@@ -1460,7 +1460,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					if not isPhysicalEarly then
 						dotSpellId = getMostRecentPeriodicSpellId(self, t)
 					end
-					if dotSpellId and restrict == true and (not hasTargetDebuffSpellId(dotSpellId)) then
+					-- Safety: only treat it as a DoT tick if the target actually has the debuff.
+					-- Without this, any recent non-periodic cast (e.g. Shadow Bolt) can "stick"
+					-- as the spellId for unrelated magic WOUND ticks.
+					if dotSpellId and (not hasTargetDebuffSpellId(dotSpellId)) then
 						dotSpellId = nil
 					end
 					if dotSpellId then
@@ -1725,6 +1728,16 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			self._bestOutgoingByToken = {}
 		end
 		local existing = self._bestOutgoingByToken[tokenKey]
+		-- Safety: never allow an old bucket to persist and keep re-attributing spellId
+		-- across later unrelated UNIT_COMBAT(target) ticks. Buckets are meant to live
+		-- only for the short merge window.
+		if existing and type(existing.timestamp) == "number" then
+			local age = t - existing.timestamp
+			if age < 0 or age > 0.20 then
+				self._bestOutgoingByToken[tokenKey] = nil
+				existing = nil
+			end
+		end
 
 		-- If no existing bucket, only start one when we can attribute this hit.
 		local matchedCast = nil
@@ -1735,7 +1748,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- If we recently cast a periodic-capable spell, treat this as outgoing
 				-- periodic damage instead of dropping it as a proc.
 				local dotSpellId = getMostRecentPeriodicSpellId(self, t)
-				if dotSpellId and restrict == true and (not hasTargetDebuffSpellId(dotSpellId)) then
+				-- Safety: only treat it as a DoT tick if the target actually has the debuff.
+				if dotSpellId and (not hasTargetDebuffSpellId(dotSpellId)) then
 					dotSpellId = nil
 				end
 				if dotSpellId then
@@ -1772,14 +1786,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				wantSpellId = self._lastPlayerSpellId
 			end
 			matchedCast = consumeBestPendingCast(self, t, wantSpellId, castWindow)
-			-- Fallback: if we couldn't match a pending cast, allow a very recent last-cast.
-			-- When instance-aware restriction is enabled, do NOT allow last-cast fallback.
-			if quietMode ~= true and (not restrict) and (not matchedCast) and self._lastPlayerSpellAt and self._lastPlayerSpellId then
-				local age = t - (self._lastPlayerSpellAt or 0)
-				if age >= 0 and age <= 1.5 then
-					matchedCast = { eligibleIcon = true, spellId = self._lastPlayerSpellId }
-				end
-			end
 			if not matchedCast then
 				return
 			end

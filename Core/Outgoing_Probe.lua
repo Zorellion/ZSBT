@@ -418,12 +418,21 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
         end
 
         -- Append spell name only if text is a clean safe string (not raw pipe).
-        if rawPipeValue == nil and prof.showSpellNames and evt.isAuto ~= true then
-            local cleanName = ZSBT.CleanSpellName(evt.spellId)
-            if cleanName and ZSBT.IsSafeString(text) then
-                text = text .. " " .. cleanName
-            end
-        end
+		local trustedForSpellLabel = (evt and (
+			evt.amountSource == "COMBAT_TEXT"
+			or evt.amountSource == "DAMAGE_METER"
+			or evt.amountSource == "COMBAT_LOG"
+			or evt.amountSource == "UNIT_COMBAT_DOT"
+			or evt.amountSource == "UNIT_COMBAT_BEST"
+			or evt.amountSource == "UNIT_COMBAT_PHYSICAL"
+			or evt.amountSource == "UNIT_COMBAT_AUTO_FALLBACK"
+		))
+		if rawPipeValue == nil and prof.showSpellNames and evt.isAuto ~= true and trustedForSpellLabel then
+			local cleanName = ZSBT.CleanSpellName(evt.spellId)
+			if cleanName and ZSBT.IsSafeString(text) then
+				text = text .. " " .. cleanName
+			end
+		end
 
         -- Append target name with class color (only if safe/clean).
         if conf.showTargets and ZSBT.IsSafeString(evt.targetName) and evt.targetName ~= "" then
@@ -494,11 +503,21 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
             end
         end
 
-        -- Attach spell icon if enabled
-        if prof.showSpellIcons and evt.spellId then
-            local tex = ZSBT.CleanSpellIcon(evt.spellId)
-            if tex then meta.spellIcon = tex end
-        end
+        -- Attach spell icon if enabled. Never show an ability icon for auto-attacks
+        -- (auto-attack correlation can be ambiguous and would cause "stuck" icons).
+        				local trustedForSpellIcon = (evt and (
+					evt.amountSource == "COMBAT_TEXT"
+					or evt.amountSource == "DAMAGE_METER"
+					or evt.amountSource == "COMBAT_LOG"
+					or evt.amountSource == "UNIT_COMBAT_DOT"
+					or evt.amountSource == "UNIT_COMBAT_BEST"
+					or evt.amountSource == "UNIT_COMBAT_PHYSICAL"
+					or evt.amountSource == "UNIT_COMBAT_AUTO_FALLBACK"
+				)) or (evt and evt.isPeriodic == true)
+		if prof.showSpellIcons and evt.isAuto ~= true and evt.spellId and trustedForSpellIcon then
+			local tex = ZSBT.CleanSpellIcon(evt.spellId)
+			if tex then meta.spellIcon = tex end
+		end
 
         local areaToUse = ruleArea or conf.scrollArea or defaultRuleArea or "Outgoing"
         if evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.7
+
+### Fixed
+- Fixed outgoing spell icons/names sticking to later unrelated outgoing ticks by tightening UNIT_COMBAT(target) correlation and periodic attribution.
+- Fixed missing outgoing spell icons for UNIT_COMBAT-derived events by preserving `amountSource` through the pulse engine.
+
 ## 1.2.6
 
 ### Changed

@@ -42,6 +42,7 @@ function Outgoing:ProcessEvent(info)
 		rawPipeId = info.rawPipeId,
 		spellName = info.spellName,
 		spellId = info.spellId,
+		amountSource = info.amountSource,
 		targetName = info.targetName,
 		isAuto = info.isAuto == true,
 		isCrit = info.isCrit,
