@@ -498,8 +498,10 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
     end
 
     local area = conf.scrollArea or "Incoming"
+    local critRouted = false
     if evt.isCrit == true and conf.critScrollArea and ZSBT.IsSafeString(conf.critScrollArea) and conf.critScrollArea ~= "" then
         area = conf.critScrollArea
+        critRouted = true
     end
 
     -- If we have a raw pipe value, use it directly for SetText.
@@ -624,11 +626,15 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
         probe = true,
         replay = isReplay == true,
         kind = kind,
-        targetName = (ZSBT.IsSafeString and ZSBT.IsSafeString(playerName) and playerName) or evt.targetName,
+        stream = "incoming",
         spellId = sid,
+        targetName = (kind == "heal" and playerName) or evt.targetName,
         isCrit = evt.isCrit == true,
         school = evt.schoolMask,
     }
+    if critRouted then
+        meta.critRouted = true
+    end
 
     if kind == "heal" and meta.isCrit == true then
         meta.critAnim = "Area"

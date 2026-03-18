@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.3
+
+### Changed
+- Crit positioning: when crits are not routed to a dedicated crit scroll area, incoming crits now spawn offset to the left and outgoing crits offset to the right.
+- Crit positioning: adjusted vertical placement for non-routed crits so they appear closer to the center of their corresponding scroll areas.
+
 ## 1.2.2
 
 ### Added

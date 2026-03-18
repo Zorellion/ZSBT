@@ -469,6 +469,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
         local meta = {
             probe = true,
             replay = isReplay == true,
+            stream = "outgoing",
             kind = kind,
             isAuto = evt.isAuto == true,
             isCrit = evt.isCrit == true,
@@ -502,6 +503,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
         local areaToUse = ruleArea or conf.scrollArea or defaultRuleArea or "Outgoing"
         if evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
             areaToUse = critConf.scrollArea
+            meta.critRouted = true
             if critConf.sticky ~= false then
                 meta.stickyCrit = true
                 meta.stickyScale = 1.12
@@ -642,6 +644,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
         local meta = {
             probe = true,
             replay = isReplay == true,
+            stream = "outgoing",
             kind = kind,
             isCrit = evt.isCrit == true,
             school = evt.schoolMask,
@@ -649,6 +652,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 
         if evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
 			areaToUse = critConf.scrollArea
+			meta.critRouted = true
 			if critConf.sticky ~= false then
 				meta.stickyCrit = true
 				meta.stickyScale = 1.12

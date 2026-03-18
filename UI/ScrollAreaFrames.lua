@@ -1647,8 +1647,32 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
     -- Validate area data with safe defaults
     local xOff = (type(area.xOffset) == "number") and area.xOffset or 0
     local yOff = (type(area.yOffset) == "number") and area.yOffset or 0
-    local areaW = (type(area.width) == "number") and area.width or 200
-    local areaH = (type(area.height) == "number") and area.height or 300
+    local areaW = (type(area.width) == "number") and area.width or 300
+    local areaH = (type(area.height) == "number") and area.height or 200
+
+	-- Crit positioning: when crits share the same scroll area as normal text,
+	-- shift them horizontally so they don't overlap the base stream.
+	-- Incoming crits shift left; outgoing crits shift right.
+	local critSideX = 0
+	local critCenterY = false
+	if meta and meta.isCrit == true and meta.critRouted ~= true then
+		local stream = meta.stream
+		if stream == "incoming" then
+			critSideX = -1
+			critCenterY = true
+		elseif stream == "outgoing" then
+			critSideX = 1
+			critCenterY = true
+		end
+	end
+	if critSideX ~= 0 then
+		local shift = math.min(120, math.max(40, areaW * 0.22))
+		xOff = xOff + (critSideX * shift)
+	end
+	if critCenterY then
+		local shiftDown = math.min(90, math.max(20, areaH * 0.12))
+		yOff = yOff - shiftDown
+	end
     local animStyle = area.animation or "Straight"
     local isFireworksEarly = animStyle:find("Fireworks") or animStyle:find("fireworks")
     local fwOriginEarly = nil
@@ -1711,7 +1735,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
         end
     end
 
-    local parentKey = string.format("test_%d_%d", xOff, yOff)
+	local parentKey = string.format("test_%d_%d", xOff, yOff)
     
     if not ZSBT._testParentFrames then
         ZSBT._testParentFrames = {}
@@ -2016,6 +2040,11 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
         local padY = math.min(areaH * 0.10, (effectiveFontSize or 18) * 2.0)
         local maxX = math.max(0, (areaW * 0.5) - padX)
         local maxY = math.max(0, (areaH * 0.5) - padY)
+        -- When crits share the normal scroll area (not routed to a crit area),
+        -- keep the vertical spread tighter so crits stay closer to the center.
+        if meta and meta.isCrit == true and meta.critRouted ~= true then
+            maxY = maxY * 0.45
+        end
         critRandX = (math.random() * 2.0 - 1.0) * maxX
         critRandY = (math.random() * 2.0 - 1.0) * maxY
     end
