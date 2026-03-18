@@ -1556,6 +1556,52 @@ function ZSBT.BuildTab_General()
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},
+			quickControlBarEnabled = {
+				type  = "toggle",
+				name  = "Enable Quick Control Bar",
+				desc  = "Show a draggable on-screen bar for quickly toggling instance/open-world tuning settings and unlocking scroll areas.",
+				order = 3.605,
+				width = "full",
+				get   = function() return ZSBT.db.profile.general.quickControlBarEnabled == true end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.quickControlBarEnabled = val and true or false
+					if ZSBT.UI and ZSBT.UI.QuickControlBar then
+						if val and ZSBT.UI.QuickControlBar.Init then
+							ZSBT.UI.QuickControlBar:Init()
+						end
+						if ZSBT.UI.QuickControlBar.RefreshVisibility then
+							ZSBT.UI.QuickControlBar:RefreshVisibility()
+						end
+					end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			quickControlBarResetPos = {
+				type  = "execute",
+				name  = "Reset Quick Control Bar Position",
+				desc  = "Reset the Quick Control Bar position to the default.",
+				order = 3.606,
+				width = "full",
+				disabled = function() return ZSBT.db.profile.general.quickControlBarEnabled ~= true end,
+				func = function()
+					if ZSBT.UI and ZSBT.UI.QuickControlBar and ZSBT.UI.QuickControlBar.ResetPosition then
+						ZSBT.UI.QuickControlBar:ResetPosition()
+					end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+
+			headerDungeonRaidTuning = {
+				type  = "header",
+				name  = "Dungeon/Raid Tuning",
+				order = 3.61,
+			},
+			dungeonRaidTuningHelp = {
+				type  = "description",
+				name  = "These settings adjust outgoing detection behavior specifically for dungeons/raids/follower dungeons where combat text and attribution can be restricted or ambiguous. Use them to reduce group/party cross-talk or to restore missing numbers in restricted content.",
+				order = 3.62,
+				width = "full",
+			},
 
 			instanceAwareOutgoing = {
 				type  = "toggle",
@@ -1566,6 +1612,11 @@ function ZSBT.BuildTab_General()
 				get   = function() return ZSBT.db.profile.general.instanceAwareOutgoing == true end,
 				set   = function(_, val)
 					ZSBT.db.profile.general.instanceAwareOutgoing = val and true or false
+					if val ~= true then
+						ZSBT.db.profile.general.damageMeterOutgoingFallback = false
+						ZSBT.db.profile.general.damageMeterIncomingFallback = false
+						ZSBT.db.profile.general.autoAttackRestrictFallback = false
+					end
 					if ZSBT.Core and ZSBT.Core.UpdateInstanceState then
 						ZSBT.Core:UpdateInstanceState(true)
 					end
@@ -1606,7 +1657,7 @@ function ZSBT.BuildTab_General()
 				type  = "toggle",
 				name  = "Show Auto Attacks in Instances (Experimental)",
 				desc  = "When Dungeon/Raid Aware Outgoing is enabled, auto-attacks may be suppressed in follower dungeons because physical UNIT_COMBAT(target) has no source attribution. This option enables a conservative last-resort auto-attack fallback in restrict mode. It may occasionally misattribute follower/other melee swings.",
-				order = 3.67,
+				order = 3.6655,
 				width = "full",
 				hidden = function()
 					return ZSBT.db.profile.general.instanceAwareOutgoing ~= true
@@ -1618,8 +1669,62 @@ function ZSBT.BuildTab_General()
 				end,
 			},
 
-            headerFont = {
-                type  = "header",
+			headerExperimentalTuning = {
+				type  = "header",
+				name  = "Open-World Tuning",
+				order = 3.666,
+			},
+			experimentalTuningHelp = {
+				type  = "description",
+				name  = "These settings change how ZSBT attributes outgoing events in open world and edge cases. Enable them if you see incorrect attribution (for example, other players' damage on shared targets). Some options may reduce the amount of outgoing text shown.",
+				order = 3.667,
+				width = "full",
+			},
+			strictOutgoingCombatLogOnly = {
+				type  = "toggle",
+				name  = "Strict Outgoing (Combat Log Only)",
+				desc  = "Experimental mode to reduce incorrect outgoing attribution. This option is intended to stop cases where other players' damage shows up as your outgoing on shared targets (like training dummies). Depending on your client/environment, it may reduce outgoing numbers in some content.",
+				order = 3.668,
+				width = "full",
+				get   = function() return ZSBT.db.profile.general.strictOutgoingCombatLogOnly == true end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.strictOutgoingCombatLogOnly = val and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			quietOutgoingWhenIdle = {
+				type  = "toggle",
+				name  = "Quiet Outgoing When Idle (Experimental)",
+				desc  = "Suppress outgoing numbers from ambiguous attribution sources unless they can be correlated to your own casts/periodic effects. This can prevent other players' damage on shared targets from being misattributed as your outgoing, but may reduce outgoing text (especially auto-attacks).",
+				order = 3.669,
+				width = "full",
+				get   = function() return ZSBT.db.profile.general.quietOutgoingWhenIdle == true end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.quietOutgoingWhenIdle = val and true or false
+					if val ~= true then
+						ZSBT.db.profile.general.quietOutgoingAutoAttacks = false
+					end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			quietOutgoingAutoAttacks = {
+				type  = "toggle",
+				name  = "Allow Auto Attacks While Quiet (Experimental)",
+				desc  = "When Quiet Outgoing When Idle is enabled, auto-attacks are suppressed for correctness (UNIT_COMBAT(target) has no source attribution). This option re-enables a conservative auto-attack fallback when your auto-attack is actually active, but it can still occasionally misattribute swings on shared targets.",
+				order = 3.6695,
+				width = "full",
+				hidden = function()
+					return ZSBT.db.profile.general.quietOutgoingWhenIdle ~= true
+				end,
+				get   = function() return ZSBT.db.profile.general.quietOutgoingAutoAttacks == true end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.quietOutgoingAutoAttacks = val and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+
+			headerFont = {
+				type  = "header",
 				name  = "Master Font",
                 order = 10,
             },

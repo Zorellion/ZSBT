@@ -18,12 +18,17 @@ ZSBT.DEFAULTS = {
 			numberFormat = "none",
             notificationsEnabled = true,
             instanceAwareOutgoing = true,
-            damageMeterOutgoingFallback = false,
-            damageMeterIncomingFallback = false,
-            autoAttackRestrictFallback = false,
+            strictOutgoingCombatLogOnly = false,
+            quietOutgoingWhenIdle = true,
+            quietOutgoingAutoAttacks = true,
+			damageMeterOutgoingFallback = true,
+			damageMeterIncomingFallback = true,
+			autoAttackRestrictFallback = true,
+			quickControlBarEnabled = false,
+			quickControlBarPos = { x = 0, y = 220 },
 
-            -- Minimap button (simple native button, no LDB libs)
-            minimap = {
+			-- Minimap button (simple native button, no LDB libs)
+			minimap = {
                 hide  = false,
                 angle = 220,
             },

@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.5
+
+### Added
+- Added Open-World tuning options to reduce incorrect outgoing attribution on shared targets, including a global "Quiet Outgoing When Idle" mode.
+- Added an optional Quick Control Bar (General) with Instance/Open World dropdown menus and a scroll-area Unlock/Lock button for fast testing.
+
+### Changed
+- General tab: renamed "Experimental Tuning" section to "Open-World Tuning".
+- Shipped defaults updated for dungeon/open-world tuning, with a selective migration that only fills unset keys for existing profiles.
+- General tab: turning off parent toggles now clears dependent child toggles (both in the config UI and Quick Control Bar) to avoid hidden stale settings.
+
+### Fixed
+- Fixed outgoing damage leakage in follower dungeons/group instances while idle by tightening attribution gates on ambiguous outgoing sources.
+- Quick Control Bar: fixed dropdown menu behavior and menu item enable/disable state.
+
 ## 1.2.4
 
 ### Fixed

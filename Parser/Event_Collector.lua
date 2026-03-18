@@ -92,6 +92,89 @@ local function ECPrint(msg)
 	end
 end
 
+local function isStrictOutgoingCombatLogOnly()
+	return ZSBT
+		and ZSBT.Core
+		and ZSBT.Core.IsStrictOutgoingCombatLogOnlyEnabled
+		and ZSBT.Core:IsStrictOutgoingCombatLogOnlyEnabled() == true
+end
+
+local function isQuietOutgoingWhenIdle()
+	return ZSBT
+		and ZSBT.Core
+		and ZSBT.Core.IsQuietOutgoingWhenIdleEnabled
+		and ZSBT.Core:IsQuietOutgoingWhenIdleEnabled() == true
+end
+
+local function isQuietOutgoingAutoAttacks()
+	return ZSBT
+		and ZSBT.Core
+		and ZSBT.Core.IsQuietOutgoingAutoAttacksEnabled
+		and ZSBT.Core:IsQuietOutgoingAutoAttacksEnabled() == true
+end
+
+local function isPlayerAutoAttackActive()
+	local aaOn = false
+	if IsCurrentSpell then
+		local okAA, resAA = pcall(IsCurrentSpell, 6603)
+		if okAA and resAA == true then
+			return true
+		end
+		local attackName = nil
+		if GetSpellInfo then
+			local okN, name = pcall(GetSpellInfo, 6603)
+			if okN and type(name) == "string" and name ~= "" then
+				attackName = name
+			end
+		end
+		if attackName then
+			local okAA2, resAA2 = pcall(IsCurrentSpell, attackName)
+			if okAA2 and resAA2 == true then
+				return true
+			end
+			if IsAutoRepeatSpell then
+				local okAR, resAR = pcall(IsAutoRepeatSpell, attackName)
+				if okAR and resAR == true then
+					return true
+				end
+			end
+		end
+		local okAA3, resAA3 = pcall(IsCurrentSpell, "Attack")
+		if okAA3 and resAA3 == true then
+			return true
+		end
+	end
+	return aaOn
+end
+
+local function isPlayerMeleeEngaged()
+	local canAttack = false
+	if UnitCanAttack then
+		local okA, resA = pcall(UnitCanAttack, "player", "target")
+		if okA and resA == true then
+			canAttack = true
+		end
+	end
+	if not canAttack then
+		return false
+	end
+	-- Prefer a range check for Attack (6603) when available.
+	if IsSpellInRange then
+		local okR, r = pcall(IsSpellInRange, 6603, "target")
+		if okR and r == 1 then
+			return true
+		end
+	end
+	-- Fallback: interaction distance 3 is "duel/trade" range; close enough to approximate melee.
+	if CheckInteractDistance then
+		local okD, d = pcall(CheckInteractDistance, "target", 3)
+		if okD and d == true then
+			return true
+		end
+	end
+	return false
+end
+
 local function flushBestOutgoing(self, token)
 	if not self or not token then return end
 	local bucket = self._bestOutgoingByToken and self._bestOutgoingByToken[token]
@@ -383,6 +466,7 @@ function Collector:handleChatSelfDamage(event, msg)
 		isSafeMsg = false
 	end
 	local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+	local quietMode = isQuietOutgoingWhenIdle()
 
 	-- In instances, some clients can mark chat combat messages as secret/unsafe.
 	-- We still want outgoing numbers when "Your ..." messages are available, but we
@@ -398,7 +482,11 @@ function Collector:handleChatSelfDamage(event, msg)
 			return
 		end
 		local dt = tNow - (self._lastPlayerSpellAt or 0)
-		if dt < 0 or dt > 2.5 then
+		local maxDt = 2.5
+		if quietMode == true then
+			maxDt = 1.25
+		end
+		if dt < 0 or dt > maxDt then
 			return
 		end
 		if self._lastChatOutgoingToken == token then
@@ -814,6 +902,7 @@ function Collector:handleCombatTextUpdate(arg1)
 
 		local outgoingSpellId = nil
 		local matchedCast = nil
+		local quietMode = isQuietOutgoingWhenIdle()
 		if ctSpellId then
 			matchedCast = consumeBestPendingCast(self, tNow, ctSpellId)
 			if matchedCast and matchedCast.helpful == true then
@@ -821,10 +910,14 @@ function Collector:handleCombatTextUpdate(arg1)
 			end
 			if matchedCast then
 				outgoingSpellId = matchedCast.spellId
-			elseif self._lastPlayerSpellId and ctSpellId == self._lastPlayerSpellId then
+			elseif (not quietMode) and self._lastPlayerSpellId and ctSpellId == self._lastPlayerSpellId and self._lastPlayerSpellAt then
 				-- Strong evidence path: combat text gave us a spellId that matches the
-				-- player's last cast. Allow stamping even if we didn't enqueue the cast.
-				outgoingSpellId = ctSpellId
+				-- player's last cast, but ONLY if the cast was very recent. Without a
+				-- recency check, party/follower spells can be misattributed as yours.
+				local age = tNow - (self._lastPlayerSpellAt or 0)
+				if age >= 0 and age <= 1.25 then
+					outgoingSpellId = ctSpellId
+				end
 			elseif isPeriodic and self._recentPeriodicSpellAt and self._recentPeriodicSpellAt[ctSpellId] then
 				local age = tNow - (self._recentPeriodicSpellAt[ctSpellId] or 0)
 				if age >= 0 and age <= PERIODIC_OUTGOING_WINDOW_SEC then
@@ -839,7 +932,53 @@ function Collector:handleCombatTextUpdate(arg1)
 		local pipeId = self._rawPipeCount + 1
 		self._rawPipeCount = pipeId
 		self._rawPipe[pipeId] = rawAmount
-		local numAmount, amountText, secret = launderAmount(rawAmount)
+		local numAmount, amountText, secret = nil, nil, false
+		if type(launderAmount) == "function" then
+			numAmount, amountText, secret = launderAmount(rawAmount)
+		else
+			if ZSBT.IsSafeNumber(rawAmount) then
+				numAmount = rawAmount
+				amountText = tostring(math.floor(rawAmount + 0.5))
+			else
+				local okS, s = pcall(tostring, rawAmount)
+				if okS and type(s) == "string" then
+					amountText = s
+				else
+					amountText = nil
+					secret = true
+				end
+			end
+		end
+
+		if outgoingSpellId then
+			-- In follower/party instances, COMBAT_TEXT_UPDATE can include damage not caused
+			-- by the player. For non-periodic hits, require a very recent player cast or a
+			-- pending-cast match before emitting outgoing.
+			if not isPeriodic then
+				-- Max correctness mode: non-periodic outgoing must be backed by a pending cast
+				-- match. This avoids accepting other-player hits that share a spellId.
+				if quietMode == true and not matchedCast then
+					outgoingSpellId = nil
+				end
+				local instanceAware = (ZSBT.Core and ZSBT.Core.IsInstanceAwareOutgoingEnabled and ZSBT.Core:IsInstanceAwareOutgoingEnabled()) or false
+				if instanceAware == true and IsInInstance then
+					local okI, inInst = pcall(IsInInstance)
+					if okI and inInst == true then
+						local members = 0
+						if type(GetNumGroupMembers) == "function" then
+							local okM, m = pcall(GetNumGroupMembers)
+							if okM and type(m) == "number" then members = m end
+						end
+						if members and members > 1 and not matchedCast then
+							local lastAt = self._lastPlayerSpellAt
+							if not (type(lastAt) == "number" and (tNow - lastAt) >= 0 and (tNow - lastAt) <= 0.90) then
+								outgoingSpellId = nil
+							end
+						end
+					end
+				end
+			end
+		end
 
 		if outgoingSpellId then
 			-- Mark for health-delta dedup.
@@ -856,6 +995,7 @@ function Collector:handleCombatTextUpdate(arg1)
 				schoolMask = nil,
 				targetName = self._lastOutgoingCombatTargetName,
 			})
+			return
 		else
 			-- Incoming dedup: in 12.0, the same incoming hit can appear via UNIT_COMBAT("player")
 			-- and COMBAT_TEXT_UPDATE in rapid succession. If UNIT_COMBAT already emitted
@@ -897,7 +1037,23 @@ function Collector:handleCombatTextUpdate(arg1)
 		local pipeId = self._rawPipeCount + 1
 		self._rawPipeCount = pipeId
 		self._rawPipe[pipeId] = rawAmount
-		local numAmount, amountText, secret = launderAmount(rawAmount)
+		local numAmount, amountText, secret = nil, nil, false
+		if type(launderAmount) == "function" then
+			numAmount, amountText, secret = launderAmount(rawAmount)
+		else
+			if ZSBT.IsSafeNumber(rawAmount) then
+				numAmount = rawAmount
+				amountText = tostring(math.floor(rawAmount + 0.5))
+			else
+				local okS, s = pcall(tostring, rawAmount)
+				if okS and type(s) == "string" then
+					amountText = s
+				else
+					amountText = nil
+					secret = true
+				end
+			end
+		end
 
 		-- For heals: use player.s own spell (self-heals)
 		local healSpellId = nil
@@ -1136,14 +1292,30 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 	if unit == "target" then
 		local restrict = (ZSBT.Core and ZSBT.Core.ShouldRestrictOutgoingFallback and ZSBT.Core:ShouldRestrictOutgoingFallback()) or false
 		local instanceAware = (ZSBT.Core and ZSBT.Core.IsInstanceAwareOutgoingEnabled and ZSBT.Core:IsInstanceAwareOutgoingEnabled()) or false
+		local quietMode = isQuietOutgoingWhenIdle()
+		-- Strict outgoing mode: still allow UNIT_COMBAT(target) for outgoing, but only
+		-- when we can correlate it to a very recent player cast (MSBT-style safety).
+		if isStrictOutgoingCombatLogOnly() then
+			restrict = true
+			instanceAware = true
+		end
+		-- Max correctness: UNIT_COMBAT(target) has no source attribution, so only allow
+		-- it when we can correlate to the player's own casts/periodic effects.
+		-- This intentionally suppresses auto-attacks from this pipeline.
+		if quietMode == true then
+			restrict = true
+			instanceAware = true
+		end
 		-- If combat text / chat already produced an outgoing number for the current cast
 		-- token, suppress UNIT_COMBAT(target) for that token to avoid double numbers.
 		if self._castToken and self._lastCombatTextOutgoingToken == self._castToken then
 			return
 		end
+		local inInst = false
 		if IsInInstance then
 			local okI, inInst = pcall(IsInInstance)
 			if okI and inInst == true then
+				inInst = true
 				-- Inside instances, UNIT_COMBAT("target") has no source attribution and can
 				-- easily pick up follower/party damage.
 				if instanceAware == true then
@@ -1157,6 +1329,14 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- cast-correlation below so we only emit hits we can attribute.
 					if members and members > 1 then
 						restrict = true
+						-- Hard gate: if the player is not actively casting/attacking, do NOT emit
+						-- outgoing from UNIT_COMBAT(target). This prevents follower/party damage on
+						-- your target from being misattributed as your outgoing when you're idle.
+						local tNow = now()
+						local lastAt = self._lastPlayerSpellAt
+						if not (type(lastAt) == "number" and (tNow - lastAt) >= 0 and (tNow - lastAt) <= 0.90) then
+							return
+						end
 					end
 				end
 			end
@@ -1384,8 +1564,25 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			if ok and res == true then hasPet = true end
 		end
 		local allowAutoFallback = false
-		if restrict == true and (not hasPet) and ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general and ZSBT.db.profile.general.autoAttackRestrictFallback == true then
-			allowAutoFallback = true
+		if restrict == true and (not hasPet) then
+			-- Normal behavior: instance-only opt-in auto-attack fallback.
+			if quietMode ~= true then
+				if ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general and ZSBT.db.profile.general.autoAttackRestrictFallback == true then
+					allowAutoFallback = true
+				end
+			-- Quiet mode behavior: separate opt-in for showing auto-attacks while quiet.
+			elseif isQuietOutgoingAutoAttacks() == true then
+				local inPlayerCombat = false
+				if UnitAffectingCombat then
+					local okC, res = pcall(UnitAffectingCombat, "player")
+					if okC and type(res) == "boolean" then inPlayerCombat = res end
+				end
+				if inPlayerCombat then
+					if isPlayerAutoAttackActive() or isPlayerMeleeEngaged() then
+						allowAutoFallback = true
+					end
+				end
+			end
 		end
 
 		-- PHYSICAL: do not merge. Multiple swings / cleaves / multistrikes would be
@@ -1577,7 +1774,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			matchedCast = consumeBestPendingCast(self, t, wantSpellId, castWindow)
 			-- Fallback: if we couldn't match a pending cast, allow a very recent last-cast.
 			-- When instance-aware restriction is enabled, do NOT allow last-cast fallback.
-			if (not restrict) and (not matchedCast) and self._lastPlayerSpellAt and self._lastPlayerSpellId then
+			if quietMode ~= true and (not restrict) and (not matchedCast) and self._lastPlayerSpellAt and self._lastPlayerSpellId then
 				local age = t - (self._lastPlayerSpellAt or 0)
 				if age >= 0 and age <= 1.5 then
 					matchedCast = { eligibleIcon = true, spellId = self._lastPlayerSpellId }

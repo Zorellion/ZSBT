@@ -1319,6 +1319,29 @@ Enables a conservative fallback for auto-attacks in restricted instance mode.
 3. If outgoing is too quiet, enable `Use Damage Meter Outgoing Fallback (Experimental)` and retest.
 4. If incoming damage is missing/secret, enable `Use Damage Meter Incoming Damage Fallback (Experimental)` and retest.
 5. Only if swings are missing, try `Show Auto Attacks in Instances (Experimental)`.
+
+## Open-World Tuning
+These settings change how ZSBT attributes outgoing events in open world and edge cases.
+
+### Quiet Outgoing When Idle
+Suppress outgoing numbers from ambiguous attribution sources unless they can be correlated to your own casts/periodic effects.
+
+### Allow Auto Attacks While Quiet
+Optional companion toggle for melee classes. Re-enables a conservative auto-attack fallback while quiet mode is enabled.
+]],
+
+	quickControlBar = [[# Quick Control Bar
+
+The Quick Control Bar is an optional on-screen widget that lets you toggle common tuning settings without opening the full configuration UI.
+
+## Enable
+- `/zsbt` -> `General` -> `Enable Quick Control Bar`
+
+## How to use
+- Drag the bar to position it anywhere on your screen.
+- `Instance` opens a menu for Dungeon/Raid tuning toggles.
+- `Open World` opens a menu for Open-World tuning toggles.
+- `Unlock/Lock` toggles scroll area unlock mode for quick positioning.
 ]],
 
 	combatLogSettings = [[# Combat Log Settings (Required for Fallback Detection)
@@ -1940,6 +1963,7 @@ Notifications is intended for short, high-signal messages like:
 local HELP_TOPICS = {
 	gettingStarted = { name = "Getting Started", docKey = "gettingStarted" },
 	general = { name = "General", docKey = "general" },
+	quickControlBar = { name = "Quick Control Bar", docKey = "quickControlBar" },
 	combatLogSettings = { name = "Combat Log Settings", docKey = "combatLogSettings" },
 	dbProfiles = {
 		name = "DB Profiles (Presets)",
@@ -1971,6 +1995,7 @@ local HELP_TOPICS = {
 local HELP_ORDER = {
 	"gettingStarted",
 	"general",
+	"quickControlBar",
 	"combatLogSettings",
 	"dbProfiles",
 	"scrollAreas",

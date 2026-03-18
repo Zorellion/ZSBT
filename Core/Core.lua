@@ -104,6 +104,27 @@ function Core:IsInstanceAwareOutgoingEnabled()
 		and ZSBT.db.profile.general.instanceAwareOutgoing == true
 end
 
+function Core:IsStrictOutgoingCombatLogOnlyEnabled()
+	return ZSBT.db
+		and ZSBT.db.profile
+		and ZSBT.db.profile.general
+		and ZSBT.db.profile.general.strictOutgoingCombatLogOnly == true
+end
+
+function Core:IsQuietOutgoingWhenIdleEnabled()
+	return ZSBT.db
+		and ZSBT.db.profile
+		and ZSBT.db.profile.general
+		and ZSBT.db.profile.general.quietOutgoingWhenIdle == true
+end
+
+function Core:IsQuietOutgoingAutoAttacksEnabled()
+	return ZSBT.db
+		and ZSBT.db.profile
+		and ZSBT.db.profile.general
+		and ZSBT.db.profile.general.quietOutgoingAutoAttacks == true
+end
+
 function Core:IsInGroupInstance()
 	return Core._inGroupInstance == true
 end

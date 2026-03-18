@@ -270,6 +270,48 @@ function Addon:OnInitialize()
     -- Store reference in shared namespace for cross-file access
     ZSBT.db = self.db
 
+	-- Selective migration: apply shipped General defaults to existing profiles
+	-- only when those keys are unset (nil). Do not overwrite user choices.
+	local function migrateGeneralDefaultsOnce()
+		if not self.db then return end
+		self.db.global = self.db.global or {}
+		self.db.global.migrations = self.db.global.migrations or {}
+		if self.db.global.migrations.generalDefaults_v1 == true then return end
+
+		local keys = {
+			"instanceAwareOutgoing",
+			"damageMeterOutgoingFallback",
+			"damageMeterIncomingFallback",
+			"autoAttackRestrictFallback",
+			"quietOutgoingWhenIdle",
+			"quietOutgoingAutoAttacks",
+			"strictOutgoingCombatLogOnly",
+		}
+		local defaults = ZSBT.DEFAULTS and ZSBT.DEFAULTS.profile and ZSBT.DEFAULTS.profile.general or nil
+		if type(defaults) ~= "table" then
+			self.db.global.migrations.generalDefaults_v1 = true
+			return
+		end
+
+		local profiles = self.db.profiles
+		if type(profiles) == "table" then
+			for _, prof in pairs(profiles) do
+				if type(prof) == "table" then
+					prof.general = prof.general or {}
+					for _, k in ipairs(keys) do
+						if prof.general[k] == nil and defaults[k] ~= nil then
+							prof.general[k] = defaults[k]
+						end
+					end
+				end
+			end
+		end
+
+		self.db.global.migrations.generalDefaults_v1 = true
+	end
+
+	migrateGeneralDefaultsOnce()
+
 	ZSBT.Presets = ZSBT.Presets or {}
 	local Presets = ZSBT.Presets
 
@@ -772,7 +814,6 @@ function Addon:OnInitialize()
 			LSM:Register("sound", "ZSBT: Ship Horn", [[Interface\AddOns\ZSBT\Media\Sounds\ship-horn.ogg]])
 			LSM:Register("sound", "ZSBT: Unstoppable", [[Interface\AddOns\ZSBT\Media\Sounds\unstoppable.ogg]])
 		end)
-
 		local custom = self.db and self.db.profile and self.db.profile.media and self.db.profile.media.custom
 		local fonts = custom and custom.fonts
 		if type(fonts) == "table" then
@@ -790,7 +831,19 @@ function Addon:OnInitialize()
 				end
 			end
 		end
-    end
+	end
+
+	-- Keep quick control bar profile-specific on profile switches.
+	if self.db and type(self.db.RegisterCallback) == "function" then
+		local function refreshQuickBar()
+			if ZSBT.UI and ZSBT.UI.QuickControlBar and ZSBT.UI.QuickControlBar.Init then
+				ZSBT.UI.QuickControlBar:Init()
+			end
+		end
+		pcall(self.db.RegisterCallback, self.db, "OnProfileChanged", refreshQuickBar)
+		pcall(self.db.RegisterCallback, self.db, "OnProfileCopied", refreshQuickBar)
+		pcall(self.db.RegisterCallback, self.db, "OnProfileReset", refreshQuickBar)
+	end
 
     -- Register slash commands
     self:RegisterChatCommand("zsbt", "HandleSlashCommand")
@@ -991,6 +1044,11 @@ function Addon:OnEnable()
     enableFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     enableFrame:SetScript("OnEvent", function(self, event)
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
+
+        -- UI: initialize quick control bar after UIParent is ready.
+        if ZSBT.UI and ZSBT.UI.QuickControlBar and ZSBT.UI.QuickControlBar.Init then
+            ZSBT.UI.QuickControlBar:Init()
+        end
 
         if masterEnabled then
             if ZSBT.Core and ZSBT.Core.Enable then ZSBT.Core:Enable() end

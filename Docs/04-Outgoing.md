@@ -50,3 +50,8 @@ Outgoing controls what you see when you deal damage or healing.
 
 ## Group/instance note
 - If you have a “dungeon/raid aware outgoing” restriction enabled, outgoing fallback signals can be limited in instanced content to avoid mis-attributing group activity to you.
+
+## Open-world note
+- If `Open-World Tuning` -> `Quiet Outgoing When Idle` is enabled, ZSBT will prioritize correct attribution over completeness for ambiguous outgoing sources.
+- This can reduce outgoing numbers on shared targets (by design).
+- If you want swing numbers while quiet mode is enabled, use `Allow Auto Attacks While Quiet`.

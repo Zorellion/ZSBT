@@ -578,6 +578,10 @@ function Engine:_processHealthDamage(sample)
 	if sample.unit == "player" then
 		self:_emitIncoming(normalized)
 	else
+		local strictOutgoing = (ZSBT.Core and ZSBT.Core.IsStrictOutgoingCombatLogOnlyEnabled and ZSBT.Core:IsStrictOutgoingCombatLogOnlyEnabled()) or false
+		if strictOutgoing == true then
+			return
+		end
 		-- HEALTH_DAMAGE for non-player units (e.g. target/nameplates) has no source attribution.
 		-- When instance-aware outgoing is enabled, only treat it as *player outgoing*
 		-- when we can correlate it to a recent player cast. Otherwise, preserve legacy
@@ -626,6 +630,10 @@ function Engine:_processHealthHeal(sample)
 	if sample.unit == "player" then
 		self:_emitIncoming(normalized)
 	elseif bestCast and confidence == CorrelationLogic.CONFIDENCE.HIGH then
+		local strictOutgoing = (ZSBT.Core and ZSBT.Core.IsStrictOutgoingCombatLogOnlyEnabled and ZSBT.Core:IsStrictOutgoingCombatLogOnlyEnabled()) or false
+		if strictOutgoing == true then
+			return
+		end
 		if ZSBT.Core and ZSBT.Core.ShouldRestrictOutgoingFallback and ZSBT.Core:ShouldRestrictOutgoingFallback() then
 			return
 		end
@@ -947,7 +955,7 @@ function Engine:flushBucket()
 				-- would collapse multi-swing / cleave behaviors.
 				-- Suppress legacy/unknown source events (amountSource nil) to prevent
 				-- Outgoing_Probe from applying LAST_CAST fallback.
-				if sample.amountSource ~= "COMBAT_TEXT" and sample.amountSource ~= "UNIT_COMBAT_BEST" and sample.amountSource ~= "UNIT_COMBAT_PHYSICAL" and sample.amountSource ~= "UNIT_COMBAT_DOT" and sample.amountSource ~= "DAMAGE_METER" and sample.amountSource ~= "UNIT_COMBAT_AUTO_FALLBACK" then
+				if sample.amountSource ~= "COMBAT_TEXT" and sample.amountSource ~= "UNIT_COMBAT_BEST" and sample.amountSource ~= "UNIT_COMBAT_PHYSICAL" and sample.amountSource ~= "UNIT_COMBAT_DOT" and sample.amountSource ~= "DAMAGE_METER" and sample.amountSource ~= "UNIT_COMBAT_AUTO_FALLBACK" and sample.amountSource ~= "COMBAT_LOG" then
 					local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
 					if rawPipeId and ec and ec._rawPipe then
 						ec._rawPipe[rawPipeId] = nil
