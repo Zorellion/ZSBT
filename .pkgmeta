@@ -3,3 +3,5 @@ package-as: ZSBT
 ignore:
   - .git
   - .git/**
+  - .github
+  - .github/**
