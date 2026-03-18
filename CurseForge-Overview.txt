@@ -1,0 +1,42 @@
+ZSBT (Zore’s Scrolling Battle Text)
+
+Overview
+ZSBT is a modern scrolling combat text addon for WoW Retail (12.x). It’s built to behave safely under Retail’s “secret value” restrictions so it can be used in open world, dungeons, and raids without breaking the UI.
+
+What it does
+- Scrolling combat text with multiple independent scroll areas:
+  - Incoming damage/healing
+  - Outgoing damage/healing
+  - Notifications (cooldowns, warnings, triggers)
+- Multiple animation styles (including Parabola, Fireworks, Waterfall, Straight, and Static)
+- Spam control and cleanup:
+  - AoE hit condensing / merging
+  - Minimum thresholds and throttling options
+- Cooldown ready alerts (text + sound)
+- Custom Triggers:
+  - Create your own notifications for events (auras, spell events, and more)
+  - Choose text, colors, sounds, sticky styling, and font overrides
+- UT-style multi-kill announcer:
+  - Fires trigger events UT_KILL_1 through UT_KILL_7
+  - Ships with preset “First Blood!” through “God Like!” announcements, fully customizable via Triggers
+
+How to use
+- Type /zsbt to open the configuration UI.
+- Configure:
+  - General: enable addon, master font, suppression options
+  - Scroll Areas: position/size/animation settings
+  - Incoming / Outgoing: what to show and where
+  - Spam Control: merging and thresholds
+  - Cooldowns: tracked cooldown ready alerts
+  - Triggers: create custom alerts (text/sound/style)
+  - Media: choose and preview sounds
+
+Commands
+- /zsbt Open configuration
+- /zsbt minimap Toggle minimap button
+- /zsbt reset Reset to defaults
+- /zsbt version Show addon version
+
+Notes
+- Designed for WoW Retail 12.x
+- Uses LibSharedMedia for fonts/sounds and includes bundled media

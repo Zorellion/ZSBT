@@ -1,0 +1,429 @@
+------------------------------------------------------------------------
+-- Zore's Scrolling Battle Text - Default Configuration Values
+-- Every user-configurable setting with its factory default.
+-- Structure mirrors the AceDB profile schema.
+------------------------------------------------------------------------
+
+local ADDON_NAME, ZSBT = ...
+
+ZSBT.DEFAULTS = {
+    profile = {
+        ------------------------------------------------------------------------
+        -- Tab 1: General
+        ------------------------------------------------------------------------
+        general = {
+            enabled       = true,       -- Master enable/disable
+            combatOnly    = false,      -- Only show text during combat
+            perCharacterProfile = false,
+			numberFormat = "none",
+            notificationsEnabled = true,
+            instanceAwareOutgoing = true,
+            damageMeterOutgoingFallback = false,
+            damageMeterIncomingFallback = false,
+            autoAttackRestrictFallback = false,
+
+            -- Minimap button (simple native button, no LDB libs)
+            minimap = {
+                hide  = false,
+                angle = 220,
+            },
+
+            -- Master font settings
+            font = {
+                face    = "Friz Quadrata TT",   -- Default WoW font
+                size    = 18,
+                outline = "Thin",               -- None / Thin / Thick / Monochrome
+                alpha   = 1.0,                  -- 0.0 - 1.0
+            },
+
+            -- Crit font overrides (falls back to master font if nil)
+            critFont = {
+                face    = nil,                  -- nil = use master font face
+                size    = 28,                   -- Bigger for crits
+                outline = "Thick",              -- Bolder outline
+                scale   = 1.5,                  -- Scale multiplier vs normal
+                useScale = false,
+                anim = "Pow",
+            },
+
+            -- Suppress Blizzard's floating combat text on load
+            suppressBlizzardFCT = true,
+        },
+
+        notifications = {
+            combatState = true,
+            progress = true,
+			lootItems = true,
+			lootMoney = true,
+			lootCurrency = true,
+            cooldowns = true,
+            auras = true,
+            power = true,
+            procs = true,
+            triggers = true,
+        },
+
+		notificationsRouting = {
+			combatState = "Notifications",
+			progress = "Notifications",
+			lootItems = "Notifications",
+			lootMoney = "Notifications",
+			lootCurrency = "Notifications",
+			cooldowns = "Notifications",
+			auras = "Notifications",
+			power = "Notifications",
+			procs = "Notifications",
+			triggers = "Notifications",
+		},
+
+		notificationsTemplates = {
+			lootItems = "+%a %e (%t)",
+			lootMoney = "+%e",
+			lootCurrency = "+%a %e (%t)",
+		},
+
+		loot = {
+			alwaysShowQuestItems = true,
+			showCreated = false,
+			qualityExclusions = {},
+			itemExclusions = {},
+			itemsAllowed = {},
+		},
+
+        ------------------------------------------------------------------------
+        -- Tab 2: Scroll Areas
+        ------------------------------------------------------------------------
+        scrollAreas = {
+            ["Outgoing"] = {
+                xOffset   = 250,
+                yOffset   = -10,
+                width     = 100,
+                height    = 300,
+                alignment = "Center",
+                direction = "Up",
+                animation = "Parabola",
+                parabolaSide = "Right",
+                animSpeed = 1.0,
+            },
+            ["Incoming"] = {
+                xOffset   = -250,
+                yOffset   = -10,
+                width     = 100,
+                height    = 300,
+                alignment = "Center",
+                direction = "Up",
+                animation = "Parabola",
+                parabolaSide = "Left",
+                animSpeed = 1.0,
+            },
+            ["Notifications"] = {
+                xOffset   = 0,
+                yOffset   = 200,
+                width     = 300,
+                height    = 100,
+                alignment = "Center",
+                direction = "Up",
+                animation = "Straight",
+                animSpeed = 1.0,
+            },
+        },
+
+        ------------------------------------------------------------------------
+        -- Tab 3: Incoming
+        ------------------------------------------------------------------------
+        incoming = {
+            damage = {
+                enabled       = true,
+                scrollArea    = "Incoming",
+				critScrollArea = nil,
+                showFlags     = true,
+                minThreshold  = 0,
+                showMisses    = true,
+            },
+            healing = {
+                enabled       = true,
+                scrollArea    = "Incoming",
+				critScrollArea = nil,
+                showHoTTicks  = true,
+                showOverheal  = false,
+                minThreshold  = 0,
+            },
+            showSpellIcons  = false,
+            useSchoolColors = true,
+            customDamageColor  = { r = 1, g = 1, b = 1 },
+            customHealingColor = { r = 1, g = 1, b = 1 },
+            customColor     = { r = 1, g = 1, b = 1 },
+        },
+
+        ------------------------------------------------------------------------
+        -- Tab 4: Outgoing
+        ------------------------------------------------------------------------
+        outgoing = {
+            damage = {
+                enabled        = true,
+                scrollArea     = "Outgoing",
+                showTargets    = false,
+                autoAttackMode = "Show All",
+                minThreshold   = 0,
+                showMisses     = true,
+            },
+            healing = {
+                enabled       = true,
+                scrollArea    = "Outgoing",
+                showOverheal  = false,
+                minThreshold  = 0,
+            },
+            crits = {
+                enabled = false,
+                scrollArea = "Outgoing",
+                sticky = true,
+				color = { r = 1.00, g = 1.00, b = 0.00 },
+            },
+            showSpellNames = false,
+            showSpellIcons = false,
+            useSchoolColors = true,
+            customDamageColor  = { r = 1, g = 1, b = 1 },
+            customHealingColor = { r = 1, g = 1, b = 1 },
+        },
+
+        ------------------------------------------------------------------------
+        -- Tab 5: Pets
+        ------------------------------------------------------------------------
+        pets = {
+            enabled       = true,
+            scrollArea    = "Outgoing",
+            aggregation   = "Generic (\"Pet Hit X\")",
+            minThreshold  = 0,
+            mergeWindowSec = 0,
+            showCount = true,
+			outgoingDamageColor = { r = 1.00, g = 1.00, b = 1.00 },
+			outgoingCritColor = { r = 1.00, g = 1.00, b = 0.00 },
+            showHealing = false,
+            healScrollArea = "Outgoing",
+            healMinThreshold = 0,
+			incomingHealColor = { r = 0.60, g = 0.80, b = 0.60 },
+			incomingHealCritColor = { r = 0.80, g = 1.00, b = 0.00 },
+			showIncomingDamage = false,
+			incomingDamageScrollArea = "Pet Incoming",
+			incomingDamageMinThreshold = 0,
+			incomingDamageColor = { r = 1.00, g = 0.30, b = 0.30 },
+			incomingDamageCritColor = { r = 1.00, g = 0.80, b = 0.20 },
+        },
+
+        ------------------------------------------------------------------------
+        -- Tab 6: Spam Control
+        ------------------------------------------------------------------------
+        spamControl = {
+            merging = {
+                enabled     = true,
+                window      = 1.5,
+                showCount   = true,
+            },
+            auraGlobal = {
+                showUnconfiguredGains = true,
+                showUnconfiguredFades = true,
+            },
+            routing = {
+                spellRulesDefaultArea = "Outgoing",
+                auraRulesDefaultArea = "Notifications",
+            },
+            templates = {
+                autoApplyOnSpecChange = false,
+                applyAllSpecs = true,
+            },
+            throttling = {
+                minDamage     = 0,
+                minHealing    = 0,
+                hideAutoBelow = 0,
+            },
+            pulseEngine = {
+                maxBucketSize   = 120,
+                maxWorkPerPulse = 80,
+            },
+            suppressDummyDamage = false,
+        },
+
+        ------------------------------------------------------------------------
+        -- Tab 7: Cooldowns
+        ------------------------------------------------------------------------
+        cooldowns = {
+            enabled    = true,
+            scrollArea = "Notifications",
+            format     = "%s Ready!",
+            sound      = "None",
+            tracked    = {},
+        },
+
+        ------------------------------------------------------------------------
+        -- Tab 8: Media
+        ------------------------------------------------------------------------
+        media = {
+            sounds = {
+                lowHealth     = "None",
+                cooldownReady = "None",
+            },
+            custom = {
+                fonts = {
+                    -- [displayName] = "path"
+                },
+                sounds = {
+                    -- [displayName] = "path"
+                },
+            },
+            schoolColors = {
+                physical = { r = 1.00, g = 1.00, b = 0.00 },
+                holy     = { r = 1.00, g = 0.90, b = 0.50 },
+                fire     = { r = 1.00, g = 0.30, b = 0.00 },
+                nature   = { r = 0.30, g = 1.00, b = 0.30 },
+                frost    = { r = 0.40, g = 0.80, b = 1.00 },
+                shadow   = { r = 0.60, g = 0.20, b = 1.00 },
+                arcane   = { r = 1.00, g = 0.50, b = 1.00 },
+            },
+        },
+
+        ------------------------------------------------------------------------
+        -- Diagnostics
+        ------------------------------------------------------------------------
+        diagnostics = {
+            debugLevel     = 0,
+            captureEnabled = false,
+            maxEntries     = 1000,
+            qHead          = 1,
+            qTail          = 0,
+            qCount         = 0,
+            log            = {},
+        },
+    },
+    char = {
+        ui = {
+            help = {
+                expanded = false,
+                selected = "gettingStarted",
+            },
+            configWindow = {
+                width = 900,
+                height = 820,
+            },
+        },
+        spamControl = {
+            spellRules = {
+                -- [spellID] = { enabled=true, throttleSec=0.20 }
+            },
+            auraRules = {
+                -- [spellID] = { enabled=true, throttleSec=0.00, suppressGain=false, suppressFade=false }
+            },
+        },
+        cooldowns = {
+            tracked = {},
+        },
+        triggers = {
+            enabled = true,
+            items = {
+				{ id = "ut_kill_1", enabled = true, eventType = "UT_KILL_1", throttleSec = 0,
+					action = {
+						text = "First Blood!",
+						scrollArea = "Notifications",
+						sound = "ZSBT: First Blood",
+						color = { r = 1.0, g = 0.0, b = 0.11764705882353 },
+						sticky = true,
+						stickyScale = 2,
+						stickyDurationMult = 1.5,
+						fontOverride = true,
+						fontFace = "ZSBT: PermanentMarker",
+						fontOutline = "Thin",
+					}
+				},
+				{ id = "ut_kill_2", enabled = true, eventType = "UT_KILL_2", throttleSec = 0,
+					action = {
+						text = "Double Kill!",
+						scrollArea = "Notifications",
+						sound = "ZSBT: Double Kill",
+						color = { r = 1.0, g = 0.0, b = 0.11764705882353 },
+						sticky = true,
+						stickyScale = 2,
+						stickyDurationMult = 1.5,
+						fontOverride = true,
+						fontFace = "ZSBT: PermanentMarker",
+						fontOutline = "Thin",
+					}
+				},
+				{ id = "ut_kill_3", enabled = true, eventType = "UT_KILL_3", throttleSec = 0,
+					action = {
+						text = "Killing Spree!",
+						scrollArea = "Notifications",
+						sound = "ZSBT: Killing Spree",
+						color = { r = 1.0, g = 0.0, b = 0.11764705882353 },
+						sticky = true,
+						stickyScale = 2,
+						stickyDurationMult = 1.5,
+						fontOverride = true,
+						fontFace = "ZSBT: PermanentMarker",
+						fontOutline = "Thin",
+					}
+				},
+				{ id = "ut_kill_4", enabled = true, eventType = "UT_KILL_4", throttleSec = 0,
+					action = {
+						text = "Mega Kill!",
+						scrollArea = "Notifications",
+						sound = "ZSBT: Mega Kill",
+						color = { r = 1.0, g = 0.0, b = 0.11764705882353 },
+						sticky = true,
+						stickyScale = 2,
+						stickyDurationMult = 1.5,
+						fontOverride = true,
+						fontFace = "ZSBT: PermanentMarker",
+						fontOutline = "Thin",
+					}
+				},
+				{ id = "ut_kill_5", enabled = true, eventType = "UT_KILL_5", throttleSec = 0,
+					action = {
+						text = "Rampage!",
+						scrollArea = "Notifications",
+						sound = "ZSBT: Rampage",
+						color = { r = 1.0, g = 0.0, b = 0.11764705882353 },
+						sticky = true,
+						stickyScale = 2,
+						stickyDurationMult = 1.5,
+						fontOverride = true,
+						fontFace = "ZSBT: PermanentMarker",
+						fontOutline = "Thin",
+					}
+				},
+				{ id = "ut_kill_6", enabled = true, eventType = "UT_KILL_6", throttleSec = 0,
+					action = {
+						text = "Unstoppable!",
+						scrollArea = "Notifications",
+						sound = "ZSBT: Unstoppable",
+						color = { r = 1.0, g = 0.0, b = 0.11764705882353 },
+						sticky = true,
+						stickyScale = 2,
+						stickyDurationMult = 1.5,
+						fontOverride = true,
+						fontFace = "ZSBT: PermanentMarker",
+						fontOutline = "Thin",
+					}
+				},
+				{ id = "ut_kill_7", enabled = true, eventType = "UT_KILL_7", throttleSec = 0,
+					action = {
+						text = "God Like!",
+						scrollArea = "Notifications",
+						sound = "ZSBT: Godlike",
+						color = { r = 1.0, g = 0.81176470588235, b = 0.0 },
+						sticky = true,
+						stickyScale = 2,
+						stickyDurationMult = 1.5,
+						fontOverride = true,
+						fontFace = "ZSBT: PermanentMarker",
+						fontOutline = "Thin",
+					}
+				},
+                -- { id="...", enabled=true, eventType="AURA_GAIN", spellId=123, throttleSec=0, action={text="{spell}!", scrollArea="Notifications", sound="None", color={r=1,g=1,b=1}} }
+            },
+        },
+    },
+    global = {
+        migrations = {
+            rulesToChar_v1 = false,
+        },
+    },
+}

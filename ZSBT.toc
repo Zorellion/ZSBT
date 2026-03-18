@@ -1,0 +1,53 @@
+## Interface: 120001
+## Title: Zore's Scrolling Battle Text
+## Notes: Zore's Scrolling Battle Text (ZSBT) for WoW Retail 12.x
+## Author: Zorellion
+## Version: 1.2.2
+## SavedVariables: ZSBTDB
+## OptionalDeps: Ace3, LibSharedMedia-3.0
+
+# Libraries - Load order matters
+libs\LibStub\LibStub.lua
+libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+libs\AceAddon-3.0\AceAddon-3.0.lua
+libs\AceConsole-3.0\AceConsole-3.0.lua
+libs\AceDB-3.0\AceDB-3.0.lua
+libs\AceDBOptions-3.0\AceDBOptions-3.0.lua
+libs\AceConfig-3.0\AceConfigRegistry-3.0.lua
+libs\AceConfig-3.0\AceConfigDialog-3.0.lua
+libs\AceConfig-3.0\AceConfigCmd-3.0.lua
+libs\AceGUI-3.0\AceGUI-3.0.lua
+libs\AceSerializer-3.0\AceSerializer-3.0.lua
+libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
+
+# Core - Constants and defaults before init
+Core\Constants.lua
+Core\Defaults.lua
+Core\Init.lua
+Core\Diagnostics.lua
+
+# Core (Decision / Coordination) - Skeletons
+Core\Core.lua
+Core\Incoming_Probe.lua
+Core\Outgoing_Probe.lua
+Core\MinimapButton.lua
+Core\Display_Decide.lua
+Core\Cooldowns_Decide.lua
+Core\Triggers.lua
+Core\Combat_Decide.lua
+
+# Parser (Detection) - Skeletons
+Parser\Normalize.lua
+Parser\CombatLog_Detect.lua
+Parser\Cooldowns_Detect.lua
+Parser\Incoming_Detect.lua
+Parser\Outgoing_Detect.lua
+Parser\State_Manager.lua
+Parser\Correlation_Logic.lua
+Parser\Event_Collector.lua
+Parser\Pulse_Engine.lua
+
+# UI - Config tabs before main config assembler
+UI\ConfigTabs.lua
+UI\Config.lua
+UI\ScrollAreaFrames.lua
