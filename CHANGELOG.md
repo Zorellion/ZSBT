@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.4
+
+### Fixed
+- Packaging: CurseForge/packager now packages the addon folder as "ZSBT" (instead of versioned folder names) and excludes the .git directory.
+
 ## 1.2.3
 
 ### Changed
