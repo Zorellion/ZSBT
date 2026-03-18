@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.6
+
+### Changed
+- README: updated documentation links and added Quick Control Bar + tuning overview.
+
 ## 1.2.5
 
 ### Added
