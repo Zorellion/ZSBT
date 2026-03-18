@@ -19,11 +19,22 @@ local Triggers = ZSBT.Core.Triggers
 
 local function Now() return (GetTime and GetTime()) or 0 end
 
+local function SafeToString(v)
+	local ok, s = pcall(tostring, v)
+	if ok and type(s) == "string" then return s end
+	return "<secret>"
+end
+
 local function TrigDebug(msg)
 	local level = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
 		and tonumber(ZSBT.db.profile.diagnostics.debugLevel) or 0
-	if level >= 2 and Addon and Addon.Print then
-		Addon:Print("|cFF00CCFF[TRG]|r " .. tostring(msg))
+	if level >= 2 then
+		local out = "|cFF00CCFF[TRG]|r " .. SafeToString(msg)
+		if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+			DEFAULT_CHAT_FRAME:AddMessage(out)
+		elseif Addon and Addon.Print then
+			Addon:Print(out)
+		end
 	end
 end
 
@@ -385,6 +396,18 @@ GetTrackedTriggerList = function(self)
 	local watch = {}
 	for _, trig in ipairs(list) do
 		if type(trig) == "table" and trig.enabled ~= false and type(trig.eventType) == "string" then
+			-- Coerce spellId to number for spellId-based triggers when the UI stores it as a string.
+			if trig.eventType == "SPELL_USABLE" or trig.eventType == "COOLDOWN_READY" or trig.eventType == "SPELLCAST_SUCCEEDED" or trig.eventType == "AURA_STACKS" then
+				local sid = trig.spellId
+				if type(sid) == "string" then
+					local n = tonumber(sid)
+					if type(n) == "number" and n > 0 then
+						trig.spellId = n
+						TrigDebug("Trigger spellId coerced to number: eventType=" .. tostring(trig.eventType) .. " spellId=" .. tostring(n))
+					end
+				end
+			end
+
 			if trig.eventType == "SPELL_USABLE" then
 				su[#su + 1] = trig
 			elseif trig.eventType == "RESOURCE_THRESHOLD" then
@@ -502,6 +525,42 @@ end
 
 local function SafeIsUsableSpell(spellId)
 	if type(spellId) ~= "number" then return false end
+	-- IMPORTANT: In modern clients, many cooldown/charge values can be returned as
+	-- "secret" numeric types. Direct numeric comparisons can throw hard errors.
+	-- Only compare values that pass ZSBT.IsSafeNumber.
+	local isSafeNumber = ZSBT and ZSBT.IsSafeNumber
+
+	-- Prefer our own cooldown detector state if available (safe + combat reliable).
+	local cdParser = ZSBT and ZSBT.Parser and ZSBT.Parser.Cooldowns
+	local cdState = cdParser and cdParser._state and cdParser._state[spellId]
+	if cdState and cdState.isOnCD == true then
+		return false
+	end
+
+	local cooldownOk = true
+	if C_Spell and C_Spell.GetSpellCharges then
+		local okc, info = pcall(C_Spell.GetSpellCharges, spellId)
+		if okc and type(info) == "table" then
+			local cur = info.currentCharges
+			local max = info.maxCharges
+			if isSafeNumber and isSafeNumber(cur) and isSafeNumber(max) and max > 0 then
+				cooldownOk = (cur > 0) and true or false
+			end
+		end
+	end
+	if cooldownOk and C_Spell and C_Spell.GetSpellCooldown then
+		local okcd, cd = pcall(C_Spell.GetSpellCooldown, spellId)
+		if okcd and type(cd) == "table" then
+			local dur = cd.duration
+			local start = cd.startTime
+			if isSafeNumber and isSafeNumber(dur) and isSafeNumber(start) then
+				if dur > 0 then
+					cooldownOk = false
+				end
+			end
+		end
+	end
+	if cooldownOk ~= true then return false end
 	if C_Spell and C_Spell.IsSpellUsable then
 		local ok, usable = pcall(C_Spell.IsSpellUsable, spellId)
 		if ok and type(usable) == "boolean" then return usable end
@@ -748,6 +807,22 @@ function Triggers:_CheckSpellUsable()
 			local inCombat = IsInCombat()
 			if (not onlyCombat) or inCombat then
 				local usable = SafeIsUsableSpell(sid)
+				local cdDur, cdStart = nil, nil
+				if C_Spell and C_Spell.GetSpellCooldown then
+					local okcd, cd = pcall(C_Spell.GetSpellCooldown, sid)
+					if okcd and type(cd) == "table" then
+						cdDur = cd.duration
+						cdStart = cd.startTime
+					end
+				end
+				local chCur, chMax = nil, nil
+				if C_Spell and C_Spell.GetSpellCharges then
+					local okch, info = pcall(C_Spell.GetSpellCharges, sid)
+					if okch and type(info) == "table" then
+						chCur = info.currentCharges
+						chMax = info.maxCharges
+					end
+				end
 				local key = trig.id or trig._key or sid
 				local wasUsable = self._lastUsable[key] == true
 				self._lastUsable[key] = usable and true or false
@@ -788,6 +863,9 @@ function Triggers:_CheckSpellUsable()
 				else
 					TrigDebug("SpellUsable check: sid=" .. tostring(sid)
 						.. " usable=" .. tostring(usable)
+						.. " cdDur=" .. tostring(cdDur)
+						.. " cdStart=" .. tostring(cdStart)
+						.. " ch=" .. tostring(chCur) .. "/" .. tostring(chMax)
 						.. " wasUsable=" .. tostring(wasUsable)
 						.. " edge=" .. tostring(isEdge)
 						.. " rearmSec=" .. tostring(rearmSec)

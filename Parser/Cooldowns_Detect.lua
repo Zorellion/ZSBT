@@ -136,6 +136,16 @@ local function CreateCDFrame(spellId)
     Cooldowns._cdFrames[spellId] = cd
 end
 
+local function EnsureTrackedInitialized(spellId)
+	if not spellId then return end
+	if not Cooldowns._cdFrames[spellId] then
+		CreateCDFrame(spellId)
+	end
+	if not Cooldowns._state[spellId] then
+		Cooldowns._state[spellId] = { isOnCD = false, lastFiredAt = 0, seenStart = false }
+	end
+end
+
 ------------------------------------------------------------------------
 -- Cast Detection
 ------------------------------------------------------------------------
@@ -150,6 +160,7 @@ local function OnSpellcastSucceeded(_, event, unit, _, spellId)
     local tracked = cdb and cdb.tracked
     if not tracked then return end
     if not (tracked[spellId] or tracked[tostring(spellId)]) then return end
+	EnsureTrackedInitialized(spellId)
 
     local name = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or tostring(spellId)
     CdDebug("Cast: " .. name .. " (ID:" .. spellId .. ")")
@@ -186,6 +197,7 @@ local function OnSpellUpdate(source)
     for idKey, _ in pairs(tracked) do
         local spellId = tonumber(idKey)
         if spellId then
+            EnsureTrackedInitialized(spellId)
             local state = Cooldowns._state[spellId]
             if C_Spell and C_Spell.GetSpellCooldown and state then
 				local info = C_Spell.GetSpellCooldown(spellId)

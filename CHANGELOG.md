@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.8
+
+### Fixed
+- Fixed cooldown tracking for newly-added tracked spells by initializing cooldown state/frames lazily when spells are observed.
+- Fixed SPELL_USABLE triggers failing for cooldown-based edges by safely treating spells as unusable while on cooldown (without crashing on Blizzard "secret" number values).
+- Fixed trigger debug output causing errors in AceConsole-based print paths by printing a single safe string.
+
 ## 1.2.7
 
 ### Fixed
