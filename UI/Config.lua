@@ -1226,7 +1226,6 @@ function ZSBT.PlayLSMSound(soundKey)
 end
 
 
-------------------------------------------------------------------------
 -- In-Game Help (Quick Reference)
 -- Injected at the bottom of each config tab.
 ------------------------------------------------------------------------
@@ -1849,17 +1848,6 @@ If you have your own font or sound file, you can register it in the `Custom Medi
 5. **Test the sound**
    - Pick your sound and click `Play Sound`.
 
-### Common mistakes (quick checklist)
-- Wrong folder
-- Typed the extension
-- Filename mismatch
-- Unsupported format
-]],
-
-	utAnnouncer = [[# UT Announcer (Multi-Kill)
-
-ZSBT includes an Unreal Tournament–style multi-kill announcer.
-
 ## Customize the announcements
 
 - `/zsbt` -> `Triggers`
@@ -1966,6 +1954,167 @@ Notifications is intended for short, high-signal messages like:
 - If notifications are too noisy, disable categories you don’t care about.
 - If notifications are hard to read, increase font size and height.
 ]],
+
+	troubleshooting = [[# Troubleshooting
+
+If something feels “off”, start here.
+
+## Quick checklist (30 seconds)
+- Confirm the addon is enabled: `/zsbt` -> `General` -> `Enabled`
+- Confirm you have at least one visible scroll area enabled: `/zsbt` -> `Scroll Areas`
+- If `Combat Only` is enabled, you will see very little out of combat
+- Lower thresholds temporarily to confirm output is working
+- Type `/reload`
+
+Use the topics below for more specific fixes.
+]],
+
+	troubleshooting_nothing = [[# Nothing Shows
+
+If ZSBT is enabled but you see nothing:
+
+## 1) Enable ZSBT
+- `/zsbt` -> `General` -> `Enabled`
+
+## 2) Enable a scroll area
+- `/zsbt` -> `Scroll Areas`
+- Ensure at least one visible area is enabled:
+  - `Incoming`
+  - `Outgoing`
+  - `Notifications`
+
+## 3) Combat-only settings
+- If `Combat Only` is enabled, test while in combat.
+
+## 4) Thresholds
+- If minimum thresholds are too high, smaller events are hidden.
+- Temporarily lower thresholds to confirm output is working.
+
+## 5) Reload
+- `/reload`
+]],
+
+	troubleshooting_icons = [[# Icons/Names
+
+ZSBT tries to show spell icons and spell names only when it can do so reliably.
+
+## Check options
+- Make sure `Show Spell Icons` and/or `Show Spell Names` are enabled.
+
+## Instance/group content note
+- In dungeons and raids, some combat signals can be more ambiguous.
+- You may see fewer icons/names because ZSBT prefers correctness over guessing.
+
+## If something is consistently wrong
+- If the same spell is consistently wrong and you can reproduce it, report it (see Bug Report).
+]],
+
+	troubleshooting_spam = [[# Spam
+
+If ZSBT is working but it’s too noisy:
+
+## Spam Control
+- `/zsbt` -> `Spam Control`
+- Enable merging to condense rapid hits.
+- Raise thresholds gradually until only meaningful events show.
+
+## Scroll Areas
+- Reduce `Max Messages` (if present).
+- Increase the scroll area `Height` so lines have room.
+]],
+
+	troubleshooting_triggers = [[# Triggers/Cooldowns
+
+If a trigger or cooldown alert doesn’t fire, it’s usually one of these:
+
+## Feature disabled
+- Ensure the Triggers/Cooldowns system is enabled.
+- Ensure the specific trigger/cooldown entry is enabled.
+
+## Routed to the wrong place
+- Route alerts to a visible scroll area (usually `Notifications`).
+
+## Wrong SpellID
+- Verify the spell ID and test with a known ability.
+
+## Event expectations
+- Some trigger types fire only on a state change (example: “became usable”).
+]],
+
+	troubleshooting_media = [[# Custom Media
+
+If custom fonts or sounds don’t appear in dropdowns:
+
+## Reload is required
+- `/reload`
+
+## Fonts
+- Format: `.ttf`
+- Folder: `Media/Fonts/`
+- When registering, use the filename without extension.
+
+## Sounds
+- Format: `.ogg`
+- Folder: `Media/Sounds/`
+- When registering, use the filename without extension.
+]],
+
+	troubleshooting_limits = [[# Limits (Expected)
+
+These are common reports that can be expected behavior depending on settings and what signals WoW provides:
+
+## Fewer icons/names in group content
+- Some signals do not include a reliable spell ID.
+- ZSBT will omit icons/names rather than display the wrong spell.
+
+## Outgoing can be quieter in instances
+- If `Dungeon/Raid Aware Outgoing` is enabled, ZSBT may suppress uncertain attribution.
+- This reduces false positives in group content.
+
+## What to try
+- If outgoing is too quiet in an instance, review `General` -> instance tuning (and any experimental fallbacks).
+]],
+
+	troubleshooting_bug = [[# Bug Report
+
+If you think you found a real bug, these details help the most:
+
+## Include
+- What you expected vs what happened.
+- Open world vs dungeon/raid.
+- The specific spell/ability (and SpellID if possible).
+- Repro steps.
+
+## Diagnostics (recommended)
+- Raise debug level.
+- Reproduce the issue once.
+- Copy/paste the relevant `ZSBT:` lines.
+- Set debug level back to `0`.
+]],
+
+	utAnnouncer = [[# UT Announcer
+
+UT Announcer is a feature that announces specific events to your party or raid.
+
+## Where to configure
+- `/zsbt` -> `UT Announcer`
+
+## Enable UT Announcer
+- Turn `Enabled` on.
+
+## Add UT Announcer events
+- Add events to the list (spell IDs) in the UT Announcer UI.
+
+## Output
+- **Channel**: where the announcement appears (party/raid).
+- **Format**: the message format (for example: `%s Ready!`).
+- **Sound**: select a sound to play.
+
+## Tips
+- Use a distinct sound for UT Announcer so it’s easy to notice.
+- Keep UT Announcer events in a visible scroll area (usually `Notifications`).
+]],
+
 }
 
 local HELP_TOPICS = {
@@ -1998,6 +2147,26 @@ local HELP_TOPICS = {
 	media = { name = "Media", docKey = "media" },
 	utAnnouncer = { name = "UT Announcer", docKey = "utAnnouncer" },
 	diagnostics = { name = "Diagnostics", docKey = "diagnostics" },
+	troubleshooting = {
+		name = "Troubleshooting",
+		docKey = "troubleshooting",
+		children = {
+			"troubleshooting_nothing",
+			"troubleshooting_icons",
+			"troubleshooting_spam",
+			"troubleshooting_triggers",
+			"troubleshooting_media",
+			"troubleshooting_limits",
+			"troubleshooting_bug",
+		},
+	},
+	troubleshooting_nothing = { name = "Nothing Shows", docKey = "troubleshooting_nothing" },
+	troubleshooting_icons = { name = "Icons/Names", docKey = "troubleshooting_icons" },
+	troubleshooting_spam = { name = "Spam", docKey = "troubleshooting_spam" },
+	troubleshooting_triggers = { name = "Triggers/Cooldowns", docKey = "troubleshooting_triggers" },
+	troubleshooting_media = { name = "Custom Media", docKey = "troubleshooting_media" },
+	troubleshooting_limits = { name = "Limits", docKey = "troubleshooting_limits" },
+	troubleshooting_bug = { name = "Bug Report", docKey = "troubleshooting_bug" },
 }
 
 local HELP_ORDER = {
@@ -2017,6 +2186,10 @@ local HELP_ORDER = {
 	"media",
 	"utAnnouncer",
 	"diagnostics",
+}
+
+local TROUBLESHOOTING_ORDER = {
+	"troubleshooting",
 }
 
 local function prettyPrintMarkdown(md)
@@ -2255,17 +2428,91 @@ function ZSBT.UpdateHelpPopupIfOpen(topicKey)
 	end
 end
 
-local function buildHelpTreeArgs()
+local function buildHelpTreeArgs(orderKeys)
 	local args = {}
 	local order = 1
-	for _, key in ipairs(HELP_ORDER) do
+	local keys = (type(orderKeys) == "table") and orderKeys or HELP_ORDER
+	for _, key in ipairs(keys) do
 		local topic = HELP_TOPICS[key]
 		if type(topic) == "table" and type(topic.name) == "string" then
+			local children = topic.children
+			local groupArgs
+			if type(children) == "table" and #children > 0 then
+				groupArgs = {}
+				groupArgs.openPopup = {
+					type = "execute",
+					name = "Open In Window",
+					desc = "Open this help topic in a separate window so you can keep it visible while configuring ZSBT.",
+					order = 0,
+					width = "full",
+					func = function()
+						if ZSBT and ZSBT.OpenHelpTopicInPopup then
+							ZSBT.OpenHelpTopicInPopup(key)
+						end
+					end,
+				}
+				groupArgs.body = {
+					type = "description",
+					name = function()
+						if type(topic.text) == "string" and topic.text ~= "" then
+							return topic.text
+						end
+						if type(topic.docKey) == "string" then
+							return prettyPrintMarkdown(HELP_MD[topic.docKey])
+						end
+						return ""
+					end,
+					order = 0.01,
+					width = "full",
+					fontSize = "medium",
+				}
+				local childOrder = 1
+				for _, childKey in ipairs(children) do
+					local child = HELP_TOPICS[childKey]
+					if type(child) == "table" and type(child.name) == "string" then
+						groupArgs[childKey] = {
+							type = "group",
+							name = child.name,
+							order = childOrder,
+							args = {
+								openPopup = {
+									type = "execute",
+									name = "Open In Window",
+									desc = "Open this help topic in a separate window so you can keep it visible while configuring ZSBT.",
+									order = 0.1,
+									width = "full",
+									func = function()
+										if ZSBT and ZSBT.OpenHelpTopicInPopup then
+											ZSBT.OpenHelpTopicInPopup(childKey)
+										end
+									end,
+								},
+								body = {
+									type = "description",
+									name = function()
+										if type(child.text) == "string" and child.text ~= "" then
+											return child.text
+										end
+										if type(child.docKey) == "string" then
+											return prettyPrintMarkdown(HELP_MD[child.docKey])
+										end
+										return ""
+									end,
+									order = 1,
+									width = "full",
+									fontSize = "medium",
+								},
+							},
+						}
+						childOrder = childOrder + 1
+					end
+				end
+			end
 			args[key] = {
 				type = "group",
 				name = topic.name,
 				order = order,
-				args = {
+				args = groupArgs or {
 					popupHelp = {
 						type = "description",
 						name = "Tip: If you want to keep this help visible while you change settings in other tabs, click the button below to open it in a separate window.",
@@ -2352,6 +2599,15 @@ local function buildHelpTreeArgs()
 	return args
 end
 
+local function buildHelpTopicArgs(topicKey)
+	local tree = buildHelpTreeArgs({ topicKey })
+	local grp = tree and tree[topicKey]
+	if type(grp) == "table" and type(grp.args) == "table" then
+		return grp.args
+	end
+	return {}
+end
+
 ------------------------------------------------------------------------
 -- Build the complete options table
 -- Called once during OnInitialize.
@@ -2430,6 +2686,14 @@ function ZSBT.BuildOptionsTable()
                 order = 999,
                 childGroups = "tree",
                 args = buildHelpTreeArgs(),
+            },
+
+            troubleshooting = {
+                type = "group",
+                name = "|cFFFFD100Troubleshooting|r",
+                order = 1000,
+                childGroups = "tree",
+                args = buildHelpTopicArgs("troubleshooting"),
             },
 
             ----------------------------------------------------------------

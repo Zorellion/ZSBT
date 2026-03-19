@@ -67,14 +67,14 @@
 - `/zsbt version` Show addon version
 
 ## Troubleshooting
-- **Nothing shows up**
-  - Ensure ZSBT is enabled in `General`.
-  - Ensure the scroll area you’re using is enabled in `Scroll Areas`.
-  - If `Combat Only` is enabled, you won’t see most messages out of combat.
-- **Too much spam**
-  - Go to `Spam Control` and enable merging/throttling and thresholds.
-- **Blizzard floating combat text still shows**
-  - Go to `General` and enable Blizzard FCT suppression, then `/reload`.
+- **Nothing shows**
+  - `/zsbt` -> `General` -> `Enabled`
+  - `/zsbt` -> `Scroll Areas` -> enable at least one visible scroll area
+  - If `Combat Only` is enabled, test while in combat
+  - Temporarily lower thresholds to confirm output is working
+  - `/reload`
+- **More help**
+  - See: [Troubleshooting](14-Troubleshooting.md)
 
 ## Next reading
 - [General](00-General.md)
