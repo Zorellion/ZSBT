@@ -3873,6 +3873,101 @@ function ZSBT.BuildTab_Outgoing()
 					ZSBT.db.profile.outgoing.crits.color = { r = r, g = g, b = b }
 				end,
 			},
+			critsSoundEnabled = {
+				type = "toggle",
+				name = "Play a Sound on Outgoing Crits",
+				desc = "Plays a sound when you land a critical hit or critical heal.",
+				width = "full",
+				order = 8.31,
+				get = function()
+					local c = ZSBT.db.profile.outgoing.crits
+					return c and c.soundEnabled == true
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.outgoing.crits = ZSBT.db.profile.outgoing.crits or {}
+					ZSBT.db.profile.outgoing.crits.soundEnabled = v and true or false
+				end,
+			},
+			critsSound = {
+				type = "select",
+				name = "Crit Sound",
+				desc = "Sound to play when an outgoing crit triggers.",
+				order = 8.32,
+				values = function() return (ZSBT.BuildSoundDropdown and ZSBT.BuildSoundDropdown()) or { ["None"] = "None" } end,
+				disabled = function()
+					local c = ZSBT.db.profile.outgoing.crits
+					return not (c and c.soundEnabled == true)
+				end,
+				get = function()
+					local c = ZSBT.db.profile.outgoing.crits
+					return (c and type(c.sound) == "string" and c.sound ~= "") and c.sound or "None"
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.outgoing.crits = ZSBT.db.profile.outgoing.crits or {}
+					ZSBT.db.profile.outgoing.crits.sound = v
+				end,
+			},
+			critsSoundTest = {
+				type = "execute",
+				name = "Test Crit Sound",
+				order = 8.33,
+				disabled = function()
+					local c = ZSBT.db.profile.outgoing.crits
+					return not (c and c.soundEnabled == true)
+				end,
+				func = function()
+					local c = ZSBT.db.profile.outgoing.crits
+					if c and ZSBT.PlayLSMSound then
+						ZSBT.PlayLSMSound(c.sound)
+					end
+				end,
+			},
+			critsMinSoundAmount = {
+				type = "range",
+				name = "Minimum Crit Amount (sound)",
+				desc = "Only play the crit sound when the crit amount is at or above this value. In instances, the exact amount may be unavailable.",
+				order = 8.34,
+				min = 0,
+				max = 999999,
+				softMax = 250000,
+				step = 100,
+				disabled = function()
+					local c = ZSBT.db.profile.outgoing.crits
+					return not (c and c.soundEnabled == true)
+				end,
+				get = function()
+					local c = ZSBT.db.profile.outgoing.crits
+					return (c and tonumber(c.minSoundAmount)) or 0
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.outgoing.crits = ZSBT.db.profile.outgoing.crits or {}
+					ZSBT.db.profile.outgoing.crits.minSoundAmount = tonumber(v) or 0
+				end,
+			},
+			critsInstanceSoundMode = {
+				type = "select",
+				name = "Instances: When amount is unavailable",
+				desc = "In dungeons/raids, crit amounts can be protected/secret. Choose how crit sounds behave when the amount can't be safely compared.",
+				order = 8.35,
+				values = function()
+					return {
+						["Any Crit"] = "Any Crit",
+						["Only when amount is known"] = "Only when amount is known",
+					}
+				end,
+				disabled = function()
+					local c = ZSBT.db.profile.outgoing.crits
+					return not (c and c.soundEnabled == true)
+				end,
+				get = function()
+					local c = ZSBT.db.profile.outgoing.crits
+					return (c and type(c.instanceSoundMode) == "string" and c.instanceSoundMode ~= "") and c.instanceSoundMode or "Only when amount is known"
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.outgoing.crits = ZSBT.db.profile.outgoing.crits or {}
+					ZSBT.db.profile.outgoing.crits.instanceSoundMode = v
+				end,
+			},
 
             ----------------------------------------------------------------
             -- Outgoing Healing

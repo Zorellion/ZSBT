@@ -357,6 +357,9 @@ function Addon:OnInitialize()
 		profile.outgoing.crits.enabled = true
 		profile.outgoing.crits.scrollArea = "Crits"
 		profile.outgoing.crits.sticky = true
+		if profile.outgoing.crits.instanceSoundMode == nil then
+			profile.outgoing.crits.instanceSoundMode = "Only when amount is known"
+		end
 
 		profile.general = profile.general or {}
 		profile.general.critFont = profile.general.critFont or {}
@@ -781,8 +784,17 @@ function Addon:OnInitialize()
         ZSBT.Core.Minimap:Init()
     end
 
-    	-- Register LibSharedMedia-3.0 defaults (ensure base WoW font is listed)
+	    -- Register LibSharedMedia-3.0 defaults (ensure base WoW font is listed)
 	local LSM = LibStub("LibSharedMedia-3.0", true)
+	if LSM and not ZSBT.PlayLSMSound then
+		function ZSBT.PlayLSMSound(soundKey)
+			if not soundKey or soundKey == "None" then return end
+			local path = LSM:Fetch("sound", soundKey)
+			if path then
+				PlaySoundFile(path, "Master")
+			end
+		end
+	end
 	if LSM then
 		pcall(function()
 			LSM:Register("font", "ZSBT: Audiowide", [[Interface\AddOns\ZSBT\Media\Fonts\Audiowide.ttf]])

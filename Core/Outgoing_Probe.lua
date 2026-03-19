@@ -228,6 +228,36 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
     end
 
     local prof = ZSBT.db.profile.outgoing
+
+	local function maybePlayCritSound(rawPipeValue, isTainted)
+		if not (evt and evt.isCrit == true) then return end
+		local critConf = prof and prof.crits
+		if type(critConf) ~= "table" then return end
+		if critConf.soundEnabled ~= true then return end
+		local soundKey = critConf.sound
+		if type(soundKey) ~= "string" or soundKey == "" or soundKey == "None" then return end
+		if not ZSBT.PlayLSMSound then return end
+
+		local minAmt = tonumber(critConf.minSoundAmount) or 0
+		local amt = nil
+		if rawPipeValue ~= nil and ZSBT.IsSafeNumber(rawPipeValue) then
+			amt = rawPipeValue
+		elseif (not isTainted) and ZSBT.IsSafeNumber(evt.amount) then
+			amt = evt.amount
+		end
+
+		if type(amt) == "number" then
+			if amt >= minAmt then
+				ZSBT.PlayLSMSound(soundKey)
+			end
+			return
+		end
+
+		local mode = tostring(critConf.instanceSoundMode or "Only when amount is known")
+		if mode == "Any Crit" then
+			ZSBT.PlayLSMSound(soundKey)
+		end
+	end
     local kind = evt.kind
     if kind ~= "damage" and kind ~= "heal" and kind ~= "miss" then return end
 
@@ -485,6 +515,8 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
             school = evt.schoolMask,
         }
 
+		maybePlayCritSound(rawPipeValue, isTainted)
+
         -- Dungeon-safe visual filtering: pass tainted value + threshold
         if rawPipeValue ~= nil and not ZSBT.IsSafeNumber(rawPipeValue) then
             local catMin = tonumber(conf.minThreshold) or 0
@@ -668,6 +700,8 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
             isCrit = evt.isCrit == true,
             school = evt.schoolMask,
         }
+
+		maybePlayCritSound(rawPipeValue, isTainted)
 
         if evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
 			areaToUse = critConf.scrollArea

@@ -1,14 +1,13 @@
 # Changelog
 
-## 1.2.10
+## 1.2.11
 
 ### Added
-- Added a new Troubleshooting documentation page.
-- Added a new Troubleshooting section in the in-game configuration UI with multiple help subtopics.
+- Added an optional outgoing crit sound trigger (damage + healing) integrated into Outgoing -> Outgoing Critical Hits.
+- Added a minimum crit amount threshold for playing the crit sound.
 
 ### Changed
-- Getting Started: updated Troubleshooting section to link to the dedicated Troubleshooting page.
-- In-game help navigation: Troubleshooting is now a top-level entry immediately after Help (not nested under Help).
+- Instances: crit sound now defaults to only triggering when the crit amount is safely known (to avoid secret-value issues).
 
 ## 1.2.9
 
