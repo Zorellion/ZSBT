@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.9
+
+### Fixed
+- Fixed config UI tab content bleeding after committing text inputs (Enter) by preventing edit boxes from double-committing on subsequent focus loss/tab switches.
+
 ## 1.2.8
 
 ### Fixed

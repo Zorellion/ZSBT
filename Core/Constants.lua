@@ -8,7 +8,7 @@ local ADDON_NAME, ZSBT = ...
 ------------------------------------------------------------------------
 -- Version & Identity
 ------------------------------------------------------------------------
-ZSBT.VERSION = "1.2.8"
+ZSBT.VERSION = "1.2.9"
 ZSBT.ADDON_TITLE = "Zore's Scrolling Battle Text"
 ZSBT.ADDON_SHORT = "ZSBT"
 ZSBT.ADDON_AUTHOR = "Zorellion"
