@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.10
+
+### Added
+- Added a new Troubleshooting documentation page.
+- Added a new Troubleshooting section in the in-game configuration UI with multiple help subtopics.
+
+### Changed
+- Getting Started: updated Troubleshooting section to link to the dedicated Troubleshooting page.
+- In-game help navigation: Troubleshooting is now a top-level entry immediately after Help (not nested under Help).
+
 ## 1.2.9
 
 ### Fixed
