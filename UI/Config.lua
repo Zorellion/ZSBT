@@ -87,7 +87,11 @@ do
 
         local function EditBox_OnEnterPressed(frame)
             local self = frame.obj
+            -- Enter already commits the value. Avoid double-committing when focus is
+            -- subsequently lost due to UI refresh/tab switches.
+            self._zsbtSkipNextFocusLostCommit = true
             self:Fire("OnEnterPressed", frame:GetText() or "")
+            AceGUI:ClearFocus()
         end
 
         local function EditBox_OnTextChanged(frame)
@@ -98,6 +102,10 @@ do
 
         local function EditBox_OnFocusLost(frame)
             local self = frame.obj
+            if self._zsbtSkipNextFocusLostCommit then
+                self._zsbtSkipNextFocusLostCommit = nil
+                return
+            end
             self:Fire("OnEnterPressed", frame:GetText() or "")
         end
 
@@ -3057,6 +3065,14 @@ function ZSBT.HookSpellRulesOverlayTabSwitch(aceFrame)
             update(group)
         end)
     end
+
+	-- Some AceGUI paths use SetGroup instead of SelectTab
+	if tabGroup.SetGroup then
+		hooksecurefunc(tabGroup, "SetGroup", function(self, group)
+			local selected = group or (self.status and self.status.selected)
+			update(selected)
+		end)
+	end
 
     local selected = tabGroup.status and tabGroup.status.selected
     update(selected)
