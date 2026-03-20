@@ -584,6 +584,7 @@ function Core:Enable()
     self:InitBuffTracking()
     self:InitKillAnnouncer()
     self:InitLootTracking()
+    self:InitTradeSkillTracking()
     self:InitPowerTracking()
     self:InitProgressTracking()
 end
@@ -619,6 +620,97 @@ function Core:InitNotifications()
             Core:EmitNotification("-Combat", {r = 0.2, g = 1, b = 0.2}, "combatState")
         end
     end)
+end
+
+------------------------------------------------------------------------
+-- Trade Skill Notifications
+-- Skill ups and learned recipes/spells (MSBT-style) routed via Notifications.
+------------------------------------------------------------------------
+function Core:InitTradeSkillTracking()
+	if self._tradeSkillFrame then return end
+
+	local function getTemplate(key, fallback)
+		local p = ZSBT.db and ZSBT.db.profile
+		local t = p and p.notificationsTemplates
+		local v = t and t[key]
+		if type(v) ~= "string" or v == "" then
+			return fallback
+		end
+		return v
+	end
+
+	local function applyTemplate(tpl, ctx)
+		if type(tpl) ~= "string" or tpl == "" then return nil end
+		ctx = ctx or {}
+		local out = tpl
+		out = out:gsub("%%e", tostring(ctx.e or ""))
+		out = out:gsub("%%a", tostring(ctx.a or ""))
+		out = out:gsub("%%t", tostring(ctx.t or ""))
+		return out
+	end
+
+	local function convertGlobalStringToPattern(gs)
+		if type(gs) ~= "string" or gs == "" then return nil end
+		local pat = gs
+		pat = pat:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
+		pat = pat:gsub("%%%%%d%$d", "(%%d+)")
+		pat = pat:gsub("%%%%d", "(%%d+)")
+		pat = pat:gsub("%%%%%d%$s", "(.+)")
+		pat = pat:gsub("%%%%s", "(.+)")
+		return "^" .. pat .. "$"
+	end
+
+	local skillUpPat = convertGlobalStringToPattern(_G.SKILL_RANK_UP)
+	local learnRecipePat = convertGlobalStringToPattern(_G.ERR_LEARN_RECIPE_S)
+	local learnSpellPat = convertGlobalStringToPattern(_G.ERR_LEARN_SPELL_S)
+
+	self._tradeSkillFrame = CreateFrame("Frame")
+	self._tradeSkillFrame:RegisterEvent("CHAT_MSG_SKILL")
+	self._tradeSkillFrame:RegisterEvent("CHAT_MSG_SYSTEM")
+	self._tradeSkillFrame:SetScript("OnEvent", function(_, event, msg)
+		if not Core:IsMasterEnabled() then return end
+		if not msg or type(msg) ~= "string" then return end
+		if not ZSBT.IsSafeString(msg) then return end
+
+		if event == "CHAT_MSG_SKILL" then
+			-- Example (localized): "%s increased to %d."
+			local skillName, newRank = nil, nil
+			if skillUpPat then
+				skillName, newRank = msg:match(skillUpPat)
+			end
+			if not skillName or not newRank then
+				return
+			end
+			local newLevel = tonumber(newRank)
+			if not newLevel then return end
+			local tpl = getTemplate("tradeskillUps", "%e +%a (%t)")
+			local out = applyTemplate(tpl, { e = skillName, a = 1, t = newLevel })
+			if out and out ~= "" then
+				Core:EmitNotification(out, { r = 0.2, g = 0.8, b = 1.0 }, "tradeskillUps")
+			end
+			return
+		end
+
+		if event == "CHAT_MSG_SYSTEM" then
+			-- Learned recipe/spell messages (localized)
+			local learned = nil
+			if learnRecipePat then
+				learned = msg:match(learnRecipePat)
+			end
+			if not learned and learnSpellPat then
+				learned = msg:match(learnSpellPat)
+			end
+			if not learned or learned == "" then
+				return
+			end
+			local tpl = getTemplate("tradeskillLearned", "Learned: %e")
+			local out = applyTemplate(tpl, { e = learned })
+			if out and out ~= "" then
+				Core:EmitNotification(out, { r = 0.2, g = 0.8, b = 1.0 }, "tradeskillLearned")
+			end
+			return
+		end
+	end)
 end
 
 function Core:InitKillAnnouncer()

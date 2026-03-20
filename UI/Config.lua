@@ -1893,6 +1893,14 @@ Loot is split into three categories:
 Loot templates and loot filtering are configured under:
 - `/zsbt` -> `Notifications` -> `Loot Alerts`
 
+## Trade Skill Alerts
+Trade skills are split into two categories:
+- Trade Skills: Skill Ups
+- Trade Skills: Learned Recipes/Spells
+
+Trade skill templates are configured under:
+- `/zsbt` -> `Notifications` -> `Trade Skill Alerts`
+
 ### How to use Loot Alerts
 
 #### 1) Turn on the category (and choose where it goes)
@@ -1911,6 +1919,11 @@ Template codes:
 - `%e` The thing you gained (item link / money string / currency link)
 - `%a` Amount gained
 - `%t` Total owned (your new total)
+
+For Trade Skills:
+- `%e` Skill name (Skill Ups) or learned recipe/spell link/name (Learned)
+- `%a` Amount gained (Skill Ups)
+- `%t` New level (Skill Ups)
 
 Examples:
 - `+%a %e (%t)` (MSBT-style)

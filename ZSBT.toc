@@ -2,7 +2,7 @@
 ## Title: Zore's Scrolling Battle Text
 ## Notes: Zore's Scrolling Battle Text (ZSBT) for WoW Retail 12.x
 ## Author: Zorellion
-## Version: 1.2.11
+## Version: 1.2.12
 ## SavedVariables: ZSBTDB
 ## OptionalDeps: Ace3, LibSharedMedia-3.0
 

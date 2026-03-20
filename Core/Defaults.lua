@@ -61,6 +61,8 @@ ZSBT.DEFAULTS = {
 			lootItems = true,
 			lootMoney = true,
 			lootCurrency = true,
+			tradeskillUps = true,
+			tradeskillLearned = true,
             cooldowns = true,
             auras = true,
             power = true,
@@ -74,6 +76,8 @@ ZSBT.DEFAULTS = {
 			lootItems = "Notifications",
 			lootMoney = "Notifications",
 			lootCurrency = "Notifications",
+			tradeskillUps = "Notifications",
+			tradeskillLearned = "Notifications",
 			cooldowns = "Notifications",
 			auras = "Notifications",
 			power = "Notifications",
@@ -85,6 +89,8 @@ ZSBT.DEFAULTS = {
 			lootItems = "+%a %e (%t)",
 			lootMoney = "+%e",
 			lootCurrency = "+%a %e (%t)",
+			tradeskillUps = "%e +%a (%t)",
+			tradeskillLearned = "Learned: %e",
 		},
 
 		loot = {

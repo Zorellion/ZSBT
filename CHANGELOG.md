@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.12
+
+### Added
+- Added MSBT-style Trade Skill notifications (Skill Ups and Learned Recipes/Spells) routed through the Notifications system, with per-category scroll area routing and message templates.
+
 ## 1.2.11
 
 ### Added

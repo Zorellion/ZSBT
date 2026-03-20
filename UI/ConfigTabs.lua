@@ -2138,6 +2138,24 @@ function ZSBT.BuildTab_Notifications()
 				set   = function(_, v) setCat("lootCurrency", v) end,
 			},
 			lootCurrencyRoute = routeSelect("lootCurrency", 7.1),
+			tradeskillUps = {
+				type  = "toggle",
+				name  = "Trade Skills: Skill Ups",
+				order = 7.2,
+				width = "full",
+				get   = function() return getCat("tradeskillUps") end,
+				set   = function(_, v) setCat("tradeskillUps", v) end,
+			},
+			tradeskillUpsRoute = routeSelect("tradeskillUps", 7.21),
+			tradeskillLearned = {
+				type  = "toggle",
+				name  = "Trade Skills: Learned Recipes/Spells",
+				order = 7.3,
+				width = "full",
+				get   = function() return getCat("tradeskillLearned") end,
+				set   = function(_, v) setCat("tradeskillLearned", v) end,
+			},
+			tradeskillLearnedRoute = routeSelect("tradeskillLearned", 7.31),
 			lootAlerts = {
 				type = "group",
 				name = "Loot Alerts",
@@ -2316,6 +2334,31 @@ function ZSBT.BuildTab_Notifications()
 							ZSBT.db.profile.loot.itemsAllowed = splitLinesToSet(v)
 							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 						end,
+					},
+				},
+			},
+			tradeSkillAlerts = {
+				type = "group",
+				name = "Trade Skill Alerts",
+				order = 7.6,
+				args = {
+					tplUps = {
+						type = "input",
+						name = "Skill Up Template",
+						desc = "Message template codes: %e=skill name, %a=+amount, %t=new level.",
+						order = 1,
+						width = "full",
+						get = function() return getTpl("tradeskillUps", "%e +%a (%t)") end,
+						set = function(_, v) setTpl("tradeskillUps", v) end,
+					},
+					tplLearned = {
+						type = "input",
+						name = "Learned Template",
+						desc = "Message template codes: %e=recipe/spell link or name.",
+						order = 2,
+						width = "full",
+						get = function() return getTpl("tradeskillLearned", "Learned: %e") end,
+						set = function(_, v) setTpl("tradeskillLearned", v) end,
 					},
 				},
 			},
