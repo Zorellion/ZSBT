@@ -99,6 +99,19 @@ local function isStrictOutgoingCombatLogOnly()
 		and ZSBT.Core:IsStrictOutgoingCombatLogOnlyEnabled() == true
 end
 
+local function isPvPStrictActive()
+	return ZSBT
+		and ZSBT.Core
+		and ZSBT.Core.IsPvPStrictActive
+		and ZSBT.Core:IsPvPStrictActive() == true
+end
+
+local function getPvPStrictFlag(key)
+	local g = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+	if type(g) ~= "table" then return nil end
+	return g[key]
+end
+
 local function isQuietOutgoingWhenIdle()
 	return ZSBT
 		and ZSBT.Core
@@ -979,7 +992,6 @@ function Collector:handleCombatTextUpdate(arg1)
 				end
 			end
 		end
-
 		if outgoingSpellId then
 			-- Mark for health-delta dedup.
 			self._lastOutgoingCombatAt = tNow
@@ -1568,6 +1580,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		end
 		local allowAutoFallback = false
 		if restrict == true and (not hasPet) then
+			if isPvPStrictActive() and getPvPStrictFlag("pvpStrictDisableAutoAttackFallback") ~= false then
+				allowAutoFallback = false
+			else
 			-- Normal behavior: instance-only opt-in auto-attack fallback.
 			if quietMode ~= true then
 				if ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general and ZSBT.db.profile.general.autoAttackRestrictFallback == true then
@@ -1585,6 +1600,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						allowAutoFallback = true
 					end
 				end
+			end
 			end
 		end
 

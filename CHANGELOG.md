@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.2.13
+
+### Added
+- Quick Control Bar: added a PvP dropdown menu with toggles for PvP Strict Mode and disabling the PvP auto-attack fallback.
+
+### Changed
+- PvP Strict Mode now defaults to enabled for new profiles.
+- Existing profiles now receive the PvP Strict Mode defaults on upgrade, but only if the settings were previously unset (no overwrites).
+
+### Fixed
+- Quick Control Bar: Open World and PvP menus now clear dependent settings when the parent is disabled and keep the dropdown state in sync while open.
+- Config UI: main configuration window now has a stable default size when no saved geometry exists.
+
 ## 1.2.12
 
 ### Added

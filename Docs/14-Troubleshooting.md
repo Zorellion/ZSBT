@@ -80,6 +80,21 @@ These are common reports that can be expected behavior depending on settings and
   - If `Dungeon/Raid Aware Outgoing` is enabled, ZSBT may suppress uncertain attribution
   - This reduces false positives in group content
 
+## PvP feels too quiet (or missing swings)
+- **Check PvP Strict Mode**
+  - `/zsbt` -> `General` -> `PvP Tuning`
+  - PvP Strict Mode tightens attribution in battlegrounds/arenas.
+- **Check auto-attacks in PvP**
+  - If you are missing swings while PvP Strict Mode is enabled, try disabling `Disable Auto-Attack Fallback (PvP)`.
+
+## I updated and my PvP settings changed
+- ZSBT only applies new defaults to existing profiles when a setting is missing (unset/nil).
+- If you previously had explicit PvP settings, ZSBT will not overwrite them.
+
+## Config window size looks different after an update
+- ZSBT uses a default window size only when no saved window size exists.
+- If you previously resized the config window, that size should still be preserved.
+
 ## Bug report
 If you think you found a real bug:
 

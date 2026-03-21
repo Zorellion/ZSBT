@@ -105,10 +105,33 @@ function Core:IsInstanceAwareOutgoingEnabled()
 end
 
 function Core:IsStrictOutgoingCombatLogOnlyEnabled()
+	if not (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general) then return false end
+	local g = ZSBT.db.profile.general
+	return g.strictOutgoingCombatLogOnly == true
+end
+
+function Core:IsInPvPInstanceType()
+	local inInstance, instanceType = false, "none"
+	if type(IsInInstance) == "function" then
+		local ok, ii, it = pcall(IsInInstance)
+		if ok then
+			inInstance = ii == true
+			instanceType = it
+		end
+	end
+	if not inInstance then return false end
+	return instanceType == "pvp" or instanceType == "arena"
+end
+
+function Core:IsPvPStrictEnabled()
 	return ZSBT.db
 		and ZSBT.db.profile
 		and ZSBT.db.profile.general
-		and ZSBT.db.profile.general.strictOutgoingCombatLogOnly == true
+		and ZSBT.db.profile.general.pvpStrictEnabled == true
+end
+
+function Core:IsPvPStrictActive()
+	return self:IsPvPStrictEnabled() and self:IsInPvPInstanceType()
 end
 
 function Core:IsQuietOutgoingWhenIdleEnabled()
@@ -143,12 +166,19 @@ function Core:UpdateInstanceState(_silent)
 		end
 	end
 	local isPartyOrRaidInstance = (inInstance == true) and (instanceType == "party" or instanceType == "raid")
+	local isPvPInstance = (inInstance == true) and (instanceType == "pvp" or instanceType == "arena")
 	local members = 0
 	if type(GetNumGroupMembers) == "function" then
 		local okM, m = pcall(GetNumGroupMembers)
 		if okM and type(m) == "number" then members = m end
 	end
 	local isGroup = isPartyOrRaidInstance and members > 1
+	if isGroup ~= true and isPvPInstance and members > 1 then
+		local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+		if g and g.pvpStrictEnabled == true then
+			isGroup = true
+		end
+	end
 	Core._inGroupInstance = isGroup
 end
 

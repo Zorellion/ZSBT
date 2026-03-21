@@ -54,6 +54,7 @@ The Quick Control Bar is an optional on-screen widget that lets you toggle commo
 - Drag the bar to position it anywhere on your screen.
 - Use `Instance` to toggle Dungeon/Raid tuning options.
 - Use `Open World` to toggle Open-World tuning options.
+- Use `PvP` to toggle PvP tuning options.
 - Use `Unlock/Lock` to quickly unlock scroll areas for dragging.
 
 ## Open-World Tuning
@@ -67,6 +68,17 @@ Suppress outgoing numbers from ambiguous attribution sources unless they can be 
 
 ### Allow Auto Attacks While Quiet
 Optional companion toggle for melee classes. Re-enables a conservative auto-attack fallback while Quiet Outgoing is enabled.
+
+## PvP Tuning
+These settings change how ZSBT attributes outgoing events in PvP instances (battlegrounds/arenas).
+
+### PvP Strict Mode
+In PvP, some outgoing feeds can be ambiguous and can cause incorrect outgoing attribution.
+
+PvP Strict Mode prioritizes correctness by tightening attribution rules.
+
+### Disable Auto-Attack Fallback (PvP)
+Optional companion toggle for PvP Strict Mode. Suppresses the last-resort auto-attack fallback used in restricted attribution modes.
 
 ## Defaults and migration
 ZSBT ships with recommended defaults for Dungeon/Raid and Open-World tuning. On upgrade, ZSBT only applies these defaults to existing profiles when a setting is unset (nil), and does not overwrite explicit user choices.

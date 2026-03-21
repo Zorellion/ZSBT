@@ -1348,6 +1348,7 @@ The Quick Control Bar is an optional on-screen widget that lets you toggle commo
 - Drag the bar to position it anywhere on your screen.
 - `Instance` opens a menu for Dungeon/Raid tuning toggles.
 - `Open World` opens a menu for Open-World tuning toggles.
+- `PvP` opens a menu for PvP tuning toggles.
 - `Unlock/Lock` toggles scroll area unlock mode for quick positioning.
 ]],
 
@@ -2084,8 +2085,19 @@ These are common reports that can be expected behavior depending on settings and
 - If `Dungeon/Raid Aware Outgoing` is enabled, ZSBT may suppress uncertain attribution.
 - This reduces false positives in group content.
 
+## PvP can be quieter (or missing swings)
+- If PvP Strict Mode is enabled, ZSBT tightens attribution in battlegrounds/arenas.
+- If you are missing swings while PvP Strict Mode is enabled, try disabling `Disable Auto-Attack Fallback (PvP)`.
+
+## Defaults and migration
+- On upgrade, ZSBT only applies new defaults to existing profiles when a setting is missing (unset/nil).
+- ZSBT does not overwrite explicit user choices.
+
 ## What to try
 - If outgoing is too quiet in an instance, review `General` -> instance tuning (and any experimental fallbacks).
+
+## Config window size
+- ZSBT uses a default window size only when no saved window size exists.
 ]],
 
 	troubleshooting_bug = [[# Bug Report
@@ -2888,6 +2900,8 @@ function ZSBT.ApplyStrikeSilverStyling()
         ZSBT.db.char.ui = ZSBT.db.char.ui or {}
         ZSBT.db.char.ui.configWindow = ZSBT.db.char.ui.configWindow or {}
         local cw = ZSBT.db.char.ui.configWindow
+        if cw.width == nil then cw.width = 900 end
+        if cw.height == nil then cw.height = 720 end
         local s = tonumber(cw.scale)
         local w = tonumber(cw.width)
         local h = tonumber(cw.height)

@@ -286,6 +286,8 @@ function Addon:OnInitialize()
 			"quietOutgoingWhenIdle",
 			"quietOutgoingAutoAttacks",
 			"strictOutgoingCombatLogOnly",
+			"pvpStrictEnabled",
+			"pvpStrictDisableAutoAttackFallback",
 		}
 		local defaults = ZSBT.DEFAULTS and ZSBT.DEFAULTS.profile and ZSBT.DEFAULTS.profile.general or nil
 		if type(defaults) ~= "table" then
@@ -310,7 +312,43 @@ function Addon:OnInitialize()
 		self.db.global.migrations.generalDefaults_v1 = true
 	end
 
+	-- Follow-up selective migration: some keys were introduced after v1 shipped.
+	-- Apply them only if missing, without changing existing user choices.
+	local function migrateGeneralDefaults_v2()
+		if not self.db then return end
+		self.db.global = self.db.global or {}
+		self.db.global.migrations = self.db.global.migrations or {}
+		if self.db.global.migrations.generalDefaults_v2 == true then return end
+
+		local keys = {
+			"pvpStrictEnabled",
+			"pvpStrictDisableAutoAttackFallback",
+		}
+		local defaults = ZSBT.DEFAULTS and ZSBT.DEFAULTS.profile and ZSBT.DEFAULTS.profile.general or nil
+		if type(defaults) ~= "table" then
+			self.db.global.migrations.generalDefaults_v2 = true
+			return
+		end
+
+		local profiles = self.db.profiles
+		if type(profiles) == "table" then
+			for _, prof in pairs(profiles) do
+				if type(prof) == "table" then
+					prof.general = prof.general or {}
+					for _, k in ipairs(keys) do
+						if prof.general[k] == nil and defaults[k] ~= nil then
+							prof.general[k] = defaults[k]
+						end
+					end
+				end
+			end
+		end
+
+		self.db.global.migrations.generalDefaults_v2 = true
+	end
+
 	migrateGeneralDefaultsOnce()
+	migrateGeneralDefaults_v2()
 
 	ZSBT.Presets = ZSBT.Presets or {}
 	local Presets = ZSBT.Presets

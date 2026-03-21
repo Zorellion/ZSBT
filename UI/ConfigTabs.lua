@@ -1669,6 +1669,46 @@ function ZSBT.BuildTab_General()
 				end,
 			},
 
+			headerPvPTuning = {
+				type  = "header",
+				name  = "PvP Tuning",
+				order = 3.6656,
+			},
+			pvpTuningHelp = {
+				type  = "description",
+				name  = "These settings tighten outgoing attribution while inside battlegrounds and arenas. They are designed to reduce bleed-through (other players showing as your outgoing) and to improve icon/color correctness by requiring stronger ownership signals.",
+				order = 3.6657,
+				width = "full",
+			},
+			pvpStrictEnabled = {
+				type  = "toggle",
+				name  = "Enable PvP Strict Mode (Experimental)",
+				desc  = "Only applies inside PvP/Arena instances. Prioritizes correctness over completeness: expect fewer outgoing numbers, but fewer wrong icons/colors and less bleed-through.",
+				order = 3.6658,
+				width = "full",
+				get   = function() return ZSBT.db.profile.general.pvpStrictEnabled == true end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.pvpStrictEnabled = val and true or false
+					if ZSBT.Core and ZSBT.Core.UpdateInstanceState then
+						ZSBT.Core:UpdateInstanceState(true)
+					end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			pvpStrictDisableAutoAttackFallback = {
+				type  = "toggle",
+				name  = "Disable Auto-Attack Fallback (PvP)",
+				desc  = "When PvP Strict Mode is enabled, suppress the last-resort auto-attack fallback used in restricted attribution modes.",
+				order = 3.66585,
+				width = "full",
+				hidden = function() return ZSBT.db.profile.general.pvpStrictEnabled ~= true end,
+				get   = function() return ZSBT.db.profile.general.pvpStrictDisableAutoAttackFallback ~= false end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.pvpStrictDisableAutoAttackFallback = val and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+
 			headerExperimentalTuning = {
 				type  = "header",
 				name  = "Open-World Tuning",
