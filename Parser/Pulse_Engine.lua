@@ -127,6 +127,9 @@ function Engine:_pollDamageMeterIncoming()
 	if type(playerGUID) ~= "string" then
 		return
 	end
+	if ZSBT and ZSBT.IsSafeString and not ZSBT.IsSafeString(playerGUID) then
+		return
+	end
 
 	local ok, sessionSource = pcall(C_DamageMeter.GetCombatSessionSourceFromType, 0, Enum.DamageMeterType.DamageTaken, playerGUID)
 	if not ok or not sessionSource then
@@ -245,6 +248,9 @@ function Engine:_pollDamageMeterOutgoing()
 	if type(playerGUID) ~= "string" then
 		return
 	end
+	if ZSBT and ZSBT.IsSafeString and not ZSBT.IsSafeString(playerGUID) then
+		return
+	end
 	local petGUID = UnitGUID and UnitGUID("pet") or nil
 	local vehGUID = UnitGUID and UnitGUID("vehicle") or nil
 
@@ -253,7 +259,7 @@ function Engine:_pollDamageMeterOutgoing()
 	local sources = { playerGUID, petGUID, vehGUID }
 	for i = 1, #sources do
 		local srcGUID = sources[i]
-		if type(srcGUID) == "string" and not seen[srcGUID] then
+		if type(srcGUID) == "string" and (not (ZSBT and ZSBT.IsSafeString) or ZSBT.IsSafeString(srcGUID)) and not seen[srcGUID] then
 			seen[srcGUID] = true
 			local ok, sessionSource = pcall(C_DamageMeter.GetCombatSessionSourceFromType, 0, Enum.DamageMeterType.DamageDone, srcGUID)
 			if ok and sessionSource and type(sessionSource.combatSpells) == "table" then

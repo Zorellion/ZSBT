@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.14
+
+### Fixed
+- Instances: fixed a crash in damage meter fallback polling where certain GUID sources could be returned as secret strings ("table index is secret"). Secret GUID sources are now skipped safely.
+
 ## 1.2.13
 
 ### Added
