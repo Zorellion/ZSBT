@@ -72,6 +72,37 @@ local function angleToXY(angle, radius)
     return x, y
 end
 
+local function resolveButton(self)
+    if self and self.button then
+        return self.button
+    end
+    local b = _G and _G[BUTTON_NAME]
+    if self and b then
+        self.button = b
+    end
+    return b
+end
+
+local function applyExternalMinimapButtonsHidden(hidden)
+    if not _G then return end
+    for k, v in pairs(_G) do
+        if type(k) == "string" and k ~= BUTTON_NAME and k:find("ZSBT_MinimapButton", 1, true) then
+            if type(v) == "table" or type(v) == "userdata" then
+                local okHide = (v.Hide and v.Show)
+                if okHide then
+                    if hidden then
+                        if v.SetAlpha then v:SetAlpha(0) end
+                        v:Hide()
+                    else
+                        if v.SetAlpha then v:SetAlpha(1) end
+                        v:Show()
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function cursorAngleFromMinimap()
     local mx, my = Minimap:GetCenter()
     local cx, cy = GetCursorPosition()
@@ -85,23 +116,52 @@ local function cursorAngleFromMinimap()
 end
 
 function MM:ApplyPosition()
-    if not self.button or not ZSBT.db then return end
+    local b = resolveButton(self)
+    if not b or not ZSBT.db then return end
 
     local angle = clampAngle(ZSBT.db.profile.general.minimap.angle)
-    local x, y = angleToXY(angle, getRadius(self.button))
+    local x, y = angleToXY(angle, getRadius(b))
 
     -- Critical: clear points first to avoid anchor-family conflicts.
-    self.button:ClearAllPoints()
-    self.button:SetPoint("CENTER", Minimap, "CENTER", x, y)
+    b:ClearAllPoints()
+    b:SetPoint("CENTER", Minimap, "CENTER", x, y)
 end
 
 function MM:UpdateVisibility()
-    if not self.button or not ZSBT.db then return end
+    local b = resolveButton(self)
+    if not b or not ZSBT.db then return end
     if ZSBT.db.profile.general.minimap.hide then
-        self.button:Hide()
+        if b.SetAlpha then b:SetAlpha(0) end
+        b:Hide()
+		applyExternalMinimapButtonsHidden(true)
+		if C_Timer and C_Timer.After then
+			C_Timer.After(0, function()
+				local bb = resolveButton(self)
+				if bb and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+					and ZSBT.db.profile.general.minimap
+					and ZSBT.db.profile.general.minimap.hide then
+					if bb.SetAlpha then bb:SetAlpha(0) end
+					bb:Hide()
+					applyExternalMinimapButtonsHidden(true)
+				end
+			end)
+		end
     else
-        self.button:Show()
-        self:ApplyPosition()
+        if b.SetAlpha then b:SetAlpha(1) end
+        b:Show()
+		applyExternalMinimapButtonsHidden(false)
+		-- Apply position on next frame as well; certain UI refreshes can occur
+		-- in the same tick as Show() and briefly misalign the textures/anchor.
+		self:ApplyPosition()
+		if C_Timer and C_Timer.After then
+			C_Timer.After(0, function()
+				if ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+					and ZSBT.db.profile.general.minimap
+					and not ZSBT.db.profile.general.minimap.hide then
+					self:ApplyPosition()
+				end
+			end)
+		end
     end
 end
 
@@ -199,6 +259,30 @@ function MM:Init()
 
     b:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
     b:RegisterForDrag("LeftButton")
+
+	-- Enforce hide in real time: if anything re-shows the button while the
+	-- profile says it should be hidden, immediately hide it again.
+	b:HookScript("OnShow", function()
+		if ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+			and ZSBT.db.profile.general.minimap
+			and ZSBT.db.profile.general.minimap.hide then
+			if b.SetAlpha then b:SetAlpha(0) end
+			b:Hide()
+			applyExternalMinimapButtonsHidden(true)
+			return
+		end
+		if b.SetAlpha then b:SetAlpha(1) end
+		applyExternalMinimapButtonsHidden(false)
+		if C_Timer and C_Timer.After then
+			C_Timer.After(0, function()
+				if ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+					and ZSBT.db.profile.general.minimap
+					and not ZSBT.db.profile.general.minimap.hide then
+					MM:ApplyPosition()
+				end
+			end)
+		end
+	end)
 
     --------------------------------------------------------------------
     -- Tooltip (attach ONCE; not inside OnClick)

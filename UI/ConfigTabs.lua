@@ -1591,6 +1591,46 @@ function ZSBT.BuildTab_General()
 				end,
 			},
 
+			minimapHide = {
+				type  = "toggle",
+				name  = "Hide Minimap Button",
+				desc  = "Hide the ZSBT minimap button. You can also toggle it with /zsbt minimap.",
+				order = 3.607,
+				width = "full",
+				get   = function()
+					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+					if not g or not g.minimap then return false end
+					return g.minimap.hide == true
+				end,
+				set   = function(_, val)
+					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+					if not g then return end
+					g.minimap = g.minimap or {}
+					g.minimap.hide = val and true or false
+					local mm = ZSBT.Core and ZSBT.Core.Minimap
+					if mm and mm.Init then
+						mm:Init()
+					end
+					if mm and mm.SetHidden then
+						mm:SetHidden(g.minimap.hide)
+					elseif mm and mm.UpdateVisibility then
+						mm:UpdateVisibility()
+					end
+					local b = _G and _G["ZSBT_MinimapButton"]
+					if b then
+						if g.minimap.hide then
+							b:Hide()
+						else
+							b:Show()
+							if mm and mm.ApplyPosition then
+								mm:ApplyPosition()
+							end
+						end
+					end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+
 			headerDungeonRaidTuning = {
 				type  = "header",
 				name  = "Dungeon/Raid Tuning",

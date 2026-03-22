@@ -1160,14 +1160,35 @@ function Addon:HandleSlashCommand(input)
     cmd = cmd:lower()
 
     if cmd == "minimap" then
-        if ZSBT.Core and ZSBT.Core.Minimap and ZSBT.Core.Minimap.UpdateVisibility then
-            local g = ZSBT.db.profile.general
-            g.minimap.hide = not g.minimap.hide
-            ZSBT.Core.Minimap:UpdateVisibility()
-            self:Print(("Minimap button %s."):format(g.minimap.hide and "hidden" or "shown"))
-        end
-        return
-    end
+		local mm = ZSBT.Core and ZSBT.Core.Minimap
+		if not (mm and (mm.SetHidden or mm.UpdateVisibility)) then
+			self:Print("Minimap button module not available.")
+			return
+		end
+		if mm.Init then
+			mm:Init()
+		end
+		local g = ZSBT.db.profile.general
+		g.minimap.hide = not g.minimap.hide
+		if mm.SetHidden then
+			mm:SetHidden(g.minimap.hide)
+		else
+			mm:UpdateVisibility()
+		end
+		local b = _G and _G["ZSBT_MinimapButton"]
+		if b then
+			if g.minimap.hide then
+				b:Hide()
+			else
+				b:Show()
+				if mm.ApplyPosition then
+					mm:ApplyPosition()
+				end
+			end
+		end
+		self:Print(("Minimap button %s."):format(g.minimap.hide and "hidden" or "shown"))
+		return
+	end
 
     if cmd == "debug" then
         self:HandleDebugCommand(rest)

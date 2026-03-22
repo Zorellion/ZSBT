@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.16
+
+### Added
+- General: added a Hide Minimap Button toggle to show/hide the minimap icon in real time.
+
+### Fixed
+- Minimap button: hide/show now also applies to third-party/LibDBIcon minimap button variants that wrap the ZSBT button.
+
 ## 1.2.15
 
 ### Changed
