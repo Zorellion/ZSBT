@@ -8,7 +8,7 @@ local ADDON_NAME, ZSBT = ...
 ------------------------------------------------------------------------
 -- Version & Identity
 ------------------------------------------------------------------------
-ZSBT.VERSION = "1.2.16"
+ZSBT.VERSION = "1.2.17"
 ZSBT.ADDON_TITLE = "Zore's Scrolling Battle Text"
 ZSBT.ADDON_SHORT = "ZSBT"
 ZSBT.ADDON_AUTHOR = "Zorellion"
@@ -22,6 +22,7 @@ ZSBT.DEBUG_LEVEL_SUPPRESSED = 1    -- Show filtered/suppressed events
 ZSBT.DEBUG_LEVEL_CONFIDENCE = 2    -- Show confidence scores
 ZSBT.DEBUG_LEVEL_ALL_EVENTS = 3    -- Everything (verbose)
 ZSBT.DEBUG_LEVEL_TRACE      = 4    -- High-signal tracing (OUTDBG/PETDBG)
+ZSBT.DEBUG_LEVEL_CORRELATION = 5   -- Correlation tracing (chat -> outgoing -> icon)
 
 ------------------------------------------------------------------------
 -- Confidence Thresholds

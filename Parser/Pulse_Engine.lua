@@ -107,6 +107,36 @@ local function wipeTable(t)
 	end
 end
 
+local function Dbg5(prefix, msg)
+	local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
+	if dbg >= 5 and ZSBT.Addon and ZSBT.Addon.Print then
+		local function safeToString(v)
+			if v == nil then return "" end
+			if type(v) == "string" then
+				if ZSBT and ZSBT.IsSafeString and ZSBT.IsSafeString(v) then
+					return v
+				end
+				return "<secret>"
+			end
+			local ok, s = pcall(tostring, v)
+			if ok and type(s) == "string" then
+				if ZSBT and ZSBT.IsSafeString and ZSBT.IsSafeString(s) then
+					return s
+				end
+				return "<secret>"
+			end
+			return "<secret>"
+		end
+		local p = safeToString(prefix)
+		local m = safeToString(msg)
+		if m ~= "" then
+			ZSBT.Addon:Print(p .. " " .. m)
+		else
+			ZSBT.Addon:Print(p)
+		end
+	end
+end
+
 function Engine:_pollDamageMeterIncoming()
 	local tNow = now()
 	if not shouldPollDamageMeterIncoming() then
@@ -469,7 +499,7 @@ function Engine:collect(eventType, payload)
 	if not eventType or not payload then return end
 
 	local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
-	if dbg >= 3 and ZSBT.Addon and ZSBT.Addon.Print then
+	if dbg >= 3 and dbg < 5 and ZSBT.Addon and ZSBT.Addon.Print then
 		local tNow = now()
 		if (tNow - (self._dbgLastCollectAt or 0)) >= 0.25 then
 			-- Only sample interesting types to keep chat readable.
@@ -702,7 +732,7 @@ function Engine:flushBucket()
 	local bucket = self._bucket
 	local count = self._qCount or 0
 	local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
-	if dbg >= 3 and ZSBT.Addon and ZSBT.Addon.Print then
+	if dbg >= 3 and dbg < 5 and ZSBT.Addon and ZSBT.Addon.Print then
 		local tNow = now()
 		if (tNow - (self._dbgLastHeartbeatAt or 0)) >= 1.0 then
 			self._dbgLastHeartbeatAt = tNow
@@ -727,7 +757,7 @@ function Engine:flushBucket()
 		if sample then
 			local et = sample.eventType
 			local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
-			if dbg >= 3 and ZSBT.Addon and ZSBT.Addon.Print then
+			if dbg >= 3 and dbg < 5 and ZSBT.Addon and ZSBT.Addon.Print then
 				if et == "COMBAT_TEXT_DAMAGE" or et == "OUTGOING_DAMAGE_COMBAT" or et == "OUTGOING_HEAL_COMBAT" or et == "HEALTH_DAMAGE" or et == "HEALTH_HEAL" or et == "INCOMING_DAMAGE" or et == "FALL_DAMAGE" or et == "INCOMING_HEAL_COMBAT" then
 					local function safeDbg(v)
 						if v == nil then return "nil" end
@@ -952,6 +982,17 @@ function Engine:flushBucket()
 				local rawPipeId = sample.rawPipeId
 				Dbg4("|cFFCC66FF[OUTDBG]|r", ("PATH OUTGOING_DAMAGE_COMBAT rawPipeId=%s spellId=%s target=%s")
 					:format(tostring(sample.rawPipeId), tostring(sample.spellId), tostring(sample.targetName)))
+				Dbg5("|cFFCC66FF[OUTDBG]|r", ("CORR OUTGOING_DAMAGE_COMBAT dbgChatId=%s src=%s rawPipeId=%s spellId=%s target=%s")
+					:format(tostring(sample.dbgChatId), tostring(sample.amountSource), tostring(sample.rawPipeId), tostring(sample.spellId), tostring(sample.targetName)))
+				do
+					local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
+					if dbg >= 5 then
+						local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
+						if ec and ec._dbgCorrOutgoingNote then
+							pcall(function() ec:_dbgCorrOutgoingNote(sample) end)
+						end
+					end
+				end
 				self:_noteOutgoingSignal(sample.timestamp)
 
 				-- Only allow trusted outgoing amounts. COMBAT_TEXT_UPDATE is ideal; when it is
@@ -977,11 +1018,13 @@ function Engine:flushBucket()
 					rawPipeId = sample.rawPipeId,
 					spellName = nil,
 					spellId = sample.spellId,
+					dbgChatId = sample.dbgChatId,
 					amountSource = sample.amountSource,
 					isAuto = sample.isAuto == true,
 					schoolMask = sample.schoolMask,
 					targetName = sample.targetName,
 					isCrit = sample.isCrit,
+					wwCount = sample.wwCount,
 					timestamp = sample.timestamp,
 					confidence = "HIGH",
 					isPeriodic = sample.isPeriodic == true,

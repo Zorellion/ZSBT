@@ -1037,6 +1037,269 @@ function ZSBT.BuildSpellRuleEditorOptionsTable()
 					end
 				end,
 			},
+			aggHeader = {
+				type = "header",
+				name = "Aggregation",
+				order = 6,
+			},
+			aggEnabled = {
+				type = "toggle",
+				name = "Enable Aggregation",
+				desc = "Combine rapid repeated hits into a single line (e.g. Whirlwind shows (xN)).",
+				order = 7,
+				width = "full",
+				hidden = function() return type(ZSBT._editingSpellRuleSpellID) ~= "number" end,
+				get = function()
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.spellRules and id and sc.spellRules[id]
+					local agg = r and r.aggregate
+					return type(agg) == "table" and agg.enabled == true
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.spellRules = sc.spellRules or {}
+					sc.spellRules[id] = sc.spellRules[id] or {}
+					sc.spellRules[id].aggregate = sc.spellRules[id].aggregate or {}
+					sc.spellRules[id].aggregate.enabled = v and true or false
+				end,
+			},
+			aggWindow = {
+				type = "range",
+				name = "Aggregation Window (sec)",
+				desc = "Time window for combining hits.",
+				order = 8,
+				min = 0.10,
+				max = 1.25,
+				softMax = 0.80,
+				step = 0.05,
+				hidden = function() return type(ZSBT._editingSpellRuleSpellID) ~= "number" end,
+				get = function()
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.spellRules and id and sc.spellRules[id]
+					local agg = r and r.aggregate
+					return type(agg) == "table" and (tonumber(agg.windowSec) or 0.60) or 0.60
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.spellRules = sc.spellRules or {}
+					sc.spellRules[id] = sc.spellRules[id] or {}
+					sc.spellRules[id].aggregate = sc.spellRules[id].aggregate or {}
+					sc.spellRules[id].aggregate.windowSec = tonumber(v) or 0.60
+				end,
+			},
+			aggShowCount = {
+				type = "toggle",
+				name = "Show (xN) Count",
+				desc = "Append a hit count marker like (x5) to aggregated events.",
+				order = 9,
+				width = "full",
+				hidden = function() return type(ZSBT._editingSpellRuleSpellID) ~= "number" end,
+				get = function()
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.spellRules and id and sc.spellRules[id]
+					local agg = r and r.aggregate
+					return type(agg) ~= "table" or agg.showCount ~= false
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.spellRules = sc.spellRules or {}
+					sc.spellRules[id] = sc.spellRules[id] or {}
+					sc.spellRules[id].aggregate = sc.spellRules[id].aggregate or {}
+					sc.spellRules[id].aggregate.showCount = v and true or false
+				end,
+			},
+			styleHeader = {
+				type = "header",
+				name = "Style Override",
+				order = 10,
+			},
+			styleFontOverride = {
+				type = "toggle",
+				name = "Font Override",
+				desc = "Override font and color for this spell's outgoing text.",
+				order = 11,
+				width = "full",
+				hidden = function() return type(ZSBT._editingSpellRuleSpellID) ~= "number" end,
+				get = function()
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.spellRules and id and sc.spellRules[id]
+					local st = r and r.style
+					return type(st) == "table" and st.fontOverride == true
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.spellRules = sc.spellRules or {}
+					sc.spellRules[id] = sc.spellRules[id] or {}
+					sc.spellRules[id].style = sc.spellRules[id].style or {}
+					sc.spellRules[id].style.fontOverride = v and true or false
+				end,
+			},
+			styleFontFace = {
+				type = "select",
+				name = "Font Face",
+				order = 12,
+				values = function() return ZSBT.BuildFontDropdown() end,
+				hidden = function()
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.spellRules and id and sc.spellRules[id]
+					local st = r and r.style
+					return not (type(st) == "table" and st.fontOverride == true)
+				end,
+				get = function()
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.spellRules and id and sc.spellRules[id]
+					local st = r and r.style
+					return (type(st) == "table" and type(st.fontFace) == "string" and st.fontFace ~= "") and st.fontFace or "Friz Quadrata TT"
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.spellRules = sc.spellRules or {}
+					sc.spellRules[id] = sc.spellRules[id] or {}
+					sc.spellRules[id].style = sc.spellRules[id].style or {}
+					sc.spellRules[id].style.fontFace = (type(v) == "string" and v ~= "") and v or nil
+				end,
+			},
+			styleFontOutline = {
+				type = "select",
+				name = "Outline Style",
+				order = 13,
+				values = function() return ZSBT.ValuesFromKeys(ZSBT.OUTLINE_STYLES) end,
+				hidden = function()
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.spellRules and id and sc.spellRules[id]
+					local st = r and r.style
+					return not (type(st) == "table" and st.fontOverride == true)
+				end,
+				get = function()
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.spellRules and id and sc.spellRules[id]
+					local st = r and r.style
+					return (type(st) == "table" and type(st.fontOutline) == "string" and st.fontOutline ~= "") and st.fontOutline or "Thin"
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.spellRules = sc.spellRules or {}
+					sc.spellRules[id] = sc.spellRules[id] or {}
+					sc.spellRules[id].style = sc.spellRules[id].style or {}
+					sc.spellRules[id].style.fontOutline = (type(v) == "string" and v ~= "") and v or nil
+				end,
+			},
+			styleFontSize = {
+				type = "range",
+				name = "Font Size (0=use scale)",
+				order = 14,
+				min = 0,
+				max = 72,
+				softMax = 32,
+				step = 1,
+				hidden = function()
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.spellRules and id and sc.spellRules[id]
+					local st = r and r.style
+					return not (type(st) == "table" and st.fontOverride == true)
+				end,
+				get = function()
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.spellRules and id and sc.spellRules[id]
+					local st = r and r.style
+					return type(st) == "table" and (tonumber(st.fontSize) or 0) or 0
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.spellRules = sc.spellRules or {}
+					sc.spellRules[id] = sc.spellRules[id] or {}
+					sc.spellRules[id].style = sc.spellRules[id].style or {}
+					local n = tonumber(v) or 0
+					sc.spellRules[id].style.fontSize = (n > 0) and n or nil
+				end,
+			},
+			styleFontScale = {
+				type = "range",
+				name = "Font Scale",
+				desc = "Multiplier applied to the resolved scroll area font size when Font Size is 0.",
+				order = 15,
+				min = 0.5,
+				max = 3.0,
+				softMax = 2.0,
+				step = 0.05,
+				hidden = function()
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.spellRules and id and sc.spellRules[id]
+					local st = r and r.style
+					return not (type(st) == "table" and st.fontOverride == true)
+				end,
+				get = function()
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.spellRules and id and sc.spellRules[id]
+					local st = r and r.style
+					return type(st) == "table" and (tonumber(st.fontScale) or 1.0) or 1.0
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.spellRules = sc.spellRules or {}
+					sc.spellRules[id] = sc.spellRules[id] or {}
+					sc.spellRules[id].style = sc.spellRules[id].style or {}
+					sc.spellRules[id].style.fontScale = tonumber(v) or 1.0
+				end,
+			},
+			styleColor = {
+				type = "color",
+				name = "Color",
+				order = 16,
+				hidden = function()
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.spellRules and id and sc.spellRules[id]
+					local st = r and r.style
+					return not (type(st) == "table" and st.fontOverride == true)
+				end,
+				get = function()
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.spellRules and id and sc.spellRules[id]
+					local st = r and r.style
+					local c = type(st) == "table" and st.color
+					if type(c) ~= "table" then return 1, 1, 1 end
+					return tonumber(c.r) or 1, tonumber(c.g) or 1, tonumber(c.b) or 1
+				end,
+				set = function(_, r, g, b)
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.spellRules = sc.spellRules or {}
+					sc.spellRules[id] = sc.spellRules[id] or {}
+					sc.spellRules[id].style = sc.spellRules[id].style or {}
+					sc.spellRules[id].style.color = { r = r, g = g, b = b }
+				end,
+			},
 		},
 	}
 end

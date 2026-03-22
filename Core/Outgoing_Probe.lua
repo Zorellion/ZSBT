@@ -58,6 +58,13 @@ local function Dbg4(prefix, msg)
 	end
 end
 
+local function Dbg5(prefix, msg)
+	local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
+	if dbg >= 5 and Addon and Addon.Print then
+		Addon:Print(prefix .. " " .. msg)
+	end
+end
+
 Probe._spellRuleLastAt = Probe._spellRuleLastAt or {}
 Probe._recentSpellStats = Probe._recentSpellStats or {}
 Probe._recentSpellMax = Probe._recentSpellMax or 60
@@ -301,6 +308,14 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			tostring(isSecret),
 			tostring(isEmpty)
 		))
+	Dbg5("|cFFCC66FF[OUTDBG]|r", ("CORR Probe dbgChatId=%s src=%s evtSpellId=%s resolved=%s spellSource=%s")
+		:format(
+			tostring(evt and evt.dbgChatId),
+			tostring(evt and evt.amountSource),
+			tostring(evt and evt.spellId),
+			tostring(resolvedSpellID),
+			tostring(spellSource)
+		))
 
 	-- Secret/empty events are used for correlation diagnostics only; they should
 	-- not consume throttle budgets or be attributed to "last cast".
@@ -363,21 +378,22 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
         ec._rawPipe[evt.rawPipeId] = nil  -- consume it
     end
 
-    -- Suppress training dummy damage if enabled
-    local spam = ZSBT.db.profile.spamControl
-    if spam and spam.suppressDummyDamage and ZSBT.IsTrainingDummy("target") then
-        return
-    end
+    	-- Suppress training dummy damage if enabled
+	local spam = ZSBT.db.profile.spamControl
+	if spam and spam.suppressDummyDamage and ZSBT.IsTrainingDummy("target") then
+		return
+	end
 
-		local sr = spam and spam.spellRules
+		local sr = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl and ZSBT.db.char.spamControl.spellRules
 		local routing = spam and spam.routing
 		local defaultRuleArea = nil
 		if type(resolvedSpellID) == "number" and sr and next(sr) ~= nil and routing and type(routing.spellRulesDefaultArea) == "string" and routing.spellRulesDefaultArea ~= "" then
 			defaultRuleArea = routing.spellRulesDefaultArea
 		end
 		local ruleArea = nil
+		local rule = nil
 		if sr and type(resolvedSpellID) == "number" then
-			local rule = sr[resolvedSpellID]
+			rule = sr[resolvedSpellID]
 			if type(rule) == "table" and rule.enabled ~= false then
 				ruleArea = (type(rule.scrollArea) == "string" and rule.scrollArea ~= "") and rule.scrollArea or nil
 				local throttleSec = tonumber(rule.throttleSec) or 0
@@ -464,6 +480,21 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			end
 		end
 
+		-- Whirlwind burst aggregation (UNIT_COMBAT fallback): append count marker.
+		do
+			local show = true
+			local scChar = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+			local rule = scChar and scChar.spellRules and scChar.spellRules[1680]
+			local agg = rule and rule.aggregate
+			if type(agg) == "table" and type(agg.showCount) == "boolean" then
+				show = agg.showCount
+			end
+			local n = evt and tonumber(evt.wwCount)
+			if show and type(n) == "number" and n > 1 and ZSBT.IsSafeString(text) then
+				text = text .. " (x" .. tostring(math.floor(n + 0.5)) .. ")"
+			end
+		end
+
         -- Append target name with class color (only if safe/clean).
         if conf.showTargets and ZSBT.IsSafeString(evt.targetName) and evt.targetName ~= "" then
             local coloredName = ZSBT.ClassColorName(evt.targetName, "target") or evt.targetName
@@ -505,15 +536,36 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			-- Default crit color: yellow for damage crits (overrides school)
 			color = {r = 1.00, g = 1.00, b = 0.00}
 		end
-        local meta = {
-            probe = true,
-            replay = isReplay == true,
-            stream = "outgoing",
-            kind = kind,
-            isAuto = evt.isAuto == true,
-            isCrit = evt.isCrit == true,
-            school = evt.schoolMask,
-        }
+
+		local meta = {
+			probe = true,
+			replay = isReplay == true,
+			stream = "outgoing",
+			kind = kind,
+			isAuto = evt.isAuto == true,
+			isCrit = evt.isCrit == true,
+			school = evt.schoolMask,
+		}
+
+		-- Per-spell style overrides (Outgoing only).
+		local style = rule and rule.style
+		if type(style) == "table" and style.fontOverride == true then
+			local sc = tonumber(style.fontScale)
+			local face = style.fontFace
+			local outline = style.fontOutline
+			local sz = tonumber(style.fontSize)
+			if (type(face) == "string" and face ~= "") or (type(outline) == "string" and outline ~= "") or (type(sz) == "number" and sz > 0) or (type(sc) == "number" and sc > 0) then
+				meta.spellFontOverride = true
+				meta.spellFontFace = face
+				meta.spellFontOutline = outline
+				meta.spellFontSize = sz
+				meta.spellFontScale = sc
+			end
+			local c = style.color
+			if type(c) == "table" and type(c.r) == "number" and type(c.g) == "number" and type(c.b) == "number" then
+				color = { r = c.r, g = c.g, b = c.b }
+			end
+		end
 
 		maybePlayCritSound(rawPipeValue, isTainted)
 

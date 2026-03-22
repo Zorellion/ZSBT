@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.17
+
+### Added
+- Spell Rules: added per-spell style overrides for outgoing text (font face, outline, size/scale, and color).
+- Spell Rules: added per-spell aggregation controls (enable, window, show (xN)) for Whirlwind (1680).
+
+### Changed
+- Whirlwind: burst aggregation is now spell-rule-driven. If no Whirlwind spell rule exists (or aggregation is disabled), Whirlwind shows every hit (no aggregation).
+- Spell Rules: outgoing spell rules (routing/throttle/style/aggregation) are stored per-character.
+
 ## 1.2.16
 
 ### Added

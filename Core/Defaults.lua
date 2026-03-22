@@ -236,6 +236,11 @@ ZSBT.DEFAULTS = {
                 window      = 1.5,
                 showCount   = true,
             },
+            whirlwindAggregate = {
+                enabled = true,
+                window = 0.60,
+                showCount = true,
+            },
             auraGlobal = {
                 showUnconfiguredGains = true,
                 showUnconfiguredFades = true,

@@ -28,6 +28,9 @@ end
 local function TrigDebug(msg)
 	local level = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
 		and tonumber(ZSBT.db.profile.diagnostics.debugLevel) or 0
+	if level == 5 then
+		return
+	end
 	if level >= 2 then
 		local out = "|cFF00CCFF[TRG]|r " .. SafeToString(msg)
 		if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then

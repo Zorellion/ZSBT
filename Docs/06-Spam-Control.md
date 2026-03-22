@@ -24,8 +24,14 @@ Spell Rules let you add **per-spell throttles** for outgoing combat text.
   - Outgoing damage/healing display (not Notifications).
 - **What Spell Rules do**
   - Apply an additional, per-spell throttle window so that repeated events from the same spell don’t spam the scroll area.
+  - Optionally override scroll area routing.
+  - Optionally override font and color (Style Override).
+  - Some spells may support additional per-spell behaviors (like aggregation) that only apply when a rule exists.
 - **Where to configure**
   - `/zsbt` -> `Spam Control` -> `Open Spell Rules Manager`
+
+### Character-specific
+Spell Rules are stored **per character**.
 
 ### How to add a spell rule
 - Enter a **SpellID** (or exact spell name) and click `Add`.

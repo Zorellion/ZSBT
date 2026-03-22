@@ -393,7 +393,7 @@ end
 -- Capture successful casts for downstream correlation.
 -- Player casts: used for outgoing spell icons.
 -- Target/enemy casts: used for incoming spell icons.
-function Collector:handleSpellcastSucceeded(unit, _, spellId)
+function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 	if not spellId then return end
 
 	-- Pet casts are used for custom triggers (e.g. Growl), but should not
@@ -401,7 +401,7 @@ function Collector:handleSpellcastSucceeded(unit, _, spellId)
 	if unit == "pet" then
 		local trg = ZSBT.Core and ZSBT.Core.Triggers
 		if trg and trg.OnSpellcastSucceeded then
-			pcall(function() trg:OnSpellcastSucceeded(unit, spellId) end)
+			pcall(function() trg:OnSpellcastSucceeded(unit, guid, spellId) end)
 		end
 		return
 	end
@@ -409,9 +409,24 @@ function Collector:handleSpellcastSucceeded(unit, _, spellId)
 	if unit == "player" then
 		self._castToken = (self._castToken or 0) + 1
 		self._lastPlayerSpellId = spellId
+		self._lastPlayerSpellName = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or nil
 		self._lastPlayerSpellAt = now()
-		local spellName = ZSBT.CleanSpellName(spellId)
-		self._lastPlayerSpellName = spellName
+		local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+		if dl >= 5 and spellId == 1680 then
+			local tNow = now()
+			local lastRecv = Collector._dbgWWChatRecvAt or 0
+			local lastEmit = Collector._dbgWWChatEmitAt or 0
+			local recvCount = Collector._dbgWWChatRecvCount or 0
+			local emitCount = Collector._dbgWWChatEmitCount or 0
+			local recvAge = tNow - lastRecv
+			local emitAge = tNow - lastEmit
+			ECPrint(("WW_CAST token=%s chatRecvCount=%s chatEmitCount=%s lastChatRecvAge=%.3f lastChatEmitAge=%.3f")
+				:format(dbgSafe(self._castToken), dbgSafe(recvCount), dbgSafe(emitCount), recvAge, emitAge))
+			if recvCount == 0 or recvAge > 30 then
+				ECPrint("WW_CAST DIAG: No addon-readable Whirlwind CHAT_MSG combat-log lines received recently; outgoing will rely on UNIT_COMBAT(target) fallback (icons may be missing).")
+			end
+		end
+		local spellName = self._lastPlayerSpellName
 		enqueuePendingCast(self, spellId, spellName, self._lastPlayerSpellAt)
 		self._recentPeriodicSpellAt[spellId] = self._lastPlayerSpellAt
 
@@ -449,6 +464,64 @@ local function parseAmountFromChat(numText)
 	local n = tonumber(cleaned)
 	if not n then return nil end
 	return n
+end
+
+local function wwAggEnabled()
+	local scChar = ZSBT and ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+	local rule = scChar and scChar.spellRules and scChar.spellRules[1680]
+	local agg = rule and rule.aggregate
+	return type(agg) == "table" and agg.enabled == true
+end
+
+local function wwAggWindowSec()
+	local scChar = ZSBT and ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+	local rule = scChar and scChar.spellRules and scChar.spellRules[1680]
+	local agg = rule and rule.aggregate
+	local w = type(agg) == "table" and tonumber(agg.windowSec) or nil
+	if type(w) ~= "number" then return 0.35 end
+	if w < 0.10 then return 0.10 end
+	if w > 1.25 then return 1.25 end
+	return w
+end
+
+local function wwAggFlush(self)
+	if not self then return end
+	local st = self._wwAgg
+	if type(st) ~= "table" then return end
+	self._wwAgg = nil
+	if st.timer and st.timer.Cancel then
+		pcall(function() st.timer:Cancel() end)
+	end
+	local sum = st.sum
+	local cnt = st.count
+	if type(sum) ~= "number" or sum <= 0 then return end
+	if type(cnt) ~= "number" or cnt <= 0 then cnt = 1 end
+
+	emit("OUTGOING_DAMAGE_COMBAT", {
+		timestamp = st.t or now(),
+		amount = sum,
+		amountText = tostring(math.floor(sum + 0.5)),
+		spellId = 1680,
+		amountSource = "UNIT_COMBAT_PHYSICAL",
+		targetName = st.targetName,
+		isCrit = st.isCrit == true,
+		schoolMask = 1,
+		wwCount = cnt,
+	})
+end
+
+local function dbgChatPush(self, row)
+	if not self then return nil end
+	local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+	if dl < 5 then return nil end
+	self._dbgChatSeq = (self._dbgChatSeq or 0) + 1
+	local id = self._dbgChatSeq
+	self._dbgChatRing = self._dbgChatRing or {}
+	self._dbgChatRingHead = ((self._dbgChatRingHead or 0) % 60) + 1
+	row = row or {}
+	row.id = id
+	self._dbgChatRing[self._dbgChatRingHead] = row
+	return id
 end
 
 local function resolveRecentSpellIdByName(self, wantName, tNow)
@@ -502,19 +575,27 @@ function Collector:handleChatSelfDamage(event, msg)
 		if dt < 0 or dt > maxDt then
 			return
 		end
-		if self._lastChatOutgoingToken == token then
-			return
-		end
 		local amountText = msg:match("(%d[%d,]*)")
 		local amount = amountText and parseAmountFromChat(amountText) or nil
 		if not amount or amount <= 0 then
 			return
 		end
+		local sig = tostring(token) .. ":" .. tostring(self._lastPlayerSpellId) .. ":" .. tostring(amount)
+		local lastSig = self._lastChatOutgoingSig
+		local lastAt = self._lastChatOutgoingSigAt or 0
+		if lastSig == sig and (tNow - lastAt) < 0.10 then
+			if dl >= 5 then
+				ECPrint(("CHAT_OUT dup unsafe token=%s spellId=%s amt=%s")
+					:format(dbgSafe(token), dbgSafe(self._lastPlayerSpellId), dbgSafe(amount)))
+			end
+			return
+		end
+		self._lastChatOutgoingSig = sig
+		self._lastChatOutgoingSigAt = tNow
 		if dl >= 4 and amount >= BIG_HIT_THRESHOLD then
 			ECPrint(("BIG_HIT CHAT_UNSAFE token=%s spellId=%s amt=%s")
 				:format(dbgSafe(token), dbgSafe(self._lastPlayerSpellId), dbgSafe(amount)))
 		end
-		self._lastChatOutgoingToken = token
 		self._lastOutgoingFromTargetToken = token
 		self._lastCombatTextOutgoingToken = token
 		local isCrit = (msg:find("Critical", 1, true) ~= nil) or (msg:find("critical", 1, true) ~= nil)
@@ -523,6 +604,20 @@ function Collector:handleChatSelfDamage(event, msg)
 		self._lastOutgoingChatAmount = amount
 		self._recentOutgoingMax = math.max(self._recentOutgoingMax or 0, amount)
 		self._recentOutgoingMaxAt = tNow
+		local dbgId = dbgChatPush(self, {
+			t = tNow,
+			evt = event,
+			token = token,
+			spellId = self._lastPlayerSpellId,
+			spellName = nil,
+			targetName = nil,
+			amount = amount,
+			msg = "<unsafe>",
+		})
+		if dl >= 5 then
+			ECPrint(("CHAT_OUT emit#%s unsafe token=%s spellId=%s amt=%s")
+				:format(dbgSafe(dbgId), dbgSafe(token), dbgSafe(self._lastPlayerSpellId), dbgSafe(amount)))
+		end
 		emit("OUTGOING_DAMAGE_COMBAT", {
 			timestamp = tNow,
 			amount = amount,
@@ -531,6 +626,7 @@ function Collector:handleChatSelfDamage(event, msg)
 			targetName = nil,
 			isCrit = isCrit,
 			amountSource = "COMBAT_TEXT",
+			dbgChatId = dbgId,
 			schoolMask = nil,
 		})
 		return
@@ -701,17 +797,29 @@ function Collector:handleChatSelfDamage(event, msg)
 		return
 	end
 
-	-- Per-cast dedup: only allow one outgoing hit per cast token.
-	if self._lastChatOutgoingToken == token then
+	-- Duplicate-line guard:
+	-- Some clients/event routes can deliver the same combat log chat line more
+	-- than once (e.g. different CHAT_MSG_* events). We want multi-hit spells
+	-- (Whirlwind, cleaves, etc.) to emit each hit, but avoid printing an
+	-- identical duplicate line in the same instant.
+	local amount = parseAmountFromChat(amountText)
+	if not amount or amount <= 0 then return end
+	local sig = tostring(token) .. ":" .. tostring(self._lastPlayerSpellId) .. ":" .. tostring(targetName) .. ":" .. tostring(amount)
+	local lastSig = self._lastChatOutgoingSig
+	local lastAt = self._lastChatOutgoingSigAt or 0
+	if lastSig == sig and (tNow - lastAt) < 0.10 then
+		if dl >= 5 then
+			ECPrint(("CHAT_OUT dup token=%s spellId=%s target=%s amt=%s")
+				:format(dbgSafe(token), dbgSafe(self._lastPlayerSpellId), dbgSafe(targetName), dbgSafe(amount)))
+		end
 		return
 	end
-	self._lastChatOutgoingToken = token
-	-- Also suppress UNIT_COMBAT(target) fallback for this cast.
+	self._lastChatOutgoingSig = sig
+	self._lastChatOutgoingSigAt = tNow
+	-- Suppress UNIT_COMBAT(target) fallback for this cast.
 	self._lastOutgoingFromTargetToken = token
 	self._lastCombatTextOutgoingToken = token
 
-	local amount = parseAmountFromChat(amountText)
-	if not amount or amount <= 0 then return end
 	if dl >= 4 and amount >= BIG_HIT_THRESHOLD then
 		ECPrint(("BIG_HIT CHAT token=%s spellId=%s amt=%s")
 			:format(dbgSafe(token), dbgSafe(self._lastPlayerSpellId), dbgSafe(amount)))
@@ -722,6 +830,25 @@ function Collector:handleChatSelfDamage(event, msg)
 	self._lastOutgoingChatAmount = amount
 	self._recentOutgoingMax = math.max(self._recentOutgoingMax or 0, amount)
 	self._recentOutgoingMaxAt = tNow
+	if self._lastPlayerSpellId == 1680 then
+		Collector._dbgWWChatEmitAt = tNow
+		Collector._dbgWWChatEmitCount = (Collector._dbgWWChatEmitCount or 0) + 1
+	end
+
+	local dbgId = dbgChatPush(self, {
+		t = tNow,
+		evt = event,
+		token = token,
+		spellId = self._lastPlayerSpellId,
+		spellName = spellName,
+		targetName = targetName,
+		amount = amount,
+		msg = (ZSBT.IsSafeString and ZSBT.IsSafeString(msg)) and msg:sub(1, 160) or "<secret>",
+	})
+	if dl >= 5 then
+		ECPrint(("CHAT_OUT emit#%s token=%s spellId=%s spell=%s target=%s amt=%s")
+			:format(dbgSafe(dbgId), dbgSafe(token), dbgSafe(self._lastPlayerSpellId), dbgSafe(spellName), dbgSafe(targetName), dbgSafe(amount)))
+	end
 
 	emit("OUTGOING_DAMAGE_COMBAT", {
 		timestamp = tNow,
@@ -731,6 +858,7 @@ function Collector:handleChatSelfDamage(event, msg)
 		targetName = targetName,
 		isCrit = isCrit,
 		amountSource = "COMBAT_TEXT",
+		dbgChatId = dbgId,
 		schoolMask = nil,
 	})
 end
@@ -1433,7 +1561,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				if okH then hostile = h end
 			end
 			local tDbg = now()
-			if (tDbg - (Collector._dbgLastUnitCombatTargetAt or 0)) > 0.25 then
+			if dl >= 4 and dl < 5 and (tDbg - (Collector._dbgLastUnitCombatTargetAt or 0)) > 0.25 then
 				Collector._dbgLastUnitCombatTargetAt = tDbg
 				ECPrint(("UNIT_COMBAT_TARGET name=%s guid=%s hostile=%s action=%s desc=%s amt=%s school=%s")
 					:format(dbgSafe(tName), dbgSafe(tGuid), dbgSafe(hostile), dbgSafe(action), dbgSafe(descriptor), dbgSafe(amount), dbgSafe(school)))
@@ -1631,6 +1759,16 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			if restrict == true then
 				wantSpellId = self._lastPlayerSpellId
 			end
+			local wwRecent = false
+			if self._lastPlayerSpellId == 1680 and self._lastPlayerSpellAt then
+				local age = t - (self._lastPlayerSpellAt or 0)
+				if age >= 0 and age <= 0.85 then
+					wwRecent = true
+				end
+			end
+			if wwRecent and not wantSpellId then
+				wantSpellId = 1680
+			end
 			local doConsume = true
 			if restrict ~= true then
 				doConsume = true
@@ -1642,11 +1780,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					self._restrictPhysMulti = st
 				end
 				st.count = (st.count or 0) + 1
-				if (st.count or 0) <= 6 then
-					doConsume = false
-				end
+				-- Whirlwind can produce many rapid physical hits. In strict/restricted mode,
+				-- keep the pending cast available so multiple hits can still be attributed.
+				doConsume = false
 			end
 			local matchedCast = consumeBestPendingCast(self, t, wantSpellId, castWindow, doConsume)
+			-- Strict/restricted mode normally requires a pending-cast match. For Whirlwind,
+			-- the UNIT_COMBAT(target) stream can contain more hits than we can reliably
+			-- match; allow a short post-cast window to still attribute as Whirlwind.
+			if (not matchedCast) and wantSpellId == 1680 and wwRecent then
+				matchedCast = { spellId = 1680, eligibleIcon = true }
+			end
 			if restrict and (not matchedCast) and allowAutoFallback == true then
 				-- Last-resort: show an auto-attack-like hit even though UNIT_COMBAT(target)
 				-- has no source attribution in 12.0. Gate aggressively to minimize
@@ -1722,6 +1866,35 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				if dl >= 4 then
 					ECPrint(("BIG_HIT_SUPPRESS src=UNIT_COMBAT_PHYSICAL token=%s spellId=%s amt=%s")
 						:format(dbgSafe(self._castToken), dbgSafe(spellId), dbgSafe(amount)))
+				end
+				return
+			end
+			if spellId == 1680 and wwAggEnabled() then
+				self._wwAgg = self._wwAgg or {}
+				local st = self._wwAgg
+				st.t = st.t or t
+				st.sum = (st.sum or 0) + amount
+				st.count = (st.count or 0) + 1
+				st.isCrit = st.isCrit == true or isCrit == true
+				st.targetName = safeUnitName("target")
+				st.token = self._castToken
+				if st.timer and st.timer.Cancel then
+					pcall(function() st.timer:Cancel() end)
+				end
+				local win = wwAggWindowSec()
+				if C_Timer and C_Timer.NewTimer then
+					st.timer = C_Timer.NewTimer(win, function()
+						if Collector and Collector._wwAgg then
+							wwAggFlush(Collector)
+						end
+					end)
+				elseif C_Timer and C_Timer.After then
+					st.timer = nil
+					C_Timer.After(win, function()
+						if Collector and Collector._wwAgg then
+							wwAggFlush(Collector)
+						end
+					end)
 				end
 				return
 			end
@@ -2157,7 +2330,14 @@ function Collector:Enable()
 				Collector:handleUnitCombat(...)
 			elseif CHAT_OUTGOING_EVENTS[event] then
 				local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
-				if dl >= 4 then
+				local msg = select(1, ...)
+				if dl >= 5 then
+					if type(msg) == "string" and (msg:find("Whirlwind", 1, true) or msg:find("whirlwind", 1, true)) then
+						Collector._dbgWWChatRecvAt = now()
+						Collector._dbgWWChatRecvCount = (Collector._dbgWWChatRecvCount or 0) + 1
+						ECPrint(("CHAT_OUT WW recv evt=%s msg=%s"):format(dbgSafe(event), dbgSafe(msg:sub(1, 160))))
+					end
+				elseif dl >= 4 then
 					local msg = select(1, ...)
 					if type(msg) == "string" then
 						ECPrint(("CHAT_OUT recv evt=%s msg=%s"):format(dbgSafe(event), dbgSafe(msg:sub(1, 160))))

@@ -655,6 +655,39 @@ function Addon:OnInitialize()
 		self.db.global.migrations.rulesToChar_v1 = true
 	end
 
+	local function migrateWhirlwindAggregateToSpellRuleOnce()
+		if not self.db then return end
+		self.db.global = self.db.global or {}
+		self.db.global.migrations = self.db.global.migrations or {}
+		if self.db.global.migrations.wwAggToSpellRule_v1 == true then return end
+
+		self.db.char = self.db.char or {}
+		self.db.char.spamControl = self.db.char.spamControl or {}
+		self.db.char.spamControl.spellRules = self.db.char.spamControl.spellRules or {}
+
+		local prof = self.db.profile
+		local psc = prof and prof.spamControl
+		local ww = psc and psc.whirlwindAggregate
+		if type(ww) == "table" then
+			local sid = 1680
+			local rules = self.db.char.spamControl.spellRules
+			rules[sid] = rules[sid] or { enabled = true }
+			local r = rules[sid]
+			r.aggregate = r.aggregate or {}
+			if type(ww.enabled) == "boolean" then
+				r.aggregate.enabled = ww.enabled
+			end
+			if ww.window ~= nil then
+				r.aggregate.windowSec = tonumber(ww.window) or r.aggregate.windowSec
+			end
+			if type(ww.showCount) == "boolean" then
+				r.aggregate.showCount = ww.showCount
+			end
+		end
+
+		self.db.global.migrations.wwAggToSpellRule_v1 = true
+	end
+
 	local function seedUTPresetsOnce()
 		if not self.db then return end
 		self.db.global = self.db.global or {}
@@ -713,6 +746,7 @@ function Addon:OnInitialize()
 	end
 
 	migrateRulesToCharOnce()
+	migrateWhirlwindAggregateToSpellRuleOnce()
 	seedUTPresetsOnce()
 
 	-- One-time migration: move cooldown tracked list to db.char (per-character).
@@ -1213,7 +1247,7 @@ function Addon:HandleSlashCommand(input)
     end
 
     self:Print("|cFF808C9EUnknown command:|r " .. cmd)
-	self:Print("|cFF00CC66Usage:|r /zsbt [minimap | debug 0-4 | reset | version | auratest | restorefct]")
+	self:Print("|cFF00CC66Usage:|r /zsbt [minimap | debug 0-5 | reset | version | auratest | restorefct]")
 end
 
 ------------------------------------------------------------------------
@@ -1330,9 +1364,9 @@ end
 function Addon:HandleDebugCommand(levelStr)
     local level = tonumber(levelStr)
     if not level or level < ZSBT.DEBUG_LEVEL_NONE or level >
-		ZSBT.DEBUG_LEVEL_TRACE then
-		self:Print("Usage: /zsbt debug [0-4]")
-		self:Print("  0 = Off, 1 = Suppressed, 2 = Confidence, 3 = All Events, 4 = Trace")
+		ZSBT.DEBUG_LEVEL_CORRELATION then
+		self:Print("Usage: /zsbt debug [0-5]")
+		self:Print("  0 = Off, 1 = Suppressed, 2 = Confidence, 3 = All Events, 4 = Trace, 5 = Correlation")
 		return
     end
 
@@ -1343,6 +1377,7 @@ function Addon:HandleDebugCommand(levelStr)
 		[2] = "Confidence",
 		[3] = "All Events",
 		[4] = "Trace",
+		[5] = "Correlation",
 	}
     self:Print("Debug level set to " .. level .. " (" .. names[level] .. ")")
 end

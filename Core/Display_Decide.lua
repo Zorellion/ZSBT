@@ -364,6 +364,25 @@ function Display:Emit(areaName, text, color, meta)
             fontSize = math.max(1, math.floor((tonumber(fontSize) or 18) * sc + 0.5))
         end
     end
+    if meta and meta.spellFontOverride == true then
+        local LSM = LibStub("LibSharedMedia-3.0", true)
+        local faceKey = meta.spellFontFace
+        if LSM and type(faceKey) == "string" and faceKey ~= "" then
+            local fetched = LSM:Fetch("font", faceKey)
+            if fetched then fontFace = fetched end
+        end
+        local outlineKey = meta.spellFontOutline
+        if type(outlineKey) == "string" and outlineKey ~= "" and ZSBT.OUTLINE_STYLES and ZSBT.OUTLINE_STYLES[outlineKey] ~= nil then
+            outlineFlag = ZSBT.OUTLINE_STYLES[outlineKey]
+        end
+        local sz = tonumber(meta.spellFontSize)
+        local sc = tonumber(meta.spellFontScale)
+        if type(sz) == "number" and sz > 0 then
+            fontSize = sz
+        elseif type(sc) == "number" and sc > 0 then
+            fontSize = math.max(1, math.floor((tonumber(fontSize) or 18) * sc + 0.5))
+        end
+    end
     local anchorH = (area.alignment == "Left" and "LEFT") or (area.alignment == "Right" and "RIGHT") or "CENTER"
     local dirMult = (area.direction == "Down") and -1 or 1
     local speed = tonumber(area.animSpeed) or 1.0
