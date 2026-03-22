@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.15
+
+### Changed
+- PvP: tightened outgoing attribution when PvP Strict Mode is active to reduce battleground bleed-through.
+- PvP: auto-attacks are now always suppressed while PvP Strict Mode is active.
+
+### Fixed
+- PvP: suppressed outgoing healing derived from UNIT_COMBAT("target") while PvP Strict Mode is active to prevent heal-colored outgoing noise from other players.
+
 ## 1.2.14
 
 ### Fixed

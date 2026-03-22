@@ -1305,6 +1305,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		local restrict = (ZSBT.Core and ZSBT.Core.ShouldRestrictOutgoingFallback and ZSBT.Core:ShouldRestrictOutgoingFallback()) or false
 		local instanceAware = (ZSBT.Core and ZSBT.Core.IsInstanceAwareOutgoingEnabled and ZSBT.Core:IsInstanceAwareOutgoingEnabled()) or false
 		local quietMode = isQuietOutgoingWhenIdle()
+		-- PvP Strict Mode: battlegrounds/arenas are high-risk for misattribution.
+		-- Force restricted attribution behavior when active.
+		if isPvPStrictActive() then
+			restrict = true
+			instanceAware = true
+		end
 		-- Strict outgoing mode: still allow UNIT_COMBAT(target) for outgoing, but only
 		-- when we can correlate it to a very recent player cast (MSBT-style safety).
 		if isStrictOutgoingCombatLogOnly() then
@@ -1537,6 +1543,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		end
 
 		if actionStr == "HEAL" then
+			-- PvP Strict Mode: UNIT_COMBAT(target) healing has no ownership attribution and
+			-- can frequently represent other players' healing on your target.
+			-- Suppress to prevent green outgoing noise (especially for non-healer classes).
+			if isPvPStrictActive() then
+				return
+			end
 			local pipeId = self._rawPipeCount + 1
 			self._rawPipeCount = pipeId
 			self._rawPipe[pipeId] = amount
