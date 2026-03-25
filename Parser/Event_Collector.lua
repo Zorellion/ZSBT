@@ -607,60 +607,80 @@ local function wwAggFlush(self)
 	if st.timer and st.timer.Cancel then
 		pcall(function() st.timer:Cancel() end)
 	end
-	local sum = st.sum
-	local cnt = st.count
+	local sid = st.spellId or 190411
+	local tEmit = st.t or now()
+	local normSum = st.normSum
+	local normCount = st.normCount
+	local critSum = st.critSum
 	local critCount = st.critCount
-	if type(sum) ~= "number" or sum <= 0 then return end
-	if type(cnt) ~= "number" or cnt <= 0 then cnt = 1 end
-	if type(critCount) ~= "number" or critCount < 0 then critCount = 0 end
+	if type(normSum) ~= "number" then normSum = 0 end
+	if type(normCount) ~= "number" then normCount = 0 end
+	if type(critSum) ~= "number" then critSum = 0 end
+	if type(critCount) ~= "number" then critCount = 0 end
+	if normSum <= 0 and critSum <= 0 then return end
+	if normCount <= 0 and normSum > 0 then normCount = 1 end
+	if critCount <= 0 and critSum > 0 then critCount = 1 end
 
-	emit("OUTGOING_DAMAGE_COMBAT", {
-		timestamp = st.t or now(),
-		amount = sum,
-		amountText = tostring(math.floor(sum + 0.5)),
-		spellId = st.spellId or 190411,
-		amountSource = "UNIT_COMBAT_PHYSICAL",
-		targetName = st.targetName,
-		isCrit = false,
-		schoolMask = 1,
-		wwCount = cnt,
-		wwCritCount = (st.similarHitsEnabled == true) and critCount or nil,
-	})
+	-- When aggregation is enabled, keep crits and non-crits as separate aggregated
+	-- lines so crit styling/routing remains accurate.
+	if normSum > 0 then
+		emit("OUTGOING_DAMAGE_COMBAT", {
+			timestamp = tEmit,
+			amount = normSum,
+			amountText = tostring(math.floor(normSum + 0.5)),
+			spellId = sid,
+			amountSource = "UNIT_COMBAT_PHYSICAL",
+			targetName = st.targetName,
+			isCrit = false,
+			schoolMask = 1,
+			wwCount = normCount,
+		})
+	end
+	if critSum > 0 then
+		emit("OUTGOING_DAMAGE_COMBAT", {
+			timestamp = tEmit,
+			amount = critSum,
+			amountText = tostring(math.floor(critSum + 0.5)),
+			spellId = sid,
+			amountSource = "UNIT_COMBAT_PHYSICAL",
+			targetName = st.targetName,
+			isCrit = true,
+			schoolMask = 1,
+			wwCount = critCount,
+		})
+	end
 end
 
-local function wwAggPush(self, t, spellId, amount, isCrit)
+local function wwAggPush(self, t, spellId, amount, isCrit, allowInfer)
 	if not (self and ZSBT.IsSafeNumber(amount) and amount > 0) then return end
 	self._wwAgg = self._wwAgg or {}
 	local st = self._wwAgg
 	st.t = st.t or t
-	st.sum = (st.sum or 0) + amount
-	st.count = (st.count or 0) + 1
-	st.similarHitsEnabled = st.similarHitsEnabled or wwSimilarHitsEnabled(spellId)
-	if st.similarHitsEnabled == true then
-		-- Crit inference: prefer explicit crit flag when available. If unavailable on some
-		-- clients (UNIT_COMBAT may not flag crits), infer crit-like hits as ~2x the
-		-- smallest observed hit in this bucket.
-		local prevMin = (ZSBT.IsSafeNumber(st.minHit) and st.minHit > 0) and st.minHit or nil
-		st.minHit = prevMin and math.min(prevMin, amount) or amount
-		local critLike = (isCrit == true)
-		if critLike ~= true and prevMin and prevMin > 0 then
-			-- Use a conservative threshold to reduce false positives from off-hand variance.
-			if amount >= (prevMin * 1.75) and amount >= (prevMin + 250) then
-				critLike = true
-			end
+	-- Crit inference: prefer explicit crit flag when available. If unavailable on some
+	-- clients (UNIT_COMBAT may not flag crits), infer crit-like hits as ~2x the
+	-- smallest observed hit in this bucket.
+	local prevMin = (ZSBT.IsSafeNumber(st.minHit) and st.minHit > 0) and st.minHit or nil
+	st.minHit = prevMin and math.min(prevMin, amount) or amount
+	local critLike = (isCrit == true)
+	if allowInfer == true and critLike ~= true and prevMin and prevMin >= 600 then
+		-- Use a conservative threshold to reduce false positives from off-hand variance.
+		if amount >= (prevMin * 1.75) and amount >= (prevMin + 250) then
+			critLike = true
 		end
-		if critLike == true and isCrit ~= true then
-			local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
-			if dl >= 5 then
-				ECPrint(("WW_CRIT_INFER token=%s spellId=%s amt=%s prevMin=%s")
-					:format(dbgSafe(self._castToken), dbgSafe(spellId), dbgSafe(amount), dbgSafe(prevMin)))
-			end
+	end
+	if critLike == true and isCrit ~= true then
+		local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+		if dl >= 5 then
+			ECPrint(("WW_CRIT_INFER token=%s spellId=%s amt=%s prevMin=%s")
+				:format(dbgSafe(self._castToken), dbgSafe(spellId), dbgSafe(amount), dbgSafe(prevMin)))
 		end
-		if critLike == true then
-			st.critCount = (st.critCount or 0) + 1
-		else
-			st.critCount = st.critCount or 0
-		end
+	end
+	if critLike == true then
+		st.critSum = (st.critSum or 0) + amount
+		st.critCount = (st.critCount or 0) + 1
+	else
+		st.normSum = (st.normSum or 0) + amount
+		st.normCount = (st.normCount or 0) + 1
 	end
 	st.targetName = st.targetName or safeUnitName("target")
 	st.token = st.token or self._castToken
@@ -777,7 +797,7 @@ function Collector:handleChatSelfDamage(event, msg)
 		if isWhirlwindSpellId(self._lastPlayerSpellId) and wwAggEnabled(self._lastPlayerSpellId) then
 			self._wwAggChatToken = token
 			self._wwAggChatAt = tNow
-			wwAggPush(self, tNow, self._lastPlayerSpellId, amount, isCrit)
+			wwAggPush(self, tNow, self._lastPlayerSpellId, amount, isCrit, false)
 			return
 		end
 		self._lastOutgoingChatAt = tNow
@@ -1011,7 +1031,7 @@ function Collector:handleChatSelfDamage(event, msg)
 		-- same aggregation bucket and suppress per-hit emits (prevents duplicates/crit routing).
 		self._wwAggChatToken = token
 		self._wwAggChatAt = tNow
-		wwAggPush(self, tNow, self._lastPlayerSpellId, amount, isCrit)
+		wwAggPush(self, tNow, self._lastPlayerSpellId, amount, isCrit, false)
 		return
 	end
 	self._lastOutgoingChatAt = tNow
@@ -2233,7 +2253,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				if chatTok == self._castToken and (t - chatAt) >= 0 and (t - chatAt) <= 1.25 then
 					return
 				end
-				wwAggPush(self, t, spellId, amount, isCrit)
+				wwAggPush(self, t, spellId, amount, isCrit, true)
 				return
 			end
 			local pipeId = self._rawPipeCount + 1
@@ -2653,6 +2673,11 @@ end
 function Collector:Enable()
 	if self._enabled then return end
 	resetFallingState()
+	local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+	if dl >= 5 and self._dbgWWInferGatePrinted ~= true then
+		self._dbgWWInferGatePrinted = true
+		ECPrint("WW_INFER_GATE prevMin>=600 (UNIT_COMBAT only); chat uses explicit crit only")
+	end
 
 	-- Create the event frame once and route events to parser handlers.
 	if not self._frame then

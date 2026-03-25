@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.19
+
+### Fixed
+- Outgoing (Whirlwind): fixed missing/incorrect crit output when using Whirlwind aggregation by splitting aggregated normal hits and crits into separate lines.
+- Outgoing (Whirlwind): reduced false "crit-like" inference in the UNIT_COMBAT fallback path (prevents inflated crit aggregates from small off-hand minima).
+
+### Changed
+- Outgoing (Whirlwind): when aggregation is enabled, crits and non-crits are aggregated separately so crit styling/routing remains accurate.
+
 ## 1.2.18
 
 ### Added
