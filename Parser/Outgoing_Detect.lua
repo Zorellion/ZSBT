@@ -51,6 +51,7 @@ function Outgoing:ProcessEvent(info)
 		spellName = info.spellName,
 		spellId = info.spellId,
 		wwCount = info.wwCount,
+		wwCritCount = info.wwCritCount,
 		amountSource = info.amountSource,
 		targetName = info.targetName,
 		isAuto = info.isAuto == true,

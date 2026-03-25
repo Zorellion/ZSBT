@@ -3797,6 +3797,21 @@ function ZSBT.BuildTab_Outgoing()
                 name  = "Outgoing Damage",
                 order = 1,
             },
+			turnOffZSBTOutgoingUseBlizzFCT = {
+				type  = "toggle",
+				name  = "Turn off ZSBT outgoing and use Blizzard FCT",
+				desc  = "Disables ZSBT outgoing scroll area output and enables Blizzard's outgoing combat text (numbers above enemy heads).\n\nIf 'Suppress All Blizzard Combat Text' is enabled in General, this overrides suppression for outgoing only (incoming stays suppressed).",
+				width = "full",
+				order = 1.05,
+				get   = function() return ZSBT.db.profile.outgoing.useBlizzardFCTInstead == true end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.useBlizzardFCTInstead = val and true or false
+					if ZSBT.Core and ZSBT.Core.ApplyBlizzardFCTCVars then
+						ZSBT.Core:ApplyBlizzardFCTCVars()
+					end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
             damageEnabled = {
                 type  = "toggle",
                 name  = "Show Outgoing Damage",

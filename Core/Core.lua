@@ -296,6 +296,18 @@ local BLIZZARD_FCT_CVARS = {
     "floatingCombatTextSpellMechanicsOther_v2",
 }
 
+-- When the user wants Blizzard outgoing combat text while ZSBT is enabled,
+-- we re-enable only the outgoing-related CVars after suppression. This is a
+-- best-effort separation: Blizzard routing is shared, but these CVars gate
+-- which kinds of messages actually render.
+local BLIZZARD_FCT_OUTGOING_CVARS = {
+	"enableFloatingCombatText",
+	"floatingCombatTextCombatDamage",
+	"floatingCombatTextCombatDamage_v2",
+	"floatingCombatTextCombatDamageAllAutos",
+	"floatingCombatTextCombatDamageAllAutos_v2",
+}
+
 local function getFCTStateTable()
     local db = ZSBT and ZSBT.db
     if not db then return nil end
@@ -440,6 +452,27 @@ local function restoreCombatTextFrames()
     end
 end
 
+local function suppressBlizzardFCTExceptOutgoing()
+	snapshotBlizzardFCTCVarsOnce()
+	snapshotCombatTextFramesOnce()
+	snapshotCombatTextAddFnsOnce()
+	-- Best-effort: suppress all known Blizzard FCT CVars, then re-enable only
+	-- outgoing damage/healing ones. Do NOT touch CombatText frame routing here,
+	-- since restoring routing can also re-enable incoming text.
+	for _, cvar in ipairs(BLIZZARD_FCT_CVARS) do
+		trySetCVar(cvar, "0")
+	end
+	for _, cvar in ipairs(BLIZZARD_FCT_OUTGOING_CVARS) do
+		trySetCVar(cvar, "1")
+	end
+
+	-- Keep Blizzard CombatText (center-screen style) suppressed, otherwise some
+	-- heal/self events can still render even when the floating combat text heal
+	-- CVars are 0.
+	suppressCombatTextFrames()
+	suppressCombatTextAddFns()
+end
+
 local function cvarsLookSuppressed()
     local v1 = tryGetCVar("enableFloatingCombatText")
     local dmg = tryGetCVar("floatingCombatTextCombatDamage")
@@ -547,7 +580,12 @@ function Core:ApplyBlizzardFCTCVars()
 
     -- Suppress Blizzard's own floating combat text
     if g.suppressBlizzardFCT then
-        self:SuppressBlizzardFCT()
+		local out = ZSBT.db.profile.outgoing
+		if out and out.useBlizzardFCTInstead == true then
+			suppressBlizzardFCTExceptOutgoing()
+		else
+			self:SuppressBlizzardFCT()
+		end
     else
         -- If we are NOT suppressing, ensure the key CVars are on.
         -- Do not restore full backups here, since this runs repeatedly.

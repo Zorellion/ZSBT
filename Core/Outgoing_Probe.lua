@@ -233,6 +233,14 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
     if not ZSBT.db or not ZSBT.db.profile or not ZSBT.db.profile.outgoing then
         return
     end
+	local o = ZSBT.db.profile.outgoing
+	if o and o.useBlizzardFCTInstead == true then
+		-- Still allow capture/replay harness to record, but do not emit to ZSBT scroll areas.
+		if self._capturing then
+			PushEvent(evt)
+		end
+		return
+	end
 
     local prof = ZSBT.db.profile.outgoing
 
@@ -484,14 +492,28 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 		do
 			local show = true
 			local scChar = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-			local rule = scChar and scChar.spellRules and scChar.spellRules[1680]
+			local sr = scChar and scChar.spellRules
+			local sid = evt and evt.spellId
+			local rule = nil
+			if sr and (sid == 1680 or sid == 190411) then
+				rule = sr[sid] or sr[(sid == 1680) and 190411 or 1680]
+			else
+				rule = (sr and (sr[190411] or sr[1680])) or nil
+			end
 			local agg = rule and rule.aggregate
 			if type(agg) == "table" and type(agg.showCount) == "boolean" then
 				show = agg.showCount
 			end
 			local n = evt and tonumber(evt.wwCount)
 			if show and type(n) == "number" and n > 1 and ZSBT.IsSafeString(text) then
-				text = text .. " (x" .. tostring(math.floor(n + 0.5)) .. ")"
+				local suffix = " (x" .. tostring(math.floor(n + 0.5))
+				local c = evt and tonumber(evt.wwCritCount)
+				if type(c) == "number" and c >= 1 then
+					local label = (c == 1) and " crit" or " crits"
+					suffix = suffix .. ", " .. tostring(math.floor(c + 0.5)) .. label
+				end
+				suffix = suffix .. ")"
+				text = text .. suffix
 			end
 		end
 

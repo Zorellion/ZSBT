@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.18
+
+### Added
+- Outgoing: added a toggle to turn off ZSBT outgoing output and use Blizzard Floating Combat Text for outgoing damage while keeping incoming suppressed.
+- Slash commands: added `/zsbt dumpcvars` to print relevant Blizzard combat text CVars (including XP/world text scale probes).
+- Similar hits in spell rules now you can show DMG(x1, 1crit) 
+
+### Fixed
+- Whirlwind spell ID changed because of course it did. Updated. 
+- Blizzard Combat Text: fixed incoming heals leaking through when using Blizzard outgoing override by keeping CombatText routing suppressed while outgoing floating damage CVars are enabled.
+
+### Changed
+- Version metadata: updated addon version strings to stay consistent across `.toc` and UI surfaces.
+
 ## 1.2.17
 
 ### Added

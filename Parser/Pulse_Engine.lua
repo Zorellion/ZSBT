@@ -1025,6 +1025,7 @@ function Engine:flushBucket()
 					targetName = sample.targetName,
 					isCrit = sample.isCrit,
 					wwCount = sample.wwCount,
+					wwCritCount = sample.wwCritCount,
 					timestamp = sample.timestamp,
 					confidence = "HIGH",
 					isPeriodic = sample.isPeriodic == true,

@@ -669,19 +669,20 @@ function Addon:OnInitialize()
 		local psc = prof and prof.spamControl
 		local ww = psc and psc.whirlwindAggregate
 		if type(ww) == "table" then
-			local sid = 1680
 			local rules = self.db.char.spamControl.spellRules
-			rules[sid] = rules[sid] or { enabled = true }
-			local r = rules[sid]
-			r.aggregate = r.aggregate or {}
-			if type(ww.enabled) == "boolean" then
-				r.aggregate.enabled = ww.enabled
-			end
-			if ww.window ~= nil then
-				r.aggregate.windowSec = tonumber(ww.window) or r.aggregate.windowSec
-			end
-			if type(ww.showCount) == "boolean" then
-				r.aggregate.showCount = ww.showCount
+			for _, sid in ipairs({1680, 190411}) do
+				rules[sid] = rules[sid] or { enabled = true }
+				local r = rules[sid]
+				r.aggregate = r.aggregate or {}
+				if type(ww.enabled) == "boolean" then
+					r.aggregate.enabled = ww.enabled
+				end
+				if ww.window ~= nil then
+					r.aggregate.windowSec = tonumber(ww.window) or r.aggregate.windowSec
+				end
+				if type(ww.showCount) == "boolean" then
+					r.aggregate.showCount = ww.showCount
+				end
 			end
 		end
 
@@ -1239,15 +1240,67 @@ function Addon:HandleSlashCommand(input)
         end
         return
     elseif cmd == "restorefct" then
-		if ZSBT.Core and ZSBT.Core.RestoreBlizzardFCT then
-			ZSBT.Core:RestoreBlizzardFCT()
-			self:Print("Restored Blizzard Floating Combat Text settings.")
+        if ZSBT.Core and ZSBT.Core.RestoreBlizzardFCT then
+            ZSBT.Core:RestoreBlizzardFCT()
+            self:Print("Restored Blizzard Floating Combat Text settings.")
+        end
+        return
+    elseif cmd == "dumpcvars" then
+		local function safeGet(name)
+			if type(GetCVar) ~= "function" then return nil end
+			local ok, val = pcall(GetCVar, name)
+			if not ok then return nil end
+			return val
 		end
+		local function safeDefault(name)
+			if type(GetCVarDefault) ~= "function" then return nil end
+			local ok, val = pcall(GetCVarDefault, name)
+			if not ok then return nil end
+			return val
+		end
+		local function dump(name)
+			local v = safeGet(name)
+			local d = safeDefault(name)
+			if v == nil and d == nil then
+				self:Print(name .. "=<nil>")
+				return
+			end
+			if d ~= nil then
+				self:Print(name .. "=" .. tostring(v) .. " (def " .. tostring(d) .. ")")
+			else
+				self:Print(name .. "=" .. tostring(v))
+			end
+		end
+		self:Print("Blizzard Combat Text CVars:")
+		dump("enableFloatingCombatText")
+		dump("enableCombatText")
+		dump("floatingCombatTextCombatDamage")
+		dump("floatingCombatTextCombatDamage_v2")
+		dump("floatingCombatTextCombatDamageAllAutos")
+		dump("floatingCombatTextCombatDamageAllAutos_v2")
+		dump("floatingCombatTextCombatHealing")
+		dump("floatingCombatTextCombatHealing_v2")
+		dump("floatingCombatTextCombatXP")
+		dump("floatingCombatTextCombatXP_v2")
+		dump("fctCombatXP")
+		dump("fctCombatXP_v2")
+		dump("floatingCombatTextReactives")
+		dump("floatingCombatTextReactives_v2")
+		dump("CombatDamage")
+		dump("CombatHealing")
+		self:Print("World / XP text scale CVars:")
+		dump("WorldTextScale")
+		dump("WorldTextSize")
+		dump("worldTextScale")
+		dump("worldTextSize")
+		dump("chatBubblesTextSize")
+		dump("floatingCombatTextFloatMode")
+		dump("floatingCombatTextFloatMode_v2")
 		return
-    end
+	end
 
     self:Print("|cFF808C9EUnknown command:|r " .. cmd)
-	self:Print("|cFF00CC66Usage:|r /zsbt [minimap | debug 0-5 | reset | version | auratest | restorefct]")
+    self:Print("|cFF00CC66Usage:|r /zsbt [minimap | debug 0-5 | reset | version | auratest | restorefct | dumpcvars]")
 end
 
 ------------------------------------------------------------------------

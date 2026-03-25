@@ -172,6 +172,7 @@ ZSBT.DEFAULTS = {
         -- Tab 4: Outgoing
         ------------------------------------------------------------------------
         outgoing = {
+            useBlizzardFCTInstead = false,
             damage = {
                 enabled        = true,
                 scrollArea     = "Outgoing",

@@ -5,6 +5,16 @@ Outgoing controls what you see when you deal damage or healing.
 ## Where to configure
 - `/zsbt` -> `Outgoing`
 
+## Blizzard Floating Combat Text (Outgoing Only)
+If you prefer Blizzard's outgoing damage numbers above enemy heads, you can disable ZSBT outgoing output and let Blizzard handle outgoing damage.
+
+- Toggle: `Turn off ZSBT outgoing and use Blizzard FCT`
+- Location: `Outgoing` tab
+
+Notes:
+- This is designed to work with `General` -> `Suppress All Blizzard Combat Text` enabled, so Blizzard incoming combat text stays suppressed.
+- This toggle only affects outgoing output. ZSBT can still provide incoming text and notifications.
+
 ## Step-by-step setup
 - **Pick a scroll area**
   - Set `Outgoing Damage` -> `Scroll Area` to your `Outgoing` scroll area.

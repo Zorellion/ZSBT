@@ -860,7 +860,11 @@ local function AcquireFontString(parent)
         fs:SetParent(parent)
         fs:ClearAllPoints()
         fs:SetAlpha(1)
-        fs:SetText("")
+        local okFont, fontPath = pcall(fs.GetFont, fs)
+        if okFont and not fontPath and fs.SetFont then
+            pcall(fs.SetFont, fs, STANDARD_TEXT_FONT, 12, "")
+        end
+        pcall(fs.SetText, fs, "")
         fs:Show()
         return fs
     end
@@ -873,7 +877,11 @@ local function AcquireIconFS(parent)
         fs:SetParent(parent)
         fs:ClearAllPoints()
         fs:SetAlpha(1)
-        fs:SetText("")
+        local okFont, fontPath = pcall(fs.GetFont, fs)
+        if okFont and not fontPath and fs.SetFont then
+            pcall(fs.SetFont, fs, STANDARD_TEXT_FONT, 12, "")
+        end
+        pcall(fs.SetText, fs, "")
         fs:Show()
         return fs
     end
@@ -895,7 +903,11 @@ RecycleFontString = function(fs)
     if not fs then return end
     fs:Hide()
     fs:SetParent(recyclingBin)
-    fs:SetText("")
+    local okFont, fontPath = pcall(fs.GetFont, fs)
+    if okFont and not fontPath and fs.SetFont then
+        pcall(fs.SetFont, fs, STANDARD_TEXT_FONT, 12, "")
+    end
+    pcall(fs.SetText, fs, "")
     if #fontStringPool < MAX_POOL_SIZE then
         fontStringPool[#fontStringPool + 1] = fs
     end
@@ -905,7 +917,11 @@ RecycleIconFS = function(fs)
     if not fs then return end
     fs:Hide()
     fs:SetParent(recyclingBin)
-    fs:SetText("")
+    local okFont, fontPath = pcall(fs.GetFont, fs)
+    if okFont and not fontPath and fs.SetFont then
+        pcall(fs.SetFont, fs, STANDARD_TEXT_FONT, 12, "")
+    end
+    pcall(fs.SetText, fs, "")
     if #iconFSPool < MAX_POOL_SIZE then
         iconFSPool[#iconFSPool + 1] = fs
     end

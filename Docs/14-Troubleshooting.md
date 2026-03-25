@@ -95,6 +95,19 @@ These are common reports that can be expected behavior depending on settings and
 - ZSBT uses a default window size only when no saved window size exists.
 - If you previously resized the config window, that size should still be preserved.
 
+## Blizzard combat text leaking (incoming heals/damage)
+If you see Blizzard combat text (for example, incoming heals) while ZSBT is enabled:
+
+- Go to `/zsbt` -> `General` and enable `Suppress All Blizzard Combat Text`.
+- If you are using Blizzard outgoing numbers, enable `/zsbt` -> `Outgoing` -> `Turn off ZSBT outgoing and use Blizzard FCT`.
+- Use `/zsbt dumpcvars` to verify the Blizzard combat text CVars are set as expected.
+
+## Blizzard XP / world text size is too small
+If you previously changed CVars to reduce Blizzard XP/progress spam and your world text now looks too small:
+
+- Run `/zsbt dumpcvars` and check the "World / XP text scale CVars" section.
+- Restore the relevant CVar to its default value (shown in the dump output).
+
 ## Bug report
 If you think you found a real bug:
 

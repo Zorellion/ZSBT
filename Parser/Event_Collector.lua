@@ -270,6 +270,28 @@ local PENDING_CAST_MAX = 12
 Collector._recentPeriodicSpellAt = Collector._recentPeriodicSpellAt or {}
 local PERIODIC_OUTGOING_WINDOW_SEC = 30.0
 
+local isPlayerClassTag
+local isWhirlwindSpellId
+
+if type(_G.isPlayerClassTag) ~= "function" then
+	_G.isPlayerClassTag = function(tag)
+		if type(tag) ~= "string" or tag == "" then return false end
+		if type(UnitClass) ~= "function" then return false end
+		local ok, _, classTag = pcall(UnitClass, "player")
+		return ok and classTag == tag
+	end
+end
+
+isPlayerClassTag = _G.isPlayerClassTag
+
+if type(_G.isWhirlwindSpellId) ~= "function" then
+	_G.isWhirlwindSpellId = function(spellId)
+		return spellId == 1680 or spellId == 190411
+	end
+end
+
+isWhirlwindSpellId = _G.isWhirlwindSpellId
+
 local function getMostRecentPeriodicSpellId(self, tNow)
 	local m = self and self._recentPeriodicSpellAt
 	if type(m) ~= "table" then return nil end
@@ -296,9 +318,54 @@ local function hasTargetDebuffSpellId(spellId)
 			return true
 		end
 	end
+	local function SafeAuraSpellId(auraData)
+		if type(auraData) ~= "table" then return nil end
+		local sid = auraData.spellId or auraData.spellID
+		-- WoW 12.x can surface "secret" numeric values that are unsafe to compare
+		-- using ordering operators (>, <). Only type-check here.
+		return (type(sid) == "number") and sid or nil
+	end
+	if AuraUtil and AuraUtil.ForEachAura then
+		local found = false
+		pcall(function()
+			AuraUtil.ForEachAura("target", "HARMFUL", 255, function(auraData)
+				local sid = SafeAuraSpellId(auraData)
+				local okEq, eq = pcall(function() return sid == spellId end)
+				if okEq and eq then
+					found = true
+					return false
+				end
+				return true
+			end, true)
+		end)
+		if found then return true end
+	end
+	if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
+		local seen = 0
+		for i = 1, 255 do
+			local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, "target", i, "HARMFUL")
+			if not ok or not auraData then break end
+			seen = seen + 1
+			local sid = SafeAuraSpellId(auraData)
+			local okEq, eq = pcall(function() return sid == spellId end)
+			if okEq and eq then
+				return true
+			end
+		end
+	end
 	if UnitAura then
 		for i = 1, 40 do
 			local ok, _, _, _, _, _, _, _, _, sid = pcall(UnitAura, "target", i, "HARMFUL")
+			if not ok then break end
+			if not sid then break end
+			if sid == spellId then
+				return true
+			end
+		end
+	end
+	if UnitDebuff then
+		for i = 1, 40 do
+			local ok, _, _, _, _, _, _, _, _, sid = pcall(UnitDebuff, "target", i)
 			if not ok then break end
 			if not sid then break end
 			if sid == spellId then
@@ -411,8 +478,18 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 		self._lastPlayerSpellId = spellId
 		self._lastPlayerSpellName = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or nil
 		self._lastPlayerSpellAt = now()
+		if false and isPlayerClassTag("WARRIOR") and spellId == 772 then
+			self._rendLastCastAt = self._lastPlayerSpellAt
+			self._rendNextTickAt = self._lastPlayerSpellAt + 3.0
+			self._rendTickState = nil
+			self._rendInitialHitAmt = nil
+			local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+			if dl >= 4 then
+				ECPrint(("REND_CAST token=%s"):format(dbgSafe(self._castToken)))
+			end
+		end
 		local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
-		if dl >= 5 and spellId == 1680 then
+		if dl >= 5 and isWhirlwindSpellId(spellId) then
 			local tNow = now()
 			local lastRecv = Collector._dbgWWChatRecvAt or 0
 			local lastEmit = Collector._dbgWWChatEmitAt or 0
@@ -420,8 +497,8 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 			local emitCount = Collector._dbgWWChatEmitCount or 0
 			local recvAge = tNow - lastRecv
 			local emitAge = tNow - lastEmit
-			ECPrint(("WW_CAST token=%s chatRecvCount=%s chatEmitCount=%s lastChatRecvAge=%.3f lastChatEmitAge=%.3f")
-				:format(dbgSafe(self._castToken), dbgSafe(recvCount), dbgSafe(emitCount), recvAge, emitAge))
+			ECPrint(("WW_CAST token=%s spellId=%s chatRecvCount=%s chatEmitCount=%s lastChatRecvAge=%.3f lastChatEmitAge=%.3f")
+				:format(dbgSafe(self._castToken), dbgSafe(spellId), dbgSafe(recvCount), dbgSafe(emitCount), recvAge, emitAge))
 			if recvCount == 0 or recvAge > 30 then
 				ECPrint("WW_CAST DIAG: No addon-readable Whirlwind CHAT_MSG combat-log lines received recently; outgoing will rely on UNIT_COMBAT(target) fallback (icons may be missing).")
 			end
@@ -466,16 +543,52 @@ local function parseAmountFromChat(numText)
 	return n
 end
 
-local function wwAggEnabled()
+isPlayerClassTag = function(tag)
+	if type(tag) ~= "string" or tag == "" then return false end
+	if type(UnitClass) ~= "function" then return false end
+	local ok, _, classTag = pcall(UnitClass, "player")
+	return ok and classTag == tag
+end
+
+local function isWhirlwindSpellId(spellId)
+	return spellId == 1680 or spellId == 190411
+end
+
+local function wwSimilarHitsEnabled(spellId)
 	local scChar = ZSBT and ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-	local rule = scChar and scChar.spellRules and scChar.spellRules[1680]
+	local sr = scChar and scChar.spellRules
+	local rule = nil
+	if sr and (spellId == 1680 or spellId == 190411) then
+		rule = sr[spellId] or sr[(spellId == 1680) and 190411 or 1680]
+	else
+		rule = (sr and (sr[190411] or sr[1680])) or nil
+	end
+	local sh = rule and rule.similarHits
+	return type(sh) == "table" and sh.enabled == true
+end
+
+local function wwAggEnabled(spellId)
+	local scChar = ZSBT and ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+	local sr = scChar and scChar.spellRules
+	local rule = nil
+	if sr and (spellId == 1680 or spellId == 190411) then
+		rule = sr[spellId] or sr[(spellId == 1680) and 190411 or 1680]
+	else
+		rule = (sr and (sr[190411] or sr[1680])) or nil
+	end
 	local agg = rule and rule.aggregate
 	return type(agg) == "table" and agg.enabled == true
 end
 
-local function wwAggWindowSec()
+local function wwAggWindowSec(spellId)
 	local scChar = ZSBT and ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-	local rule = scChar and scChar.spellRules and scChar.spellRules[1680]
+	local sr = scChar and scChar.spellRules
+	local rule = nil
+	if sr and (spellId == 1680 or spellId == 190411) then
+		rule = sr[spellId] or sr[(spellId == 1680) and 190411 or 1680]
+	else
+		rule = (sr and (sr[190411] or sr[1680])) or nil
+	end
 	local agg = rule and rule.aggregate
 	local w = type(agg) == "table" and tonumber(agg.windowSec) or nil
 	if type(w) ~= "number" then return 0.35 end
@@ -489,25 +602,87 @@ local function wwAggFlush(self)
 	local st = self._wwAgg
 	if type(st) ~= "table" then return end
 	self._wwAgg = nil
+	self._wwAggChatToken = nil
+	self._wwAggChatAt = nil
 	if st.timer and st.timer.Cancel then
 		pcall(function() st.timer:Cancel() end)
 	end
 	local sum = st.sum
 	local cnt = st.count
+	local critCount = st.critCount
 	if type(sum) ~= "number" or sum <= 0 then return end
 	if type(cnt) ~= "number" or cnt <= 0 then cnt = 1 end
+	if type(critCount) ~= "number" or critCount < 0 then critCount = 0 end
 
 	emit("OUTGOING_DAMAGE_COMBAT", {
 		timestamp = st.t or now(),
 		amount = sum,
 		amountText = tostring(math.floor(sum + 0.5)),
-		spellId = 1680,
+		spellId = st.spellId or 190411,
 		amountSource = "UNIT_COMBAT_PHYSICAL",
 		targetName = st.targetName,
-		isCrit = st.isCrit == true,
+		isCrit = false,
 		schoolMask = 1,
 		wwCount = cnt,
+		wwCritCount = (st.similarHitsEnabled == true) and critCount or nil,
 	})
+end
+
+local function wwAggPush(self, t, spellId, amount, isCrit)
+	if not (self and ZSBT.IsSafeNumber(amount) and amount > 0) then return end
+	self._wwAgg = self._wwAgg or {}
+	local st = self._wwAgg
+	st.t = st.t or t
+	st.sum = (st.sum or 0) + amount
+	st.count = (st.count or 0) + 1
+	st.similarHitsEnabled = st.similarHitsEnabled or wwSimilarHitsEnabled(spellId)
+	if st.similarHitsEnabled == true then
+		-- Crit inference: prefer explicit crit flag when available. If unavailable on some
+		-- clients (UNIT_COMBAT may not flag crits), infer crit-like hits as ~2x the
+		-- smallest observed hit in this bucket.
+		local prevMin = (ZSBT.IsSafeNumber(st.minHit) and st.minHit > 0) and st.minHit or nil
+		st.minHit = prevMin and math.min(prevMin, amount) or amount
+		local critLike = (isCrit == true)
+		if critLike ~= true and prevMin and prevMin > 0 then
+			-- Use a conservative threshold to reduce false positives from off-hand variance.
+			if amount >= (prevMin * 1.75) and amount >= (prevMin + 250) then
+				critLike = true
+			end
+		end
+		if critLike == true and isCrit ~= true then
+			local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+			if dl >= 5 then
+				ECPrint(("WW_CRIT_INFER token=%s spellId=%s amt=%s prevMin=%s")
+					:format(dbgSafe(self._castToken), dbgSafe(spellId), dbgSafe(amount), dbgSafe(prevMin)))
+			end
+		end
+		if critLike == true then
+			st.critCount = (st.critCount or 0) + 1
+		else
+			st.critCount = st.critCount or 0
+		end
+	end
+	st.targetName = st.targetName or safeUnitName("target")
+	st.token = st.token or self._castToken
+	st.spellId = st.spellId or spellId
+	if st.timer and st.timer.Cancel then
+		pcall(function() st.timer:Cancel() end)
+	end
+	local win = wwAggWindowSec(spellId)
+	if C_Timer and C_Timer.NewTimer then
+		st.timer = C_Timer.NewTimer(win, function()
+			if Collector and Collector._wwAgg then
+				wwAggFlush(Collector)
+			end
+		end)
+	elseif C_Timer and C_Timer.After then
+		st.timer = nil
+		C_Timer.After(win, function()
+			if Collector and Collector._wwAgg then
+				wwAggFlush(Collector)
+			end
+		end)
+	end
 end
 
 local function dbgChatPush(self, row)
@@ -599,6 +774,12 @@ function Collector:handleChatSelfDamage(event, msg)
 		self._lastOutgoingFromTargetToken = token
 		self._lastCombatTextOutgoingToken = token
 		local isCrit = (msg:find("Critical", 1, true) ~= nil) or (msg:find("critical", 1, true) ~= nil)
+		if isWhirlwindSpellId(self._lastPlayerSpellId) and wwAggEnabled(self._lastPlayerSpellId) then
+			self._wwAggChatToken = token
+			self._wwAggChatAt = tNow
+			wwAggPush(self, tNow, self._lastPlayerSpellId, amount, isCrit)
+			return
+		end
 		self._lastOutgoingChatAt = tNow
 		self._lastOutgoingChatSpellId = self._lastPlayerSpellId
 		self._lastOutgoingChatAmount = amount
@@ -825,12 +1006,20 @@ function Collector:handleChatSelfDamage(event, msg)
 			:format(dbgSafe(token), dbgSafe(self._lastPlayerSpellId), dbgSafe(amount)))
 	end
 	local isCrit = (msg:find("Critical", 1, true) ~= nil) or (msg:find("critical", 1, true) ~= nil)
+	if isWhirlwindSpellId(self._lastPlayerSpellId) and wwAggEnabled(self._lastPlayerSpellId) then
+		-- If Whirlwind aggregation is enabled, funnel addon-readable chat hits into the
+		-- same aggregation bucket and suppress per-hit emits (prevents duplicates/crit routing).
+		self._wwAggChatToken = token
+		self._wwAggChatAt = tNow
+		wwAggPush(self, tNow, self._lastPlayerSpellId, amount, isCrit)
+		return
+	end
 	self._lastOutgoingChatAt = tNow
 	self._lastOutgoingChatSpellId = self._lastPlayerSpellId
 	self._lastOutgoingChatAmount = amount
 	self._recentOutgoingMax = math.max(self._recentOutgoingMax or 0, amount)
 	self._recentOutgoingMaxAt = tNow
-	if self._lastPlayerSpellId == 1680 then
+	if isWhirlwindSpellId(self._lastPlayerSpellId) then
 		Collector._dbgWWChatEmitAt = tNow
 		Collector._dbgWWChatEmitCount = (Collector._dbgWWChatEmitCount or 0) + 1
 	end
@@ -1381,8 +1570,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 
 	-- Detect crit from the descriptor arg.
 	local isCrit = false
-	if ZSBT.IsSafeString(descriptor) then
-		isCrit = (descriptor == "CRITICAL")
+	if type(descriptor) == "string" then
+		local d = descriptor
+		local u = d:upper()
+		if u:find("CRIT", 1, true) then
+			isCrit = true
+		end
 	end
 
 	-- PET: pet incoming damage / healing (UNIT_COMBAT("pet") reports events happening to the pet)
@@ -1751,6 +1944,169 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			if ZSBT.IsSafeNumber(amount) and amount > 0 and amount < 50 then
 				return
 			end
+			-- Rend (772) periodic ticks are physical WOUND events in 12.x and contain no spellId.
+			-- Warrior-only heuristic: after a recent Rend cast, emit tick-like wounds as periodic.
+			if false and isPlayerClassTag("WARRIOR") then
+				local rAt = self._rendLastCastAt
+				if type(rAt) == "number" then
+					local ageCast = t - rAt
+					if ageCast >= 0 and ageCast <= 24.0 and actionStr == "WOUND" and ZSBT.IsSafeNumber(amount) and amount > 0 then
+						local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+						local debuffOk = hasTargetDebuffSpellId(772)
+						local nextTickAt = self._rendNextTickAt
+						local isNearExpected = false
+						local dtNext = nil
+						if type(nextTickAt) == "number" then
+							dtNext = t - nextTickAt
+							-- Asymmetric window: allow being late (events can be delayed), but be
+							-- strict about being early to avoid seeding on pre-tick ability hits.
+							if dtNext >= -0.20 and dtNext <= 0.90 then
+								isNearExpected = true
+							end
+						end
+						if debuffOk ~= true and ageCast <= 0.25 and not self._rendInitialHitAmt then
+							if ZSBT.IsSafeNumber(amount) and amount > 0 then
+								self._rendInitialHitAmt = amount
+							end
+						end
+						local allowRendAttrib = true
+						if debuffOk ~= true then
+							if isPlayerAutoAttackActive() then
+								if dl >= 5 then
+									ECPrint(("REND_DEBUFF_MISS aa=1 ageCast=%.3f amt=%s"):format(ageCast, dbgSafe(amount)))
+								end
+								allowRendAttrib = false
+							end
+							if allowRendAttrib and dl >= 5 then
+								ECPrint(("REND_DEBUFF_MISS aa=0 ageCast=%.3f amt=%s"):format(ageCast, dbgSafe(amount)))
+							end
+							-- Do not disable Rend attribution just because we're not near the expected
+							-- tick time. Under heavy combat noise, nextTickAt can get out of sync;
+							-- we still want to track state so we can detect repeating tick patterns.
+						end
+						if allowRendAttrib ~= true then
+							-- Fall through to generic physical logic below.
+						else
+							local st = self._rendTickState
+							if type(st) ~= "table" then
+								st = { amt = nil, lastAt = 0, streak = 0, lastEmitAt = 0 }
+								self._rendTickState = st
+							end
+							if dl >= 5 then
+								ECPrint(("REND_CLASS ageCast=%.3f amt=%s next=%s near=%s debuffOk=%s aa=%s cand=%s streak=%s lastAt=%s")
+									:format(ageCast, dbgSafe(amount), dbgSafe(nextTickAt), dbgSafe(isNearExpected), dbgSafe(debuffOk), dbgSafe(isPlayerAutoAttackActive()), dbgSafe(st.amt), dbgSafe(st.streak), dbgSafe(st.lastAt)))
+							end
+							-- If we don't have a baseline tick candidate yet, seed it on the first
+							-- near-expected event. This prevents the tickLike window (based on dt)
+							-- from never starting due to lastAt=0.
+							local canSeed = (debuffOk ~= true and isNearExpected == true and (not dtNext or dtNext >= -0.20) and not (type(st.lastAt) == "number" and st.lastAt > 0))
+							if canSeed and ZSBT.IsSafeNumber(self._rendInitialHitAmt) and self._rendInitialHitAmt > 0 then
+								-- Require tick candidates to be much smaller than the application hit.
+								-- This is ratio-based and scales across level/gear.
+								if not (amount <= (self._rendInitialHitAmt * 0.25)) then
+									canSeed = false
+								end
+							end
+							if canSeed then
+								st.amt = amount
+								st.streak = 1
+								st.lastAt = t
+							end
+							local dt = t - (st.lastAt or 0)
+							local isSame = false
+							if ZSBT.IsSafeNumber(st.amt) and st.amt > 0 then
+								local diff = math.abs(amount - st.amt)
+								local tol = math.max(10, st.amt * 0.18)
+								if diff <= tol then isSame = true end
+							end
+							local tickLike = (dt >= 1.4 and dt <= 5.8)
+							-- Only update streak state on tick-like intervals; intervening non-tick-like
+							-- WOUND events are likely melee/other abilities and should not reset the
+							-- current tick candidate.
+							-- When the Rend debuff isn't confirmed, further require the hit to be near
+							-- the expected tick time; otherwise other abilities can constantly reset
+							-- the candidate amount.
+							local allowTickStateUpdate = tickLike
+							if dl >= 5 then
+								ECPrint(("REND_CLASS2 dt=%.3f tickLike=%s isSame=%s allowState=%s cand=%s streak=%s")
+									:format(dt, dbgSafe(tickLike), dbgSafe(isSame), dbgSafe(allowTickStateUpdate), dbgSafe(st.amt), dbgSafe(st.streak)))
+							end
+							if allowTickStateUpdate then
+								if isSame then
+									st.streak = (st.streak or 0) + 1
+								else
+									-- When debuff isn't confirmed, lock in the candidate amount once we
+									-- have a repeating streak to prevent other physical hits near the
+									-- tick window from hijacking the classifier.
+									if not (debuffOk ~= true and (st.streak or 0) >= 2) then
+										st.amt = amount
+										st.streak = 1
+									end
+								end
+								st.lastAt = t
+								-- If we have a repeating tick-like pattern, resync the expected tick clock
+								-- even if we didn't emit yet. This prevents nextTickAt from getting stuck
+								-- at cast+3 and missing later ticks under heavy combat noise.
+								if debuffOk ~= true and isSame == true and (st.streak or 0) >= 2 then
+									-- Typical Rend tick spacing is ~3s; use a tighter band here to avoid
+									-- latching onto unrelated repeating damage.
+									if dt >= 2.2 and dt <= 3.8 then
+										self._rendNextTickAt = t + 3.0
+									end
+								end
+							end
+							local firstTickLike = false
+							if debuffOk == true then
+								firstTickLike = (ageCast >= 1.8 and ageCast <= 6.5)
+							elseif isNearExpected == true then
+								firstTickLike = true
+							end
+							local canEmit = false
+							if debuffOk == true then
+								canEmit = (st.streak or 0) >= 2 or firstTickLike == true
+							else
+								-- Debuff not confirmed: emit only after a repeating tick pattern is
+								-- established. Prefer the expected tick time gate when available, but
+								-- also allow the emission when the spacing itself is strongly tick-like
+								-- (~3s) to recover when nextTickAt has drifted.
+								local streakOk = (st.streak or 0) >= 2
+								local spacingOk = (dt >= 2.2 and dt <= 3.8)
+								canEmit = streakOk and (isNearExpected == true or spacingOk == true)
+							end
+							if dl >= 5 then
+								ECPrint(("REND_DECIDE canEmit=%s streak=%s near=%s firstTickLike=%s")
+									:format(dbgSafe(canEmit), dbgSafe(st.streak), dbgSafe(isNearExpected), dbgSafe(firstTickLike)))
+							end
+							if canEmit then
+								local dtEmit = t - (st.lastEmitAt or 0)
+								if dtEmit < 0 or dtEmit > 0.80 then
+									st.lastEmitAt = t
+									local tName = safeUnitName("target")
+									emit("OUTGOING_DAMAGE_COMBAT", {
+										timestamp = t,
+										amount = amount,
+										amountText = tostring(amount),
+										spellId = 772,
+										amountSource = "UNIT_COMBAT_DOT",
+										targetName = tName,
+										isCrit = isCrit,
+										isPeriodic = true,
+										schoolMask = 1,
+									})
+									local dl2 = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+									if dl2 >= 5 then
+										ECPrint(("REND_EMIT ageCast=%.3f amt=%s cand=%s streak=%s near=%s debuffOk=%s")
+											:format(ageCast, dbgSafe(amount), dbgSafe(st.amt), dbgSafe(st.streak), dbgSafe(isNearExpected), dbgSafe(debuffOk)))
+									end
+									self._rendNextTickAt = t + 3.0
+									self._lastOutgoingCombatAt = t
+									self._lastOutgoingCombatTargetName = tName
+								end
+							end
+						end
+					end
+				end
+			end
 			-- Attempt to attribute physical hits to a recent cast (abilities like Shield Slam).
 			-- If no match exists, treat as auto-attack (no icon). If a pet exists, we require
 			-- a match to avoid mis-attributing pet melee.
@@ -1760,19 +2116,19 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				wantSpellId = self._lastPlayerSpellId
 			end
 			local wwRecent = false
-			if self._lastPlayerSpellId == 1680 and self._lastPlayerSpellAt then
+			if isWhirlwindSpellId(self._lastPlayerSpellId) and self._lastPlayerSpellAt then
 				local age = t - (self._lastPlayerSpellAt or 0)
 				if age >= 0 and age <= 0.85 then
 					wwRecent = true
 				end
 			end
 			if wwRecent and not wantSpellId then
-				wantSpellId = 1680
+				wantSpellId = self._lastPlayerSpellId
 			end
 			local doConsume = true
 			if restrict ~= true then
 				doConsume = true
-			elseif wantSpellId == 1680 then
+			elseif isWhirlwindSpellId(wantSpellId) then
 				local tok = self._castToken
 				local st = self._restrictPhysMulti
 				if type(st) ~= "table" or st.token ~= tok or st.spellId ~= wantSpellId or (t - (st.at or 0)) > 0.60 then
@@ -1788,8 +2144,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- Strict/restricted mode normally requires a pending-cast match. For Whirlwind,
 			-- the UNIT_COMBAT(target) stream can contain more hits than we can reliably
 			-- match; allow a short post-cast window to still attribute as Whirlwind.
-			if (not matchedCast) and wantSpellId == 1680 and wwRecent then
-				matchedCast = { spellId = 1680, eligibleIcon = true }
+			if (not matchedCast) and isWhirlwindSpellId(wantSpellId) and wwRecent then
+				matchedCast = { spellId = wantSpellId, eligibleIcon = true }
 			end
 			if restrict and (not matchedCast) and allowAutoFallback == true then
 				-- Last-resort: show an auto-attack-like hit even though UNIT_COMBAT(target)
@@ -1849,9 +2205,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 			-- Prevent Whirlwind multi-hit attribution from absorbing unrelated huge physical
 			-- spikes in restricted instances (follower/party melee has no source attribution).
-			if restrict == true and spellId == 1680 and ZSBT.IsSafeNumber(amount) then
+			if restrict == true and isWhirlwindSpellId(spellId) and ZSBT.IsSafeNumber(amount) then
 				local st = self._restrictPhysMulti
-				if type(st) == "table" and st.token == self._castToken and st.spellId == 1680 then
+				if type(st) == "table" and st.token == self._castToken and isWhirlwindSpellId(st.spellId) then
 					if not (ZSBT.IsSafeNumber(st.firstAmt) and st.firstAmt > 0) then
 						st.firstAmt = amount
 					else
@@ -1869,33 +2225,15 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				end
 				return
 			end
-			if spellId == 1680 and wwAggEnabled() then
-				self._wwAgg = self._wwAgg or {}
-				local st = self._wwAgg
-				st.t = st.t or t
-				st.sum = (st.sum or 0) + amount
-				st.count = (st.count or 0) + 1
-				st.isCrit = st.isCrit == true or isCrit == true
-				st.targetName = safeUnitName("target")
-				st.token = self._castToken
-				if st.timer and st.timer.Cancel then
-					pcall(function() st.timer:Cancel() end)
+			if isWhirlwindSpellId(spellId) and wwAggEnabled(spellId) then
+				-- If we are receiving addon-readable Whirlwind chat hits for this same cast,
+				-- do not double-count the UNIT_COMBAT stream.
+				local chatTok = self._wwAggChatToken
+				local chatAt = self._wwAggChatAt or 0
+				if chatTok == self._castToken and (t - chatAt) >= 0 and (t - chatAt) <= 1.25 then
+					return
 				end
-				local win = wwAggWindowSec()
-				if C_Timer and C_Timer.NewTimer then
-					st.timer = C_Timer.NewTimer(win, function()
-						if Collector and Collector._wwAgg then
-							wwAggFlush(Collector)
-						end
-					end)
-				elseif C_Timer and C_Timer.After then
-					st.timer = nil
-					C_Timer.After(win, function()
-						if Collector and Collector._wwAgg then
-							wwAggFlush(Collector)
-						end
-					end)
-				end
+				wwAggPush(self, t, spellId, amount, isCrit)
 				return
 			end
 			local pipeId = self._rawPipeCount + 1

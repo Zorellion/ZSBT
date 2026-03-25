@@ -1117,6 +1117,30 @@ function ZSBT.BuildSpellRuleEditorOptionsTable()
 					sc.spellRules[id].aggregate.showCount = v and true or false
 				end,
 			},
+			similarHitsEnabled = {
+				type = "toggle",
+				name = "Similar Hits (xN, crits)",
+				desc = "Optional: for multi-hit spells (e.g. Whirlwind), show (xN, 1 crit) on the aggregated line. Not enabled by default.",
+				order = 9.1,
+				width = "full",
+				hidden = function() return type(ZSBT._editingSpellRuleSpellID) ~= "number" end,
+				get = function()
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.spellRules and id and sc.spellRules[id]
+					local sh = r and r.similarHits
+					return type(sh) == "table" and sh.enabled == true
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingSpellRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.spellRules = sc.spellRules or {}
+					sc.spellRules[id] = sc.spellRules[id] or {}
+					sc.spellRules[id].similarHits = sc.spellRules[id].similarHits or {}
+					sc.spellRules[id].similarHits.enabled = v and true or false
+				end,
+			},
 			styleHeader = {
 				type = "header",
 				name = "Style Override",
@@ -2336,6 +2360,24 @@ If custom fonts or sounds don’t appear in dropdowns:
 - When registering, use the filename without extension.
 ]],
 
+	troubleshooting_blizzardCombatText = [[# Blizzard Combat Text
+
+## Incoming heals/damage showing from Blizzard
+If you see Blizzard combat text (for example, incoming heals) while ZSBT is enabled:
+
+- Enable `/zsbt` -> `General` -> `Suppress All Blizzard Combat Text`.
+- If you prefer Blizzard outgoing numbers above enemy heads, enable `/zsbt` -> `Outgoing` -> `Turn off ZSBT outgoing and use Blizzard FCT`.
+
+## Useful command
+- `/zsbt dumpcvars` prints the relevant Blizzard combat text CVars and defaults.
+
+## XP/world text size is too small
+If you previously changed CVars to reduce XP/progress spam and your world text now looks too small:
+
+- Run `/zsbt dumpcvars` and check the "World / XP text scale CVars" section.
+- Restore the relevant CVar to its default value (shown in the dump output).
+]],
+
 	troubleshooting_limits = [[# Limits (Expected)
 
 These are common reports that can be expected behavior depending on settings and what signals WoW provides:
@@ -2444,6 +2486,7 @@ local HELP_TOPICS = {
 			"troubleshooting_spam",
 			"troubleshooting_triggers",
 			"troubleshooting_media",
+			"troubleshooting_blizzardCombatText",
 			"troubleshooting_limits",
 			"troubleshooting_bug",
 		},
@@ -2453,6 +2496,7 @@ local HELP_TOPICS = {
 	troubleshooting_spam = { name = "Spam", docKey = "troubleshooting_spam" },
 	troubleshooting_triggers = { name = "Triggers/Cooldowns", docKey = "troubleshooting_triggers" },
 	troubleshooting_media = { name = "Custom Media", docKey = "troubleshooting_media" },
+	troubleshooting_blizzardCombatText = { name = "Blizzard Combat Text", docKey = "troubleshooting_blizzardCombatText" },
 	troubleshooting_limits = { name = "Limits", docKey = "troubleshooting_limits" },
 	troubleshooting_bug = { name = "Bug Report", docKey = "troubleshooting_bug" },
 }
