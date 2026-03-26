@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.20
+
+### Fixed
+- Outgoing (Warlock): improved reliability of Shadow Bolt / non-physical outgoing damage display in WoW 12.x Midnight by reducing over-filtering in the UNIT_COMBAT(target) fallback path.
+- Outgoing (Warlock): Drain Life periodic damage ticks now emit as outgoing damage events per tick for better visibility.
+- Pets: when pet outgoing is disabled, pet tracking is fully disabled (no pet raw-pipe consumption or pet debug spam).
+
+### Changed
+- Combat Text (Midnight): COMBAT_TEXT_UPDATE payload parsing now treats the spellId hint as optional and only trusts numeric values, improving compatibility across clients where payload slots vary.
+
 ## 1.2.19
 
 ### Fixed

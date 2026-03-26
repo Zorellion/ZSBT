@@ -310,6 +310,11 @@ local function getMostRecentPeriodicSpellId(self, tNow)
 	return bestId
 end
 
+local function arePetsEnabled()
+	local petConf = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.pets
+	return petConf and petConf.enabled == true
+end
+
 local function hasTargetDebuffSpellId(spellId)
 	if type(spellId) ~= "number" then return false end
 	if AuraUtil and AuraUtil.FindAuraBySpellId then
@@ -478,15 +483,13 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 		self._lastPlayerSpellId = spellId
 		self._lastPlayerSpellName = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or nil
 		self._lastPlayerSpellAt = now()
-		if false and isPlayerClassTag("WARRIOR") and spellId == 772 then
-			self._rendLastCastAt = self._lastPlayerSpellAt
-			self._rendNextTickAt = self._lastPlayerSpellAt + 3.0
-			self._rendTickState = nil
-			self._rendInitialHitAmt = nil
-			local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
-			if dl >= 4 then
-				ECPrint(("REND_CAST token=%s"):format(dbgSafe(self._castToken)))
-			end
+		if spellId == 234153 then
+			-- Drain Life is a channeled spell with periodic damage/heal ticks. The
+			-- UNIT_COMBAT(target) stream can deliver multiple non-physical WOUND events
+			-- during the channel; do not collapse these into a single "best" hit.
+			-- Track a short active window so we can emit each tick.
+			self._drainLifeUntil = now() + 6.0
+			self._drainLifeLastTickAt = 0
 		end
 		local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
 		if dl >= 5 and isWhirlwindSpellId(spellId) then
@@ -901,6 +904,9 @@ function Collector:handleChatSelfDamage(event, msg)
 		if dl >= 4 and ZSBT.Addon and ZSBT.Addon.Print then
 			ECPrint(("CHAT_OUT no match evt=%s msg=%s"):format(dbgSafe(event), dbgSafe(msg:sub(1, 160))))
 		end
+		if arePetsEnabled() ~= true then
+			return
+		end
 		-- Pet damage fallback:
 		-- 1) enUS: "Your pet hits X for N"
 		-- 2) Combat log tab: "<PetName> <Spell> hit <Target> <Amount> Physical. (Critical)"
@@ -1203,8 +1209,14 @@ function Collector:handleCombatTextUpdate(arg1)
 	-- Many combat text damage events include a spellId in the 2nd return value.
 	-- Use it as a strong hint for attribution when it is a safe number.
 	local ctSpellId = nil
-	if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(rawArg2) then
-		ctSpellId = rawArg2
+	if ZSBT.IsSafeNumber then
+		-- Some clients/builds may return the spellId in different slots depending on token.
+		-- Only trust values that are already safe numbers.
+		if ZSBT.IsSafeNumber(rawArg3) then
+			ctSpellId = rawArg3
+		elseif ZSBT.IsSafeNumber(rawArg2) then
+			ctSpellId = rawArg2
+		end
 	end
 
 	-- The amount is rawArg1 for most event types.
@@ -1600,6 +1612,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 
 	-- PET: pet incoming damage / healing (UNIT_COMBAT("pet") reports events happening to the pet)
 	if unit == "pet" then
+		if arePetsEnabled() ~= true then
+			return
+		end
 		local actionStr = ZSBT.IsSafeString(action) and action or nil
 		if actionStr == "HEAL" then
 			local numAmount = nil
@@ -1799,7 +1814,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		-- for pet hits. Also, UnitAffectingCombat("player") may be true during pet combat.
 		-- Heuristic: if pet is in combat and we have no recent player cast to attribute,
 		-- treat WOUND events on target as pet damage.
-		if actionStr == "WOUND" and UnitAffectingCombat and UnitExists then
+		if arePetsEnabled() == true and actionStr == "WOUND" and UnitAffectingCombat and UnitExists then
 			local okEx, hasPet = pcall(UnitExists, "pet")
 			if okEx and hasPet == true then
 				local okPet, inPetCombat = pcall(UnitAffectingCombat, "pet")
@@ -1808,6 +1823,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					if self._lastPlayerSpellAt then
 						local age = t - (self._lastPlayerSpellAt or 0)
 						local maxAge = (restrict == true) and 0.70 or 1.25
+						-- Non-physical spells (e.g. Shadow Bolt) can have longer travel times,
+						-- so allow a longer window before treating target WOUND events as pet damage.
+						if not (ZSBT.IsSafeNumber(school) and school == 1) then
+							maxAge = math.max(maxAge, 2.50)
+						end
 						if age >= 0 and age <= maxAge then
 							recentPlayerCast = true
 						end
@@ -2278,6 +2298,35 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		-- Merge window: multiple UNIT_COMBAT(target) hits can arrive per cast.
 		-- Keep only the largest amount in a short window to avoid showing tiny
 		-- proc/secondary values (the root cause of the "300-900 Shadow Bolt" bug).
+		-- Exception: channeled periodic spells like Drain Life should emit each tick.
+		if actionStr == "WOUND" and (not isPhysicalEarly) then
+			local dlUntil = self._drainLifeUntil
+			if type(dlUntil) == "number" and t <= dlUntil then
+				local wantSid = self._lastPlayerSpellId
+				if wantSid == 234153 then
+					local dtTick = t - (self._drainLifeLastTickAt or 0)
+					if dtTick >= 0.12 then
+						self._drainLifeLastTickAt = t
+						local pipeId = self._rawPipeCount + 1
+						self._rawPipeCount = pipeId
+						self._rawPipe[pipeId] = amount
+						self._lastOutgoingCombatAt = t
+						self._lastOutgoingCombatTargetName = safeUnitName("target")
+						emit("OUTGOING_DAMAGE_COMBAT", {
+							timestamp = t,
+							rawPipeId = pipeId,
+							spellId = 234153,
+							amountSource = "UNIT_COMBAT_DOT",
+							targetName = safeUnitName("target"),
+							isCrit = isCrit,
+							isPeriodic = true,
+							schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil,
+						})
+						return
+					end
+				end
+			end
+		end
 		local tokenKey = self._castToken
 		if not tokenKey then
 			-- If we somehow have no cast token, fall back to a time bucket.
@@ -2346,7 +2395,25 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 			matchedCast = consumeBestPendingCast(self, t, wantSpellId, castWindow)
 			if not matchedCast then
-				return
+				-- "Make it work" mode: if we cannot confidently attribute to a specific spell,
+				-- still show the outgoing number when it occurs shortly after the player's own cast.
+				-- This sacrifices icons/attribution but prevents outgoing going silent.
+				-- IMPORTANT: do NOT bypass strict/restricted/quiet modes (PvP strict, instance-aware,
+				-- or user-enabled strict outgoing). In those modes we require a real pending-cast match.
+				if restrict == true or quietMode == true then
+					return
+				end
+				local lastAt = self._lastPlayerSpellAt
+				if type(lastAt) == "number" then
+					local age = t - lastAt
+					if age >= 0 and age <= 1.25 then
+						matchedCast = { spellId = nil, eligibleIcon = false }
+					else
+						return
+					end
+				else
+					return
+				end
 			end
 		end
 
@@ -2357,11 +2424,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			spellId = (matchedCast.eligibleIcon == true) and matchedCast.spellId or nil
 		end
 
+		local schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil
+
 		-- Merge window: multiple UNIT_COMBAT(target) hits can arrive per cast.
 		-- Keep only the largest amount in a short window to avoid showing tiny
 		-- proc/secondary values (the root cause of the "300-900 Shadow Bolt" bug).
 		local token = tokenKey
-		local schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil
 		local targetName = safeUnitName("target")
 		local bucket = self._bestOutgoingByToken[token]
 		if not bucket then
@@ -2633,26 +2701,29 @@ function Collector:handleUnitHealth(unit)
 		})
 	-- Emit healing if health increased
 	elseif delta < 0 then
-		local healAmt = -delta
-		if healAmt > 50000 then
-			if dl >= 4 then
-				ECPrint(("HEALTH_HEAL_CLAMP unit=%s guid=%s old=%s new=%s max=%s amt=%s")
-					:format(dbgSafe(unit), dbgSafe(guid), dbgSafe(oldHealth), dbgSafe(health), dbgSafe(healthMax), dbgSafe(healAmt)))
-			end
-			self._lastHealth[unit] = health
-			return
-		end
+		-- Only track player self-healing via health deltas. Non-player healing deltas
+		-- (e.g. mouseover/target party members) are frequently caused by external
+		-- sources and can be misclassified as outgoing heals.
 		if unit == "player" then
+			local healAmt = -delta
+			if healAmt > 50000 then
+				if dl >= 4 then
+					ECPrint(("HEALTH_HEAL_CLAMP unit=%s guid=%s old=%s new=%s max=%s amt=%s")
+						:format(dbgSafe(unit), dbgSafe(guid), dbgSafe(oldHealth), dbgSafe(health), dbgSafe(healthMax), dbgSafe(healAmt)))
+				end
+				self._lastHealth[unit] = health
+				return
+			end
 			self._lastPlayerHealthHealAt = now()
+			emit("HEALTH_HEAL", {
+				timestamp = now(),
+				unit = unit,
+				amount = healAmt,
+				targetName = safeUnitName(unit),
+				health = health,
+				healthMax = healthMax,
+			})
 		end
-		emit("HEALTH_HEAL", {
-			timestamp = now(),
-			unit = unit,
-			amount = healAmt,
-			targetName = safeUnitName(unit),
-			health = health,
-			healthMax = healthMax,
-		})
 	end
 
 	-- Also emit general health change for correlation engine

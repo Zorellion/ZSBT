@@ -1,0 +1,14 @@
+tag d3a7ce328a40c77d7a1b7eb1560164da1790b555 v1.2.17
+Author:	Zorellion <260567275+Zorellion@users.noreply.github.com>
+Date:	Sun Mar 22 14:22:08 2026 -0500
+
+v1.2.17
+
+commit f93c41632187392b60cfbff6aad776d11758fdaa
+Author: Zorellion <260567275+Zorellion@users.noreply.github.com>
+Date:   Sun Mar 22 14:22:02 2026 -0500
+
+    Release 1.2.17
+    
+    Spell Rules: per-character storage, Whirlwind aggregation via spell rule, and per-spell style overrides (font/color).
+
