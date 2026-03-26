@@ -1042,6 +1042,12 @@ function ZSBT.BuildSpellRuleEditorOptionsTable()
 				name = "Aggregation",
 				order = 6,
 			},
+			aggCaveat = {
+				type = "description",
+				name = "Note (WoW 12.x Midnight): Aggregation only applies when ZSBT receives a valid SpellID for the outgoing event. Some combat sources do not provide a SpellID (events may show as spellId=nil / no icon), and those cannot be aggregated per-spell.",
+				order = 6.1,
+				fontSize = "medium",
+			},
 			aggEnabled = {
 				type = "toggle",
 				name = "Enable Aggregation",

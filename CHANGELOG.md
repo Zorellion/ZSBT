@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.21
+
+### Added
+- Outgoing (Spell Rules): generic per-spell aggregation now supports spell rules with aggregation enabled (not Whirlwind-specific).
+
+### Changed
+- Outgoing (Spell Rules): aggregation can now use open-world rawPipe numeric values as a fallback when evt.amount is unavailable, improving compatibility for some periodic/multi-hit spells.
+- Outgoing (Spell Rules): when Similar Hits is enabled, aggregated groups now split crits and non-crits into separate lines so crit styling/routing remains accurate.
+
 ## 1.2.20
 
 ### Fixed

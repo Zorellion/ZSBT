@@ -69,6 +69,142 @@ Probe._spellRuleLastAt = Probe._spellRuleLastAt or {}
 Probe._recentSpellStats = Probe._recentSpellStats or {}
 Probe._recentSpellMax = Probe._recentSpellMax or 60
 
+Probe._spellAgg = Probe._spellAgg or {}
+
+local function isWhirlwindSpellId(spellId)
+	return spellId == 1680 or spellId == 190411
+end
+
+local function deepCopyTableShallow(t)
+	if type(t) ~= "table" then return t end
+	local o = {}
+	for k, v in pairs(t) do o[k] = v end
+	return o
+end
+
+local function aggWindowFromRule(rule)
+	local agg = rule and rule.aggregate
+	if type(agg) ~= "table" or agg.enabled ~= true then return nil end
+	local w = tonumber(agg.windowSec)
+	if type(w) ~= "number" or w <= 0 then w = 0.60 end
+	if w < 0.10 then w = 0.10 end
+	if w > 1.25 then w = 1.25 end
+	return w
+end
+
+local function aggShowCountFromRule(rule)
+	local agg = rule and rule.aggregate
+	if type(agg) ~= "table" or agg.enabled ~= true then return false end
+	if type(agg.showCount) == "boolean" then
+		return agg.showCount
+	end
+	return true
+end
+
+local function startOrPushSpellAgg(self, spellId, rule, evt, amountNumber)
+	if not (self and type(spellId) == "number" and type(rule) == "table" and type(evt) == "table") then return false end
+	local win = aggWindowFromRule(rule)
+	if not win then return false end
+	if type(amountNumber) ~= "number" then return false end
+	local t = Now()
+	self._spellAgg = self._spellAgg or {}
+	local st = self._spellAgg
+	local b = st[spellId]
+	if not b or type(b) ~= "table" or type(b.firstAt) ~= "number" or (t - b.firstAt) > win then
+		local isCrit = evt.isCrit == true
+		b = {
+			firstAt = t,
+			lastAt = t,
+			count = 1,
+			sum = amountNumber,
+			critCount = isCrit and 1 or 0,
+			sumCrit = isCrit and amountNumber or 0,
+			sumNonCrit = isCrit and 0 or amountNumber,
+			countCrit = isCrit and 1 or 0,
+			countNonCrit = isCrit and 0 or 1,
+			base = deepCopyTableShallow(evt),
+			timer = nil,
+		}
+		b.base.rawPipeId = nil
+		st[spellId] = b
+		if C_Timer and C_Timer.NewTimer then
+			b.timer = C_Timer.NewTimer(win, function()
+				local bb = st[spellId]
+				if type(bb) ~= "table" then return end
+				st[spellId] = nil
+				local nonN = tonumber(bb.countNonCrit) or 0
+				local critN = tonumber(bb.countCrit) or 0
+				if nonN > 0 then
+					local outEvt = deepCopyTableShallow(bb.base)
+					outEvt.amount = tonumber(bb.sumNonCrit) or 0
+					outEvt.isCrit = false
+					outEvt._zsbtAggSkip = true
+					outEvt.aggCount = nonN
+					outEvt.aggCritCount = (critN > 0) and critN or nil
+					outEvt.rawPipeId = nil
+					self:ProcessOutgoingEvent(outEvt, false)
+				end
+				if critN > 0 then
+					local outEvt = deepCopyTableShallow(bb.base)
+					outEvt.amount = tonumber(bb.sumCrit) or 0
+					outEvt.isCrit = true
+					outEvt._zsbtAggSkip = true
+					outEvt.aggCount = critN
+					outEvt.aggCritCount = nil
+					outEvt.rawPipeId = nil
+					self:ProcessOutgoingEvent(outEvt, false)
+				end
+			end)
+		elseif C_Timer and C_Timer.After then
+			C_Timer.After(win, function()
+				local bb = st[spellId]
+				if type(bb) ~= "table" then return end
+				st[spellId] = nil
+				local nonN = tonumber(bb.countNonCrit) or 0
+				local critN = tonumber(bb.countCrit) or 0
+				if nonN > 0 then
+					local outEvt = deepCopyTableShallow(bb.base)
+					outEvt.amount = tonumber(bb.sumNonCrit) or 0
+					outEvt.isCrit = false
+					outEvt._zsbtAggSkip = true
+					outEvt.aggCount = nonN
+					outEvt.aggCritCount = (critN > 0) and critN or nil
+					outEvt.rawPipeId = nil
+					self:ProcessOutgoingEvent(outEvt, false)
+				end
+				if critN > 0 then
+					local outEvt = deepCopyTableShallow(bb.base)
+					outEvt.amount = tonumber(bb.sumCrit) or 0
+					outEvt.isCrit = true
+					outEvt._zsbtAggSkip = true
+					outEvt.aggCount = critN
+					outEvt.aggCritCount = nil
+					outEvt.rawPipeId = nil
+					self:ProcessOutgoingEvent(outEvt, false)
+				end
+			end)
+		end
+		return true
+	end
+
+	b.lastAt = t
+	b.count = (b.count or 0) + 1
+	b.sum = (b.sum or 0) + amountNumber
+	local isCrit = evt.isCrit == true
+	b.critCount = (b.critCount or 0) + (isCrit and 1 or 0)
+	b.sumCrit = (b.sumCrit or 0) + (isCrit and amountNumber or 0)
+	b.sumNonCrit = (b.sumNonCrit or 0) + ((not isCrit) and amountNumber or 0)
+	b.countCrit = (b.countCrit or 0) + (isCrit and 1 or 0)
+	b.countNonCrit = (b.countNonCrit or 0) + ((not isCrit) and 1 or 0)
+	if type(evt.targetName) == "string" and evt.targetName ~= "" then
+		b.base.targetName = evt.targetName
+	end
+	if type(evt.schoolMask) == "number" then
+		b.base.schoolMask = evt.schoolMask
+	end
+	return true
+end
+
 local function PushEvent(evt)
     Probe._bufHead = (Probe._bufHead % Probe._maxBuffer) + 1
     Probe._buffer[Probe._bufHead] = evt
@@ -404,15 +540,39 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			rule = sr[resolvedSpellID]
 			if type(rule) == "table" and rule.enabled ~= false then
 				ruleArea = (type(rule.scrollArea) == "string" and rule.scrollArea ~= "") and rule.scrollArea or nil
-				local throttleSec = tonumber(rule.throttleSec) or 0
-				if throttleSec > 0 then
-					local t = Now()
-					local last = self._spellRuleLastAt[resolvedSpellID]
-					if last and (t - last) < throttleSec then
-						return
+			end
+		end
+
+		if evt and evt._zsbtAggSkip ~= true and type(resolvedSpellID) == "number" and type(rule) == "table" and rule.enabled ~= false then
+			local wwRuleExists = (sr and (type(sr[1680]) == "table" or type(sr[190411]) == "table")) and true or false
+			if not (wwRuleExists and isWhirlwindSpellId(resolvedSpellID)) then
+				local aggWin = aggWindowFromRule(rule)
+				if aggWin then
+					local amt = nil
+					if ZSBT.IsSafeNumber(evt.amount) then
+						amt = evt.amount
+					elseif rawPipeValue ~= nil and ZSBT.IsSafeNumber(rawPipeValue) then
+						-- Some open-world outgoing values are carried via rawPipe even when evt.amount is nil.
+						amt = rawPipeValue
 					end
-					self._spellRuleLastAt[resolvedSpellID] = t
+					if type(amt) == "number" and amt > 0 then
+						if startOrPushSpellAgg(self, resolvedSpellID, rule, evt, amt) then
+							return
+						end
+					end
 				end
+			end
+		end
+
+		if type(rule) == "table" and rule.enabled ~= false and type(resolvedSpellID) == "number" then
+			local throttleSec = tonumber(rule.throttleSec) or 0
+			if throttleSec > 0 then
+				local t = Now()
+				local last = self._spellRuleLastAt[resolvedSpellID]
+				if last and (t - last) < throttleSec then
+					return
+				end
+				self._spellRuleLastAt[resolvedSpellID] = t
 			end
 		end
 
@@ -514,6 +674,29 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				end
 				suffix = suffix .. ")"
 				text = text .. suffix
+			end
+		end
+
+		-- Generic per-spell aggregation (spell rule): append (xN) marker.
+		if evt and evt.aggCount and type(resolvedSpellID) == "number" and type(rule) == "table" and ZSBT.IsSafeString(text) then
+			local sr2 = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl and ZSBT.db.char.spamControl.spellRules
+			local wwRuleExists = (sr2 and (type(sr2[1680]) == "table" or type(sr2[190411]) == "table")) and true or false
+			if not (wwRuleExists and isWhirlwindSpellId(resolvedSpellID)) then
+				local show = aggShowCountFromRule(rule)
+				local n = tonumber(evt.aggCount)
+				if show and type(n) == "number" and n > 1 then
+					local suffix = " (x" .. tostring(math.floor(n + 0.5))
+					local sh = rule and rule.similarHits
+					if type(sh) == "table" and sh.enabled == true then
+						local c = tonumber(evt.aggCritCount)
+						if type(c) == "number" and c >= 1 then
+							local label = (c == 1) and " crit" or " crits"
+							suffix = suffix .. ", " .. tostring(math.floor(c + 0.5)) .. label
+						end
+					end
+					suffix = suffix .. ")"
+					text = text .. suffix
+				end
 			end
 		end
 
