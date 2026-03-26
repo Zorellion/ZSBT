@@ -86,10 +86,22 @@ local function ApplyCooldownToFrame(spellId)
 
     if C_Spell and C_Spell.GetSpellCooldown then
         local info = C_Spell.GetSpellCooldown(spellId)
-        if info and info.startTime and info.duration then
-            cd:SetCooldown(info.startTime, info.duration)
+        local start = info and info.startTime
+        local dur = info and info.duration
+        local modRate = info and info.modRate
+
+        if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(start) and ZSBT.IsSafeNumber(dur) and start and dur then
+            if ZSBT.IsSafeNumber(modRate) and modRate then
+                cd:SetCooldown(start, dur, modRate)
+            else
+                cd:SetCooldown(start, dur)
+            end
             CdDebug("  Applied CD to frame for " .. spellId)
             return true
+        end
+
+        if cd.Clear then
+            cd:Clear()
         end
     end
 

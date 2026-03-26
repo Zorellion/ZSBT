@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.22
+
+### Fixed
+- Profiles: fixed ZSBT preset profile actions appearing in other addons' AceDBOptions "Profiles" tabs by isolating (cloning/wrapping) the AceDBOptions profiles options table before customization.
+- Cooldowns: prevented errors in cooldown tracking (e.g. Taunt) by avoiding passing secret/tainted values into `Cooldown:SetCooldown`.
+
 ## 1.2.21
 
 ### Added

@@ -933,39 +933,94 @@ function Addon:OnInitialize()
     -- Register slash commands
     self:RegisterChatCommand("zsbt", "HandleSlashCommand")
 
-    -- Build and register Ace3 options table (assembled in Config.lua)
-    if ZSBT.BuildOptionsTable then
-        local options = ZSBT.BuildOptionsTable()
+	    -- Build and register Ace3 options table (assembled in Config.lua)
+	    if ZSBT.BuildOptionsTable then
+	        local options = ZSBT.BuildOptionsTable()
 
-        		-- Inject the AceDBOptions-3.0 profiles tab into the options tree
-		local AceDBOptions = LibStub("AceDBOptions-3.0", true)
-		if AceDBOptions then
-			-- Request the profiles options table without AceDBOptions' built-in
-			-- "common" suggestions (realm/class/char/Default). We only want to show
-			-- real saved profiles the user has actually created.
-			local profilesTable = AceDBOptions:GetOptionsTable(self.db, true)
-			-- Prevent deleting the Default profile from the Profiles tab.
-			-- AceDB itself already blocks deleting the active profile, but we also
-			-- explicitly protect the "Default" profile.
-			if profilesTable and profilesTable.handler and profilesTable.args then
-				local addon = self
-				local handler = profilesTable.handler
-				local oldDeleteProfile = handler.DeleteProfile
-				handler.DeleteProfile = function(h, info, value)
-					if value == "Default" then
-						return
+	        		-- Inject the AceDBOptions-3.0 profiles tab into the options tree
+			local AceDBOptions = LibStub("AceDBOptions-3.0", true)
+			if AceDBOptions then
+				local function deepCopyTable(src, seen)
+					if type(src) ~= "table" then return src end
+					seen = seen or {}
+					if seen[src] then return seen[src] end
+					local dst = {}
+					seen[src] = dst
+					for k, v in pairs(src) do
+						dst[deepCopyTable(k, seen)] = deepCopyTable(v, seen)
 					end
-					if oldDeleteProfile then
-						return oldDeleteProfile(h, info, value)
+					local mt = getmetatable(src)
+					if mt ~= nil then
+						setmetatable(dst, mt)
+					end
+					return dst
+				end
+				local function wrapHandler(handler)
+					if type(handler) ~= "table" then return handler end
+					local h = {}
+					setmetatable(h, { __index = handler })
+					h.DeleteProfile = function(selfH, info, value)
+						if value == "Default" then
+							return
+						end
+						if type(handler.DeleteProfile) == "function" then
+							return handler.DeleteProfile(handler, info, value)
+						end
+					end
+					return h
+				end
+				local function cloneProfilesTable(t)
+					local copy = deepCopyTable(t)
+					if copy and copy.handler then
+						copy.handler = wrapHandler(copy.handler)
+					end
+					return copy
+				end
+				local function safeGetProfilesTable(db)
+					local ok, t = pcall(AceDBOptions.GetOptionsTable, AceDBOptions, db, true)
+					if not ok then return nil end
+					return cloneProfilesTable(t)
+				end
+				local function safeListProfiles(handler, info)
+					if not handler or type(handler.ListProfiles) ~= "function" then return nil end
+					local ok, t = pcall(handler.ListProfiles, handler, info)
+					if ok and type(t) == "table" then return t end
+					return nil
+				end
+				local function safeSetChooseArg(tbl)
+					local chooseOpt = tbl and tbl.args and tbl.args.choose
+					if chooseOpt then
+						chooseOpt.arg = "nocurrent"
 					end
 				end
-
-				profilesTable.args.zsbtPresetProfiles = {
-					type = "group",
-					name = "Preset Profiles",
-					order = 999,
-					inline = true,
-					args = {
+				local function safeRestrictDeleteDefault(tbl)
+					local deleteOpt = tbl and tbl.args and tbl.args.delete
+					if deleteOpt then
+						deleteOpt.values = function(info)
+							local profiles = safeListProfiles(info and info.handler, info)
+							if type(profiles) == "table" then
+								profiles["Default"] = nil
+							end
+							return profiles
+						end
+						deleteOpt.disabled = function(info)
+							local profiles = info and info.option and info.option.values and info.option.values(info)
+							return (type(profiles) ~= "table") or (not next(profiles))
+						end
+					end
+				end
+				-- Request the profiles options table without AceDBOptions' built-in
+				-- "common" suggestions (realm/class/char/Default). We only want to show
+				-- real saved profiles the user has actually created.
+				local profilesTable = safeGetProfilesTable(self.db)
+				if profilesTable and profilesTable.handler and profilesTable.args then
+					local addon = self
+					profilesTable.args.zsbtPresetProfiles = {
+						type = "group",
+						name = "Preset Profiles",
+						order = 999,
+						inline = true,
+						args = {
 						desc = {
 							type = "description",
 							name = "Restore shipped preset profiles (layouts) to their defaults. This only modifies the preset profile itself and does not change which profile you currently have selected.",
@@ -1035,29 +1090,12 @@ function Addon:OnInitialize()
 					},
 				}
 
-				local chooseOpt = profilesTable.args.choose
-				if chooseOpt then
-					chooseOpt.arg = "nocurrent"
-				end
-
-				local deleteOpt = profilesTable.args.delete
-				if deleteOpt then
-					deleteOpt.values = function(info)
-						local profiles = info.handler:ListProfiles(info)
-						if type(profiles) == "table" then
-							profiles["Default"] = nil
-						end
-						return profiles
-					end
-					deleteOpt.disabled = function(info)
-						local profiles = info.option.values(info)
-						return (type(profiles) ~= "table") or (not next(profiles))
-					end
-				end
+				safeSetChooseArg(profilesTable)
+				safeRestrictDeleteDefault(profilesTable)
+				profilesTable.order = 100
+				profilesTable.name = "|cFFFFD100DB Profiles|r"
+				options.args.acedbProfiles = profilesTable
 			end
-			profilesTable.order = 100
-			profilesTable.name = "|cFFFFD100DB Profiles|r"
-			options.args.acedbProfiles = profilesTable
 		end
         LibStub("AceConfig-3.0"):RegisterOptionsTable("ZSBT", options)
         self.configDialog = LibStub("AceConfigDialog-3.0")
