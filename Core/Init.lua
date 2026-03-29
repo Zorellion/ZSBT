@@ -940,8 +940,13 @@ function Addon:OnInitialize()
 	        		-- Inject the AceDBOptions-3.0 profiles tab into the options tree
 			local AceDBOptions = LibStub("AceDBOptions-3.0", true)
 			if AceDBOptions then
+				local mainDb = self.db
 				local function deepCopyTable(src, seen)
 					if type(src) ~= "table" then return src end
+					-- IMPORTANT: Never deep-copy the AceDB database object.
+					-- If we clone it, the Profiles UI would operate on a detached copy and
+					-- newly created profiles would not persist to SavedVariables.
+					if src == mainDb then return src end
 					seen = seen or {}
 					if seen[src] then return seen[src] end
 					local dst = {}

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.1
+
+### Fixed
+- Profiles: fixed newly created profiles not persisting between sessions (profiles created via the Profiles UI now save correctly and remain after relog).
+
 ## 2.0.0
 
 ### Added
