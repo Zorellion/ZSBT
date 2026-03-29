@@ -1436,13 +1436,30 @@ function ZSBT.TestScrollAreaCrit(areaName)
     end
 end
 
-local function BuildCritMeta()
+local function BuildCritMeta(stream)
 	local critMeta = { isCrit = true }
+	if type(stream) == "string" and stream ~= "" then
+		critMeta.stream = stream
+	end
 	local profile = ZSBT.db and ZSBT.db.profile
-	if profile and profile.general and profile.general.critFont then
-		local critConf = profile.general.critFont
-		local general = (profile.general and profile.general.font) or {}
-		local faceKey = critConf.face or general.face or "Friz Quadrata TT"
+	local general = profile and profile.general
+	local masterFont = (general and general.font) or {}
+
+	local critConf = general and general.critFont or nil
+	if stream == "incoming" and profile and type(profile.incoming) == "table" then
+		local ic = profile.incoming.critFont
+		if type(ic) == "table" and ic.enabled == true then
+			critConf = ic
+		end
+	elseif stream == "outgoing" and profile and type(profile.outgoing) == "table" then
+		local oc = profile.outgoing.critFont
+		if type(oc) == "table" and oc.enabled == true then
+			critConf = oc
+		end
+	end
+
+	if critConf then
+		local faceKey = critConf.face or masterFont.face or "Friz Quadrata TT"
 		local LSM = LibStub("LibSharedMedia-3.0", true)
 		if LSM and faceKey then
 			local fetched = LSM:Fetch("font", faceKey)
@@ -1463,6 +1480,7 @@ local function BuildCritMeta()
 		critMeta.critScale = 1.5
 		critMeta.critAnim = "Pow"
 	end
+
 	return critMeta
 end
 
@@ -1484,7 +1502,7 @@ function ZSBT.TestIncomingHealCrit()
 	local anchorH = ({["Left"] = "LEFT", ["Center"] = "CENTER", ["Right"] = "RIGHT"})[area.alignment] or "CENTER"
 	local dirMult = (area.direction == "Down") and -1 or 1
 	local duration = 2.0 / (area.animSpeed or 1.0)
-	local critMeta = BuildCritMeta()
+	local critMeta = BuildCritMeta("incoming")
 	local color = {r = 0.20, g = 1.00, b = 0.40}
 	ZSBT.FireTestText("*+7,777*", area, fontFace, fontSize, outlineFlag, fontAlpha, anchorH, dirMult, duration, color, critMeta)
 end
@@ -1507,7 +1525,7 @@ function ZSBT.TestIncomingDamageCrit()
 	local anchorH = ({["Left"] = "LEFT", ["Center"] = "CENTER", ["Right"] = "RIGHT"})[area.alignment] or "CENTER"
 	local dirMult = (area.direction == "Down") and -1 or 1
 	local duration = 2.0 / (area.animSpeed or 1.0)
-	local critMeta = BuildCritMeta()
+	local critMeta = BuildCritMeta("incoming")
 	local color = {r = 1.00, g = 1.00, b = 0.00}
 	ZSBT.FireTestText("*9,999*", area, fontFace, fontSize, outlineFlag, fontAlpha, anchorH, dirMult, duration, color, critMeta)
 end

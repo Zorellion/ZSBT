@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.0.0
+
+### Added
+- Incoming/Outgoing: added split critical hit configuration blocks per stream and kind:
+  - Incoming Crit Damage
+  - Incoming Crit Heals
+  - Outgoing Crit Damage
+  - Outgoing Crit Heals
+- Incoming/Outgoing: added per-stream + per-kind crit font override controls embedded directly in each crit block.
+
+### Changed
+- Incoming UI: moved Incoming "Color Settings" to the top of Incoming Damage for a more streamlined layout.
+- Crits UI: consolidated crit configuration into the new split blocks and removed standalone crit font override sections from view.
+- Incoming UI: hid legacy per-category incoming "Crit Scroll Area (optional)" dropdowns to avoid duplicate routing controls (runtime fallback remains).
+- Help/Support: renamed the config tab label from "Maintenance" to "Help and Support".
+
+### Fixed
+- Outgoing: improved outgoing crit detection from combat log chat messages (detects "crits" / "critically" / "critical").
+- Display: fixed a nil indexing error in crit font resolution (`ResolveCritFont`) when resolving outgoing crit fonts.
+- UI: fixed crit font override gating so dependent controls (face/size/etc.) are hidden unless the override toggle is enabled.
+- UI (Spam Control / Rules Managers): fixed inconsistent window title coloring and prevented custom button skinning so buttons remain Blizzard-style.
+
 ## 1.2.22
 
 ### Fixed

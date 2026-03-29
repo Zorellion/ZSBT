@@ -112,8 +112,8 @@ function ZSBT.BuildTab_Triggers()
 			},
 			restoreUT = {
 				type = "execute",
-				name = "Restore UT Announcer Presets",
-				desc = "Re-adds the shipped UT_KILL_1..UT_KILL_7 triggers (merge-only).",
+				name = "Setup UT Announcer Triggers",
+				desc = "Adds the shipped UT_KILL_1..UT_KILL_7 triggers (merge-only).",
 				order = 3.5,
 				width = "full",
 				func = function()
@@ -1431,14 +1431,376 @@ end
 
 
 ------------------------------------------------------------------------
+-- TAB 0: QUICK START
+-- Setup-first tab with the most common controls and actions.
+------------------------------------------------------------------------
+function ZSBT.BuildTab_QuickStart()
+	local function general()
+		return ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+	end
+
+	local function core()
+		return ZSBT and ZSBT.Core or nil
+	end
+
+	local function notify()
+		local reg = LibStub and LibStub("AceConfigRegistry-3.0", true)
+		if reg and reg.NotifyChange then
+			reg:NotifyChange("ZSBT")
+		end
+	end
+
+	local function toggleUnlock()
+		if ZSBT and ZSBT.IsScrollAreasUnlocked and ZSBT.IsScrollAreasUnlocked() then
+			if ZSBT.HideScrollAreaFrames then ZSBT.HideScrollAreaFrames() end
+			return
+		end
+		if ZSBT and ZSBT.ShowScrollAreaFrames then ZSBT.ShowScrollAreaFrames() end
+	end
+
+	local function testNotifications()
+		if ZSBT and ZSBT.TestScrollArea then
+			ZSBT.TestScrollArea("Notifications")
+		end
+	end
+
+	local function testIncoming()
+		if ZSBT and ZSBT.TestIncomingDamageCrit then
+			ZSBT.TestIncomingDamageCrit()
+		end
+		if ZSBT and ZSBT.TestIncomingHealCrit then
+			ZSBT.TestIncomingHealCrit()
+		end
+	end
+
+	local function testOutgoing()
+		if not (ZSBT and ZSBT.TestScrollAreaCrit) then return end
+		local areaToTest = "Outgoing"
+		local oc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.outgoing and ZSBT.db.profile.outgoing.crits
+		if oc and oc.enabled == true and type(oc.scrollArea) == "string" and oc.scrollArea ~= "" then
+			areaToTest = oc.scrollArea
+		end
+		ZSBT.TestScrollAreaCrit(areaToTest)
+	end
+
+	return {
+		type  = "group",
+		name  = "|cFFFFD100Quick Start|r",
+		order = 0.5,
+		args  = {
+			header = { type = "header", name = "Quick Start", order = 1 },
+			desc = {
+				type = "description",
+				name = "Get ZSBT working quickly: enable output, place scroll areas, and test.",
+				order = 2,
+				fontSize = "medium",
+			},
+
+			masterHeader = { type = "header", name = "Master Controls", order = 10 },
+			enabled = {
+				type = "toggle",
+				name = "Enable ZSBT",
+				desc = "Master switch to enable or disable all ZSBT output.",
+				width = "full",
+				order = 11,
+				get = function()
+					local g = general(); return g and g.enabled == true
+				end,
+				set = function(_, v)
+					local g = general(); if not g then return end
+					g.enabled = v and true or false
+					local c = core(); if c and c.SetEnabled then c:SetEnabled(g.enabled == true) end
+					notify()
+				end,
+			},
+			combatOnly = {
+				type = "toggle",
+				name = "Combat Only Mode",
+				desc = "Only display ZSBT output while you are in combat.",
+				width = "full",
+				order = 12,
+				get = function()
+					local g = general(); return g and g.combatOnly == true
+				end,
+				set = function(_, v)
+					local g = general(); if not g then return end
+					g.combatOnly = v and true or false
+					notify()
+				end,
+			},
+
+			blizzardHeader = { type = "header", name = "Blizzard Combat Text", order = 20 },
+			suppressBlizzardFCT = {
+				type = "toggle",
+				name = "Suppress All Blizzard Combat Text",
+				desc = "Disable Blizzard's floating combat text (incoming) and outgoing damage/crit numbers above enemy heads. ZSBT replaces them.\n\nThis setting modifies Blizzard CVars, which persist even if you disable or uninstall ZSBT. To restore, turn this off and use the button below (or run /zsbt restorefct). Before uninstalling, turn this setting OFF.",
+				order = 21,
+				width = "full",
+				get = function()
+					local g = general(); return g and g.suppressBlizzardFCT == true
+				end,
+				set = function(_, v)
+					local g = general(); if not g then return end
+					g.suppressBlizzardFCT = v and true or false
+					local c = core()
+					if c then
+						if g.suppressBlizzardFCT and c.SuppressBlizzardFCT then
+							c:SuppressBlizzardFCT()
+						elseif (not g.suppressBlizzardFCT) and c.RestoreBlizzardFCT then
+							c:RestoreBlizzardFCT()
+						end
+					end
+					notify()
+				end,
+			},
+			restoreBlizzardFCTNow = {
+				type = "execute",
+				name = "Restore Blizzard Combat Text Now",
+				desc = "Restore Blizzard floating combat text CVars to their previous values (before ZSBT suppression).",
+				order = 22,
+				width = "full",
+				disabled = function()
+					local g = general(); return g and g.suppressBlizzardFCT == true
+				end,
+				func = function()
+					local c = core(); if c and c.RestoreBlizzardFCT then c:RestoreBlizzardFCT() end
+				end,
+			},
+
+			scrollAreaHeader = { type = "header", name = "Scroll Areas", order = 30 },
+			unlockScrollAreas = {
+				type = "execute",
+				name = function()
+					if ZSBT and ZSBT.IsScrollAreasUnlocked and ZSBT.IsScrollAreasUnlocked() then
+						return "Lock Scroll Areas"
+					end
+					return "Unlock Scroll Areas"
+				end,
+				desc = "Show draggable frames on screen for each scroll area. Drag to reposition, then lock to save.",
+				order = 31,
+				width = "full",
+				func = function() toggleUnlock(); notify() end,
+			},
+			testNotifications = {
+				type = "execute",
+				name = "Test Notifications",
+				desc = "Fire test text into the Notifications scroll area.",
+				order = 32,
+				width = "full",
+				func = function() testNotifications() end,
+			},
+			testIncoming = {
+				type = "execute",
+				name = "Test Incoming",
+				desc = "Fire test incoming damage/heal text into your configured Incoming areas.",
+				order = 33,
+				width = "full",
+				func = function() testIncoming() end,
+			},
+			testOutgoing = {
+				type = "execute",
+				name = "Test Outgoing",
+				desc = "Fire test outgoing text into your configured Outgoing areas.",
+				order = 34,
+				width = "full",
+				func = function() testOutgoing() end,
+			},
+
+			quickBarHeader = { type = "header", name = "Quick Control Bar", order = 40 },
+			quickControlBarEnabled = {
+				type = "toggle",
+				name = "Enable Quick Control Bar",
+				desc = "Show a draggable on-screen bar for quickly toggling instance/open-world tuning settings and unlocking scroll areas.",
+				order = 41,
+				width = "full",
+				get = function()
+					local g = general(); return g and g.quickControlBarEnabled == true
+				end,
+				set = function(_, v)
+					local g = general(); if not g then return end
+					g.quickControlBarEnabled = v and true or false
+					local qb = ZSBT and ZSBT.UI and ZSBT.UI.QuickControlBar
+					if qb and qb.Init then qb:Init() end
+					if qb and qb.RefreshVisibility then qb:RefreshVisibility() end
+					notify()
+				end,
+			},
+			quickControlBarResetPos = {
+				type = "execute",
+				name = "Reset Quick Control Bar Position",
+				desc = "Reset the Quick Control Bar position to the default.",
+				order = 41.1,
+				width = "full",
+				disabled = function()
+					local g = general(); return not (g and g.quickControlBarEnabled == true)
+				end,
+				func = function()
+					local qb = ZSBT and ZSBT.UI and ZSBT.UI.QuickControlBar
+					if qb and qb.ResetPosition then
+						qb:ResetPosition()
+					elseif qb and qb._frame then
+						local g = general()
+						if g then
+							g.quickControlBarPos = { x = 0, y = 220 }
+						end
+						if qb.Init then qb:Init() end
+					end
+					notify()
+				end,
+			},
+		},
+	}
+end
+
+------------------------------------------------------------------------
+-- TAB 0.5: DISPLAY
+-- Consolidated entry point for Scroll Areas + Media.
+------------------------------------------------------------------------
+function ZSBT.BuildTab_Display()
+	local sa = ZSBT.BuildTab_ScrollAreas and ZSBT.BuildTab_ScrollAreas() or nil
+	local media = ZSBT.BuildTab_Media and ZSBT.BuildTab_Media() or nil
+	if type(sa) == "table" then
+		sa.order = 1
+		sa.name = "|cFFFFD100Scroll Areas|r"
+	end
+	if type(media) == "table" then
+		media.order = 2
+		media.name = "|cFFFFD100Media|r"
+	end
+
+	return {
+		type = "group",
+		name = "|cFFFFD100Display|r",
+		order = 0.7,
+		childGroups = "tree",
+		args = {
+			scrollAreas = sa or { type = "group", name = "|cFFFFD100Scroll Areas|r", order = 1, args = {} },
+			media = media or { type = "group", name = "|cFFFFD100Media|r", order = 2, args = {} },
+		},
+	}
+end
+
+------------------------------------------------------------------------
+-- TAB 0.75: ALERTS
+-- Consolidated entry point for Notifications + Triggers + Cooldowns.
+------------------------------------------------------------------------
+function ZSBT.BuildTab_Alerts()
+	local notifications = ZSBT.BuildTab_Notifications and ZSBT.BuildTab_Notifications() or nil
+	local triggers = ZSBT.BuildTab_Triggers and ZSBT.BuildTab_Triggers() or nil
+	local cooldowns = ZSBT.BuildTab_Cooldowns and ZSBT.BuildTab_Cooldowns() or nil
+	if type(notifications) == "table" then
+		notifications.order = 1
+		notifications.name = "|cFFFFD100Notifications|r"
+	end
+	if type(triggers) == "table" then
+		triggers.order = 2
+		triggers.name = "|cFFFFD100Triggers|r"
+	end
+	if type(cooldowns) == "table" then
+		cooldowns.order = 3
+		cooldowns.name = "|cFFFFD100Cooldowns|r"
+	end
+
+	return {
+		type = "group",
+		name = "|cFFFFD100Alerts|r",
+		order = 0.85,
+		childGroups = "tree",
+		args = {
+			notifications = notifications or { type = "group", name = "|cFFFFD100Notifications|r", order = 1, args = {} },
+			triggers = triggers or { type = "group", name = "|cFFFFD100Triggers|r", order = 2, args = {} },
+			cooldowns = cooldowns or { type = "group", name = "|cFFFFD100Cooldowns|r", order = 3, args = {} },
+		},
+	}
+end
+
+------------------------------------------------------------------------
+-- TAB 0.9: COMBAT TEXT
+-- Consolidated entry point for Incoming + Outgoing + Pets + Spam Control.
+------------------------------------------------------------------------
+function ZSBT.BuildTab_CombatText()
+	local incoming = ZSBT.BuildTab_Incoming and ZSBT.BuildTab_Incoming() or nil
+	local outgoing = ZSBT.BuildTab_Outgoing and ZSBT.BuildTab_Outgoing() or nil
+	local pets = ZSBT.BuildTab_Pets and ZSBT.BuildTab_Pets() or nil
+	local spamControl = ZSBT.BuildTab_SpamControl and ZSBT.BuildTab_SpamControl() or nil
+	if type(incoming) == "table" then
+		incoming.order = 1
+		incoming.name = "|cFFFFD100Incoming|r"
+	end
+	if type(outgoing) == "table" then
+		outgoing.order = 2
+		outgoing.name = "|cFFFFD100Outgoing|r"
+	end
+	if type(pets) == "table" then
+		pets.order = 3
+		pets.name = "|cFFFFD100Pets|r"
+	end
+	if type(spamControl) == "table" then
+		spamControl.order = 4
+		spamControl.name = "|cFFFFD100Spam Control|r"
+	end
+
+	return {
+		type = "group",
+		name = "|cFFFFD100Combat Text|r",
+		order = 0.9,
+		childGroups = "tree",
+		args = {
+			incoming = incoming or { type = "group", name = "|cFFFFD100Incoming|r", order = 1, args = {} },
+			outgoing = outgoing or { type = "group", name = "|cFFFFD100Outgoing|r", order = 2, args = {} },
+			pets = pets or { type = "group", name = "|cFFFFD100Pets|r", order = 3, args = {} },
+			spamControl = spamControl or { type = "group", name = "|cFFFFD100Spam Control|r", order = 4, args = {} },
+		},
+	}
+end
+
+------------------------------------------------------------------------
+-- TAB 2: PROFILES
+-- Consolidated entry point for Import/Export + DB Profiles.
+-- DB Profiles content is injected by Init.lua after DB creation.
+------------------------------------------------------------------------
+function ZSBT.BuildTab_ProfilesRoot()
+	local importExport = ZSBT.BuildTab_Profiles and ZSBT.BuildTab_Profiles() or nil
+	if type(importExport) == "table" then
+		importExport.order = 1
+		importExport.name = "|cFFFFD100Import / Export|r"
+	end
+
+	return {
+		type = "group",
+		name = "|cFFFFD100Profiles|r",
+		order = 2.0,
+		childGroups = "tree",
+		args = {
+			importExport = importExport or { type = "group", name = "|cFFFFD100Import / Export|r", order = 1, args = {} },
+			acedbProfiles = { type = "group", name = "|cFFFFD100DB Profiles|r", order = 2, args = {} },
+		},
+	}
+end
+
+------------------------------------------------------------------------
+-- TAB 9: MAINTENANCE
+-- Container for Help/Troubleshooting and other operational tools.
+------------------------------------------------------------------------
+function ZSBT.BuildTab_Maintenance()
+	return {
+		type = "group",
+		name = "|cFFFFD100Maintenance|r",
+		order = 9,
+		childGroups = "tree",
+		args = {},
+	}
+end
+
+-------------------------------------------------------------------------
 -- TAB 1: GENERAL
 -- Master font, global behavior, quick actions, profile management.
-------------------------------------------------------------------------
+-------------------------------------------------------------------------
 function ZSBT.BuildTab_General()
     return {
         type  = "group",
 		name  = "|cFFFFD100General|r",
-        order = 1,
+        order = 0.6,
         args  = {
             -- Branded header
             brandHeader = {
@@ -1457,7 +1819,7 @@ function ZSBT.BuildTab_General()
             },
             headerMaster = {
                 type  = "header",
-				name  = "|cFFFFD100Master Controls|r",
+				name  = "|cFFFFD100System|r",
                 order = 1,
             },
             enabled = {
@@ -1541,26 +1903,16 @@ function ZSBT.BuildTab_General()
 					end
 				end,
 			},
-
-			notificationsEnabled = {
-				type  = "toggle",
-				name  = "Enable Notifications Area",
-				desc  = "If disabled, nothing will be shown in the Notifications scroll area (combat enter/leave, buffs, cooldown ready, loot, triggers routed there, etc.).",
-				order = 3.6,
-				width = "full",
-				get   = function()
-					return ZSBT.db.profile.general.notificationsEnabled ~= false
-				end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.notificationsEnabled = val and true or false
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
+			headerUI = {
+				type  = "header",
+				name  = "UI",
+				order = 3.56,
 			},
 			quickControlBarEnabled = {
 				type  = "toggle",
 				name  = "Enable Quick Control Bar",
 				desc  = "Show a draggable on-screen bar for quickly toggling instance/open-world tuning settings and unlocking scroll areas.",
-				order = 3.605,
+				order = 3.57,
 				width = "full",
 				get   = function() return ZSBT.db.profile.general.quickControlBarEnabled == true end,
 				set   = function(_, val)
@@ -1580,7 +1932,7 @@ function ZSBT.BuildTab_General()
 				type  = "execute",
 				name  = "Reset Quick Control Bar Position",
 				desc  = "Reset the Quick Control Bar position to the default.",
-				order = 3.606,
+				order = 3.575,
 				width = "full",
 				disabled = function() return ZSBT.db.profile.general.quickControlBarEnabled ~= true end,
 				func = function()
@@ -1595,7 +1947,7 @@ function ZSBT.BuildTab_General()
 				type  = "toggle",
 				name  = "Hide Minimap Button",
 				desc  = "Hide the ZSBT minimap button. You can also toggle it with /zsbt minimap.",
-				order = 3.607,
+				order = 3.58,
 				width = "full",
 				get   = function()
 					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
@@ -2167,11 +2519,23 @@ function ZSBT.BuildTab_Notifications()
 			},
 			desc = {
 				type     = "description",
-				name     = "Choose which notification categories can emit into the Notifications scroll area. The master toggle in General can still disable the entire Notifications area.",
+				name     = "Choose which notification categories can emit into the Notifications scroll area.",
 				order    = 2,
 				fontSize = "medium",
 			},
 			spacer = { type = "description", name = " ", order = 2.5, width = "full" },
+			enabled = {
+				type  = "toggle",
+				name  = "Enable Notifications Area",
+				desc  = "If disabled, nothing will be shown in the Notifications scroll area (combat enter/leave, buffs, cooldown ready, loot, triggers routed there, etc.).",
+				order = 2.6,
+				width = "full",
+				get   = function() return ZSBT.db.profile.general.notificationsEnabled ~= false end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.notificationsEnabled = val and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
 
 			combatState = {
 				type  = "toggle",
@@ -3475,6 +3839,7 @@ function ZSBT.BuildTab_Incoming()
 				name   = "Crit Scroll Area (optional)",
 				desc   = "Override scroll area for incoming damage crits only. Leave blank to use the normal Incoming Damage scroll area.",
 				order  = 3.05,
+				hidden = function() return true end,
 				values = function()
 					local t = ZSBT.GetScrollAreaNames()
 					t[""] = "(Use normal)"
@@ -3521,6 +3886,406 @@ function ZSBT.BuildTab_Incoming()
                 width    = "full",
                 fontSize = "medium",
             },
+
+            ----------------------------------------------------------------
+            -- Color Settings
+            ----------------------------------------------------------------
+            headerColors = {
+                type  = "header",
+                name  = "Color Settings",
+                order = 4.25,
+            },
+            useSchoolColors = {
+                type  = "toggle",
+                name  = "Use Damage School Colors (may be limited)",
+                desc  = "Color incoming damage numbers by damage school (Fire, Frost, etc.). On modern WoW, some events may not provide reliable school information.",
+                width = "full",
+                order = 4.26,
+                disabled = function()
+                    local cap = ZSBT.GetUnitCombatCapabilities
+                    if type(cap) ~= "function" then return false end
+                    local c = cap()
+                    return c and c.hasSchool == false
+                end,
+                get   = function() return ZSBT.db.profile.incoming.useSchoolColors end,
+                set   = function(_, val) ZSBT.db.profile.incoming.useSchoolColors = val end,
+            },
+            customDamageColor = {
+                type     = "color",
+                name     = "Custom Damage Color",
+                desc     = "Fallback damage color when school colors are disabled.",
+                order    = 4.27,
+                disabled = function() return ZSBT.db.profile.incoming.useSchoolColors end,
+                get      = function()
+                    local c = ZSBT.db.profile.incoming.customDamageColor
+                    return c.r, c.g, c.b
+                end,
+                set      = function(_, r, g, b)
+                    local c = ZSBT.db.profile.incoming.customDamageColor
+                    c.r, c.g, c.b = r, g, b
+                end,
+            },
+            customHealingColor = {
+                type     = "color",
+                name     = "Custom Healing Color",
+                desc     = "Fallback healing color when school colors are disabled.",
+                order    = 4.28,
+                disabled = function() return ZSBT.db.profile.incoming.useSchoolColors end,
+                get      = function()
+                    local c = ZSBT.db.profile.incoming.customHealingColor
+                    return c.r, c.g, c.b
+                end,
+                set      = function(_, r, g, b)
+                    local c = ZSBT.db.profile.incoming.customHealingColor
+                    c.r, c.g, c.b = r, g, b
+                end,
+            },
+            showSpellIcons = {
+                type  = "toggle",
+                name  = "Show Spell Icons (may be inaccurate)",
+                desc  = "Display the spell icon next to incoming damage/heal numbers. On modern WoW, spell attribution is not always reliable, so icons may be incorrect.",
+                width = "full",
+                order = 4.29,
+                get   = function() return ZSBT.db.profile.incoming.showSpellIcons end,
+                set   = function(_, val) ZSBT.db.profile.incoming.showSpellIcons = val end,
+            },
+			headerCritsSplitDamage = {
+				type  = "header",
+				name  = "Incoming Crit Damage",
+				order = 4.41,
+			},
+			incomingCritDamageFontEnabled = {
+				type  = "toggle",
+				name  = "Override Crit Font (Incoming Crit Damage)",
+				desc  = "If enabled, incoming critical damage uses this crit font instead of the Global Crit Font.",
+				order = 4.415,
+				width = "full",
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return type(cf) == "table" and cf.enabled == true
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.critFont = ZSBT.db.profile.incoming.critDamage.critFont or {}
+					ZSBT.db.profile.incoming.critDamage.critFont.enabled = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritDamageFontFace = {
+				type   = "select",
+				name   = "Crit Font Face",
+				desc   = "Font used for incoming critical damage.",
+				order  = 4.416,
+				values = function() return ZSBT.BuildFontDropdown() end,
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get    = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return cf and cf.face or "__use_master__"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.critFont = ZSBT.db.profile.incoming.critDamage.critFont or {}
+					if val == "__use_master__" then
+						ZSBT.db.profile.incoming.critDamage.critFont.face = nil
+					else
+						ZSBT.db.profile.incoming.critDamage.critFont.face = val
+					end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritDamageFontSize = {
+				type  = "range",
+				name  = "Crit Font Size",
+				desc  = "Font size for incoming critical damage text.",
+				order = 4.417,
+				min   = ZSBT.FONT_SIZE_MIN,
+				max   = 48,
+				step  = 1,
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true) or (cf and cf.useScale == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return (cf and cf.size) or 28
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.critFont = ZSBT.db.profile.incoming.critDamage.critFont or {}
+					ZSBT.db.profile.incoming.critDamage.critFont.size = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritDamageUseScale = {
+				type  = "toggle",
+				name  = "Use Crit Scale (instead of fixed size)",
+				desc  = "When enabled, crit size is derived from your normal font size using Crit Scale.",
+				order = 4.418,
+				width = "full",
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return cf and cf.useScale == true
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.critFont = ZSBT.db.profile.incoming.critDamage.critFont or {}
+					ZSBT.db.profile.incoming.critDamage.critFont.useScale = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritDamageAnim = {
+				type   = "select",
+				name   = "Crit Animation",
+				desc   = "Choose whether crits use the sticky Pow animation or follow the scroll area's animation.",
+				order  = 4.419,
+				values = { Pow = "Pow (Sticky)", Area = "Use Scroll Area Animation" },
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get    = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return (cf and (cf.anim == "Area" or cf.anim == "Pow")) and cf.anim or "Pow"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.critFont = ZSBT.db.profile.incoming.critDamage.critFont or {}
+					ZSBT.db.profile.incoming.critDamage.critFont.anim = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritDamageFontOutline = {
+				type   = "select",
+				name   = "Crit Outline",
+				desc   = "Outline style for incoming critical damage text.",
+				order  = 4.42,
+				values = { None = "None", Thin = "Thin", Thick = "Thick", Monochrome = "Monochrome" },
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get    = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return (cf and cf.outline) or "Thick"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.critFont = ZSBT.db.profile.incoming.critDamage.critFont or {}
+					ZSBT.db.profile.incoming.critDamage.critFont.outline = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritDamageFontScale = {
+				type  = "range",
+				name  = "Crit Scale",
+				desc  = "Scale multiplier vs normal font size.",
+				order = 4.421,
+				min   = 1.0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true) or not (cf and cf.useScale == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return (cf and cf.scale) or 1.5
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.critFont = ZSBT.db.profile.incoming.critDamage.critFont or {}
+					ZSBT.db.profile.incoming.critDamage.critFont.scale = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critDamageEnabled = {
+				type  = "toggle",
+				name  = "Route Incoming Crit Damage to a Different Scroll Area",
+				desc  = "If enabled, incoming critical damage uses the crit scroll area below.",
+				width = "full",
+				order = 4.422,
+				get   = function() return ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.enabled == true end,
+				set   = function(_, v)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.enabled = v and true or false
+				end,
+			},
+			critDamageScrollArea = {
+				type   = "select",
+				name   = "Crit Damage Scroll Area",
+				desc   = "Scroll area to use for incoming critical damage when routing is enabled.",
+				order  = 4.43,
+				values = function() return ZSBT.GetScrollAreaNames() end,
+				disabled = function()
+					local c = ZSBT.db.profile.incoming.critDamage
+					return not (c and c.enabled == true)
+				end,
+				get = function()
+					local c = ZSBT.db.profile.incoming.critDamage
+					return (c and type(c.scrollArea) == "string" and c.scrollArea ~= "") and c.scrollArea or "Incoming"
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.scrollArea = v
+				end,
+			},
+			critDamageColor = {
+				type  = "color",
+				name  = "Crit Damage Color",
+				desc  = "Color for incoming critical damage when routed to the Crit Damage Scroll Area.",
+				order = 4.44,
+				get = function()
+					local c = ZSBT.db.profile.incoming.critDamage
+					local col = c and c.color
+					if type(col) ~= "table" then return 1, 0.2, 0.2 end
+					return col.r or 1, col.g or 0.2, col.b or 0.2
+				end,
+				set = function(_, r, g, b)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.color = { r = r, g = g, b = b }
+				end,
+			},
+			critDamageSticky = {
+				type  = "toggle",
+				name  = "Sticky Crit Damage (slightly bigger + longer)",
+				desc  = "Makes incoming critical damage feel more impactful by slightly increasing size and on-screen duration.",
+				width = "full",
+				order = 4.45,
+				get   = function()
+					local c = ZSBT.db.profile.incoming.critDamage
+					return c == nil or c.sticky ~= false
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.sticky = v and true or false
+				end,
+			},
+			critDamageSoundEnabled = {
+				type = "toggle",
+				name = "Play a Sound on Incoming Crit Damage",
+				desc = "Plays a sound when you take a critical hit.",
+				width = "full",
+				order = 4.46,
+				get = function()
+					local c = ZSBT.db.profile.incoming.critDamage
+					return c and c.soundEnabled == true
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.soundEnabled = v and true or false
+				end,
+			},
+			critDamageSound = {
+				type = "select",
+				name = "Crit Damage Sound",
+				desc = "Sound to play when an incoming crit damage triggers.",
+				order = 4.47,
+				values = function() return (ZSBT.BuildSoundDropdown and ZSBT.BuildSoundDropdown()) or { ["None"] = "None" } end,
+				disabled = function()
+					local c = ZSBT.db.profile.incoming.critDamage
+					return not (c and c.soundEnabled == true)
+				end,
+				get = function()
+					local c = ZSBT.db.profile.incoming.critDamage
+					return (c and type(c.sound) == "string" and c.sound ~= "") and c.sound or "None"
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.sound = v
+				end,
+			},
+			critDamageSoundTest = {
+				type = "execute",
+				name = "Test Crit Damage Sound",
+				order = 4.48,
+				disabled = function()
+					local c = ZSBT.db.profile.incoming.critDamage
+					return not (c and c.soundEnabled == true)
+				end,
+				func = function()
+					local c = ZSBT.db.profile.incoming.critDamage
+					if c and ZSBT.PlayLSMSound then
+						ZSBT.PlayLSMSound(c.sound)
+					end
+				end,
+			},
+			critDamageMinSoundAmount = {
+				type = "range",
+				name = "Minimum Crit Damage Amount (sound)",
+				desc = "Only play the crit sound when the crit amount is at or above this value. In instances, the exact amount may be unavailable.",
+				order = 4.49,
+				min = 0,
+				max = 999999,
+				softMax = 250000,
+				step = 100,
+				disabled = function()
+					local c = ZSBT.db.profile.incoming.critDamage
+					return not (c and c.soundEnabled == true)
+				end,
+				get = function()
+					local c = ZSBT.db.profile.incoming.critDamage
+					return (c and tonumber(c.minSoundAmount)) or 0
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.minSoundAmount = tonumber(v) or 0
+				end,
+			},
+			critDamageInstanceSoundMode = {
+				type = "select",
+				name = "Instances: When amount is unavailable (damage)",
+				desc = "In dungeons/raids, crit amounts can be protected/secret. Choose how crit sounds behave when the amount can't be safely compared.",
+				order = 4.5,
+				values = function()
+					return {
+						["Any Crit"] = "Any Crit",
+						["Only when amount is known"] = "Only when amount is known",
+					}
+				end,
+				disabled = function()
+					local c = ZSBT.db.profile.incoming.critDamage
+					return not (c and c.soundEnabled == true)
+				end,
+				get = function()
+					local c = ZSBT.db.profile.incoming.critDamage
+					return (c and type(c.instanceSoundMode) == "string" and c.instanceSoundMode ~= "") and c.instanceSoundMode or "Only when amount is known"
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.instanceSoundMode = v
+				end,
+			},
             damageMinThreshold = {
                 type    = "range",
                 name    = "Minimum Damage Threshold",
@@ -3565,6 +4330,7 @@ function ZSBT.BuildTab_Incoming()
 				name   = "Crit Scroll Area (optional)",
 				desc   = "Override scroll area for incoming healing crits only. Leave blank to use the normal Incoming Healing scroll area.",
 				order  = 12.05,
+				hidden = function() return true end,
 				values = function()
 					local t = ZSBT.GetScrollAreaNames()
 					t[""] = "(Use normal)"
@@ -3583,10 +4349,6 @@ function ZSBT.BuildTab_Incoming()
                 desc  = "Display each Heal-over-Time tick as its own number. (Requires periodic classification from the live source.)",
                 width = "full",
                 order = 13,
-                disabled = function()
-                    local c = cap()
-                    return c and c.hasPeriodic == false
-                end,
                 get   = function() return ZSBT.db.profile.incoming.healing.showHoTTicks end,
                 set   = function(_, val) ZSBT.db.profile.incoming.healing.showHoTTicks = val end,
             },
@@ -3611,68 +4373,344 @@ function ZSBT.BuildTab_Incoming()
                 get     = function() return ZSBT.db.profile.incoming.healing.minThreshold end,
                 set     = function(_, val) ZSBT.db.profile.incoming.healing.minThreshold = val end,
             },
-            ----------------------------------------------------------------
-            -- Color Settings
-            ----------------------------------------------------------------
-            headerColors = {
-                type  = "header",
-                name  = "Color Settings",
-                order = 20,
-            },
-            useSchoolColors = {
-                type  = "toggle",
-                name  = "Use Damage School Colors (may be limited)",
-                desc  = "Color incoming damage numbers by damage school (Fire, Frost, etc.). On modern WoW, some events may not provide reliable school information.",
-                width = "full",
-                order = 21,
-                disabled = function()
-                    local cap = ZSBT.GetUnitCombatCapabilities
-                    if type(cap) ~= "function" then return false end
-                    local c = cap()
-                    return c and c.hasSchool == false
-                end,
-                get   = function() return ZSBT.db.profile.incoming.useSchoolColors end,
-                set   = function(_, val) ZSBT.db.profile.incoming.useSchoolColors = val end,
-            },
-            customDamageColor = {
-                type     = "color",
-                name     = "Custom Damage Color",
-                desc     = "Fallback damage color when school colors are disabled.",
-                order    = 22,
-                disabled = function() return ZSBT.db.profile.incoming.useSchoolColors end,
-                get      = function()
-                    local c = ZSBT.db.profile.incoming.customDamageColor
-                    return c.r, c.g, c.b
-                end,
-                set      = function(_, r, g, b)
-                    local c = ZSBT.db.profile.incoming.customDamageColor
-                    c.r, c.g, c.b = r, g, b
-                end,
-            },
-            customHealingColor = {
-                type     = "color",
-                name     = "Custom Healing Color",
-                desc     = "Fallback healing color when school colors are disabled.",
-                order    = 22.1,
-                disabled = function() return ZSBT.db.profile.incoming.useSchoolColors end,
-                get      = function()
-                    local c = ZSBT.db.profile.incoming.customHealingColor
-                    return c.r, c.g, c.b
-                end,
-                set      = function(_, r, g, b)
-                    local c = ZSBT.db.profile.incoming.customHealingColor
-                    c.r, c.g, c.b = r, g, b
-                end,
-            },
-            showSpellIcons = {
-                type  = "toggle",
-                name  = "Show Spell Icons (may be inaccurate)",
-                desc  = "Display the spell icon next to incoming damage/heal numbers. On modern WoW, spell attribution is not always reliable, so icons may be incorrect.",
-                width = "full",
-                order = 23,
-                get   = function() return ZSBT.db.profile.incoming.showSpellIcons end,
-                set   = function(_, val) ZSBT.db.profile.incoming.showSpellIcons = val end,
-            },
+			headerCritsSplitHealing = {
+				type  = "header",
+				name  = "Incoming Crit Heals",
+				order = 15,
+			},
+			incomingCritHealingFontEnabled = {
+				type  = "toggle",
+				name  = "Override Crit Font (Incoming Crit Heals)",
+				desc  = "If enabled, incoming critical heals use this crit font instead of the Global Crit Font.",
+				order = 15.01,
+				width = "full",
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return type(cf) == "table" and cf.enabled == true
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.critFont = ZSBT.db.profile.incoming.critHealing.critFont or {}
+					ZSBT.db.profile.incoming.critHealing.critFont.enabled = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritHealingFontFace = {
+				type   = "select",
+				name   = "Crit Font Face",
+				desc   = "Font used for incoming critical heals.",
+				order  = 15.02,
+				values = function() return ZSBT.BuildFontDropdown() end,
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get    = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return cf and cf.face or "__use_master__"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.critFont = ZSBT.db.profile.incoming.critHealing.critFont or {}
+					if val == "__use_master__" then
+						ZSBT.db.profile.incoming.critHealing.critFont.face = nil
+					else
+						ZSBT.db.profile.incoming.critHealing.critFont.face = val
+					end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritHealingFontSize = {
+				type  = "range",
+				name  = "Crit Font Size",
+				desc  = "Font size for incoming critical heal text.",
+				order = 15.03,
+				min   = ZSBT.FONT_SIZE_MIN,
+				max   = 48,
+				step  = 1,
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true) or (cf and cf.useScale == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return (cf and cf.size) or 28
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.critFont = ZSBT.db.profile.incoming.critHealing.critFont or {}
+					ZSBT.db.profile.incoming.critHealing.critFont.size = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritHealingUseScale = {
+				type  = "toggle",
+				name  = "Use Crit Scale (instead of fixed size)",
+				desc  = "When enabled, crit size is derived from your normal font size using Crit Scale.",
+				order = 15.035,
+				width = "full",
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return cf and cf.useScale == true
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.critFont = ZSBT.db.profile.incoming.critHealing.critFont or {}
+					ZSBT.db.profile.incoming.critHealing.critFont.useScale = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritHealingAnim = {
+				type   = "select",
+				name   = "Crit Animation",
+				desc   = "Choose whether crits use the sticky Pow animation or follow the scroll area's animation.",
+				order  = 15.04,
+				values = { Pow = "Pow (Sticky)", Area = "Use Scroll Area Animation" },
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get    = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return (cf and (cf.anim == "Area" or cf.anim == "Pow")) and cf.anim or "Pow"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.critFont = ZSBT.db.profile.incoming.critHealing.critFont or {}
+					ZSBT.db.profile.incoming.critHealing.critFont.anim = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritHealingFontOutline = {
+				type   = "select",
+				name   = "Crit Outline",
+				desc   = "Outline style for incoming critical heal text.",
+				order  = 15.05,
+				values = { None = "None", Thin = "Thin", Thick = "Thick", Monochrome = "Monochrome" },
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get    = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return (cf and cf.outline) or "Thick"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.critFont = ZSBT.db.profile.incoming.critHealing.critFont or {}
+					ZSBT.db.profile.incoming.critHealing.critFont.outline = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritHealingFontScale = {
+				type  = "range",
+				name  = "Crit Scale",
+				desc  = "Scale multiplier vs normal font size.",
+				order = 15.06,
+				min   = 1.0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true) or not (cf and cf.useScale == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return (cf and cf.scale) or 1.5
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.critFont = ZSBT.db.profile.incoming.critHealing.critFont or {}
+					ZSBT.db.profile.incoming.critHealing.critFont.scale = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critHealingEnabled = {
+				type  = "toggle",
+				name  = "Route Incoming Crit Heals to a Different Scroll Area",
+				desc  = "If enabled, incoming critical heals use the crit scroll area below.",
+				width = "full",
+				order = 15.1,
+				get   = function() return ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.enabled == true end,
+				set   = function(_, v)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.enabled = v and true or false
+				end,
+			},
+			critHealingScrollArea = {
+				type   = "select",
+				name   = "Crit Heal Scroll Area",
+				desc   = "Scroll area to use for incoming critical heals when routing is enabled.",
+				order  = 15.2,
+				values = function() return ZSBT.GetScrollAreaNames() end,
+				disabled = function()
+					local c = ZSBT.db.profile.incoming.critHealing
+					return not (c and c.enabled == true)
+				end,
+				get = function()
+					local c = ZSBT.db.profile.incoming.critHealing
+					return (c and type(c.scrollArea) == "string" and c.scrollArea ~= "") and c.scrollArea or "Incoming"
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.scrollArea = v
+				end,
+			},
+			critHealingColor = {
+				type  = "color",
+				name  = "Crit Heal Color",
+				desc  = "Color for incoming critical heals when routed to the Crit Heal Scroll Area.",
+				order = 15.3,
+				get = function()
+					local c = ZSBT.db.profile.incoming.critHealing
+					local col = c and c.color
+					if type(col) ~= "table" then return 0.2, 1, 0.4 end
+					return col.r or 0.2, col.g or 1, col.b or 0.4
+				end,
+				set = function(_, r, g, b)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.color = { r = r, g = g, b = b }
+				end,
+			},
+			critHealingSticky = {
+				type  = "toggle",
+				name  = "Sticky Crit Heals (slightly bigger + longer)",
+				desc  = "Makes incoming critical heals feel more impactful by slightly increasing size and on-screen duration.",
+				width = "full",
+				order = 15.4,
+				get   = function()
+					local c = ZSBT.db.profile.incoming.critHealing
+					return c == nil or c.sticky ~= false
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.sticky = v and true or false
+				end,
+			},
+			critHealingSoundEnabled = {
+				type = "toggle",
+				name = "Play a Sound on Incoming Crit Heals",
+				desc = "Plays a sound when you receive a critical heal.",
+				width = "full",
+				order = 15.5,
+				get = function()
+					local c = ZSBT.db.profile.incoming.critHealing
+					return c and c.soundEnabled == true
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.soundEnabled = v and true or false
+				end,
+			},
+			critHealingSound = {
+				type = "select",
+				name = "Crit Heal Sound",
+				desc = "Sound to play when an incoming crit heal triggers.",
+				order = 15.6,
+				values = function() return (ZSBT.BuildSoundDropdown and ZSBT.BuildSoundDropdown()) or { ["None"] = "None" } end,
+				disabled = function()
+					local c = ZSBT.db.profile.incoming.critHealing
+					return not (c and c.soundEnabled == true)
+				end,
+				get = function()
+					local c = ZSBT.db.profile.incoming.critHealing
+					return (c and type(c.sound) == "string" and c.sound ~= "") and c.sound or "None"
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.sound = v
+				end,
+			},
+			critHealingSoundTest = {
+				type = "execute",
+				name = "Test Crit Heal Sound",
+				order = 15.7,
+				disabled = function()
+					local c = ZSBT.db.profile.incoming.critHealing
+					return not (c and c.soundEnabled == true)
+				end,
+				func = function()
+					local c = ZSBT.db.profile.incoming.critHealing
+					if c and ZSBT.PlayLSMSound then
+						ZSBT.PlayLSMSound(c.sound)
+					end
+				end,
+			},
+			critHealingMinSoundAmount = {
+				type = "range",
+				name = "Minimum Crit Heal Amount (sound)",
+				desc = "Only play the crit sound when the crit amount is at or above this value. In instances, the exact amount may be unavailable.",
+				order = 15.8,
+				min = 0,
+				max = 999999,
+				softMax = 250000,
+				step = 100,
+				disabled = function()
+					local c = ZSBT.db.profile.incoming.critHealing
+					return not (c and c.soundEnabled == true)
+				end,
+				get = function()
+					local c = ZSBT.db.profile.incoming.critHealing
+					return (c and tonumber(c.minSoundAmount)) or 0
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.minSoundAmount = tonumber(v) or 0
+				end,
+			},
+			critHealingInstanceSoundMode = {
+				type = "select",
+				name = "Instances: When amount is unavailable (heals)",
+				desc = "In dungeons/raids, crit amounts can be protected/secret. Choose how crit sounds behave when the amount can't be safely compared.",
+				order = 15.9,
+				values = function()
+					return {
+						["Any Crit"] = "Any Crit",
+						["Only when amount is known"] = "Only when amount is known",
+					}
+				end,
+				disabled = function()
+					local c = ZSBT.db.profile.incoming.critHealing
+					return not (c and c.soundEnabled == true)
+				end,
+				get = function()
+					local c = ZSBT.db.profile.incoming.critHealing
+					return (c and type(c.instanceSoundMode) == "string" and c.instanceSoundMode ~= "") and c.instanceSoundMode or "Only when amount is known"
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.instanceSoundMode = v
+				end,
+			},
+
             ----------------------------------------------------------------
             -- UI/UX Validation Harness (Capture + Replay)
             ----------------------------------------------------------------
@@ -3942,151 +4980,324 @@ function ZSBT.BuildTab_Outgoing()
             ----------------------------------------------------------------
             -- Outgoing Crits (Routing + Sticky)
             ----------------------------------------------------------------
-            headerCrits = {
-                type  = "header",
-                name  = "Outgoing Critical Hits",
-                order = 8,
-            },
-            critsEnabled = {
-                type  = "toggle",
-                name  = "Route Outgoing Crits to a Different Scroll Area",
-                desc  = "If enabled, outgoing crits (damage and healing) will use the crit scroll area below.",
-                width = "full",
-                order = 8.1,
-                get   = function() return ZSBT.db.profile.outgoing.crits and ZSBT.db.profile.outgoing.crits.enabled == true end,
-                set   = function(_, v)
-                    ZSBT.db.profile.outgoing.crits = ZSBT.db.profile.outgoing.crits or {}
-                    ZSBT.db.profile.outgoing.crits.enabled = v and true or false
-                end,
-            },
-            critsScrollArea = {
-                type   = "select",
-                name   = "Crit Scroll Area",
-                desc   = "Scroll area to use for outgoing crits when routing is enabled.",
-                order  = 8.2,
-                values = function() return ZSBT.GetScrollAreaNames() end,
-                disabled = function()
-                    return not (ZSBT.db.profile.outgoing.crits and ZSBT.db.profile.outgoing.crits.enabled == true)
-                end,
-                get = function()
-                    local c = ZSBT.db.profile.outgoing.crits
-                    return (c and type(c.scrollArea) == "string" and c.scrollArea ~= "") and c.scrollArea or "Outgoing"
-                end,
-                set = function(_, v)
-                    ZSBT.db.profile.outgoing.crits = ZSBT.db.profile.outgoing.crits or {}
-                    ZSBT.db.profile.outgoing.crits.scrollArea = v
-                end,
-            },
-            critsSticky = {
-                type  = "toggle",
-                name  = "Sticky Crits (slightly bigger + longer)",
-                desc  = "Makes outgoing crits feel more impactful by slightly increasing size and on-screen duration.",
-                width = "full",
-                order = 8.3,
-                get   = function()
-                    local c = ZSBT.db.profile.outgoing.crits
-                    return c == nil or c.sticky ~= false
-                end,
-                set   = function(_, v)
-                    ZSBT.db.profile.outgoing.crits = ZSBT.db.profile.outgoing.crits or {}
-                    ZSBT.db.profile.outgoing.crits.sticky = v and true or false
-                end,
-            },
-			critsColor = {
-				type  = "color",
-				name  = "Crit Color",
-				desc  = "Color for outgoing crits when routed to the Crit Scroll Area.",
-				order = 8.25,
+			headerCritsSplitDamage = {
+				type  = "header",
+				name  = "Outgoing Crit Damage",
+				order = 8.41,
+			},
+			outgoingCritDamageFontEnabled = {
+				type  = "toggle",
+				name  = "Override Crit Font (Outgoing Crit Damage)",
+				desc  = "If enabled, outgoing critical damage uses this crit font instead of the Global Crit Font.",
+				order = 8.415,
+				width = "full",
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return type(cf) == "table" and cf.enabled == true
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont = ZSBT.db.profile.outgoing.critDamage.critFont or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont.enabled = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritDamageFontFace = {
+				type   = "select",
+				name   = "Crit Font Face",
+				desc   = "Font used for outgoing critical damage.",
+				order  = 8.416,
+				values = function() return ZSBT.BuildFontDropdown() end,
 				disabled = function()
-					return not (ZSBT.db.profile.outgoing.crits and ZSBT.db.profile.outgoing.crits.enabled == true)
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get    = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return cf and cf.face or "__use_master__"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont = ZSBT.db.profile.outgoing.critDamage.critFont or {}
+					if val == "__use_master__" then
+						ZSBT.db.profile.outgoing.critDamage.critFont.face = nil
+					else
+						ZSBT.db.profile.outgoing.critDamage.critFont.face = val
+					end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritDamageFontSize = {
+				type  = "range",
+				name  = "Crit Font Size",
+				desc  = "Font size for outgoing critical damage text.",
+				order = 8.417,
+				min   = ZSBT.FONT_SIZE_MIN,
+				max   = 48,
+				step  = 1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true) or (cf and cf.useScale == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return (cf and cf.size) or 28
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont = ZSBT.db.profile.outgoing.critDamage.critFont or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont.size = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritDamageUseScale = {
+				type  = "toggle",
+				name  = "Use Crit Scale (instead of fixed size)",
+				desc  = "When enabled, crit size is derived from your normal font size using Crit Scale.",
+				order = 8.418,
+				width = "full",
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return cf and cf.useScale == true
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont = ZSBT.db.profile.outgoing.critDamage.critFont or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont.useScale = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritDamageAnim = {
+				type   = "select",
+				name   = "Crit Animation",
+				desc   = "Choose whether crits use the sticky Pow animation or follow the scroll area's animation.",
+				order  = 8.419,
+				values = { Pow = "Pow (Sticky)", Area = "Use Scroll Area Animation" },
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get    = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return (cf and (cf.anim == "Area" or cf.anim == "Pow")) and cf.anim or "Pow"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont = ZSBT.db.profile.outgoing.critDamage.critFont or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont.anim = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritDamageFontOutline = {
+				type   = "select",
+				name   = "Crit Outline",
+				desc   = "Outline style for outgoing critical damage text.",
+				order  = 8.42,
+				values = { None = "None", Thin = "Thin", Thick = "Thick", Monochrome = "Monochrome" },
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get    = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return (cf and cf.outline) or "Thick"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont = ZSBT.db.profile.outgoing.critDamage.critFont or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont.outline = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritDamageFontScale = {
+				type  = "range",
+				name  = "Crit Scale",
+				desc  = "Scale multiplier vs normal font size.",
+				order = 8.421,
+				min   = 1.0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true) or not (cf and cf.useScale == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return (cf and cf.scale) or 1.5
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont = ZSBT.db.profile.outgoing.critDamage.critFont or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont.scale = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critDamageEnabled = {
+				type  = "toggle",
+				name  = "Route Outgoing Crit Damage to a Different Scroll Area",
+				desc  = "If enabled, outgoing critical damage uses the crit scroll area below.",
+				width = "full",
+				order = 8.422,
+				get   = function() return ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.enabled == true end,
+				set   = function(_, v)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.enabled = v and true or false
+				end,
+			},
+			critDamageScrollArea = {
+				type   = "select",
+				name   = "Crit Damage Scroll Area",
+				desc   = "Scroll area to use for outgoing critical damage when routing is enabled.",
+				order  = 8.43,
+				values = function() return ZSBT.GetScrollAreaNames() end,
+				disabled = function()
+					local c = ZSBT.db.profile.outgoing.critDamage
+					return not (c and c.enabled == true)
 				end,
 				get = function()
-					local c = ZSBT.db.profile.outgoing.crits
+					local c = ZSBT.db.profile.outgoing.critDamage
+					return (c and type(c.scrollArea) == "string" and c.scrollArea ~= "") and c.scrollArea or "Outgoing"
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.scrollArea = v
+				end,
+			},
+			critDamageColor = {
+				type  = "color",
+				name  = "Crit Damage Color",
+				desc  = "Color for outgoing critical damage when routed to the Crit Damage Scroll Area.",
+				order = 8.44,
+				get = function()
+					local c = ZSBT.db.profile.outgoing.critDamage
 					local col = c and c.color
 					if type(col) ~= "table" then return 1, 1, 0 end
 					return col.r or 1, col.g or 1, col.b or 0
 				end,
 				set = function(_, r, g, b)
-					ZSBT.db.profile.outgoing.crits = ZSBT.db.profile.outgoing.crits or {}
-					ZSBT.db.profile.outgoing.crits.color = { r = r, g = g, b = b }
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.color = { r = r, g = g, b = b }
 				end,
 			},
-			critsSoundEnabled = {
-				type = "toggle",
-				name = "Play a Sound on Outgoing Crits",
-				desc = "Plays a sound when you land a critical hit or critical heal.",
+			critDamageSticky = {
+				type  = "toggle",
+				name  = "Sticky Crit Damage (slightly bigger + longer)",
+				desc  = "Makes outgoing critical damage feel more impactful by slightly increasing size and on-screen duration.",
 				width = "full",
-				order = 8.31,
+				order = 8.45,
+				get   = function()
+					local c = ZSBT.db.profile.outgoing.critDamage
+					return c == nil or c.sticky ~= false
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.sticky = v and true or false
+				end,
+			},
+			critDamageSoundEnabled = {
+				type = "toggle",
+				name = "Play a Sound on Outgoing Crit Damage",
+				desc = "Plays a sound when you land a critical hit.",
+				width = "full",
+				order = 8.46,
 				get = function()
-					local c = ZSBT.db.profile.outgoing.crits
+					local c = ZSBT.db.profile.outgoing.critDamage
 					return c and c.soundEnabled == true
 				end,
 				set = function(_, v)
-					ZSBT.db.profile.outgoing.crits = ZSBT.db.profile.outgoing.crits or {}
-					ZSBT.db.profile.outgoing.crits.soundEnabled = v and true or false
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.soundEnabled = v and true or false
 				end,
 			},
-			critsSound = {
+			critDamageSound = {
 				type = "select",
-				name = "Crit Sound",
-				desc = "Sound to play when an outgoing crit triggers.",
-				order = 8.32,
+				name = "Crit Damage Sound",
+				desc = "Sound to play when an outgoing crit damage triggers.",
+				order = 8.47,
 				values = function() return (ZSBT.BuildSoundDropdown and ZSBT.BuildSoundDropdown()) or { ["None"] = "None" } end,
 				disabled = function()
-					local c = ZSBT.db.profile.outgoing.crits
+					local c = ZSBT.db.profile.outgoing.critDamage
 					return not (c and c.soundEnabled == true)
 				end,
 				get = function()
-					local c = ZSBT.db.profile.outgoing.crits
+					local c = ZSBT.db.profile.outgoing.critDamage
 					return (c and type(c.sound) == "string" and c.sound ~= "") and c.sound or "None"
 				end,
 				set = function(_, v)
-					ZSBT.db.profile.outgoing.crits = ZSBT.db.profile.outgoing.crits or {}
-					ZSBT.db.profile.outgoing.crits.sound = v
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.sound = v
 				end,
 			},
-			critsSoundTest = {
+			critDamageSoundTest = {
 				type = "execute",
-				name = "Test Crit Sound",
-				order = 8.33,
+				name = "Test Crit Damage Sound",
+				order = 8.48,
 				disabled = function()
-					local c = ZSBT.db.profile.outgoing.crits
+					local c = ZSBT.db.profile.outgoing.critDamage
 					return not (c and c.soundEnabled == true)
 				end,
 				func = function()
-					local c = ZSBT.db.profile.outgoing.crits
+					local c = ZSBT.db.profile.outgoing.critDamage
 					if c and ZSBT.PlayLSMSound then
 						ZSBT.PlayLSMSound(c.sound)
 					end
 				end,
 			},
-			critsMinSoundAmount = {
+			critDamageMinSoundAmount = {
 				type = "range",
-				name = "Minimum Crit Amount (sound)",
+				name = "Minimum Crit Damage Amount (sound)",
 				desc = "Only play the crit sound when the crit amount is at or above this value. In instances, the exact amount may be unavailable.",
-				order = 8.34,
+				order = 8.49,
 				min = 0,
 				max = 999999,
 				softMax = 250000,
 				step = 100,
 				disabled = function()
-					local c = ZSBT.db.profile.outgoing.crits
+					local c = ZSBT.db.profile.outgoing.critDamage
 					return not (c and c.soundEnabled == true)
 				end,
 				get = function()
-					local c = ZSBT.db.profile.outgoing.crits
+					local c = ZSBT.db.profile.outgoing.critDamage
 					return (c and tonumber(c.minSoundAmount)) or 0
 				end,
 				set = function(_, v)
-					ZSBT.db.profile.outgoing.crits = ZSBT.db.profile.outgoing.crits or {}
-					ZSBT.db.profile.outgoing.crits.minSoundAmount = tonumber(v) or 0
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.minSoundAmount = tonumber(v) or 0
 				end,
 			},
-			critsInstanceSoundMode = {
+			critDamageInstanceSoundMode = {
 				type = "select",
-				name = "Instances: When amount is unavailable",
+				name = "Instances: When amount is unavailable (damage)",
 				desc = "In dungeons/raids, crit amounts can be protected/secret. Choose how crit sounds behave when the amount can't be safely compared.",
-				order = 8.35,
+				order = 8.5,
 				values = function()
 					return {
 						["Any Crit"] = "Any Crit",
@@ -4094,18 +5305,22 @@ function ZSBT.BuildTab_Outgoing()
 					}
 				end,
 				disabled = function()
-					local c = ZSBT.db.profile.outgoing.crits
+					local c = ZSBT.db.profile.outgoing.critDamage
 					return not (c and c.soundEnabled == true)
 				end,
 				get = function()
-					local c = ZSBT.db.profile.outgoing.crits
+					local c = ZSBT.db.profile.outgoing.critDamage
 					return (c and type(c.instanceSoundMode) == "string" and c.instanceSoundMode ~= "") and c.instanceSoundMode or "Only when amount is known"
 				end,
 				set = function(_, v)
-					ZSBT.db.profile.outgoing.crits = ZSBT.db.profile.outgoing.crits or {}
-					ZSBT.db.profile.outgoing.crits.instanceSoundMode = v
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.instanceSoundMode = v
 				end,
 			},
+
+            ----------------------------------------------------------------
+            -- Outgoing Crit Font Override
+            ----------------------------------------------------------------
 
             ----------------------------------------------------------------
             -- Outgoing Healing
@@ -4154,6 +5369,343 @@ function ZSBT.BuildTab_Outgoing()
                 get     = function() return ZSBT.db.profile.outgoing.healing.minThreshold end,
                 set     = function(_, val) ZSBT.db.profile.outgoing.healing.minThreshold = val end,
             },
+			headerCritsSplitHealing = {
+				type  = "header",
+				name  = "Outgoing Crit Heals",
+				order = 15,
+			},
+			outgoingCritHealingFontEnabled = {
+				type  = "toggle",
+				name  = "Override Crit Font (Outgoing Crit Heals)",
+				desc  = "If enabled, outgoing critical heals use this crit font instead of the Global Crit Font.",
+				order = 15.01,
+				width = "full",
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return type(cf) == "table" and cf.enabled == true
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont = ZSBT.db.profile.outgoing.critHealing.critFont or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont.enabled = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritHealingFontFace = {
+				type   = "select",
+				name   = "Crit Font Face",
+				desc   = "Font used for outgoing critical heals.",
+				order  = 15.02,
+				values = function() return ZSBT.BuildFontDropdown() end,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get    = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return cf and cf.face or "__use_master__"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont = ZSBT.db.profile.outgoing.critHealing.critFont or {}
+					if val == "__use_master__" then
+						ZSBT.db.profile.outgoing.critHealing.critFont.face = nil
+					else
+						ZSBT.db.profile.outgoing.critHealing.critFont.face = val
+					end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritHealingFontSize = {
+				type  = "range",
+				name  = "Crit Font Size",
+				desc  = "Font size for outgoing critical heal text.",
+				order = 15.03,
+				min   = ZSBT.FONT_SIZE_MIN,
+				max   = 48,
+				step  = 1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true) or (cf and cf.useScale == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return (cf and cf.size) or 28
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont = ZSBT.db.profile.outgoing.critHealing.critFont or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont.size = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritHealingUseScale = {
+				type  = "toggle",
+				name  = "Use Crit Scale (instead of fixed size)",
+				desc  = "When enabled, crit size is derived from your normal font size using Crit Scale.",
+				order = 15.035,
+				width = "full",
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return cf and cf.useScale == true
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont = ZSBT.db.profile.outgoing.critHealing.critFont or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont.useScale = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritHealingAnim = {
+				type   = "select",
+				name   = "Crit Animation",
+				desc   = "Choose whether crits use the sticky Pow animation or follow the scroll area's animation.",
+				order  = 15.04,
+				values = { Pow = "Pow (Sticky)", Area = "Use Scroll Area Animation" },
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get    = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return (cf and (cf.anim == "Area" or cf.anim == "Pow")) and cf.anim or "Pow"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont = ZSBT.db.profile.outgoing.critHealing.critFont or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont.anim = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritHealingFontOutline = {
+				type   = "select",
+				name   = "Crit Outline",
+				desc   = "Outline style for outgoing critical heal text.",
+				order  = 15.05,
+				values = { None = "None", Thin = "Thin", Thick = "Thick", Monochrome = "Monochrome" },
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get    = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return (cf and cf.outline) or "Thick"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont = ZSBT.db.profile.outgoing.critHealing.critFont or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont.outline = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritHealingFontScale = {
+				type  = "range",
+				name  = "Crit Scale",
+				desc  = "Scale multiplier vs normal font size.",
+				order = 15.06,
+				min   = 1.0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true) or not (cf and cf.useScale == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return (cf and cf.scale) or 1.5
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont = ZSBT.db.profile.outgoing.critHealing.critFont or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont.scale = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critHealingEnabled = {
+				type  = "toggle",
+				name  = "Route Outgoing Crit Heals to a Different Scroll Area",
+				desc  = "If enabled, outgoing critical heals use the crit scroll area below.",
+				width = "full",
+				order = 15.1,
+				get   = function() return ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.enabled == true end,
+				set   = function(_, v)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.enabled = v and true or false
+				end,
+			},
+			critHealingScrollArea = {
+				type   = "select",
+				name   = "Crit Heal Scroll Area",
+				desc   = "Scroll area to use for outgoing critical heals when routing is enabled.",
+				order  = 15.2,
+				values = function() return ZSBT.GetScrollAreaNames() end,
+				disabled = function()
+					local c = ZSBT.db.profile.outgoing.critHealing
+					return not (c and c.enabled == true)
+				end,
+				get = function()
+					local c = ZSBT.db.profile.outgoing.critHealing
+					return (c and type(c.scrollArea) == "string" and c.scrollArea ~= "") and c.scrollArea or "Outgoing"
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.scrollArea = v
+				end,
+			},
+			critHealingColor = {
+				type  = "color",
+				name  = "Crit Heal Color",
+				desc  = "Color for outgoing critical heals when routed to the Crit Heal Scroll Area.",
+				order = 15.3,
+				get = function()
+					local c = ZSBT.db.profile.outgoing.critHealing
+					local col = c and c.color
+					if type(col) ~= "table" then return 0.2, 1, 0.4 end
+					return col.r or 0.2, col.g or 1, col.b or 0.4
+				end,
+				set = function(_, r, g, b)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.color = { r = r, g = g, b = b }
+				end,
+			},
+			critHealingSticky = {
+				type  = "toggle",
+				name  = "Sticky Crit Heals (slightly bigger + longer)",
+				desc  = "Makes outgoing critical heals feel more impactful by slightly increasing size and on-screen duration.",
+				width = "full",
+				order = 15.4,
+				get   = function()
+					local c = ZSBT.db.profile.outgoing.critHealing
+					return c == nil or c.sticky ~= false
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.sticky = v and true or false
+				end,
+			},
+			critHealingSoundEnabled = {
+				type = "toggle",
+				name = "Play a Sound on Outgoing Crit Heals",
+				desc = "Plays a sound when you land a critical heal.",
+				width = "full",
+				order = 15.5,
+				get = function()
+					local c = ZSBT.db.profile.outgoing.critHealing
+					return c and c.soundEnabled == true
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.soundEnabled = v and true or false
+				end,
+			},
+			critHealingSound = {
+				type = "select",
+				name = "Crit Heal Sound",
+				desc = "Sound to play when an outgoing crit heal triggers.",
+				order = 15.6,
+				values = function() return (ZSBT.BuildSoundDropdown and ZSBT.BuildSoundDropdown()) or { ["None"] = "None" } end,
+				disabled = function()
+					local c = ZSBT.db.profile.outgoing.critHealing
+					return not (c and c.soundEnabled == true)
+				end,
+				get = function()
+					local c = ZSBT.db.profile.outgoing.critHealing
+					return (c and type(c.sound) == "string" and c.sound ~= "") and c.sound or "None"
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.sound = v
+				end,
+			},
+			critHealingSoundTest = {
+				type = "execute",
+				name = "Test Crit Heal Sound",
+				order = 15.7,
+				disabled = function()
+					local c = ZSBT.db.profile.outgoing.critHealing
+					return not (c and c.soundEnabled == true)
+				end,
+				func = function()
+					local c = ZSBT.db.profile.outgoing.critHealing
+					if c and ZSBT.PlayLSMSound then
+						ZSBT.PlayLSMSound(c.sound)
+					end
+				end,
+			},
+			critHealingMinSoundAmount = {
+				type = "range",
+				name = "Minimum Crit Heal Amount (sound)",
+				desc = "Only play the crit sound when the crit amount is at or above this value. In instances, the exact amount may be unavailable.",
+				order = 15.8,
+				min = 0,
+				max = 999999,
+				softMax = 250000,
+				step = 100,
+				disabled = function()
+					local c = ZSBT.db.profile.outgoing.critHealing
+					return not (c and c.soundEnabled == true)
+				end,
+				get = function()
+					local c = ZSBT.db.profile.outgoing.critHealing
+					return (c and tonumber(c.minSoundAmount)) or 0
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.minSoundAmount = tonumber(v) or 0
+				end,
+			},
+			critHealingInstanceSoundMode = {
+				type = "select",
+				name = "Instances: When amount is unavailable (heals)",
+				desc = "In dungeons/raids, crit amounts can be protected/secret. Choose how crit sounds behave when the amount can't be safely compared.",
+				order = 15.9,
+				values = function()
+					return {
+						["Any Crit"] = "Any Crit",
+						["Only when amount is known"] = "Only when amount is known",
+					}
+				end,
+				disabled = function()
+					local c = ZSBT.db.profile.outgoing.critHealing
+					return not (c and c.soundEnabled == true)
+				end,
+				get = function()
+					local c = ZSBT.db.profile.outgoing.critHealing
+					return (c and type(c.instanceSoundMode) == "string" and c.instanceSoundMode ~= "") and c.instanceSoundMode or "Only when amount is known"
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.instanceSoundMode = v
+				end,
+			},
 
             ----------------------------------------------------------------
             -- UI/UX Validation Harness (Capture + Replay)

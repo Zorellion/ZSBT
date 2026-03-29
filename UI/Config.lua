@@ -271,7 +271,7 @@ function ZSBT.BuildBuffRulesOptionsTable()
 
     return {
         type = "group",
-        name = "|cFF00CC66Buff Rules|r",
+		name = "|cFFFFD100Buff Rules|r",
 		childGroups = "tab",
 		args = args,
     }
@@ -1795,8 +1795,8 @@ Incoming controls what you see when you take damage or receive healing.
 - Set a `Min Threshold`.
 
 ## Crit routing
-- Incoming damage crits: `Incoming` -> `Incoming Damage` -> `Crit Scroll Area (optional)`.
-- Incoming healing crits: `Incoming` -> `Incoming Healing` -> `Crit Scroll Area (optional)`.
+- Incoming damage crits: `Incoming` -> `Incoming Damage` -> `Incoming Crit Damage`.
+- Incoming healing crits: `Incoming` -> `Incoming Healing` -> `Incoming Crit Heals`.
 
 ## Tips
 - If you’re in a raid and see too much spam, increase `Min Threshold` and enable merging in `Spam Control`.
@@ -2034,7 +2034,7 @@ Triggers let you create your own notifications when specific events happen.
   - Fires when you get a killing blow.
 - **UT_KILL_1** through **UT_KILL_7**
   - UT announcer tier events.
-  - These ship as presets by default (you can edit them).
+  - Install the preset UT triggers via the `Setup UT Announcer Triggers` button.
 
 ## Add a trigger
 - Click `Add Trigger`.
@@ -2430,16 +2430,14 @@ If you think you found a real bug, these details help the most:
 
 	utAnnouncer = [[# UT Announcer
 
-UT Announcer is a feature that announces specific events to your party or raid.
+UT Announcer is an Unreal Tournament–style multi-kill announcer implemented as Triggers.
 
 ## Where to configure
-- `/zsbt` -> `UT Announcer`
+- `/zsbt` -> `Alerts` -> `Triggers`
 
-## Enable UT Announcer
-- Turn `Enabled` on.
-
-## Add UT Announcer events
-- Add events to the list (spell IDs) in the UT Announcer UI.
+## Enable / install the presets
+- Click `Setup UT Announcer Triggers`.
+- This is merge-only (it adds missing UT_KILL triggers but does not overwrite your edits).
 
 ## Output
 - **Channel**: where the announcement appears (party/raid).
@@ -2961,77 +2959,60 @@ function ZSBT.BuildOptionsTable()
         childGroups = "tree",
         args = {
             ----------------------------------------------------------------
+            -- Tab 0: Quick Start
+            ----------------------------------------------------------------
+            quickStart = ZSBT.BuildTab_QuickStart(),
+
+            ----------------------------------------------------------------
             -- Tab 1: General
             ----------------------------------------------------------------
             general = ZSBT.BuildTab_General(),
 
             ----------------------------------------------------------------
-            -- Tab 2: Scroll Areas
+            -- Tab 0.5: Display
             ----------------------------------------------------------------
-            scrollAreas = ZSBT.BuildTab_ScrollAreas(),
+            display = ZSBT.BuildTab_Display(),
 
             ----------------------------------------------------------------
-            -- Tab 3: Notifications
+            -- Tab 0.75: Alerts
             ----------------------------------------------------------------
-            notifications = ZSBT.BuildTab_Notifications(),
+            alerts = ZSBT.BuildTab_Alerts(),
 
             ----------------------------------------------------------------
-            -- Tab 4: Incoming
+            -- Tab 0.9: Combat Text
             ----------------------------------------------------------------
-            incoming = ZSBT.BuildTab_Incoming(),
+            combatText = ZSBT.BuildTab_CombatText(),
 
             ----------------------------------------------------------------
-            -- Tab 5: Outgoing
+            -- Tab 2: Profiles
             ----------------------------------------------------------------
-            outgoing = ZSBT.BuildTab_Outgoing(),
+            profiles = ZSBT.BuildTab_ProfilesRoot(),
 
             ----------------------------------------------------------------
-            -- Tab 5: Pets
+            -- Tab 9: Maintenance
             ----------------------------------------------------------------
-            pets = ZSBT.BuildTab_Pets(),
-
-            ----------------------------------------------------------------
-            -- Tab 6: Spam Control
-            ----------------------------------------------------------------
-            spamControl = ZSBT.BuildTab_SpamControl(),
-
-            ----------------------------------------------------------------
-            -- Tab 9: Triggers
-            ----------------------------------------------------------------
-            triggers = ZSBT.BuildTab_Triggers(),
-
-            ----------------------------------------------------------------
-            -- Tab 7: Cooldowns
-            ----------------------------------------------------------------
-            cooldowns = ZSBT.BuildTab_Cooldowns(),
-
-            ----------------------------------------------------------------
-            -- Tab 8: Media
-            ----------------------------------------------------------------
-            media = ZSBT.BuildTab_Media(),
-
-            ----------------------------------------------------------------
-            -- Tab 9: Import / Export
-            ----------------------------------------------------------------
-            importExport = ZSBT.BuildTab_Profiles(),
-
-            ----------------------------------------------------------------
-            -- Help (Quick Reference)
-            ----------------------------------------------------------------
-            help = {
+            maintenance = {
                 type = "group",
-                name = "|cFFFFD100Help|r",
-                order = 999,
+                name = "|cFFFFD100Help and Support|r",
+                order = 9,
                 childGroups = "tree",
-                args = buildHelpTreeArgs(),
-            },
+                args = {
+                    maintenance_help = {
+                        type = "group",
+                        name = "|cFFFFD100Help|r",
+                        order = 1,
+                        childGroups = "tree",
+                        args = buildHelpTreeArgs(),
+                    },
 
-            troubleshooting = {
-                type = "group",
-                name = "|cFFFFD100Troubleshooting|r",
-                order = 1000,
-                childGroups = "tree",
-                args = buildHelpTopicArgs("troubleshooting"),
+                    maintenance_troubleshooting = {
+                        type = "group",
+                        name = "|cFFFFD100Troubleshooting|r",
+                        order = 2,
+                        childGroups = "tree",
+                        args = buildHelpTopicArgs("troubleshooting"),
+                    },
+                },
             },
 
             ----------------------------------------------------------------
@@ -3051,7 +3032,7 @@ function ZSBT.BuildSpellRulesOptionsTable()
 
     return {
         type = "group",
-        name = "|cFF00CC66Spell Rules|r",
+		name = "|cFFFFD100Spell Rules|r",
 		childGroups = "tab",
 		args = {
 			main = {
@@ -3088,6 +3069,7 @@ local BACKDROP_INNER = {
 -- Style buttons: strip WoW default textures, apply flat dark + green
 ------------------------------------------------------------------------
 local function StyleButton(btn)
+    if true then return end
     if not btn or btn.zsbtBtnStyled then return end
     btn.zsbtBtnStyled = true
 

@@ -380,9 +380,8 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 
     local prof = ZSBT.db.profile.outgoing
 
-	local function maybePlayCritSound(rawPipeValue, isTainted)
+	local function maybePlayCritSound(critConf, rawPipeValue, isTainted)
 		if not (evt and evt.isCrit == true) then return end
-		local critConf = prof and prof.crits
 		if type(critConf) ~= "table" then return end
 		if critConf.soundEnabled ~= true then return end
 		local soundKey = critConf.sound
@@ -729,6 +728,14 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			end
 		end
 		local critConf = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.outgoing and ZSBT.db.profile.outgoing.crits
+		local profOut = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.outgoing
+		if profOut and evt.isCrit == true then
+			if kind == "heal" and type(profOut.critHealing) == "table" and profOut.critHealing.enabled == true then
+				critConf = profOut.critHealing
+			elseif kind ~= "heal" and type(profOut.critDamage) == "table" and profOut.critDamage.enabled == true then
+				critConf = profOut.critDamage
+			end
+		end
 		-- Crit color: when routing to crit area, use configured crit color (if set)
 		if evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
 			local cc = critConf.color
@@ -772,7 +779,17 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			end
 		end
 
-		maybePlayCritSound(rawPipeValue, isTainted)
+		local critConf = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.outgoing and ZSBT.db.profile.outgoing.crits
+		local profOut = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.outgoing
+		if profOut and evt.isCrit == true then
+			if kind == "heal" and type(profOut.critHealing) == "table" and profOut.critHealing.enabled == true then
+				critConf = profOut.critHealing
+			elseif kind ~= "heal" and type(profOut.critDamage) == "table" and profOut.critDamage.enabled == true then
+				critConf = profOut.critDamage
+			end
+		end
+
+		maybePlayCritSound(critConf, rawPipeValue, isTainted)
 
         -- Dungeon-safe visual filtering: pass tainted value + threshold
         if rawPipeValue ~= nil and not ZSBT.IsSafeNumber(rawPipeValue) then
@@ -937,6 +954,14 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			end
 		end
 		local critConf = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.outgoing and ZSBT.db.profile.outgoing.crits
+		local profOut = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.outgoing
+		if profOut and evt.isCrit == true then
+			if kind == "heal" and type(profOut.critHealing) == "table" and profOut.critHealing.enabled == true then
+				critConf = profOut.critHealing
+			elseif kind ~= "heal" and type(profOut.critDamage) == "table" and profOut.critDamage.enabled == true then
+				critConf = profOut.critDamage
+			end
+		end
 		-- Crit color: when routing to crit area, use configured crit color (if set)
 		if evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
 			local cc = critConf.color
@@ -958,7 +983,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
             school = evt.schoolMask,
         }
 
-		maybePlayCritSound(rawPipeValue, isTainted)
+		maybePlayCritSound(critConf, rawPipeValue, isTainted)
 
         if evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
 			areaToUse = critConf.scrollArea

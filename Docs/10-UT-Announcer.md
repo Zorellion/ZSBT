@@ -5,9 +5,16 @@ ZSBT includes an Unreal Tournament–style multi-kill announcer.
 ## What it does
 - Tracks your kill streak timing.
 - Fires trigger events `UT_KILL_1` through `UT_KILL_7`.
-- By default, ZSBT ships with 7 preset triggers that:
-  - Display styled text in `Notifications`
-  - Play matching sounds
+- UT Announcer presets are optional and can be installed with one click.
+
+## Enable / install the presets
+- `/zsbt` -> `Alerts` -> `Triggers`
+- Click `Setup UT Announcer Triggers`
+- This is merge-only (it adds missing UT_KILL triggers but does not overwrite your edits).
+
+## What the presets do
+- Display styled text in `Notifications`
+- Play matching sounds
 
 ## How the tiers work
 - Tier 1 = first kill in a chain.
@@ -18,7 +25,7 @@ ZSBT includes an Unreal Tournament–style multi-kill announcer.
 ZSBT uses a rolling window + a chain cap (configured in the addon logic).
 
 ## Customize the announcements
-- `/zsbt` -> `Triggers`
+- `/zsbt` -> `Alerts` -> `Triggers`
 - Find the triggers for:
   - `UT_KILL_1` … `UT_KILL_7`
 - Change:

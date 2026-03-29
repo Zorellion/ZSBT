@@ -60,13 +60,72 @@ function Display:Disable()
     end
 end
 
-local function ResolveCritFont()
+local function ResolveCritFont(meta)
     local profile = ZSBT.db and ZSBT.db.profile
     if not profile or not profile.general then
-        return nil, 28, "THICKOUTLINE", 1.5
+        return nil, 28, "THICKOUTLINE", 1.5, "Pow"
     end
 
     local critConf = profile.general.critFont or {}
+    if meta and meta.stream == "incoming" then
+        local usedKindOverride = false
+        local ik = meta.kind
+        if ik == "heal" then
+            local hc = profile.incoming and profile.incoming.critHealing
+            if type(hc) == "table" then
+                local hk = hc.critFont
+                if type(hk) == "table" and hk.enabled == true then
+                    critConf = hk
+                    usedKindOverride = true
+                end
+            end
+        else
+            local dc = profile.incoming and profile.incoming.critDamage
+            if type(dc) == "table" then
+                local dk = dc.critFont
+                if type(dk) == "table" and dk.enabled == true then
+                    critConf = dk
+                    usedKindOverride = true
+                end
+            end
+        end
+
+        if not usedKindOverride then
+            local ic = profile.incoming and profile.incoming.critFont
+            if type(ic) == "table" and ic.enabled == true then
+                critConf = ic
+            end
+        end
+    elseif meta and meta.stream == "outgoing" then
+        local usedKindOverride = false
+        local ok = meta.kind
+        if ok == "heal" then
+            local hc = profile.outgoing and profile.outgoing.critHealing
+            if type(hc) == "table" then
+                local hk = hc.critFont
+                if type(hk) == "table" and hk.enabled == true then
+                    critConf = hk
+                    usedKindOverride = true
+                end
+            end
+        else
+            local dc = profile.outgoing and profile.outgoing.critDamage
+            if type(dc) == "table" then
+                local dk = dc.critFont
+                if type(dk) == "table" and dk.enabled == true then
+                    critConf = dk
+                    usedKindOverride = true
+                end
+            end
+        end
+
+        if not usedKindOverride then
+            local oc = profile.outgoing and profile.outgoing.critFont
+            if type(oc) == "table" and oc.enabled == true then
+                critConf = oc
+            end
+        end
+    end
     local general = profile.general.font or {}
 
     -- Face: use crit override or fall back to master
@@ -86,7 +145,16 @@ local function ResolveCritFont()
     local critOutline = ZSBT.OUTLINE_STYLES and ZSBT.OUTLINE_STYLES[outlineKey] or "THICKOUTLINE"
     local critScale = tonumber(critConf.scale) or 1.5
 
-    return critFace, critSize, critOutline, critScale
+    local globalCrit = profile.general.critFont
+    local mode = critConf.anim
+    if mode ~= "Area" and mode ~= "Pow" then
+        mode = globalCrit and globalCrit.anim
+    end
+    if mode ~= "Area" and mode ~= "Pow" then
+        mode = "Pow"
+    end
+
+    return critFace, critSize, critOutline, critScale, mode
 end
 
 ------------------------------------------------------------------------
@@ -414,20 +482,13 @@ function Display:Emit(areaName, text, color, meta)
     -- Resolve crit font if this is a crit event
     local isCrit = meta and meta.isCrit
     if isCrit then
-        local critFace, critSize, critOutline, critScale = ResolveCritFont()
+        local critFace, critSize, critOutline, critScale, critMode = ResolveCritFont(meta)
         if not meta then meta = {} end
-        meta.critFace = critFace
-        meta.critSize = critSize
-        meta.critOutline = critOutline
-        meta.critScale = critScale
-		-- Crit animation mode (Pow vs follow scroll area animation)
-		local profile = ZSBT.db and ZSBT.db.profile
-		local critConf = profile and profile.general and profile.general.critFont
-		local mode = critConf and critConf.anim
-		if mode ~= "Area" and mode ~= "Pow" then
-			mode = "Pow"
-		end
-		meta.critAnim = mode
+		if meta.critFace == nil then meta.critFace = critFace end
+		if meta.critSize == nil then meta.critSize = critSize end
+		if meta.critOutline == nil then meta.critOutline = critOutline end
+		if meta.critScale == nil then meta.critScale = critScale end
+		if meta.critAnim == nil then meta.critAnim = critMode end
     end
 
     TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag, fontAlpha,

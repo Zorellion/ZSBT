@@ -1094,7 +1094,11 @@ function Addon:OnInitialize()
 				safeRestrictDeleteDefault(profilesTable)
 				profilesTable.order = 100
 				profilesTable.name = "|cFFFFD100DB Profiles|r"
-				options.args.acedbProfiles = profilesTable
+				if options and options.args and options.args.profiles and options.args.profiles.args then
+					options.args.profiles.args.acedbProfiles = profilesTable
+				elseif options and options.args then
+					options.args.acedbProfiles = profilesTable
+				end
 			end
 		end
         LibStub("AceConfig-3.0"):RegisterOptionsTable("ZSBT", options)

@@ -497,9 +497,54 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
         end
     end
 
+    local function maybePlayCritSound(critConf, rawPipeValue, isTainted)
+        if not (evt and evt.isCrit == true) then return end
+        if type(critConf) ~= "table" then return end
+        if critConf.soundEnabled ~= true then return end
+        local soundKey = critConf.sound
+        if type(soundKey) ~= "string" or soundKey == "" or soundKey == "None" then return end
+        if not ZSBT.PlayLSMSound then return end
+
+        local minAmt = tonumber(critConf.minSoundAmount) or 0
+        local amt = nil
+        if rawPipeValue ~= nil and ZSBT.IsSafeNumber(rawPipeValue) then
+            amt = rawPipeValue
+        elseif (not isTainted) and ZSBT.IsSafeNumber(evt.amount) then
+            amt = evt.amount
+        end
+
+        if amt ~= nil then
+            if amt < minAmt then return end
+            ZSBT.PlayLSMSound(soundKey)
+            return
+        end
+
+        local mode = tostring(critConf.instanceSoundMode or "Only when amount is known")
+        if mode == "Any Crit" then
+            ZSBT.PlayLSMSound(soundKey)
+        end
+    end
+
     local area = conf.scrollArea or "Incoming"
     local critRouted = false
-    if evt.isCrit == true and conf.critScrollArea and ZSBT.IsSafeString(conf.critScrollArea) and conf.critScrollArea ~= "" then
+    local incomingProf = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.incoming
+    local baseCritConf = incomingProf and incomingProf.crits
+    local kindOverrideCritConf = nil
+    if incomingProf and evt.isCrit == true then
+        if kind == "heal" and type(incomingProf.critHealing) == "table" and incomingProf.critHealing.enabled == true then
+            kindOverrideCritConf = incomingProf.critHealing
+        elseif kind ~= "heal" and type(incomingProf.critDamage) == "table" and incomingProf.critDamage.enabled == true then
+            kindOverrideCritConf = incomingProf.critDamage
+        end
+    end
+    local resolvedCritConf = kindOverrideCritConf or baseCritConf
+
+    -- New incoming crit routing (Incoming tab)
+    if evt.isCrit == true and resolvedCritConf and resolvedCritConf.enabled == true and ZSBT.IsSafeString(resolvedCritConf.scrollArea) and resolvedCritConf.scrollArea ~= "" then
+        area = resolvedCritConf.scrollArea
+        critRouted = true
+    -- Legacy per-category crit routing (Damage/Healing)
+    elseif evt.isCrit == true and conf.critScrollArea and ZSBT.IsSafeString(conf.critScrollArea) and conf.critScrollArea ~= "" then
         area = conf.critScrollArea
         critRouted = true
     end
@@ -610,10 +655,19 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
         end
     end
 
-    -- Crit color override: yellow for damage crits, bright green for heal crits.
-    -- Applied AFTER school/custom colors so crits always stand out.
+    -- Crit color override
     if evt.isCrit then
-        if kind == "heal" then
+        -- When crits are routed via Incoming Crits config, allow a custom crit color.
+        if critRouted and resolvedCritConf and resolvedCritConf.enabled == true then
+            local cc = resolvedCritConf.color
+            if type(cc) == "table" and type(cc.r) == "number" and type(cc.g) == "number" and type(cc.b) == "number" then
+                color = { r = cc.r, g = cc.g, b = cc.b }
+            elseif kind == "heal" then
+                color = {r = 0.20, g = 1.00, b = 0.40}
+            else
+                color = {r = 1.00, g = 0.25, b = 0.25}
+            end
+        elseif kind == "heal" then
             color = {r = 0.20, g = 1.00, b = 0.40}
         else
             color = {r = 1.00, g = 1.00, b = 0.00}
@@ -632,6 +686,16 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
         isCrit = evt.isCrit == true,
         school = evt.schoolMask,
     }
+
+    maybePlayCritSound(resolvedCritConf, rawPipeValue, isTainted)
+
+    if evt.isCrit and resolvedCritConf and resolvedCritConf.enabled == true then
+        if resolvedCritConf.sticky ~= false then
+            meta.stickyCrit = true
+            meta.stickyScale = 1.12
+            meta.stickyDurationMult = 1.25
+        end
+    end
     if critRouted then
         meta.critRouted = true
     end

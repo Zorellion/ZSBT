@@ -92,6 +92,16 @@ local function ECPrint(msg)
 	end
 end
 
+
+local function isCritChatMessage(msg)
+	if type(msg) ~= "string" then return false end
+	-- Use lowercase checks to catch: "crits", "critically", and "critical".
+	local m = msg:lower()
+	return (m:find("crits", 1, true) ~= nil)
+		or (m:find("critically", 1, true) ~= nil)
+		or (m:find("critical", 1, true) ~= nil)
+end
+
 local function isStrictOutgoingCombatLogOnly()
 	return ZSBT
 		and ZSBT.Core
@@ -796,7 +806,7 @@ function Collector:handleChatSelfDamage(event, msg)
 		end
 		self._lastOutgoingFromTargetToken = token
 		self._lastCombatTextOutgoingToken = token
-		local isCrit = (msg:find("Critical", 1, true) ~= nil) or (msg:find("critical", 1, true) ~= nil)
+		local isCrit = isCritChatMessage(msg)
 		if isWhirlwindSpellId(self._lastPlayerSpellId) and wwAggEnabled(self._lastPlayerSpellId) then
 			self._wwAggChatToken = token
 			self._wwAggChatAt = tNow
@@ -1031,7 +1041,7 @@ function Collector:handleChatSelfDamage(event, msg)
 		ECPrint(("BIG_HIT CHAT token=%s spellId=%s amt=%s")
 			:format(dbgSafe(token), dbgSafe(self._lastPlayerSpellId), dbgSafe(amount)))
 	end
-	local isCrit = (msg:find("Critical", 1, true) ~= nil) or (msg:find("critical", 1, true) ~= nil)
+	local isCrit = isCritChatMessage(msg)
 	if isWhirlwindSpellId(self._lastPlayerSpellId) and wwAggEnabled(self._lastPlayerSpellId) then
 		-- If Whirlwind aggregation is enabled, funnel addon-readable chat hits into the
 		-- same aggregation bucket and suppress per-hit emits (prevents duplicates/crit routing).

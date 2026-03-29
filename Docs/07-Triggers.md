@@ -62,7 +62,7 @@ Triggers let you create your own notifications when specific events happen.
   - Fires when you get a killing blow.
 - **UT_KILL_1** through **UT_KILL_7**
   - UT announcer tier events.
-  - These ship as presets by default (you can edit them).
+  - Install the preset UT triggers via the `Setup UT Announcer Triggers` button.
 
 ## Add a trigger
 - Click `Add Trigger`.
