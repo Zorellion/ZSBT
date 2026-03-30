@@ -56,6 +56,24 @@ If a trigger or cooldown alert doesn’t fire, the issue is usually one of these
 - **Event expectations**
   - Some trigger types fire only on a state change (example: “became usable”)
 
+## Interrupt alerts not showing
+- Ensure the category is enabled:
+  - `/zsbt` -> `Alerts` -> `Notifications` -> `Interrupt Alerts`
+  - Enable `Interrupts (Successful)` and/or `Cast Stops (Stuns/CC)`
+- Ensure the Notifications (or chosen) scroll area is enabled and visible:
+  - `/zsbt` -> `Scroll Areas`
+
+## Interrupt chat announcements causing blocked action errors
+If you see an error like:
+- `ADDON_ACTION_BLOCKED` / `tried to call the protected function SendChatMessage`
+
+This is expected when an addon attempts to use protected chat APIs.
+
+ZSBT does NOT broadcast interrupts to server chat.
+Instead it can print locally into your chat frame:
+- `/zsbt` -> `Alerts` -> `Notifications` -> `Interrupt Alerts` -> `Chat Announcement`
+- Enable `Show Successful Interrupts in Chat`
+
 ## Custom media not showing
 If custom fonts or sounds don’t appear in dropdowns:
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.2
+
+### Added
+- Notifications: added Interrupt Alerts (successful interrupts + cast-stopping CC) routed through Notifications with customizable templates.
+- Notifications: new Interrupt Alerts sub-section under Alerts -> Notifications with shared style options (font override, color), routing, and optional sound.
+- Notifications: added template code %s for your stopping ability name (Kick/Pummel/Storm Bolt/etc.).
+- Notifications: added optional local chat output for successful interrupts (prints to your chat frame; does not use protected SendChatMessage).
+
+### Fixed
+- Notifications: hardened interrupt/cast-stop messaging against WoW 12.x secret-string restrictions (prevents taint/blocked actions when formatting or outputting text).
+
 ## 2.0.1
 
 ### Fixed

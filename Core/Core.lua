@@ -653,6 +653,7 @@ function Core:Enable()
     self:InitKillAnnouncer()
     self:InitLootTracking()
     self:InitTradeSkillTracking()
+	self:InitInterruptTracking()
     self:InitPowerTracking()
     self:InitProgressTracking()
 end
@@ -777,6 +778,488 @@ function Core:InitTradeSkillTracking()
 				Core:EmitNotification(out, { r = 0.2, g = 0.8, b = 1.0 }, "tradeskillLearned")
 			end
 			return
+		end
+	end)
+end
+
+function Core:InitInterruptTracking()
+	if self._interruptFrame then return end
+
+	local INTERRUPT_SPELL_IDS = {
+		-- Rogue / Shaman / Demon Hunter
+		[1766] = true,  -- Kick
+		[57994] = true, -- Wind Shear
+		[183752] = true, -- Disrupt
+		-- Death Knight / Hunter / Paladin (extra common interrupts)
+		[47528] = true, -- Mind Freeze
+		[187707] = true, -- Muzzle
+		[31935] = true, -- Avenger's Shield
+		-- Warrior / Paladin / Monk / Druid
+		[6552] = true,  -- Pummel
+		[96231] = true, -- Rebuke
+		[116705] = true, -- Spear Hand Strike
+		[106839] = true, -- Skull Bash
+		-- Mage / Warlock / Priest / Hunter / Evoker
+		[2139] = true,  -- Counterspell
+		[19647] = true, -- Spell Lock
+		[15487] = true, -- Silence
+		[147362] = true, -- Counter Shot
+		[351338] = true, -- Quell
+		-- Blood Elf racial
+		[28730] = true, -- Arcane Torrent
+	}
+	local CASTSTOP_SPELL_IDS = {
+		-- Warrior
+		[107570] = true, -- Storm Bolt
+		[46968] = true, -- Shockwave
+		[132168] = true, -- Shockwave (alt)
+		-- Demon Hunter
+		[179057] = true, -- Chaos Nova
+		-- Death Knight
+		[221562] = true, -- Asphyxiate
+		[108194] = true, -- Asphyxiate (old/alt)
+		-- Warlock
+		[30283] = true, -- Shadowfury
+		-- Shaman
+		[192058] = true, -- Capacitor Totem
+		-- Hunter
+		[19577] = true, -- Intimidation
+		-- Paladin / Rogue / Monk / Druid (common cast-stopping stuns)
+		[853] = true,   -- Hammer of Justice
+		[408] = true,   -- Kidney Shot
+		[1833] = true,  -- Cheap Shot
+		[119381] = true, -- Leg Sweep
+		[5211] = true,  -- Mighty Bash
+	}
+
+	local function getTemplate(key, fallback)
+		local p = ZSBT.db and ZSBT.db.profile
+		local t = p and p.notificationsTemplates
+		local v = t and t[key]
+		if type(v) ~= "string" or v == "" then
+			return fallback
+		end
+		return v
+	end
+
+	local function SafeDbgPrint(msg)
+		if not (ZSBT and ZSBT.Addon and ZSBT.Addon.Print) then return end
+		if type(msg) ~= "string" then return end
+		if ZSBT.IsSafeString and not ZSBT.IsSafeString(msg) then return end
+		ZSBT.Addon:Print(msg)
+	end
+
+	local function safeStr(v)
+		if type(v) ~= "string" then return tostring(v) end
+		if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
+		return "<secret>"
+	end
+
+	local function coerceSafe(v)
+		if type(v) ~= "string" then
+			v = tostring(v or "")
+		end
+		if ZSBT.IsSafeString and not ZSBT.IsSafeString(v) then
+			return "<secret>"
+		end
+		return v
+	end
+
+	local function safeSpellLabel(spellId)
+		spellId = tonumber(spellId)
+		if not spellId then return "" end
+		local STOPPER_NAMES = {
+			-- Interrupts
+			[1766] = "Kick",
+			[57994] = "Wind Shear",
+			[183752] = "Disrupt",
+			[47528] = "Mind Freeze",
+			[187707] = "Muzzle",
+			[31935] = "Avenger's Shield",
+			[6552] = "Pummel",
+			[96231] = "Rebuke",
+			[116705] = "Spear Hand Strike",
+			[106839] = "Skull Bash",
+			[2139] = "Counterspell",
+			[19647] = "Spell Lock",
+			[15487] = "Silence",
+			[147362] = "Counter Shot",
+			[351338] = "Quell",
+			[28730] = "Arcane Torrent",
+			-- Cast-stops (stuns/CC)
+			[107570] = "Storm Bolt",
+			[46968] = "Shockwave",
+			[132168] = "Shockwave",
+			[179057] = "Chaos Nova",
+			[221562] = "Asphyxiate",
+			[108194] = "Asphyxiate",
+			[30283] = "Shadowfury",
+			[192058] = "Capacitor Totem",
+			[19577] = "Intimidation",
+			[853] = "Hammer of Justice",
+			[408] = "Kidney Shot",
+			[1833] = "Cheap Shot",
+			[119381] = "Leg Sweep",
+			[5211] = "Mighty Bash",
+		}
+		local hardcoded = STOPPER_NAMES[spellId]
+		if type(hardcoded) == "string" and hardcoded ~= "" then
+			return hardcoded
+		end
+		local name = nil
+		pcall(function()
+			if GetSpellInfo then
+				name = GetSpellInfo(spellId)
+			end
+		end)
+		if type(name) == "string" and name ~= "" and (not ZSBT.IsSafeString or ZSBT.IsSafeString(name)) then
+			return name
+		end
+		return "SpellID:" .. tostring(spellId)
+	end
+
+	local function applyTemplate(tpl, ctx)
+		if type(tpl) ~= "string" or tpl == "" then return nil end
+		ctx = ctx or {}
+		local out = tpl
+		local e = coerceSafe(ctx.e)
+		local s = coerceSafe(ctx.s)
+		local p = coerceSafe(ctx.p)
+		local t = coerceSafe(ctx.t)
+		out = out:gsub("%%e", e)
+		out = out:gsub("%%s", s)
+		out = out:gsub("%%p", p)
+		out = out:gsub("%%t", t)
+		return out
+	end
+
+	local function convertGlobalStringToPattern(gs)
+		if type(gs) ~= "string" or gs == "" then return nil end
+		local pat = gs
+		pat = pat:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
+		pat = pat:gsub("%%%%%d%$d", "(%%d+)")
+		pat = pat:gsub("%%%%d", "(%%d+)")
+		pat = pat:gsub("%%%%%d%$s", "(.+)")
+		pat = pat:gsub("%%%%s", "(.+)")
+		return "^" .. pat .. "$"
+	end
+
+	local interruptPat = nil
+	if type(_G.ERR_SPELL_INTERRUPTED_S) == "string" then
+		interruptPat = convertGlobalStringToPattern(_G.ERR_SPELL_INTERRUPTED_S)
+	end
+
+	self._interruptFrame = CreateFrame("Frame")
+	pcall(function() self._interruptFrame:RegisterEvent("COMBAT_TEXT_UPDATE") end)
+	pcall(function() self._interruptFrame:RegisterEvent("CHAT_MSG_COMBAT_LOG") end)
+	pcall(function() self._interruptFrame:RegisterEvent("CHAT_MSG_COMBAT_MISC_INFO") end)
+	pcall(function() self._interruptFrame:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE") end)
+	pcall(function() self._interruptFrame:RegisterEvent("CHAT_MSG_SPELL_DAMAGES") end)
+	pcall(function() self._interruptFrame:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE") end)
+	pcall(function() self._interruptFrame:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_SELF_DAMAGE") end)
+	pcall(function() self._interruptFrame:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE") end)
+	pcall(function() self._interruptFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED") end)
+	pcall(function() self._interruptFrame:RegisterEvent("UNIT_SPELLCAST_START") end)
+	pcall(function() self._interruptFrame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED") end)
+	pcall(function() self._interruptFrame:RegisterEvent("UNIT_SPELLCAST_STOP") end)
+	pcall(function() self._interruptFrame:RegisterEvent("UNIT_SPELLCAST_FAILED") end)
+
+	self._interruptFrame:SetScript("OnEvent", function(_, event, msg, ...)
+		if not Core:IsMasterEnabled() then return end
+		local targetName, spellName = nil, nil
+		local emitCategory = nil
+		local templateKey = nil
+
+		-- Cache last-seen cast spellId per unit so we can attribute stops even if
+		-- UnitCastingInfo() returns nil by the time our own spell SUCCEEDED fires.
+		if event == "UNIT_SPELLCAST_START" then
+			local unit, castGuid, spellId = msg, ...
+			if type(unit) == "string" and type(spellId) == "number" then
+				Core._unitLastCastSpellId = Core._unitLastCastSpellId or {}
+				Core._unitLastCastAt = Core._unitLastCastAt or {}
+				Core._unitLastCastSpellId[unit] = spellId
+				Core._unitLastCastAt[unit] = GetTime and GetTime() or 0
+			end
+			return
+		end
+
+		-- Castbar-based interrupt inference: when YOU cast something and a watched unit
+		-- immediately fires UNIT_SPELLCAST_INTERRUPTED, treat it as a successful interrupt.
+		if event == "UNIT_SPELLCAST_SUCCEEDED" then
+			local unit, _, spellId = msg, ...
+			if unit == "player" and type(spellId) == "number" then
+				local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+				Core._lastStopperSpellId = spellId
+
+				if INTERRUPT_SPELL_IDS[spellId] then
+					Core._lastInterruptAttemptAt = GetTime and GetTime() or 0
+					Core._lastInterruptAttemptSpellId = spellId
+					Core._lastInterruptTargetGUID = UnitGUID and UnitGUID("target") or nil
+					Core._lastInterruptTargetName = UnitName and UnitName("target") or nil
+					Core._lastInterruptTargetCastSpellId = nil
+					if Core._unitLastCastSpellId and type(Core._unitLastCastSpellId["target"]) == "number" then
+						Core._lastInterruptTargetCastSpellId = Core._unitLastCastSpellId["target"]
+					end
+					pcall(function()
+						if UnitCastingInfo then
+							local castSpellId = select(9, UnitCastingInfo("target"))
+							if type(castSpellId) == "number" then
+								Core._lastInterruptTargetCastSpellId = castSpellId
+							end
+						end
+						if UnitChannelInfo and not Core._lastInterruptTargetCastSpellId then
+							local chSpellId = select(8, UnitChannelInfo("target"))
+							if type(chSpellId) == "number" then
+								Core._lastInterruptTargetCastSpellId = chSpellId
+							end
+						end
+					end)
+					if dl >= 4 then
+						SafeDbgPrint("[Interrupt Attempt] spellId=" .. tostring(spellId) .. " targetCastSpellId=" .. tostring(Core._lastInterruptTargetCastSpellId))
+					end
+					if dl >= 5 then
+						-- Avoid printing spell names directly (can be secret strings in 12.x).
+						SafeDbgPrint("[Interrupt Attempt] castSpellName=" .. safeStr((type(Core._lastInterruptTargetCastSpellId) == "number" and GetSpellInfo) and (select(1, GetSpellInfo(Core._lastInterruptTargetCastSpellId))) or nil))
+					end
+				end
+
+				local castStopsEnabled = Core:IsNotificationCategoryEnabled("caststops")
+				if castStopsEnabled and CASTSTOP_SPELL_IDS[spellId] then
+					Core._lastCastStopAttemptAt = GetTime and GetTime() or 0
+					Core._lastCastStopAttemptSpellId = spellId
+					Core._lastCastStopTargetGUID = UnitGUID and UnitGUID("target") or nil
+					Core._lastCastStopTargetName = UnitName and UnitName("target") or nil
+
+					-- Snapshot target cast info so we can report which spell was stopped.
+					Core._lastCastStopSpellId = nil
+					if Core._unitLastCastSpellId and type(Core._unitLastCastSpellId["target"]) == "number" then
+						Core._lastCastStopSpellId = Core._unitLastCastSpellId["target"]
+					end
+					Core._lastCastStopSeenAt = (Core._unitLastCastAt and Core._unitLastCastAt["target"]) or nil
+					Core._lastCastStopEmittedAt = nil
+					pcall(function()
+						if UnitCastingInfo then
+							local castSpellId = select(9, UnitCastingInfo("target"))
+							if type(castSpellId) == "number" then
+								Core._lastCastStopSpellId = castSpellId
+							end
+						end
+						if UnitChannelInfo and not Core._lastCastStopSpellId then
+							local chSpellId = select(8, UnitChannelInfo("target"))
+							if type(chSpellId) == "number" then
+								Core._lastCastStopSpellId = chSpellId
+							end
+						end
+					end)
+
+					-- Poll fallback: some clients don't fire UNIT_SPELLCAST_STOP/FAILED reliably for stuns.
+					pcall(function()
+						if not C_Timer or not C_Timer.After then return end
+						local attemptAt = Core._lastCastStopAttemptAt
+						local targetGUID = Core._lastCastStopTargetGUID
+						local castSpellId = Core._lastCastStopSpellId
+						local seenAt = Core._lastCastStopSeenAt
+						local function poll()
+							if not Core:IsMasterEnabled() then return end
+							if not Core:IsNotificationCategoryEnabled("caststops") then return end
+							if not attemptAt or (GetTime() - attemptAt) > 0.45 then return end
+							if Core._lastCastStopEmittedAt and (GetTime() - Core._lastCastStopEmittedAt) < 0.50 then return end
+							if targetGUID and UnitGUID and UnitGUID("target") ~= targetGUID then return end
+							-- Require that we actually saw the cast start very recently (reduces false positives
+							-- for casts ending naturally near the attempt time).
+							if not seenAt or (attemptAt - seenAt) > 0.25 then return end
+
+							local dl2 = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+							if dl2 >= 5 then
+								SafeDbgPrint("[CastStop Poll] dt=" .. string.format("%.3f", (GetTime() - attemptAt)) .. " castSpellId=" .. tostring(castSpellId))
+							end
+
+							local s1 = nil
+							local s2 = nil
+							pcall(function()
+								if UnitCastingInfo then s1 = select(9, UnitCastingInfo("target")) end
+								if UnitChannelInfo then s2 = select(8, UnitChannelInfo("target")) end
+							end)
+							local stillCasting = (type(s1) == "number") or (type(s2) == "number")
+							if stillCasting then
+								-- If the target is casting something else, don't attribute.
+								if castSpellId and type(s1) == "number" and s1 ~= castSpellId then return end
+								if castSpellId and type(s2) == "number" and s2 ~= castSpellId then return end
+								return
+							end
+
+							-- Cast disappeared early: emit caststop immediately.
+							local tn = Core._lastCastStopTargetName
+							local sn = nil
+							if type(castSpellId) == "number" and GetSpellInfo then
+								local n = GetSpellInfo(castSpellId)
+								if type(n) == "string" and n ~= "" and (not ZSBT.IsSafeString or ZSBT.IsSafeString(n)) then
+									sn = n
+								end
+							end
+							if type(sn) ~= "string" or sn == "" then
+								if type(castSpellId) == "number" then
+									sn = "SpellID:" .. tostring(castSpellId)
+								else
+									sn = "Spell"
+								end
+							end
+							if dl2 >= 5 then
+								SafeDbgPrint("[CastStop Emit] target=" .. safeStr(tn) .. " spellId=" .. tostring(castSpellId) .. " spellName=" .. safeStr(sn))
+							end
+							local tpl = getTemplate("caststops", "Stopped: %e (%t)")
+							local out = applyTemplate(tpl, { e = sn, t = tn })
+							if out and out ~= "" then
+								Core._lastCastStopEmittedAt = GetTime()
+								Core:EmitNotification(out, { r = 1.0, g = 0.6, b = 0.0 }, "caststops")
+							end
+						end
+						C_Timer.After(0.05, poll)
+						C_Timer.After(0.12, poll)
+						C_Timer.After(0.25, poll)
+					end)
+
+					if dl >= 4 then
+						SafeDbgPrint("[CastStop Attempt] spellId=" .. tostring(spellId) .. " castSpellId=" .. tostring(Core._lastCastStopSpellId))
+					end
+				end
+			end
+			return
+		end
+
+		local isCastEndEvent = (event == "UNIT_SPELLCAST_INTERRUPTED" or event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_FAILED")
+		if isCastEndEvent then
+			local unit, castGuid, interruptedSpellId = msg, ...
+			local tNow = GetTime and GetTime() or 0
+			local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+			local lastInterruptAt = Core._lastInterruptAttemptAt or 0
+			local lastCastStopAt = Core._lastCastStopAttemptAt or 0
+
+			if type(unit) ~= "string" then return end
+			if unit ~= "target" and unit ~= "focus" and (not unit:match("^nameplate")) then
+				return
+			end
+
+			-- Prefer true interrupt attribution when within window.
+			if (tNow - lastInterruptAt) <= 0.60 then
+				if dl >= 4 then
+					SafeDbgPrint("[Interrupt Unit] event=" .. tostring(event) .. " unit=" .. tostring(unit) .. " spellId=" .. tostring(interruptedSpellId) .. " dt=" .. string.format("%.3f", (tNow - lastInterruptAt)))
+				end
+				spellName = ""
+				local okName, uName = pcall(function() return UnitName and UnitName(unit) end)
+				if okName and type(uName) == "string" and uName ~= "" then
+					targetName = uName
+				end
+				if not targetName then
+					targetName = (Core._lastInterruptTargetName and tostring(Core._lastInterruptTargetName)) or nil
+				end
+				emitCategory = "interrupts"
+				templateKey = "interrupts"
+			end
+
+			-- If not a true interrupt, attempt cast-stop attribution if enabled.
+			if not emitCategory and Core:IsNotificationCategoryEnabled("caststops") and (tNow - lastCastStopAt) <= 0.40 then
+				local expectedGUID = Core._lastCastStopTargetGUID
+				local unitGUID = UnitGUID and UnitGUID(unit) or nil
+				if expectedGUID and unitGUID and expectedGUID ~= unitGUID then
+					return
+				end
+
+				if dl >= 4 then
+					SafeDbgPrint("[CastStop Unit] event=" .. tostring(event) .. " unit=" .. tostring(unit) .. " dt=" .. string.format("%.3f", (tNow - lastCastStopAt)))
+				end
+
+				targetName = (Core._lastCastStopTargetName and tostring(Core._lastCastStopTargetName)) or nil
+				if not targetName then
+					local okName, uName = pcall(function() return UnitName and UnitName(unit) end)
+					if okName and type(uName) == "string" and uName ~= "" then
+						targetName = uName
+					end
+				end
+				spellName = ""
+				emitCategory = "caststops"
+				templateKey = "caststops"
+			end
+		end
+		if emitCategory then
+			local t = GetTime and GetTime() or 0
+			if Core._lastNotifCat == emitCategory and (t - (Core._lastNotifAt or 0)) < 0.35 then
+				return
+			end
+			Core._lastNotifCat = emitCategory
+			Core._lastNotifAt = t
+
+			local stopperLabel = safeSpellLabel(Core._lastStopperSpellId)
+			local playerName = UnitName and UnitName("player") or ""
+			local tpl = getTemplate(templateKey or emitCategory, "%t Interrupted!")
+			local out = applyTemplate(tpl, { e = "", p = playerName, s = stopperLabel, t = targetName })
+			if out and out ~= "" then
+				Core:EmitInterruptAlert(out, emitCategory, { p = playerName, s = stopperLabel, t = targetName })
+			end
+			return
+		end
+
+		-- COMBAT_TEXT_UPDATE interrupt (often available even when CLEU is restricted).
+		if event == "COMBAT_TEXT_UPDATE" then
+			local ctType = msg
+			if ctType == "SPELL_INTERRUPT" then
+				local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+				local a1, a2, a3, a4 = ...
+				if dl >= 4 then
+					SafeDbgPrint("[Interrupt CT] a1=" .. safeStr(a1) .. " a2=" .. safeStr(a2) .. " a3=" .. safeStr(a3) .. " a4=" .. safeStr(a4))
+				end
+				if type(a1) == "string" and a1 ~= "" then targetName = a1 end
+				if type(a2) == "string" and a2 ~= "" then spellName = a2 end
+				if not spellName and type(a3) == "string" and a3 ~= "" then spellName = a3 end
+			end
+		end
+
+		-- Fallback: parse chat messages.
+		if not spellName then
+			if not msg or type(msg) ~= "string" then return end
+			if not ZSBT.IsSafeString(msg) then return end
+
+			if interruptPat then
+				local a, b = msg:match(interruptPat)
+				if a and b then
+					if type(a) == "string" and type(b) == "string" then
+						spellName = a
+						targetName = b
+					end
+				end
+			end
+
+			if not spellName then
+				local a, b = msg:match("You interrupt (.+)'s (.+)%.?")
+				if a and b then
+					b = b:gsub("%s+$", "")
+					b = b:gsub("%.$", "")
+					targetName = a
+					spellName = b
+				end
+			end
+
+			if not spellName then
+				local m = msg:lower()
+				if not m:find("interrupt", 1, true) then
+					return
+				end
+				spellName = msg
+			end
+		end
+
+		local t = GetTime and GetTime() or 0
+		if Core._lastNotifCat == "interrupts" and (t - (Core._lastNotifAt or 0)) < 0.35 then
+			return
+		end
+		Core._lastNotifCat = "interrupts"
+		Core._lastNotifAt = t
+
+		emitCategory = "interrupts"
+		local tpl = getTemplate("interrupts", "Interrupted: %e")
+		local out = applyTemplate(tpl, { e = spellName, t = targetName })
+		if out and out ~= "" then
+			Core:EmitNotification(out, { r = 1.0, g = 0.6, b = 0.0 }, emitCategory)
 		end
 	end)
 end
@@ -1059,6 +1542,71 @@ function Core:GetNotificationScrollArea(category)
 		area = "Notifications"
 	end
 	return area
+end
+
+function Core:EmitInterruptAlert(text, category, ctx)
+	if category and not self:IsNotificationCategoryEnabled(category) then
+		return
+	end
+	local p = ZSBT.db and ZSBT.db.profile
+	local conf = p and p.interruptAlerts
+	local area = (conf and type(conf.scrollArea) == "string" and conf.scrollArea ~= "") and conf.scrollArea or nil
+	if not area then
+		area = (type(category) == "string" and category ~= "" and self.GetNotificationScrollArea) and self:GetNotificationScrollArea(category) or "Notifications"
+	end
+	local scrollAreas = p and p.scrollAreas
+	if type(scrollAreas) ~= "table" or type(scrollAreas[area]) ~= "table" then
+		area = "Notifications"
+	end
+	local color = (conf and type(conf.color) == "table") and conf.color or nil
+	if type(color) ~= "table" then
+		color = { r = 1.0, g = 0.6, b = 0.0 }
+	end
+	local meta = { kind = "notification" }
+	if conf and conf.fontOverride == true then
+		meta.spellFontOverride = true
+		meta.spellFontFace = (type(conf.fontFace) == "string" and conf.fontFace ~= "") and conf.fontFace or nil
+		meta.spellFontOutline = (type(conf.fontOutline) == "string" and conf.fontOutline ~= "") and conf.fontOutline or nil
+		meta.spellFontSize = tonumber(conf.fontSize)
+	end
+
+	if conf and conf.soundEnabled == true and ZSBT.PlayLSMSound then
+		local soundKey = conf.sound
+		if type(soundKey) == "string" and soundKey ~= "" and soundKey ~= "None" then
+			ZSBT.PlayLSMSound(soundKey)
+		end
+	end
+
+	pcall(function()
+		if not (conf and conf.chatEnabled == true) then return end
+		-- Announce only for true interrupts by default.
+		if category ~= "interrupts" then return end
+		if type(conf.chatTemplate) ~= "string" or conf.chatTemplate == "" then return end
+		ctx = type(ctx) == "table" and ctx or {}
+		local pName = tostring(ctx.p or (UnitName and UnitName("player")) or "")
+		local sName = tostring(ctx.s or "")
+		local tName = tostring(ctx.t or "")
+		local msg = conf.chatTemplate
+		msg = msg:gsub("%%p", pName)
+		msg = msg:gsub("%%s", sName)
+		msg = msg:gsub("%%t", tName)
+		-- Ensure final message is safe before sending.
+		if ZSBT.IsSafeString and not ZSBT.IsSafeString(msg) then return end
+		-- Use local chat output instead of SendChatMessage (protected).
+		if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+			DEFAULT_CHAT_FRAME:AddMessage(msg)
+		elseif ChatFrame1 and ChatFrame1.AddMessage then
+			ChatFrame1:AddMessage(msg)
+		elseif ZSBT and ZSBT.Addon and ZSBT.Addon.Print then
+			ZSBT.Addon:Print(msg)
+		end
+	end)
+
+	if ZSBT.DisplayText then
+		ZSBT.DisplayText(area, text, color, meta)
+	elseif self.Display and self.Display.Emit then
+		self.Display:Emit(area, text, color, meta)
+	end
 end
 
 function Core:EmitNotification(text, color, category)

@@ -22,6 +22,25 @@ Trade skills are split into two categories:
 You can configure trade skill message templates under:
 - `/zsbt` -> `Notifications` -> `Trade Skill Alerts`
 
+## Interrupt Alerts
+Interrupt Alerts covers:
+- Successful interrupts
+- Cast-stopping stuns/CC (optional)
+
+You can configure these under:
+- `/zsbt` -> `Alerts` -> `Notifications` -> `Interrupt Alerts`
+
+Template codes:
+- `%t` Target name
+- `%s` Your stopping ability name (Kick/Pummel/Storm Bolt/etc.)
+
+Shared options (apply to both Interrupts and Cast Stops):
+- Routing (single `Route To` for both)
+- Color
+- Font override (face/outline/size)
+- Optional sound
+- Optional local chat output for successful interrupts
+
 ### How to use Loot Alerts
 
 #### 1) Turn on the category (and choose where it goes)

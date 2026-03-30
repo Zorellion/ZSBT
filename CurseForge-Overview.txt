@@ -1,35 +1,84 @@
 ZSBT (Zore’s Scrolling Battle Text)
 
 Overview
-ZSBT is a modern scrolling combat text addon for WoW Retail (12.x). It’s built to behave safely under Retail’s “secret value” restrictions so it can be used in open world, dungeons, and raids without breaking the UI.
+ZSBT is a modern scrolling combat text addon for WoW Retail (12.x) built for today’s API restrictions.
 
-What it does
-- Scrolling combat text with multiple independent scroll areas:
-  - Incoming damage/healing
-  - Outgoing damage/healing
-  - Notifications (cooldowns, warnings, triggers)
-- Multiple animation styles (including Parabola, Fireworks, Waterfall, Straight, and Static)
-- Spam control and cleanup:
-  - AoE hit condensing / merging
-  - Minimum thresholds and throttling options
-- Cooldown ready alerts (text + sound)
-- Custom Triggers:
-  - Create your own notifications for events (auras, spell events, and more)
-  - Choose text, colors, sounds, sticky styling, and font overrides
-- UT-style multi-kill announcer:
-  - Fires trigger events UT_KILL_1 through UT_KILL_7
-  - Ships with preset “First Blood!” through “God Like!” announcements, fully customizable via Triggers
+If you want combat text that stays stable in open world and group content, ZSBT prioritizes correctness and “secret value” safety while still giving you deep control over layout, routing, and spam.
+
+Why ZSBT
+- Built for Retail 12.x restrictions (avoids taint/blocked-action patterns)
+- Multiple independent scroll areas with MSBT-style animation engine
+- Strong spam control (merge/throttle/thresholds) so big pulls stay readable
+- Custom alerts system (Notifications + Cooldowns + Triggers)
+
+Core combat text
+- Incoming damage/healing (thresholds, misses, overheal options)
+- Outgoing damage/healing (thresholds, misses, auto-attack options)
+- Optional: use Blizzard Floating Combat Text for outgoing only (keep ZSBT incoming + alerts)
+- Crit emphasis: separate crit configuration blocks + sticky crit styling
+
+Scroll areas & animations
+- Unlimited scroll areas (move/size/anchor)
+- Animation styles: Parabola, Fireworks, Waterfall, Straight, Static
+- Per-area font override (or use master font)
+
+Alerts & notifications
+- Notifications system with per-category toggles
+- Loot alerts (items/money/currency) with templates + filters
+- Trade skill alerts (skill ups + learned recipes/spells)
+
+Interrupt Alerts (new)
+- Successful interrupts + cast-stopping stuns/CC (optional)
+- Templates:
+  - %t = target
+  - %s = your stopping ability
+- One shared config block for routing/style/sound
+- Optional local chat output for successful interrupts (prints to your chat frame)
+
+Cooldowns
+- Cooldown-ready alerts for tracked spells (text + sound)
+
+Custom Triggers
+- Create your own notifications for:
+  - Auras (gain/fade/stacks)
+  - Cooldown ready
+  - Spell usable
+  - Spellcast succeeded
+  - Low health warning
+  - Resource thresholds
+  - Enter/leave combat, target changed, spec changed, equipment changed
+  - Killing blow
+- Per-trigger styling: color, sound, sticky, and font overrides
+
+UT Announcer
+- Unreal Tournament–style multi-kill announcer implemented as triggers (UT_KILL_1 .. UT_KILL_7)
+- One-click install of shipped presets (merge-only)
+
+Spam Control (readability tools)
+- AoE hit condensing/merging
+- Global min thresholds for damage/healing
+- Per-spell outgoing rules (throttle/routing/style overrides)
+- Buff rules for notifications (whitelist mode + per-buff throttles)
+
+Pets
+- Pet/guardian damage display (aggregation + merge window + thresholds)
+- Optional incoming pet damage + incoming pet healing streams
+
+Media
+- LibSharedMedia font and sound support
+- Custom media registration for your own fonts/sounds
+
+Quality-of-life
+- Optional Quick Control Bar (toggle tuning + unlock/lock scroll areas)
+- Preset profiles (Melee/Ranged/Tank/Healer/Pet Class)
+- Diagnostics / debug logging tools
 
 How to use
-- Type /zsbt to open the configuration UI.
-- Configure:
-  - General: enable addon, master font, suppression options
-  - Scroll Areas: position/size/animation settings
-  - Incoming / Outgoing: what to show and where
-  - Spam Control: merging and thresholds
-  - Cooldowns: tracked cooldown ready alerts
-  - Triggers: create custom alerts (text/sound/style)
-  - Media: choose and preview sounds
+- Type /zsbt to open the configuration.
+- Start with:
+  - General: enable addon + choose master font
+  - Scroll Areas: place/size Incoming, Outgoing, Notifications
+  - Alerts -> Notifications: enable categories you want
 
 Commands
 - /zsbt Open configuration
@@ -39,4 +88,4 @@ Commands
 
 Notes
 - Designed for WoW Retail 12.x
-- Uses LibSharedMedia for fonts/sounds and includes bundled media
+- Uses LibSharedMedia for fonts/sounds and supports custom media

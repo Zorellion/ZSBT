@@ -2195,6 +2195,25 @@ Trade skills are split into two categories:
 Trade skill templates are configured under:
 - `/zsbt` -> `Notifications` -> `Trade Skill Alerts`
 
+## Interrupt Alerts
+Interrupt Alerts covers:
+- Successful interrupts
+- Cast-stopping stuns/CC (optional)
+
+Where to configure:
+- `/zsbt` -> `Alerts` -> `Notifications` -> `Interrupt Alerts`
+
+Template codes:
+- `%t` Target name
+- `%s` Your stopping ability name (Kick/Pummel/Storm Bolt/etc.)
+
+Shared options:
+- Routing (single Route To for both)
+- Color
+- Font override (face/outline/size)
+- Optional sound
+- Optional local chat output for successful interrupts
+
 ### How to use Loot Alerts
 
 #### 1) Turn on the category (and choose where it goes)
@@ -2348,6 +2367,21 @@ If a trigger or cooldown alert doesn’t fire, it’s usually one of these:
 - Some trigger types fire only on a state change (example: “became usable”).
 ]],
 
+	troubleshooting_notifications = [[# Notifications / Interrupt Alerts
+
+## Interrupt alerts not showing
+- `/zsbt` -> `Alerts` -> `Notifications` -> `Interrupt Alerts`
+- Enable `Interrupts (Successful)` and/or `Cast Stops (Stuns/CC)`
+- Make sure the target scroll area is enabled and visible in `Scroll Areas`.
+
+## Interrupt chat output
+WoW protects server chat APIs.
+
+ZSBT does not use protected `SendChatMessage` for interrupt announcements.
+Instead, it can print locally into your chat frame:
+- `Interrupt Alerts` -> `Chat Announcement` -> `Show Successful Interrupts in Chat`
+]],
+
 	troubleshooting_media = [[# Custom Media
 
 If custom fonts or sounds don’t appear in dropdowns:
@@ -2488,6 +2522,7 @@ local HELP_TOPICS = {
 			"troubleshooting_nothing",
 			"troubleshooting_icons",
 			"troubleshooting_spam",
+			"troubleshooting_notifications",
 			"troubleshooting_triggers",
 			"troubleshooting_media",
 			"troubleshooting_blizzardCombatText",
@@ -2498,6 +2533,7 @@ local HELP_TOPICS = {
 	troubleshooting_nothing = { name = "Nothing Shows", docKey = "troubleshooting_nothing" },
 	troubleshooting_icons = { name = "Icons/Names", docKey = "troubleshooting_icons" },
 	troubleshooting_spam = { name = "Spam", docKey = "troubleshooting_spam" },
+	troubleshooting_notifications = { name = "Notifications / Interrupt Alerts", docKey = "troubleshooting_notifications" },
 	troubleshooting_triggers = { name = "Triggers/Cooldowns", docKey = "troubleshooting_triggers" },
 	troubleshooting_media = { name = "Custom Media", docKey = "troubleshooting_media" },
 	troubleshooting_blizzardCombatText = { name = "Blizzard Combat Text", docKey = "troubleshooting_blizzardCombatText" },

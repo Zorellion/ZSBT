@@ -2600,6 +2600,231 @@ function ZSBT.BuildTab_Notifications()
 				set   = function(_, v) setCat("tradeskillLearned", v) end,
 			},
 			tradeskillLearnedRoute = routeSelect("tradeskillLearned", 7.31),
+			interruptAlerts = {
+				type = "group",
+				name = "Interrupt Alerts",
+				order = 7.4,
+				args = {
+					interrupts = {
+						type  = "toggle",
+						name  = "Interrupts (Successful)",
+						order = 1,
+						width = "full",
+						get   = function() return getCat("interrupts") end,
+						set   = function(_, v) setCat("interrupts", v) end,
+					},
+					interruptsTemplate = {
+						type = "input",
+						name = "Interrupts Template",
+						desc = "Message template codes: %t=target, %s=your ability.",
+						order = 1.1,
+						width = "full",
+						get = function() return getTpl("interrupts", "%t Interrupted!") end,
+						set = function(_, v) setTpl("interrupts", v) end,
+					},
+					caststops = {
+						type  = "toggle",
+						name  = "Cast Stops (Stuns/CC)",
+						desc  = "Show a notification when your stun/CC causes a target cast to stop (optional).",
+						order = 2,
+						width = "full",
+						get   = function() return getCat("caststops") end,
+						set   = function(_, v) setCat("caststops", v) end,
+					},
+					caststopsTemplate = {
+						type = "input",
+						name = "Cast Stops Template",
+						desc = "Message template codes: %t=target, %s=your ability.",
+						order = 2.1,
+						width = "full",
+						get = function() return getTpl("caststops", "%t Interrupted!") end,
+						set = function(_, v) setTpl("caststops", v) end,
+					},
+					sharedHeader = { type = "header", name = "Shared Style / Sound", order = 3 },
+					overrideArea = {
+						type = "select",
+						name = "Route To",
+						desc = "Choose which scroll area both Interrupts and Cast Stops should emit into.",
+						order = 3.1,
+						width = "normal",
+						values = function()
+							return ZSBT.GetScrollAreaNames and ZSBT.GetScrollAreaNames() or {}
+						end,
+						get = function()
+							local c = ZSBT.db.profile.interruptAlerts
+							return (c and type(c.scrollArea) == "string" and c.scrollArea ~= "") and c.scrollArea or "Notifications"
+						end,
+						set = function(_, val)
+							ZSBT.db.profile.interruptAlerts = ZSBT.db.profile.interruptAlerts or {}
+							ZSBT.db.profile.interruptAlerts.scrollArea = val
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					},
+					color = {
+						type = "color",
+						name = "Color",
+						desc = "Color for both Interrupts and Cast Stops.",
+						order = 3.2,
+						get = function()
+							local c = ZSBT.db.profile.interruptAlerts and ZSBT.db.profile.interruptAlerts.color
+							c = c or { r = 1.0, g = 0.6, b = 0.0 }
+							return c.r, c.g, c.b
+						end,
+						set = function(_, r, g, b)
+							ZSBT.db.profile.interruptAlerts = ZSBT.db.profile.interruptAlerts or {}
+							ZSBT.db.profile.interruptAlerts.color = { r = r, g = g, b = b }
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					},
+					fontOverride = {
+						type = "toggle",
+						name = "Font Override",
+						desc = "Override the font settings for both Interrupts and Cast Stops.",
+						order = 3.3,
+						width = "full",
+						get = function() return ZSBT.db.profile.interruptAlerts and ZSBT.db.profile.interruptAlerts.fontOverride == true end,
+						set = function(_, v)
+							ZSBT.db.profile.interruptAlerts = ZSBT.db.profile.interruptAlerts or {}
+							ZSBT.db.profile.interruptAlerts.fontOverride = v and true or false
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					},
+					fontFace = {
+						type = "select",
+						name = "Font Face",
+						order = 3.4,
+						values = function() return ZSBT.BuildFontDropdown() end,
+						disabled = function() return not (ZSBT.db.profile.interruptAlerts and ZSBT.db.profile.interruptAlerts.fontOverride == true) end,
+						get = function() return (ZSBT.db.profile.interruptAlerts and ZSBT.db.profile.interruptAlerts.fontFace) or ZSBT.db.profile.general.font.face end,
+						set = function(_, v)
+							ZSBT.db.profile.interruptAlerts = ZSBT.db.profile.interruptAlerts or {}
+							ZSBT.db.profile.interruptAlerts.fontFace = v
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					},
+					fontOutline = {
+						type = "select",
+						name = "Outline Style",
+						order = 3.5,
+						values = ZSBT.ValuesFromKeys(ZSBT.OUTLINE_STYLES),
+						disabled = function() return not (ZSBT.db.profile.interruptAlerts and ZSBT.db.profile.interruptAlerts.fontOverride == true) end,
+						get = function() return (ZSBT.db.profile.interruptAlerts and ZSBT.db.profile.interruptAlerts.fontOutline) or ZSBT.db.profile.general.font.outline end,
+						set = function(_, v)
+							ZSBT.db.profile.interruptAlerts = ZSBT.db.profile.interruptAlerts or {}
+							ZSBT.db.profile.interruptAlerts.fontOutline = v
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					},
+					fontSize = {
+						type = "range",
+						name = "Font Size",
+						order = 3.6,
+						min = 8,
+						max = 72,
+						step = 1,
+						disabled = function() return not (ZSBT.db.profile.interruptAlerts and ZSBT.db.profile.interruptAlerts.fontOverride == true) end,
+						get = function() return tonumber((ZSBT.db.profile.interruptAlerts and ZSBT.db.profile.interruptAlerts.fontSize) or 18) or 18 end,
+						set = function(_, v)
+							ZSBT.db.profile.interruptAlerts = ZSBT.db.profile.interruptAlerts or {}
+							ZSBT.db.profile.interruptAlerts.fontSize = v
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					},
+					soundEnabled = {
+						type = "toggle",
+						name = "Play a Sound",
+						order = 3.7,
+						width = "full",
+						get = function() return ZSBT.db.profile.interruptAlerts and ZSBT.db.profile.interruptAlerts.soundEnabled == true end,
+						set = function(_, v)
+							ZSBT.db.profile.interruptAlerts = ZSBT.db.profile.interruptAlerts or {}
+							ZSBT.db.profile.interruptAlerts.soundEnabled = v and true or false
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					},
+					sound = {
+						type = "select",
+						name = "Sound",
+						order = 3.8,
+						values = function() return (ZSBT.BuildSoundDropdown and ZSBT.BuildSoundDropdown()) or { ["None"] = "None" } end,
+						disabled = function() return not (ZSBT.db.profile.interruptAlerts and ZSBT.db.profile.interruptAlerts.soundEnabled == true) end,
+						get = function()
+							local c = ZSBT.db.profile.interruptAlerts
+							return (c and type(c.sound) == "string" and c.sound ~= "") and c.sound or "None"
+						end,
+						set = function(_, v)
+							ZSBT.db.profile.interruptAlerts = ZSBT.db.profile.interruptAlerts or {}
+							ZSBT.db.profile.interruptAlerts.sound = v
+						end,
+					},
+					soundTest = {
+						type = "execute",
+						name = "Play Sound",
+						order = 3.9,
+						width = "half",
+						disabled = function() return not (ZSBT.db.profile.interruptAlerts and ZSBT.db.profile.interruptAlerts.soundEnabled == true) end,
+						func = function()
+							local c = ZSBT.db.profile.interruptAlerts
+							if c and ZSBT.PlayLSMSound then
+								ZSBT.PlayLSMSound(c.sound)
+							end
+						end,
+					},
+					chatHeader = { type = "header", name = "Chat Announcement", order = 4 },
+					chatEnabled = {
+						type = "toggle",
+						name = "Show Successful Interrupts in Chat",
+						desc = "When enabled, ZSBT will print a chat message locally when you successfully interrupt (interrupts only; does not announce stuns/CC).",
+						order = 4.1,
+						width = "full",
+						get = function() return ZSBT.db.profile.interruptAlerts and ZSBT.db.profile.interruptAlerts.chatEnabled == true end,
+						set = function(_, v)
+							ZSBT.db.profile.interruptAlerts = ZSBT.db.profile.interruptAlerts or {}
+							ZSBT.db.profile.interruptAlerts.chatEnabled = v and true or false
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					},
+					chatTemplate = {
+						type = "input",
+						name = "Template",
+						desc = "Template codes: %p=your name, %s=your ability, %t=target.",
+						order = 4.2,
+						width = "full",
+						disabled = function() return not (ZSBT.db.profile.interruptAlerts and ZSBT.db.profile.interruptAlerts.chatEnabled == true) end,
+						get = function()
+							local c = ZSBT.db.profile.interruptAlerts
+							return (c and type(c.chatTemplate) == "string" and c.chatTemplate ~= "") and c.chatTemplate or "%p %s interrupted %t!"
+						end,
+						set = function(_, v)
+							ZSBT.db.profile.interruptAlerts = ZSBT.db.profile.interruptAlerts or {}
+							ZSBT.db.profile.interruptAlerts.chatTemplate = v
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					},
+					chatTest = {
+						type = "execute",
+						name = "Test Chat",
+						order = 4.3,
+						width = "half",
+						disabled = function() return not (ZSBT.db.profile.interruptAlerts and ZSBT.db.profile.interruptAlerts.chatEnabled == true) end,
+						func = function()
+							local c = ZSBT.db.profile.interruptAlerts or {}
+							local msg = c.chatTemplate or "%p %s interrupted %t!"
+							msg = msg:gsub("%%p", UnitName("player") or "Player")
+							msg = msg:gsub("%%s", "Pummel")
+							msg = msg:gsub("%%t", "Target")
+							if ZSBT.IsSafeString and not ZSBT.IsSafeString(msg) then return end
+							if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+								DEFAULT_CHAT_FRAME:AddMessage(msg)
+							elseif ChatFrame1 and ChatFrame1.AddMessage then
+								ChatFrame1:AddMessage(msg)
+							elseif ZSBT and ZSBT.Addon and ZSBT.Addon.Print then
+								ZSBT.Addon:Print(msg)
+							end
+						end,
+					},
+				},
+			},
 			lootAlerts = {
 				type = "group",
 				name = "Loot Alerts",
