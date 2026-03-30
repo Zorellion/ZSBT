@@ -1064,7 +1064,12 @@ function Core:InitInterruptTracking()
 							if not Core:IsNotificationCategoryEnabled("caststops") then return end
 							if not attemptAt or (GetTime() - attemptAt) > 0.45 then return end
 							if Core._lastCastStopEmittedAt and (GetTime() - Core._lastCastStopEmittedAt) < 0.50 then return end
-							if targetGUID and UnitGUID and UnitGUID("target") ~= targetGUID then return end
+							if targetGUID and UnitGUID then
+								local cur = UnitGUID("target")
+								if type(cur) == "string" and type(targetGUID) == "string" and ZSBT.IsSafeString and ZSBT.IsSafeString(cur) and ZSBT.IsSafeString(targetGUID) then
+									if cur ~= targetGUID then return end
+								end
+							end
 							-- Require that we actually saw the cast start very recently (reduces false positives
 							-- for casts ending naturally near the attempt time).
 							if not seenAt or (attemptAt - seenAt) > 0.25 then return end
@@ -1082,9 +1087,8 @@ function Core:InitInterruptTracking()
 							end)
 							local stillCasting = (type(s1) == "number") or (type(s2) == "number")
 							if stillCasting then
-								-- If the target is casting something else, don't attribute.
-								if castSpellId and type(s1) == "number" and s1 ~= castSpellId then return end
-								if castSpellId and type(s2) == "number" and s2 ~= castSpellId then return end
+								-- In instanced content (Delves), spellIDs can become "secret" and comparing them can taint.
+								-- If the unit is still casting/channeling, keep waiting rather than trying to match spell IDs.
 								return
 							end
 
@@ -1147,11 +1151,15 @@ function Core:InitInterruptTracking()
 				end
 				spellName = ""
 				local okName, uName = pcall(function() return UnitName and UnitName(unit) end)
-				if okName and type(uName) == "string" and uName ~= "" then
-					targetName = uName
+				if okName and type(uName) == "string" and ZSBT.IsSafeString and ZSBT.IsSafeString(uName) then
+					if uName ~= "" then
+						targetName = uName
+					end
 				end
 				if not targetName then
-					targetName = (Core._lastInterruptTargetName and tostring(Core._lastInterruptTargetName)) or nil
+					if type(Core._lastInterruptTargetName) == "string" and ZSBT.IsSafeString and ZSBT.IsSafeString(Core._lastInterruptTargetName) then
+						targetName = Core._lastInterruptTargetName
+					end
 				end
 				emitCategory = "interrupts"
 				templateKey = "interrupts"
@@ -1161,19 +1169,26 @@ function Core:InitInterruptTracking()
 			if not emitCategory and Core:IsNotificationCategoryEnabled("caststops") and (tNow - lastCastStopAt) <= 0.40 then
 				local expectedGUID = Core._lastCastStopTargetGUID
 				local unitGUID = UnitGUID and UnitGUID(unit) or nil
-				if expectedGUID and unitGUID and expectedGUID ~= unitGUID then
-					return
+				if expectedGUID and unitGUID then
+					if type(expectedGUID) == "string" and type(unitGUID) == "string" and ZSBT.IsSafeString and ZSBT.IsSafeString(expectedGUID) and ZSBT.IsSafeString(unitGUID) then
+						if expectedGUID ~= unitGUID then return end
+					end
 				end
 
 				if dl >= 4 then
 					SafeDbgPrint("[CastStop Unit] event=" .. tostring(event) .. " unit=" .. tostring(unit) .. " dt=" .. string.format("%.3f", (tNow - lastCastStopAt)))
 				end
 
-				targetName = (Core._lastCastStopTargetName and tostring(Core._lastCastStopTargetName)) or nil
+				targetName = nil
+				if type(Core._lastCastStopTargetName) == "string" and ZSBT.IsSafeString and ZSBT.IsSafeString(Core._lastCastStopTargetName) then
+					targetName = Core._lastCastStopTargetName
+				end
 				if not targetName then
 					local okName, uName = pcall(function() return UnitName and UnitName(unit) end)
-					if okName and type(uName) == "string" and uName ~= "" then
-						targetName = uName
+					if okName and type(uName) == "string" and ZSBT.IsSafeString and ZSBT.IsSafeString(uName) then
+						if uName ~= "" then
+							targetName = uName
+						end
 					end
 				end
 				spellName = ""

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.3
+
+### Fixed
+- Notifications: fixed Delve taint errors caused by comparing secret/tainted `UnitName()` values during interrupt/cast-stop attribution.
+
 ## 2.0.2
 
 ### Added
