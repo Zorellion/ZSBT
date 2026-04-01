@@ -811,25 +811,60 @@ function Core:InitInterruptTracking()
 	local CASTSTOP_SPELL_IDS = {
 		-- Warrior
 		[107570] = true, -- Storm Bolt
-		[46968] = true, -- Shockwave
+		[46968] = true,  -- Shockwave
 		[132168] = true, -- Shockwave (alt)
+		[5246] = true,   -- Intimidating Shout
 		-- Demon Hunter
 		[179057] = true, -- Chaos Nova
+		[205630] = true, -- Illidan's Grasp (talent)
 		-- Death Knight
 		[221562] = true, -- Asphyxiate
 		[108194] = true, -- Asphyxiate (old/alt)
+		[91800] = true,  -- Gnaw (pet stun)
+		[47481] = true,  -- Gnaw (old/alt)
 		-- Warlock
-		[30283] = true, -- Shadowfury
+		[30283] = true,  -- Shadowfury
+		[6789] = true,   -- Mortal Coil
+		[6358] = true,   -- Seduction
+		[5782] = true,   -- Fear
+		[261589] = true, -- Seduction ( Succubus via Grimoire of Service )
 		-- Shaman
 		[192058] = true, -- Capacitor Totem
+		[51514] = true,  -- Hex
+		[118905] = true, -- Static Charge (Capacitor Totem via talent)
 		-- Hunter
-		[19577] = true, -- Intimidation
-		-- Paladin / Rogue / Monk / Druid (common cast-stopping stuns)
-		[853] = true,   -- Hammer of Justice
-		[408] = true,   -- Kidney Shot
-		[1833] = true,  -- Cheap Shot
+		[19577] = true,  -- Intimidation
+		[186387] = true, -- Bursting Shot (talent)
+		[213691] = true, -- Scatter Shot (talent)
+		[187650] = true, -- Freezing Trap
+		-- Paladin
+		[853] = true,    -- Hammer of Justice
+		[20066] = true,  -- Repentance
+		-- Rogue
+		[408] = true,    -- Kidney Shot
+		[1833] = true,   -- Cheap Shot
+		[6770] = true,   -- Sap
+		[2094] = true,   -- Blind
+		[1776] = true,   -- Gouge
+		-- Monk
 		[119381] = true, -- Leg Sweep
-		[5211] = true,  -- Mighty Bash
+		[5211] = true,   -- Mighty Bash
+		[115078] = true, -- Paralysis
+		-- Druid
+		[33786] = true,  -- Cyclone
+		[339] = true,    -- Entangling Roots
+		[5211] = true,   -- Mighty Bash (shared)
+		-- Mage
+		[118] = true,    -- Polymorph
+		[82691] = true,  -- Ring of Frost
+		[157981] = true, -- Blizzard (talent, slow but can break casts)
+		-- Priest
+		[8122] = true,   -- Psychic Scream
+		[9484] = true,   -- Shackle Undead
+		[605] = true,    -- Mind Control (can interrupt casts)
+		-- Evoker
+		[374348] = true, -- Land Slide
+		[370565] = true, -- Terrorize (talent)
 	}
 
 	local function getTemplate(key, fallback)
@@ -865,45 +900,83 @@ function Core:InitInterruptTracking()
 		return v
 	end
 
+	local _spellLabelCache = {}
+	local STOPPER_NAMES = {
+		-- Interrupts
+		[1766] = "Kick",
+		[57994] = "Wind Shear",
+		[183752] = "Disrupt",
+		[47528] = "Mind Freeze",
+		[187707] = "Muzzle",
+		[31935] = "Avenger's Shield",
+		[6552] = "Pummel",
+		[96231] = "Rebuke",
+		[116705] = "Spear Hand Strike",
+		[106839] = "Skull Bash",
+		[2139] = "Counterspell",
+		[19647] = "Spell Lock",
+		[15487] = "Silence",
+		[147362] = "Counter Shot",
+		[351338] = "Quell",
+		[28730] = "Arcane Torrent",
+		-- Cast-stops (stuns/CC)
+		[107570] = "Storm Bolt",
+		[46968] = "Shockwave",
+		[132168] = "Shockwave",
+		[5246] = "Intimidating Shout",
+		[179057] = "Chaos Nova",
+		[205630] = "Illidan's Grasp",
+		[221562] = "Asphyxiate",
+		[108194] = "Asphyxiate",
+		[91800] = "Gnaw",
+		[47481] = "Gnaw",
+		[30283] = "Shadowfury",
+		[6789] = "Mortal Coil",
+		[6358] = "Seduction",
+		[5782] = "Fear",
+		[261589] = "Seduction",
+		[192058] = "Capacitor Totem",
+		[51514] = "Hex",
+		[118905] = "Static Charge",
+		[19577] = "Intimidation",
+		[186387] = "Bursting Shot",
+		[213691] = "Scatter Shot",
+		[187650] = "Freezing Trap",
+		[853] = "Hammer of Justice",
+		[20066] = "Repentance",
+		[408] = "Kidney Shot",
+		[1833] = "Cheap Shot",
+		[6770] = "Sap",
+		[2094] = "Blind",
+		[1776] = "Gouge",
+		[119381] = "Leg Sweep",
+		[5211] = "Mighty Bash",
+		[115078] = "Paralysis",
+		[33786] = "Cyclone",
+		[339] = "Entangling Roots",
+		[118] = "Polymorph",
+		[82691] = "Ring of Frost",
+		[157981] = "Blizzard",
+		[8122] = "Psychic Scream",
+		[9484] = "Shackle Undead",
+		[605] = "Mind Control",
+		[374348] = "Land Slide",
+		[370565] = "Terrorize",
+	}
+	for id, nm in pairs(STOPPER_NAMES) do
+		_spellLabelCache[id] = nm
+	end
+
 	local function safeSpellLabel(spellId)
 		spellId = tonumber(spellId)
 		if not spellId then return "" end
-		local STOPPER_NAMES = {
-			-- Interrupts
-			[1766] = "Kick",
-			[57994] = "Wind Shear",
-			[183752] = "Disrupt",
-			[47528] = "Mind Freeze",
-			[187707] = "Muzzle",
-			[31935] = "Avenger's Shield",
-			[6552] = "Pummel",
-			[96231] = "Rebuke",
-			[116705] = "Spear Hand Strike",
-			[106839] = "Skull Bash",
-			[2139] = "Counterspell",
-			[19647] = "Spell Lock",
-			[15487] = "Silence",
-			[147362] = "Counter Shot",
-			[351338] = "Quell",
-			[28730] = "Arcane Torrent",
-			-- Cast-stops (stuns/CC)
-			[107570] = "Storm Bolt",
-			[46968] = "Shockwave",
-			[132168] = "Shockwave",
-			[179057] = "Chaos Nova",
-			[221562] = "Asphyxiate",
-			[108194] = "Asphyxiate",
-			[30283] = "Shadowfury",
-			[192058] = "Capacitor Totem",
-			[19577] = "Intimidation",
-			[853] = "Hammer of Justice",
-			[408] = "Kidney Shot",
-			[1833] = "Cheap Shot",
-			[119381] = "Leg Sweep",
-			[5211] = "Mighty Bash",
-		}
+		local cached = _spellLabelCache[spellId]
+		if type(cached) == "string" then
+			return cached
+		end
 		local hardcoded = STOPPER_NAMES[spellId]
 		if type(hardcoded) == "string" and hardcoded ~= "" then
+			_spellLabelCache[spellId] = hardcoded
 			return hardcoded
 		end
 		local name = nil
@@ -913,9 +986,12 @@ function Core:InitInterruptTracking()
 			end
 		end)
 		if type(name) == "string" and name ~= "" and (not ZSBT.IsSafeString or ZSBT.IsSafeString(name)) then
+			_spellLabelCache[spellId] = name
 			return name
 		end
-		return "SpellID:" .. tostring(spellId)
+		local fallback = "SpellID:" .. tostring(spellId)
+		_spellLabelCache[spellId] = fallback
+		return fallback
 	end
 
 	local function applyTemplate(tpl, ctx)
@@ -988,9 +1064,12 @@ function Core:InitInterruptTracking()
 				if unit == "target" or unit == "focus" or unit == "mouseover" or (unit:match("^nameplate")) then
 					local startTime, endTime = nil, nil
 					pcall(function()
-						startTime, endTime = select(4, UnitCastingInfo(unit))
+						if UnitCastingInfo then
+							startTime, endTime = select(4, UnitCastingInfo(unit))
+						end
 					end)
-					if startTime and endTime and ZSBT.IsSafeNumber(startTime) and ZSBT.IsSafeNumber(endTime) then
+					local safeNum = (ZSBT and ZSBT.IsSafeNumber) or nil
+					if startTime and endTime and (not safeNum or (safeNum(startTime) and safeNum(endTime))) then
 						Core._pendingCasts = Core._pendingCasts or {}
 						Core._pendingCasts[unit] = {
 							spellId = spellId,
@@ -1019,6 +1098,9 @@ function Core:InitInterruptTracking()
 				if INTERRUPT_SPELL_IDS[spellId] then
 					Core._lastInterruptAttemptAt = GetTime and GetTime() or 0
 					Core._lastInterruptAttemptSpellId = spellId
+					-- Cache the spell name at cast time to avoid per-mob GetSpellInfo variability
+					Core._lastInterruptSpellName = safeSpellLabel(spellId)
+					Core._lastCastStopSpellName = nil
 					-- Determine target from priority: target > focus > mouseover > nameplates
 					local targetUnit = nil
 					local targetGUID = nil
@@ -1075,12 +1157,17 @@ function Core:InitInterruptTracking()
 						-- Avoid printing spell names directly (can be secret strings in 12.x).
 						SafeDbgPrint("[Interrupt Attempt] castSpellName=" .. safeStr((type(Core._lastInterruptTargetCastSpellId) == "number" and GetSpellInfo) and (select(1, GetSpellInfo(Core._lastInterruptTargetCastSpellId))) or nil))
 					end
+
 				end
 
 				local castStopsEnabled = Core:IsNotificationCategoryEnabled("caststops")
 				if castStopsEnabled and CASTSTOP_SPELL_IDS[spellId] then
 					Core._lastCastStopAttemptAt = GetTime and GetTime() or 0
 					Core._lastCastStopAttemptSpellId = spellId
+					-- Cache the spell name at cast time to avoid per-mob GetSpellInfo variability
+					Core._lastCastStopSpellName = safeSpellLabel(spellId)
+					Core._lastInterruptSpellName = nil
+
 					-- Determine target from priority: target > focus > mouseover > nameplates
 					local targetUnit = nil
 					local targetGUID = nil
@@ -1109,6 +1196,7 @@ function Core:InitInterruptTracking()
 							end
 						end
 					end
+
 					Core._lastCastStopTargetGUID = targetGUID
 					Core._lastCastStopTargetName = targetName
 					Core._lastCastStopTargetUnit = targetUnit
@@ -1368,7 +1456,12 @@ function Core:InitInterruptTracking()
 			Core._lastNotifCat = emitCategory
 			Core._lastNotifAt = t
 
-			local stopperLabel = safeSpellLabel(Core._lastStopperSpellId)
+			local stopperLabel = nil
+			if emitCategory == "caststops" then
+				stopperLabel = Core._lastCastStopSpellName or safeSpellLabel(Core._lastStopperSpellId)
+			else
+				stopperLabel = Core._lastInterruptSpellName or safeSpellLabel(Core._lastStopperSpellId)
+			end
 			local playerName = UnitName and UnitName("player") or ""
 			local tpl = getTemplate(templateKey or emitCategory, "%t Interrupted!")
 			local out = applyTemplate(tpl, { e = "", p = playerName, s = stopperLabel, t = targetName })

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.5
+
+### Fixed
+- Notifications: fixed stopper ability naming in Interrupt Alerts (prevents cast-stops like Shockwave displaying as a previous interrupt like Pummel).
+- Notifications: stabilized Interrupt Alerts spell naming by hardcoding/caching known interrupt + cast-stop spell names to avoid mob-specific name resolution.
+- Notifications: guarded cast timing validation against missing safe-number helpers during early load to prevent rare loading-screen errors.
+
 ## 2.0.4
 
 ### Fixed
