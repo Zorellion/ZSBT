@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.4
+
+### Fixed
+- Notifications: improved Interrupt Alerts attribution so non-interruptible casts no longer trigger alerts at natural cast end.
+- Notifications: restored cast-stop alerts for stuns/CC in restricted content by handling missing/secret cast timing safely.
+- Notifications: added mouseover support for interrupt/cast-stop attribution.
+
 ## 2.0.3
 
 ### Fixed

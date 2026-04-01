@@ -963,6 +963,7 @@ function Core:InitInterruptTracking()
 	pcall(function() self._interruptFrame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED") end)
 	pcall(function() self._interruptFrame:RegisterEvent("UNIT_SPELLCAST_STOP") end)
 	pcall(function() self._interruptFrame:RegisterEvent("UNIT_SPELLCAST_FAILED") end)
+	pcall(function() self._interruptFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED") end)
 
 	self._interruptFrame:SetScript("OnEvent", function(_, event, msg, ...)
 		if not Core:IsMasterEnabled() then return end
@@ -974,11 +975,35 @@ function Core:InitInterruptTracking()
 		-- UnitCastingInfo() returns nil by the time our own spell SUCCEEDED fires.
 		if event == "UNIT_SPELLCAST_START" then
 			local unit, castGuid, spellId = msg, ...
-			if type(unit) == "string" and type(spellId) == "number" then
+			if type(unit) == "string" then
 				Core._unitLastCastSpellId = Core._unitLastCastSpellId or {}
 				Core._unitLastCastAt = Core._unitLastCastAt or {}
-				Core._unitLastCastSpellId[unit] = spellId
+				-- Always record that we saw a cast start, even if spellId is unavailable/secret.
 				Core._unitLastCastAt[unit] = GetTime and GetTime() or 0
+				if type(spellId) == "number" then
+					Core._unitLastCastSpellId[unit] = spellId
+				end
+
+				-- Track expected cast end time for interrupt validation
+				if unit == "target" or unit == "focus" or unit == "mouseover" or (unit:match("^nameplate")) then
+					local startTime, endTime = nil, nil
+					pcall(function()
+						startTime, endTime = select(4, UnitCastingInfo(unit))
+					end)
+					if startTime and endTime and ZSBT.IsSafeNumber(startTime) and ZSBT.IsSafeNumber(endTime) then
+						Core._pendingCasts = Core._pendingCasts or {}
+						Core._pendingCasts[unit] = {
+							spellId = spellId,
+							startTime = startTime / 1000.0,
+							endTime = endTime / 1000.0,
+							castGuid = castGuid,
+						}
+						local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+						if dl >= 5 then
+							SafeDbgPrint("[Cast Start] unit=" .. tostring(unit) .. " spellId=" .. tostring(spellId) .. " endTime=" .. string.format("%.3f", endTime / 1000.0))
+						end
+					end
+				end
 			end
 			return
 		end
@@ -994,8 +1019,37 @@ function Core:InitInterruptTracking()
 				if INTERRUPT_SPELL_IDS[spellId] then
 					Core._lastInterruptAttemptAt = GetTime and GetTime() or 0
 					Core._lastInterruptAttemptSpellId = spellId
-					Core._lastInterruptTargetGUID = UnitGUID and UnitGUID("target") or nil
-					Core._lastInterruptTargetName = UnitName and UnitName("target") or nil
+					-- Determine target from priority: target > focus > mouseover > nameplates
+					local targetUnit = nil
+					local targetGUID = nil
+					local targetName = nil
+					if UnitGUID and UnitGUID("target") then
+						targetUnit = "target"
+						targetGUID = UnitGUID("target")
+						targetName = UnitName and UnitName("target")
+					elseif UnitGUID and UnitGUID("focus") then
+						targetUnit = "focus"
+						targetGUID = UnitGUID("focus")
+						targetName = UnitName and UnitName("focus")
+					elseif UnitGUID and UnitGUID("mouseover") then
+						targetUnit = "mouseover"
+						targetGUID = UnitGUID("mouseover")
+						targetName = UnitName and UnitName("mouseover")
+					else
+						-- Fallback to nameplates if available
+						for i = 1, 40 do
+							local unit = ("nameplate%d"):format(i)
+							if UnitGUID and UnitGUID(unit) then
+								targetUnit = unit
+								targetGUID = UnitGUID(unit)
+								targetName = UnitName and UnitName(unit)
+								break
+							end
+						end
+					end
+					Core._lastInterruptTargetGUID = targetGUID
+					Core._lastInterruptTargetName = targetName
+					Core._lastInterruptTargetUnit = targetUnit
 					Core._lastInterruptTargetCastSpellId = nil
 					if Core._unitLastCastSpellId and type(Core._unitLastCastSpellId["target"]) == "number" then
 						Core._lastInterruptTargetCastSpellId = Core._unitLastCastSpellId["target"]
@@ -1027,25 +1081,54 @@ function Core:InitInterruptTracking()
 				if castStopsEnabled and CASTSTOP_SPELL_IDS[spellId] then
 					Core._lastCastStopAttemptAt = GetTime and GetTime() or 0
 					Core._lastCastStopAttemptSpellId = spellId
-					Core._lastCastStopTargetGUID = UnitGUID and UnitGUID("target") or nil
-					Core._lastCastStopTargetName = UnitName and UnitName("target") or nil
+					-- Determine target from priority: target > focus > mouseover > nameplates
+					local targetUnit = nil
+					local targetGUID = nil
+					local targetName = nil
+					if UnitGUID and UnitGUID("target") then
+						targetUnit = "target"
+						targetGUID = UnitGUID("target")
+						targetName = UnitName and UnitName("target")
+					elseif UnitGUID and UnitGUID("focus") then
+						targetUnit = "focus"
+						targetGUID = UnitGUID("focus")
+						targetName = UnitName and UnitName("focus")
+					elseif UnitGUID and UnitGUID("mouseover") then
+						targetUnit = "mouseover"
+						targetGUID = UnitGUID("mouseover")
+						targetName = UnitName and UnitName("mouseover")
+					else
+						-- Fallback to nameplates if available
+						for i = 1, 40 do
+							local unit = ("nameplate%d"):format(i)
+							if UnitGUID and UnitGUID(unit) then
+								targetUnit = unit
+								targetGUID = UnitGUID(unit)
+								targetName = UnitName and UnitName(unit)
+								break
+							end
+						end
+					end
+					Core._lastCastStopTargetGUID = targetGUID
+					Core._lastCastStopTargetName = targetName
+					Core._lastCastStopTargetUnit = targetUnit
 
 					-- Snapshot target cast info so we can report which spell was stopped.
 					Core._lastCastStopSpellId = nil
-					if Core._unitLastCastSpellId and type(Core._unitLastCastSpellId["target"]) == "number" then
-						Core._lastCastStopSpellId = Core._unitLastCastSpellId["target"]
+					if Core._unitLastCastSpellId and targetUnit and type(Core._unitLastCastSpellId[targetUnit]) == "number" then
+						Core._lastCastStopSpellId = Core._unitLastCastSpellId[targetUnit]
 					end
-					Core._lastCastStopSeenAt = (Core._unitLastCastAt and Core._unitLastCastAt["target"]) or nil
+					Core._lastCastStopSeenAt = (Core._unitLastCastAt and targetUnit and Core._unitLastCastAt[targetUnit]) or nil
 					Core._lastCastStopEmittedAt = nil
 					pcall(function()
-						if UnitCastingInfo then
-							local castSpellId = select(9, UnitCastingInfo("target"))
+						if UnitCastingInfo and targetUnit then
+							local castSpellId = select(9, UnitCastingInfo(targetUnit))
 							if type(castSpellId) == "number" then
 								Core._lastCastStopSpellId = castSpellId
 							end
 						end
-						if UnitChannelInfo and not Core._lastCastStopSpellId then
-							local chSpellId = select(8, UnitChannelInfo("target"))
+						if UnitChannelInfo and not Core._lastCastStopSpellId and targetUnit then
+							local chSpellId = select(8, UnitChannelInfo(targetUnit))
 							if type(chSpellId) == "number" then
 								Core._lastCastStopSpellId = chSpellId
 							end
@@ -1057,6 +1140,7 @@ function Core:InitInterruptTracking()
 						if not C_Timer or not C_Timer.After then return end
 						local attemptAt = Core._lastCastStopAttemptAt
 						local targetGUID = Core._lastCastStopTargetGUID
+						local targetUnit = Core._lastCastStopTargetUnit
 						local castSpellId = Core._lastCastStopSpellId
 						local seenAt = Core._lastCastStopSeenAt
 						local function poll()
@@ -1064,8 +1148,8 @@ function Core:InitInterruptTracking()
 							if not Core:IsNotificationCategoryEnabled("caststops") then return end
 							if not attemptAt or (GetTime() - attemptAt) > 0.45 then return end
 							if Core._lastCastStopEmittedAt and (GetTime() - Core._lastCastStopEmittedAt) < 0.50 then return end
-							if targetGUID and UnitGUID then
-								local cur = UnitGUID("target")
+							if targetGUID and UnitGUID and targetUnit then
+								local cur = UnitGUID(targetUnit)
 								if type(cur) == "string" and type(targetGUID) == "string" and ZSBT.IsSafeString and ZSBT.IsSafeString(cur) and ZSBT.IsSafeString(targetGUID) then
 									if cur ~= targetGUID then return end
 								end
@@ -1082,8 +1166,8 @@ function Core:InitInterruptTracking()
 							local s1 = nil
 							local s2 = nil
 							pcall(function()
-								if UnitCastingInfo then s1 = select(9, UnitCastingInfo("target")) end
-								if UnitChannelInfo then s2 = select(8, UnitChannelInfo("target")) end
+								if UnitCastingInfo and targetUnit then s1 = select(9, UnitCastingInfo(targetUnit)) end
+								if UnitChannelInfo and targetUnit then s2 = select(8, UnitChannelInfo(targetUnit)) end
 							end)
 							local stillCasting = (type(s1) == "number") or (type(s2) == "number")
 							if stillCasting then
@@ -1131,6 +1215,20 @@ function Core:InitInterruptTracking()
 			return
 		end
 
+		-- Clear pending cast timing when a watched unit successfully completes a cast.
+		-- This prevents stale timing from causing later false attributions.
+		if event == "UNIT_SPELLCAST_SUCCEEDED" then
+			local unit = msg
+			if type(unit) == "string" then
+				if unit == "target" or unit == "focus" or unit == "mouseover" or unit:match("^nameplate") then
+					if Core._pendingCasts and Core._pendingCasts[unit] then
+						Core._pendingCasts[unit] = nil
+					end
+				end
+			end
+			return
+		end
+
 		local isCastEndEvent = (event == "UNIT_SPELLCAST_INTERRUPTED" or event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_FAILED")
 		if isCastEndEvent then
 			local unit, castGuid, interruptedSpellId = msg, ...
@@ -1140,12 +1238,55 @@ function Core:InitInterruptTracking()
 			local lastCastStopAt = Core._lastCastStopAttemptAt or 0
 
 			if type(unit) ~= "string" then return end
-			if unit ~= "target" and unit ~= "focus" and (not unit:match("^nameplate")) then
+			if unit ~= "target" and unit ~= "focus" and unit ~= "mouseover" and (not unit:match("^nameplate")) then
 				return
+			end
+
+			-- Validate if this was an early stop (interrupt) vs natural completion.
+			-- IMPORTANT: In some restricted content (e.g. Delves), cast timestamps can be secret/tainted.
+			-- Only enforce early-stop gating when we have a safe endTime; otherwise fall back to timing heuristics.
+			local pendingCast = Core._pendingCasts and Core._pendingCasts[unit]
+			local hasSafeTiming = (pendingCast and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(pendingCast.endTime)) or false
+			local isEarlyStop = false
+			if hasSafeTiming then
+				local timeToEnd = pendingCast.endTime - tNow
+				if timeToEnd > 0.15 then
+					isEarlyStop = true
+				end
+				if dl >= 5 then
+					SafeDbgPrint("[Cast End Validation] unit=" .. tostring(unit) .. " event=" .. tostring(event) .. " timeToEnd=" .. string.format("%.3f", timeToEnd) .. " isEarlyStop=" .. tostring(isEarlyStop))
+				end
+			end
+
+			local function sawCastStartRecently(unitKey, attemptAt)
+				if not attemptAt then return false end
+				local seenAt = (Core._unitLastCastAt and Core._unitLastCastAt[unitKey]) or nil
+				if type(seenAt) ~= "number" then return false end
+				return (attemptAt - seenAt) >= 0 and (attemptAt - seenAt) <= 0.25
 			end
 
 			-- Prefer true interrupt attribution when within window.
 			if (tNow - lastInterruptAt) <= 0.60 then
+				-- For UNIT_SPELLCAST_INTERRUPTED, always allow (explicit interrupt)
+				-- For STOP/FAILED, require early-stop validation only when safe timing data is available.
+				-- Otherwise, fall back to a conservative heuristic: we must have just seen the cast start.
+				if event ~= "UNIT_SPELLCAST_INTERRUPTED" then
+					if hasSafeTiming then
+						if not isEarlyStop then
+							if dl >= 4 then
+								SafeDbgPrint("[Interrupt Rejected] unit=" .. tostring(unit) .. " event=" .. tostring(event) .. " not early enough")
+							end
+							return
+						end
+					else
+						if not sawCastStartRecently(unit, lastInterruptAt) then
+							if dl >= 4 then
+								SafeDbgPrint("[Interrupt Rejected] unit=" .. tostring(unit) .. " event=" .. tostring(event) .. " no recent cast start")
+							end
+							return
+						end
+					end
+				end
 				if dl >= 4 then
 					SafeDbgPrint("[Interrupt Unit] event=" .. tostring(event) .. " unit=" .. tostring(unit) .. " spellId=" .. tostring(interruptedSpellId) .. " dt=" .. string.format("%.3f", (tNow - lastInterruptAt)))
 				end
@@ -1167,6 +1308,25 @@ function Core:InitInterruptTracking()
 
 			-- If not a true interrupt, attempt cast-stop attribution if enabled.
 			if not emitCategory and Core:IsNotificationCategoryEnabled("caststops") and (tNow - lastCastStopAt) <= 0.40 then
+				-- Require early-stop validation only when safe timing is available.
+				-- Otherwise require that we just saw the cast start near the cast-stop attempt.
+				if event == "UNIT_SPELLCAST_INTERRUPTED" then
+					-- Explicit cast interrupt event: trust it even if we didn't observe cast start.
+				elseif hasSafeTiming then
+					if not isEarlyStop then
+						if dl >= 4 then
+							SafeDbgPrint("[CastStop Rejected] unit=" .. tostring(unit) .. " event=" .. tostring(event) .. " not early enough")
+						end
+						return
+					end
+				else
+					if not sawCastStartRecently(unit, lastCastStopAt) then
+						if dl >= 4 then
+							SafeDbgPrint("[CastStop Rejected] unit=" .. tostring(unit) .. " event=" .. tostring(event) .. " no recent cast start")
+						end
+						return
+					end
+				end
 				local expectedGUID = Core._lastCastStopTargetGUID
 				local unitGUID = UnitGUID and UnitGUID(unit) or nil
 				if expectedGUID and unitGUID then
@@ -1197,6 +1357,10 @@ function Core:InitInterruptTracking()
 			end
 		end
 		if emitCategory then
+			-- Clean up pending cast state for this unit since we've processed the interrupt/caststop
+			if Core._pendingCasts and Core._pendingCasts[unit] then
+				Core._pendingCasts[unit] = nil
+			end
 			local t = GetTime and GetTime() or 0
 			if Core._lastNotifCat == emitCategory and (t - (Core._lastNotifAt or 0)) < 0.35 then
 				return
