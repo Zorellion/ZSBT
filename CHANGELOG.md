@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.7
+- Fixed reputation, honor, and XP progress notifications not displaying amounts.
+- Updated parser to pass amounts directly in event payloads, avoiding timing issues with rawPipe lookups.
+
 ## 2.0.6
 
 ### Added

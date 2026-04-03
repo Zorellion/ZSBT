@@ -732,6 +732,18 @@ function Engine:flushBucket()
 	local bucket = self._bucket
 	local count = self._qCount or 0
 	local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
+	local function coerceProgressAmount(v)
+		if v == nil then return nil end
+		if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then
+			return v
+		end
+		if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then
+			local s = v:gsub(",", "")
+			local n = tonumber(s)
+			if n ~= nil then return n end
+		end
+		return nil
+	end
 	if dbg >= 3 and dbg < 5 and ZSBT.Addon and ZSBT.Addon.Print then
 		local tNow = now()
 		if (tNow - (self._dbgLastHeartbeatAt or 0)) >= 1.0 then
@@ -903,13 +915,20 @@ function Engine:flushBucket()
 				})
 			elseif et == "COMBAT_TEXT_HONOR" then
 				local text = "Honor"
-				if sample.rawPipeId then
-					local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
-					local val = ec and ec._rawPipe[sample.rawPipeId]
-					if val and ZSBT.IsSafeNumber(val) then
-						text = "+" .. tostring(math.floor(val + 0.5)) .. " Honor"
+				do
+					local n = coerceProgressAmount(sample.amount)
+					if not n then
+						n = coerceProgressAmount(sample.amountText)
 					end
-					if ec then ec._rawPipe[sample.rawPipeId] = nil end
+					if not n and sample.rawPipeId then
+						local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
+						local val = ec and ec._rawPipe[sample.rawPipeId]
+						n = coerceProgressAmount(val)
+						if ec then ec._rawPipe[sample.rawPipeId] = nil end
+					end
+					if n then
+						text = "+" .. tostring(math.floor(n + 0.5)) .. " Honor"
+					end
 				end
 				if ZSBT.Core and ZSBT.Core.EmitNotification then
 					ZSBT.Core._lastHonorNotifAt = GetTime()
@@ -917,13 +936,20 @@ function Engine:flushBucket()
 				end
 			elseif et == "COMBAT_TEXT_XP" then
 				local text = "XP"
-				if sample.rawPipeId then
-					local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
-					local val = ec and ec._rawPipe[sample.rawPipeId]
-					if val and ZSBT.IsSafeNumber(val) then
-						text = "+" .. tostring(math.floor(val + 0.5)) .. " XP"
+				do
+					local n = coerceProgressAmount(sample.amount)
+					if not n then
+						n = coerceProgressAmount(sample.amountText)
 					end
-					if ec then ec._rawPipe[sample.rawPipeId] = nil end
+					if not n and sample.rawPipeId then
+						local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
+						local val = ec and ec._rawPipe[sample.rawPipeId]
+						n = coerceProgressAmount(val)
+						if ec then ec._rawPipe[sample.rawPipeId] = nil end
+					end
+					if n then
+						text = "+" .. tostring(math.floor(n + 0.5)) .. " XP"
+					end
 				end
 				if ZSBT.Core and ZSBT.Core.EmitNotification then
 					ZSBT.Core._lastXPNotifAt = GetTime()
@@ -931,13 +957,20 @@ function Engine:flushBucket()
 				end
 			elseif et == "COMBAT_TEXT_REP" then
 				local text = "Reputation"
-				if sample.rawPipeId then
-					local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
-					local val = ec and ec._rawPipe[sample.rawPipeId]
-					if val and ZSBT.IsSafeNumber(val) then
-						text = "+" .. tostring(math.floor(val + 0.5)) .. " Rep"
+				do
+					local n = coerceProgressAmount(sample.amount)
+					if not n then
+						n = coerceProgressAmount(sample.amountText)
 					end
-					if ec then ec._rawPipe[sample.rawPipeId] = nil end
+					if not n and sample.rawPipeId then
+						local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
+						local val = ec and ec._rawPipe[sample.rawPipeId]
+						n = coerceProgressAmount(val)
+						if ec then ec._rawPipe[sample.rawPipeId] = nil end
+					end
+					if n then
+						text = "+" .. tostring(math.floor(n + 0.5)) .. " Rep"
+					end
 				end
 				if ZSBT.Core and ZSBT.Core.EmitNotification then
 					ZSBT.Core._lastRepNotifAt = GetTime()

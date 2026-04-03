@@ -1508,9 +1508,16 @@ function Collector:handleCombatTextUpdate(arg1)
 		local pipeId = self._rawPipeCount + 1
 		self._rawPipeCount = pipeId
 		self._rawPipe[pipeId] = rawAmount
+		local numAmount, amountText, secret = nil, nil, false
+		if type(launderAmount) == "function" then
+			numAmount, amountText, secret = launderAmount(rawAmount)
+		end
 		emit("COMBAT_TEXT_HONOR", {
 			timestamp = now(),
 			rawPipeId = pipeId,
+			amount = numAmount,
+			amountText = amountText,
+			isSecret = secret,
 		})
 		return
 	end
@@ -1520,9 +1527,16 @@ function Collector:handleCombatTextUpdate(arg1)
 		local pipeId = self._rawPipeCount + 1
 		self._rawPipeCount = pipeId
 		self._rawPipe[pipeId] = rawAmount
+		local numAmount, amountText, secret = nil, nil, false
+		if type(launderAmount) == "function" then
+			numAmount, amountText, secret = launderAmount(rawAmount)
+		end
 		emit("COMBAT_TEXT_XP", {
 			timestamp = now(),
 			rawPipeId = pipeId,
+			amount = numAmount,
+			amountText = amountText,
+			isSecret = secret,
 		})
 		return
 	end
@@ -1532,9 +1546,16 @@ function Collector:handleCombatTextUpdate(arg1)
 		local pipeId = self._rawPipeCount + 1
 		self._rawPipeCount = pipeId
 		self._rawPipe[pipeId] = rawAmount
+		local numAmount, amountText, secret = nil, nil, false
+		if type(launderAmount) == "function" then
+			numAmount, amountText, secret = launderAmount(rawAmount)
+		end
 		emit("COMBAT_TEXT_REP", {
 			timestamp = now(),
 			rawPipeId = pipeId,
+			amount = numAmount,
+			amountText = amountText,
+			isSecret = secret,
 		})
 		return
 	end
