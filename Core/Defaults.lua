@@ -58,8 +58,10 @@ ZSBT.DEFAULTS = {
         },
 
         notifications = {
-            combatState = true,
-            progress = true,
+            combatState = false,
+            enterCombat = true,
+            leaveCombat = true,
+			progress = true,
 			lootItems = true,
 			lootMoney = true,
 			lootCurrency = true,
@@ -76,6 +78,8 @@ ZSBT.DEFAULTS = {
 
 		notificationsRouting = {
 			combatState = "Notifications",
+			enterCombat = "Notifications",
+			leaveCombat = "Notifications",
 			progress = "Notifications",
 			lootItems = "Notifications",
 			lootMoney = "Notifications",
@@ -92,6 +96,10 @@ ZSBT.DEFAULTS = {
 		},
 
 		notificationsTemplates = {
+			combatState = "%e",
+			enterCombat = "%e",
+			leaveCombat = "%e",
+			progress = "%e",
 			lootItems = "+%a %e (%t)",
 			lootMoney = "+%e",
 			lootCurrency = "+%a %e (%t)",
@@ -99,6 +107,28 @@ ZSBT.DEFAULTS = {
 			tradeskillLearned = "Learned: %e",
 			interrupts = "%t Interrupted!",
 			caststops = "%t Interrupted!",
+			cooldowns = "%e",
+			auras = "%e",
+			power = "%e",
+			procs = "%e",
+			triggers = "%e",
+		},
+
+		notificationsPerType = {
+			combatState = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
+			enterCombat = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None", stopOnLeaveCombat = false } },
+			leaveCombat = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
+			progress = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
+			lootItems = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
+			lootMoney = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
+			lootCurrency = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
+			tradeskillUps = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
+			tradeskillLearned = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
+			cooldowns = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
+			auras = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
+			power = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
+			procs = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
+			triggers = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 		},
 
 		interruptAlerts = {

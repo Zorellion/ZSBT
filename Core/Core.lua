@@ -684,9 +684,17 @@ function Core:InitNotifications()
     self._notifFrame:SetScript("OnEvent", function(_, event)
         if not Core:IsMasterEnabled() then return end
         if event == "PLAYER_REGEN_DISABLED" then
-            Core:EmitNotification("+Combat", {r = 1, g = 0.2, b = 0.2}, "combatState")
+			Core:EmitNotificationTemplate("enterCombat", "%e", { e = "+Combat" }, {r = 1, g = 0.2, b = 0.2})
         elseif event == "PLAYER_REGEN_ENABLED" then
-            Core:EmitNotification("-Combat", {r = 0.2, g = 1, b = 0.2}, "combatState")
+			local p = ZSBT.db and ZSBT.db.profile
+			local per = p and p.notificationsPerType
+			local ec = per and per.enterCombat
+			local stopOnLeave = ec and ec.sound and ec.sound.stopOnLeaveCombat == true
+			if stopOnLeave and self._enterCombatSoundHandle and StopSound then
+				pcall(function() StopSound(self._enterCombatSoundHandle) end)
+			end
+			self._enterCombatSoundHandle = nil
+			Core:EmitNotificationTemplate("leaveCombat", "%e", { e = "-Combat" }, {r = 0.2, g = 1, b = 0.2})
         end
     end)
 end
@@ -1881,23 +1889,116 @@ function Core:EmitInterruptAlert(text, category, ctx)
 	end
 end
 
+function Core:EmitNotificationTemplate(category, fallbackTpl, ctx, fallbackColor)
+	if category and not self:IsNotificationCategoryEnabled(category) then
+		return
+	end
+	local p = ZSBT.db and ZSBT.db.profile
+	local t = p and p.notificationsTemplates
+	local tpl = (t and type(t[category]) == "string" and t[category] ~= "") and t[category] or fallbackTpl
+	if type(tpl) ~= "string" or tpl == "" then return end
+	ctx = type(ctx) == "table" and ctx or {}
+	local function coerceSafe(v)
+		if type(v) ~= "string" then v = tostring(v or "") end
+		if ZSBT.IsSafeString and not ZSBT.IsSafeString(v) then
+			return "<secret>"
+		end
+		return v
+	end
+	local out = tpl
+	out = out:gsub("%%e", coerceSafe(ctx.e))
+	out = out:gsub("%%a", coerceSafe(ctx.a))
+	out = out:gsub("%%t", coerceSafe(ctx.t))
+	out = out:gsub("%%s", coerceSafe(ctx.s))
+	out = out:gsub("%%p", coerceSafe(ctx.p))
+	if out and out ~= "" then
+		self:EmitNotification(out, fallbackColor, category)
+	end
+end
+
+function Core:GetNotificationPerTypeConfig(category)
+	local p = ZSBT.db and ZSBT.db.profile
+	local nt = p and p.notificationsPerType
+	local conf = nt and nt[category]
+	return type(conf) == "table" and conf or nil
+end
+
 function Core:EmitNotification(text, color, category)
 	if category and not self:IsNotificationCategoryEnabled(category) then
+		return
+	end
+	if category == "interrupts" or category == "caststops" then
+		local area = "Notifications"
+		if type(category) == "string" and category ~= "" and self.GetNotificationScrollArea then
+			area = self:GetNotificationScrollArea(category)
+		end
+		if ZSBT.DisplayText then
+			ZSBT.DisplayText(area, text, color, { kind = "notification" })
+		elseif self.Display and self.Display.Emit then
+			self.Display:Emit(area, text, color, { kind = "notification" })
+		end
 		return
 	end
 	local area = "Notifications"
 	if type(category) == "string" and category ~= "" and self.GetNotificationScrollArea then
 		area = self:GetNotificationScrollArea(category)
 	end
-    if ZSBT.DisplayText then
-		ZSBT.DisplayText(area, text, color, { kind = "notification" })
-    elseif self.Display and self.Display.Emit then
-		self.Display:Emit(area, text, color, { kind = "notification" })
-    end
+	local meta = { kind = "notification" }
+	local finalColor = color
+	local conf = type(category) == "string" and category ~= "" and self.GetNotificationPerTypeConfig and self:GetNotificationPerTypeConfig(category) or nil
+	if conf then
+		local style = conf.style
+		if type(style) == "table" then
+			if type(style.color) == "table" and type(style.color.r) == "number" then
+				finalColor = style.color
+			end
+			if style.fontOverride == true then
+				meta.spellFontOverride = true
+				meta.spellFontFace = (type(style.fontFace) == "string" and style.fontFace ~= "") and style.fontFace or nil
+				meta.spellFontOutline = (type(style.fontOutline) == "string" and style.fontOutline ~= "") and style.fontOutline or nil
+				meta.spellFontSize = tonumber(style.fontSize)
+			end
+		end
+		local sconf = conf.sound
+		if type(sconf) == "table" and sconf.enabled == true and ZSBT.PlayLSMSound then
+			local soundKey = sconf.soundKey
+			if type(soundKey) == "string" and soundKey ~= "" and soundKey ~= "None" then
+				local handle = ZSBT.PlayLSMSound(soundKey)
+				if category == "enterCombat" and sconf.stopOnLeaveCombat == true then
+					self._enterCombatSoundHandle = handle
+				end
+			end
+		end
+	end
+	if ZSBT.DisplayText then
+		ZSBT.DisplayText(area, text, finalColor, meta)
+	elseif self.Display and self.Display.Emit then
+		self.Display:Emit(area, text, finalColor, meta)
+	end
 end
 
 function Core:EmitBuffNotification(spellID, text, color, category)
 	if category and not self:IsNotificationCategoryEnabled(category) then
+		return
+	end
+	if category == "interrupts" or category == "caststops" then
+		local area = "Notifications"
+		if type(category) == "string" and category ~= "" and self.GetNotificationScrollArea then
+			area = self:GetNotificationScrollArea(category)
+		end
+		if type(spellID) == "number" then
+			local csc = ZSBT and ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+			local rules = csc and csc.auraRules
+			local rule = rules and rules[spellID]
+			if type(rule) == "table" and type(rule.scrollArea) == "string" and rule.scrollArea ~= "" then
+				area = rule.scrollArea
+			end
+		end
+		if ZSBT.DisplayText then
+			ZSBT.DisplayText(area, text, color, { kind = "notification" })
+		elseif self.Display and self.Display.Emit then
+			self.Display:Emit(area, text, color, { kind = "notification" })
+		end
 		return
 	end
 	local area = "Notifications"
@@ -1913,10 +2014,34 @@ function Core:EmitBuffNotification(spellID, text, color, category)
 		end
 	end
 
+	local meta = { kind = "notification" }
+	local finalColor = color
+	local conf = type(category) == "string" and category ~= "" and self.GetNotificationPerTypeConfig and self:GetNotificationPerTypeConfig(category) or nil
+	if conf then
+		local style = conf.style
+		if type(style) == "table" then
+			if type(style.color) == "table" and type(style.color.r) == "number" then
+				finalColor = style.color
+			end
+			if style.fontOverride == true then
+				meta.spellFontOverride = true
+				meta.spellFontFace = (type(style.fontFace) == "string" and style.fontFace ~= "") and style.fontFace or nil
+				meta.spellFontOutline = (type(style.fontOutline) == "string" and style.fontOutline ~= "") and style.fontOutline or nil
+				meta.spellFontSize = tonumber(style.fontSize)
+			end
+		end
+		local sconf = conf.sound
+		if type(sconf) == "table" and sconf.enabled == true and ZSBT.PlayLSMSound then
+			local soundKey = sconf.soundKey
+			if type(soundKey) == "string" and soundKey ~= "" and soundKey ~= "None" then
+				ZSBT.PlayLSMSound(soundKey)
+			end
+		end
+	end
 	if ZSBT.DisplayText then
-		ZSBT.DisplayText(area, text, color, { kind = "notification" })
+		ZSBT.DisplayText(area, text, finalColor, meta)
 	elseif self.Display and self.Display.Emit then
-		self.Display:Emit(area, text, color, { kind = "notification" })
+		self.Display:Emit(area, text, finalColor, meta)
 	end
 end
 ------------------------------------------------------------------------

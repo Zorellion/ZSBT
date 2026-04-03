@@ -3,7 +3,24 @@
 Notifications controls what kinds of alerts are allowed to appear in your Notifications scroll area.
 
 ## Where to configure
-- `/zsbt` -> `Notifications`
+- `/zsbt` -> `Alerts` -> `Notifications`
+
+## Combat State
+Combat state alerts are split into two categories:
+- Enter Combat
+- Leave Combat
+
+Each category has its own:
+- Enable toggle
+- Route
+- Template
+- Style + sound options
+
+### Enter Combat: stop sound when leaving combat
+If you use a long Enter Combat sound, you can enable:
+- `Stop sound when leaving combat`
+
+This will stop the Enter Combat sound on combat end so the Leave Combat sound can play cleanly.
 
 ## Loot Alerts
 Loot is split into three categories:
@@ -12,7 +29,7 @@ Loot is split into three categories:
 - Loot Currency (tokens/currencies)
 
 You can configure loot message templates and loot filters under:
-- `/zsbt` -> `Notifications` -> `Loot Alerts`
+- `/zsbt` -> `Alerts` -> `Notifications` -> `Loot Alerts`
 
 ## Trade Skill Alerts
 Trade skills are split into two categories:
@@ -20,7 +37,7 @@ Trade skills are split into two categories:
 - Trade Skills: Learned Recipes/Spells
 
 You can configure trade skill message templates under:
-- `/zsbt` -> `Notifications` -> `Trade Skill Alerts`
+- `/zsbt` -> `Alerts` -> `Notifications` -> `Trade Skill Alerts`
 
 ## Interrupt Alerts
 Interrupt Alerts covers:
@@ -44,7 +61,7 @@ Shared options (apply to both Interrupts and Cast Stops):
 ### How to use Loot Alerts
 
 #### 1) Turn on the category (and choose where it goes)
-- Go to `/zsbt` -> `Notifications`.
+- Go to `/zsbt` -> `Alerts` -> `Notifications`.
 - Enable any of:
   - `Loot Items`
   - `Loot Money`
@@ -52,7 +69,7 @@ Shared options (apply to both Interrupts and Cast Stops):
 - Use the `Route To` dropdown next to each category to choose which scroll area receives that alert.
 
 #### 2) Customize the message template
-- Go to `/zsbt` -> `Notifications` -> `Loot Alerts`.
+- Go to `/zsbt` -> `Alerts` -> `Notifications` -> `Loot Alerts`.
 - Each loot type has its own template.
 
 Template codes:
@@ -87,13 +104,12 @@ Loot filters apply to Loot Items.
 
 ## What belongs in Notifications
 Notifications is intended for short, high-signal messages like:
-- Cooldowns ready
-- Procs / reactive abilities
-- Buff/debuff gain or fade messages
+- Combat state (enter/leave)
 - Loot / money / reputation / honor progress
+- Trade skill skill-ups / learned recipes
+- Power messages
 - Warnings (low health, low mana)
 - UT announcer events
-- Custom Triggers
 
 ## Step-by-step setup
 - **Ensure you have a Notifications scroll area**
@@ -101,12 +117,10 @@ Notifications is intended for short, high-signal messages like:
   - Enable the `Notifications` area.
   - Place it somewhere central or near your UI alerts.
 - **Enable the categories you care about**
-  - Go to `Notifications`.
+  - Go to `Alerts` -> `Notifications`.
   - Turn on the categories you want to see.
 - **Route to the right scroll area**
-  - For most notification categories (combat state, progress, loot items/money/currency, auras, power full), use the `Route To` selector in the `Notifications` tab.
-  - Cooldown ready routing is configured in the `Cooldowns` tab.
-  - Custom trigger routing is configured per-trigger in the `Triggers` tab.
+  - Use the `Route To` selector per category in the Notifications tree.
 
 ## Tips
 - If notifications are too noisy:

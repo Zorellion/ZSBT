@@ -826,6 +826,108 @@ function Addon:OnInitialize()
 
 	migrateNotificationsScrollAreaAnim_v1()
 
+	-- One-time migration: ensure all Notifications categories have template defaults
+	-- and initialize per-category style/sound settings for Notifications.
+	local function migrateNotificationsPerType_v1()
+		if not self.db then return end
+		self.db.global = self.db.global or {}
+		self.db.global.migrations = self.db.global.migrations or {}
+		if self.db.global.migrations.notificationsPerType_v1 == true then return end
+
+		local defaults = ZSBT.DEFAULTS and ZSBT.DEFAULTS.profile or nil
+		local defTpl = defaults and defaults.notificationsTemplates or {}
+		local defPer = defaults and defaults.notificationsPerType or {}
+
+		for _, prof in pairs(self.db.profiles or {}) do
+			if type(prof) == "table" then
+				prof.notificationsTemplates = prof.notificationsTemplates or {}
+				for k, v in pairs(defTpl) do
+					if prof.notificationsTemplates[k] == nil and v ~= nil then
+						prof.notificationsTemplates[k] = v
+					end
+				end
+
+				prof.notificationsPerType = prof.notificationsPerType or {}
+				for k, v in pairs(defPer) do
+					if type(prof.notificationsPerType[k]) ~= "table" and type(v) == "table" then
+						prof.notificationsPerType[k] = v
+					else
+						local cur = prof.notificationsPerType[k]
+						if type(cur) == "table" and type(v) == "table" then
+							cur.style = type(cur.style) == "table" and cur.style or (type(v.style) == "table" and v.style or {})
+							cur.sound = type(cur.sound) == "table" and cur.sound or (type(v.sound) == "table" and v.sound or {})
+							if cur.style.fontOverride == nil and v.style and v.style.fontOverride ~= nil then
+								cur.style.fontOverride = v.style.fontOverride
+							end
+							if cur.sound.enabled == nil and v.sound and v.sound.enabled ~= nil then
+								cur.sound.enabled = v.sound.enabled
+							end
+							if cur.sound.soundKey == nil and v.sound and v.sound.soundKey ~= nil then
+								cur.sound.soundKey = v.sound.soundKey
+							end
+						end
+					end
+				end
+			end
+		end
+
+		self.db.global.migrations.notificationsPerType_v1 = true
+	end
+
+	migrateNotificationsPerType_v1()
+
+	-- One-time migration: split legacy combatState category into enterCombat/leaveCombat.
+	local function migrateCombatStateSplit_v1()
+		if not self.db then return end
+		self.db.global = self.db.global or {}
+		self.db.global.migrations = self.db.global.migrations or {}
+		if self.db.global.migrations.combatStateSplit_v1 == true then return end
+
+		local function applyToProfile(prof)
+			if type(prof) ~= "table" then return end
+			local n = prof.notifications
+			local r = prof.notificationsRouting
+			local t = prof.notificationsTemplates
+			local per = prof.notificationsPerType
+			local function copyTable(src)
+				if type(src) ~= "table" then return nil end
+				local out = {}
+				for k, v in pairs(src) do
+					out[k] = v
+				end
+				return out
+			end
+
+			if type(n) == "table" and n.enterCombat == nil then n.enterCombat = n.combatState end
+			if type(n) == "table" and n.leaveCombat == nil then n.leaveCombat = n.combatState end
+
+			if type(r) == "table" and r.enterCombat == nil then r.enterCombat = r.combatState end
+			if type(r) == "table" and r.leaveCombat == nil then r.leaveCombat = r.combatState end
+
+			if type(t) == "table" and t.enterCombat == nil then t.enterCombat = t.combatState end
+			if type(t) == "table" and t.leaveCombat == nil then t.leaveCombat = t.combatState end
+
+			if type(per) == "table" and type(per.combatState) == "table" then
+				local cs = per.combatState
+				if type(per.enterCombat) ~= "table" then
+					per.enterCombat = { style = copyTable(cs.style), sound = copyTable(cs.sound) }
+				end
+				if type(per.leaveCombat) ~= "table" then
+					per.leaveCombat = { style = copyTable(cs.style), sound = copyTable(cs.sound) }
+				end
+			end
+		end
+
+		applyToProfile(self.db.profile)
+		for _, prof in pairs(self.db.profiles or {}) do
+			applyToProfile(prof)
+		end
+
+		self.db.global.migrations.combatStateSplit_v1 = true
+	end
+
+	migrateCombatStateSplit_v1()
+
 	-- Default to per-character profiles so different characters don't share
 	-- spell/buff rules unless explicitly configured via AceDB profiles.
 	local function getCharKey()
@@ -864,7 +966,8 @@ function Addon:OnInitialize()
 			if not soundKey or soundKey == "None" then return end
 			local path = LSM:Fetch("sound", soundKey)
 			if path then
-				PlaySoundFile(path, "Master")
+				local _, handle = PlaySoundFile(path, "Master")
+				return handle
 			end
 		end
 	end

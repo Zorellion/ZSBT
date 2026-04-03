@@ -74,6 +74,11 @@ Instead it can print locally into your chat frame:
 - `/zsbt` -> `Alerts` -> `Notifications` -> `Interrupt Alerts` -> `Chat Announcement`
 - Enable `Show Successful Interrupts in Chat`
 
+## Enter Combat sound does not stop
+If you use a long Enter Combat sound and it keeps playing after combat ends:
+- `/zsbt` -> `Alerts` -> `Notifications` -> `Combat State` -> `Enter Combat`
+- Enable `Stop sound when leaving combat`
+
 ## Custom media not showing
 If custom fonts or sounds don’t appear in dropdowns:
 

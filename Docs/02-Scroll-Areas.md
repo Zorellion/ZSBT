@@ -7,7 +7,7 @@ Scroll areas control where text appears on your screen and how it animates.
 
 ## The default areas
 - **Notifications**
-  - Used for alerts (cooldowns ready, warnings, triggers, UT announcements).
+  - Used for alerts (combat state, progress, loot, trade skills, warnings, UT announcements).
 - **Outgoing**
   - Your damage/healing.
 - **Incoming**

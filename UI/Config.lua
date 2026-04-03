@@ -1514,7 +1514,8 @@ function ZSBT.PlayLSMSound(soundKey)
     if not LSM then return end
     local path = LSM:Fetch("sound", soundKey)
     if path then
-        PlaySoundFile(path, "Master")
+        local _, handle = PlaySoundFile(path, "Master")
+        return handle
     end
 end
 
@@ -2176,7 +2177,20 @@ Diagnostics controls debug logging.
 Notifications controls what kinds of alerts are allowed to appear in your Notifications scroll area.
 
 ## Where to configure
-- `/zsbt` -> `Notifications`
+- `/zsbt` -> `Alerts` -> `Notifications`
+
+## Combat State
+Combat state alerts are split into two categories:
+- Enter Combat
+- Leave Combat
+
+Each category has its own template, routing, style, and sound settings.
+
+### Enter Combat: stop sound when leaving combat
+If you use a long Enter Combat sound, you can enable:
+- `Stop sound when leaving combat`
+
+This stops the Enter Combat sound when combat ends so the Leave Combat sound can play cleanly.
 
 ## Loot Alerts
 Loot is split into three categories:
@@ -2185,7 +2199,7 @@ Loot is split into three categories:
 - Loot Currency (tokens/currencies)
 
 Loot templates and loot filtering are configured under:
-- `/zsbt` -> `Notifications` -> `Loot Alerts`
+- `/zsbt` -> `Alerts` -> `Notifications` -> `Loot Alerts`
 
 ## Trade Skill Alerts
 Trade skills are split into two categories:
@@ -2193,7 +2207,7 @@ Trade skills are split into two categories:
 - Trade Skills: Learned Recipes/Spells
 
 Trade skill templates are configured under:
-- `/zsbt` -> `Notifications` -> `Trade Skill Alerts`
+- `/zsbt` -> `Alerts` -> `Notifications` -> `Trade Skill Alerts`
 
 ## Interrupt Alerts
 Interrupt Alerts covers:
@@ -2217,7 +2231,7 @@ Shared options:
 ### How to use Loot Alerts
 
 #### 1) Turn on the category (and choose where it goes)
-- Go to `/zsbt` -> `Notifications`.
+- Go to `/zsbt` -> `Alerts` -> `Notifications`.
 - Enable any of:
   - `Loot Items`
   - `Loot Money`
@@ -2225,7 +2239,7 @@ Shared options:
 - Use the `Route To` dropdown next to each category to choose which scroll area receives that alert.
 
 #### 2) Customize the message template
-- Go to `/zsbt` -> `Notifications` -> `Loot Alerts`.
+- Go to `/zsbt` -> `Alerts` -> `Notifications` -> `Loot Alerts`.
 - Each loot type has its own template.
 
 Template codes:
@@ -2260,21 +2274,19 @@ Loot filters apply to Loot Items.
 
 ## What belongs in Notifications
 Notifications is intended for short, high-signal messages like:
-- Cooldowns ready
-- Procs / reactive abilities
-- Buff/debuff gain or fade messages
-- Loot / money / reputation / honor progress
+- Combat state (enter/leave)
+- Progress (XP / honor / reputation)
+- Loot / money / currencies
+- Trade skill skill-ups / learned recipes
+- Power messages
 - Warnings (low health, low mana)
 - UT announcer events
-- Custom Triggers
 
 ## Step-by-step setup
 - Ensure you have a Notifications scroll area
 - Enable the categories you care about
 - Route to the right scroll area
-  - For most notification categories (combat state, progress, loot items/money/currency, auras, power full), use the `Route To` selector in the `Notifications` tab.
-  - Cooldown ready routing is configured in the `Cooldowns` tab.
-  - Custom trigger routing is configured per-trigger in the `Triggers` tab.
+  - Use the `Route To` selector per category in the Notifications tree.
 
 ## Tips
 - If notifications are too noisy, disable categories you don’t care about.
@@ -2380,6 +2392,11 @@ WoW protects server chat APIs.
 ZSBT does not use protected `SendChatMessage` for interrupt announcements.
 Instead, it can print locally into your chat frame:
 - `Interrupt Alerts` -> `Chat Announcement` -> `Show Successful Interrupts in Chat`
+
+## Enter Combat sound does not stop
+If you use a long Enter Combat sound and it keeps playing after combat ends:
+- `/zsbt` -> `Alerts` -> `Notifications` -> `Combat State` -> `Enter Combat`
+- Enable `Stop sound when leaving combat`
 ]],
 
 	troubleshooting_media = [[# Custom Media

@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.0.6
+
+### Added
+- Notifications: revamped the Notifications configuration UI into a tree layout with grouped sections (Combat State, Loot Alerts, Trade Skill Alerts).
+- Notifications: added per-notification-type customization for supported categories:
+  - Message templates (all notification types now support templates)
+  - Per-type style overrides (color + optional font override)
+  - Per-type sound options (enable + sound picker)
+- Notifications: split Combat State into separate Enter Combat and Leave Combat categories for independent routing/templates/styles/sounds.
+- Notifications: added Enter Combat option to stop the Enter Combat sound when leaving combat (so the Leave Combat sound can play cleanly).
+
+### Changed
+- Notifications: Interrupt Alerts configuration and behavior remains unchanged (still uses the Interrupt Alerts system), but is now embedded under the new Notifications tree.
+- Notifications: Loot Alerts and Trade Skill Alerts now live under grouped sections in the Notifications tree.
+
+### Fixed
+- Notifications: added upgrade migrations to backfill missing notification templates and per-type style/sound defaults without overwriting existing user settings.
+- Notifications: fixed sound playback helper to return a handle so long Enter Combat sounds can be stopped on Leave Combat when configured.
+
+### Removed
+- Notifications: removed unsupported categories from the Notifications tab UI (auras, procs/reactives, cooldown ready, custom triggers). These are handled elsewhere.
+
 ## 2.0.5
 
 ### Fixed

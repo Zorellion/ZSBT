@@ -2427,6 +2427,57 @@ end
 -- Manage what categories can emit to the Notifications scroll area.
 ------------------------------------------------------------------------
 function ZSBT.BuildTab_Notifications()
+	local STYLE_CATEGORIES = {
+		enterCombat = true,
+		leaveCombat = true,
+		progress = true,
+		lootItems = true,
+		lootMoney = true,
+		lootCurrency = true,
+		tradeskillUps = true,
+		tradeskillLearned = true,
+		power = true,
+	}
+	local CATEGORY_LABELS = {
+		enterCombat = "Enter Combat",
+		leaveCombat = "Leave Combat",
+		progress = "Progress (XP / Honor / Reputation)",
+		lootItems = "Loot Items",
+		lootMoney = "Loot Money",
+		lootCurrency = "Loot Currency",
+		tradeskillUps = "Trade Skills: Skill Ups",
+		tradeskillLearned = "Trade Skills: Learned Recipes/Spells",
+		interrupts = "Interrupts (Successful)",
+		caststops = "Cast Stops (Stuns/CC)",
+		power = "Power",
+	}
+	local TEMPLATE_DESCS = {
+		enterCombat = "Template codes: %e=event text.",
+		leaveCombat = "Template codes: %e=event text.",
+		progress = "Template codes: %e=event text.",
+		lootItems = "Template codes: %e=item, %a=amount looted, %t=total owned.",
+		lootMoney = "Template codes: %e=money string.",
+		lootCurrency = "Template codes: %e=currency link/name, %a=amount gained, %t=total quantity.",
+		tradeskillUps = "Template codes: %e=skill, %a=amount, %t=new level.",
+		tradeskillLearned = "Template codes: %e=learned recipe/spell.",
+		interrupts = "Message template codes: %t=target, %s=your ability.",
+		caststops = "Message template codes: %t=target, %s=your ability.",
+		power = "Template codes: %e=event text.",
+	}
+	local DEFAULT_TEMPLATES = {
+		enterCombat = "%e",
+		leaveCombat = "%e",
+		progress = "%e",
+		lootItems = "+%a %e (%t)",
+		lootMoney = "+%e",
+		lootCurrency = "+%a %e (%t)",
+		tradeskillUps = "%e +%a (%t)",
+		tradeskillLearned = "Learned: %e",
+		interrupts = "%t Interrupted!",
+		caststops = "%t Interrupted!",
+		power = "%e",
+	}
+
 	local function getCat(key)
 		local p = ZSBT.db and ZSBT.db.profile
 		local n = p and p.notifications
@@ -2506,6 +2557,233 @@ function ZSBT.BuildTab_Notifications()
 		}
 	end
 
+	local function getPerType(key)
+		local p = ZSBT.db and ZSBT.db.profile
+		local nt = p and p.notificationsPerType
+		local v = nt and nt[key]
+		return type(v) == "table" and v or nil
+	end
+	local function ensurePerType(key)
+		ZSBT.db.profile.notificationsPerType = ZSBT.db.profile.notificationsPerType or {}
+		ZSBT.db.profile.notificationsPerType[key] = ZSBT.db.profile.notificationsPerType[key] or {}
+		local v = ZSBT.db.profile.notificationsPerType[key]
+		v.style = type(v.style) == "table" and v.style or {}
+		v.sound = type(v.sound) == "table" and v.sound or {}
+		if v.sound.enabled == nil then v.sound.enabled = false end
+		if key == "enterCombat" and v.sound.stopOnLeaveCombat == nil then v.sound.stopOnLeaveCombat = false end
+		if type(v.sound.soundKey) ~= "string" or v.sound.soundKey == "" then v.sound.soundKey = "None" end
+		return v
+	end
+
+	local function buildStyleSoundArgs(key, baseOrder)
+		if not STYLE_CATEGORIES[key] then
+			return {}
+		end
+		return {
+			styleHeader = { type = "header", name = "Style", order = baseOrder },
+			color = {
+				type = "color",
+				name = "Color",
+				order = baseOrder + 0.1,
+				get = function()
+					local c = getPerType(key)
+					local style = c and c.style
+					local col = style and style.color
+					col = col or { r = 1, g = 1, b = 1 }
+					return col.r, col.g, col.b
+				end,
+				set = function(_, r, g, b)
+					local c = ensurePerType(key)
+					c.style.color = { r = r, g = g, b = b }
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			fontOverride = {
+				type = "toggle",
+				name = "Font Override",
+				desc = "Override the font settings for this notification type.",
+				order = baseOrder + 0.2,
+				width = "full",
+				get = function()
+					local c = getPerType(key)
+					return c and c.style and c.style.fontOverride == true
+				end,
+				set = function(_, v)
+					local c = ensurePerType(key)
+					c.style.fontOverride = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			fontFace = {
+				type = "select",
+				name = "Font Face",
+				order = baseOrder + 0.3,
+				values = function() return ZSBT.BuildFontDropdown() end,
+				disabled = function()
+					local c = getPerType(key)
+					return not (c and c.style and c.style.fontOverride == true)
+				end,
+				get = function()
+					local c = getPerType(key)
+					return (c and c.style and c.style.fontFace) or ZSBT.db.profile.general.font.face
+				end,
+				set = function(_, v)
+					local c = ensurePerType(key)
+					c.style.fontFace = v
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			fontOutline = {
+				type = "select",
+				name = "Outline Style",
+				order = baseOrder + 0.4,
+				values = ZSBT.ValuesFromKeys(ZSBT.OUTLINE_STYLES),
+				disabled = function()
+					local c = getPerType(key)
+					return not (c and c.style and c.style.fontOverride == true)
+				end,
+				get = function()
+					local c = getPerType(key)
+					return (c and c.style and c.style.fontOutline) or ZSBT.db.profile.general.font.outline
+				end,
+				set = function(_, v)
+					local c = ensurePerType(key)
+					c.style.fontOutline = v
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			fontSize = {
+				type = "range",
+				name = "Font Size",
+				order = baseOrder + 0.5,
+				min = 8,
+				max = 72,
+				step = 1,
+				disabled = function()
+					local c = getPerType(key)
+					return not (c and c.style and c.style.fontOverride == true)
+				end,
+				get = function()
+					local c = getPerType(key)
+					return tonumber((c and c.style and c.style.fontSize) or 18) or 18
+				end,
+				set = function(_, v)
+					local c = ensurePerType(key)
+					c.style.fontSize = v
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			soundHeader = { type = "header", name = "Sound", order = baseOrder + 1 },
+			soundEnabled = {
+				type = "toggle",
+				name = "Play a Sound",
+				order = baseOrder + 1.1,
+				width = "full",
+				get = function()
+					local c = getPerType(key)
+					return c and c.sound and c.sound.enabled == true
+				end,
+				set = function(_, v)
+					local c = ensurePerType(key)
+					c.sound.enabled = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			soundKey = {
+				type = "select",
+				name = "Sound",
+				order = baseOrder + 1.2,
+				values = function() return (ZSBT.BuildSoundDropdown and ZSBT.BuildSoundDropdown()) or { ["None"] = "None" } end,
+				disabled = function()
+					local c = getPerType(key)
+					return not (c and c.sound and c.sound.enabled == true)
+				end,
+				get = function()
+					local c = getPerType(key)
+					local sk = c and c.sound and c.sound.soundKey
+					return (type(sk) == "string" and sk ~= "") and sk or "None"
+				end,
+				set = function(_, v)
+					local c = ensurePerType(key)
+					c.sound.soundKey = v
+				end,
+			},
+			soundTest = {
+				type = "execute",
+				name = "Play Sound",
+				order = baseOrder + 1.3,
+				width = "half",
+				disabled = function()
+					local c = getPerType(key)
+					return not (c and c.sound and c.sound.enabled == true)
+				end,
+				func = function()
+					local c = getPerType(key)
+					local sk = c and c.sound and c.sound.soundKey
+					if type(sk) ~= "string" then sk = "None" end
+					if ZSBT.PlayLSMSound then
+						ZSBT.PlayLSMSound(sk)
+					end
+				end,
+			},
+			stopOnLeaveCombat = {
+				type = "toggle",
+				name = "Stop sound when leaving combat",
+				desc = "If enabled, the Enter Combat sound will be stopped when you leave combat so the Leave Combat sound can play cleanly.",
+				order = baseOrder + 1.4,
+				width = "full",
+				hidden = function() return key ~= "enterCombat" end,
+				disabled = function()
+					local c = getPerType(key)
+					return not (c and c.sound and c.sound.enabled == true)
+				end,
+				get = function()
+					local c = getPerType(key)
+					return c and c.sound and c.sound.stopOnLeaveCombat == true
+				end,
+				set = function(_, v)
+					local c = ensurePerType(key)
+					c.sound.stopOnLeaveCombat = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+		}
+	end
+
+	local function buildLeafGroup(key, order)
+		return {
+			type = "group",
+			name = CATEGORY_LABELS[key] or key,
+			order = order,
+			args = (function()
+				local args = {}
+				args.enabled = {
+					type = "toggle",
+					name = "Enabled",
+					order = 1,
+					width = "full",
+					get = function() return getCat(key) end,
+					set = function(_, v) setCat(key, v) end,
+				}
+				args.route = routeSelect(key, 1.1)
+				args.template = {
+					type = "input",
+					name = "Template",
+					desc = TEMPLATE_DESCS[key] or "Template codes: %e=event text.",
+					order = 1.2,
+					width = "full",
+					get = function() return getTpl(key, DEFAULT_TEMPLATES[key] or "%e") end,
+					set = function(_, v) setTpl(key, v) end,
+				}
+				local extra = buildStyleSoundArgs(key, 2)
+				for k, v in pairs(extra) do
+					args[k] = v
+				end
+				return args
+			end)(),
+		}
+	end
+
 	return {
 		type  = "group",
 		name  = "|cFFFFD100Notifications|r",
@@ -2527,7 +2805,7 @@ function ZSBT.BuildTab_Notifications()
 			enabled = {
 				type  = "toggle",
 				name  = "Enable Notifications Area",
-				desc  = "If disabled, nothing will be shown in the Notifications scroll area (combat enter/leave, buffs, cooldown ready, loot, triggers routed there, etc.).",
+				desc  = "If disabled, nothing will be shown in the Notifications scroll area (combat enter/leave, progress, loot, etc.).",
 				order = 2.6,
 				width = "full",
 				get   = function() return ZSBT.db.profile.general.notificationsEnabled ~= false end,
@@ -2538,72 +2816,38 @@ function ZSBT.BuildTab_Notifications()
 			},
 
 			combatState = {
-				type  = "toggle",
-				name  = "Combat State (+Combat / -Combat)",
+				type = "group",
+				name = "Combat State",
 				order = 3,
-				width = "full",
-				get   = function() return getCat("combatState") end,
-				set   = function(_, v) setCat("combatState", v) end,
+				args = {
+					enterCombat = buildLeafGroup("enterCombat", 1),
+					leaveCombat = buildLeafGroup("leaveCombat", 2),
+				},
 			},
-			combatStateRoute = routeSelect("combatState", 3.1),
-			progress = {
-				type  = "toggle",
-				name  = "Progress (XP / Honor / Reputation)",
-				order = 4,
-				width = "full",
-				get   = function() return getCat("progress") end,
-				set   = function(_, v) setCat("progress", v) end,
-			},
-			progressRoute = routeSelect("progress", 4.1),
-			lootItems = {
-				type  = "toggle",
-				name  = "Loot Items",
+			progress = buildLeafGroup("progress", 4),
+			lootAlerts = {
+				type = "group",
+				name = "Loot Alerts",
 				order = 5,
-				width = "full",
-				get   = function() return getCat("lootItems") end,
-				set   = function(_, v) setCat("lootItems", v) end,
+				args = {
+					lootItems = buildLeafGroup("lootItems", 1),
+					lootMoney = buildLeafGroup("lootMoney", 2),
+					lootCurrency = buildLeafGroup("lootCurrency", 3),
+				},
 			},
-			lootItemsRoute = routeSelect("lootItems", 5.1),
-			lootMoney = {
-				type  = "toggle",
-				name  = "Loot Money",
+			tradeSkillAlerts = {
+				type = "group",
+				name = "Trade Skill Alerts",
 				order = 6,
-				width = "full",
-				get   = function() return getCat("lootMoney") end,
-				set   = function(_, v) setCat("lootMoney", v) end,
+				args = {
+					tradeskillUps = buildLeafGroup("tradeskillUps", 1),
+					tradeskillLearned = buildLeafGroup("tradeskillLearned", 2),
+				},
 			},
-			lootMoneyRoute = routeSelect("lootMoney", 6.1),
-			lootCurrency = {
-				type  = "toggle",
-				name  = "Loot Currency",
-				order = 7,
-				width = "full",
-				get   = function() return getCat("lootCurrency") end,
-				set   = function(_, v) setCat("lootCurrency", v) end,
-			},
-			lootCurrencyRoute = routeSelect("lootCurrency", 7.1),
-			tradeskillUps = {
-				type  = "toggle",
-				name  = "Trade Skills: Skill Ups",
-				order = 7.2,
-				width = "full",
-				get   = function() return getCat("tradeskillUps") end,
-				set   = function(_, v) setCat("tradeskillUps", v) end,
-			},
-			tradeskillUpsRoute = routeSelect("tradeskillUps", 7.21),
-			tradeskillLearned = {
-				type  = "toggle",
-				name  = "Trade Skills: Learned Recipes/Spells",
-				order = 7.3,
-				width = "full",
-				get   = function() return getCat("tradeskillLearned") end,
-				set   = function(_, v) setCat("tradeskillLearned", v) end,
-			},
-			tradeskillLearnedRoute = routeSelect("tradeskillLearned", 7.31),
 			interruptAlerts = {
 				type = "group",
 				name = "Interrupt Alerts",
-				order = 7.4,
+				order = 7,
 				args = {
 					interrupts = {
 						type  = "toggle",
@@ -2825,274 +3069,18 @@ function ZSBT.BuildTab_Notifications()
 					},
 				},
 			},
-			lootAlerts = {
-				type = "group",
-				name = "Loot Alerts",
-				order = 7.5,
-				args = {
-					tplItems = {
-						type = "input",
-						name = "Loot Items Template",
-						desc = "Message template codes: %e=item, %a=amount looted, %t=total owned.",
-						order = 1,
-						width = "full",
-						get = function() return getTpl("lootItems", "+%a %e (%t)") end,
-						set = function(_, v) setTpl("lootItems", v) end,
-					},
-					tplMoney = {
-						type = "input",
-						name = "Loot Money Template",
-						desc = "Message template codes: %e=money string.",
-						order = 2,
-						width = "full",
-						get = function() return getTpl("lootMoney", "+%e") end,
-						set = function(_, v) setTpl("lootMoney", v) end,
-					},
-					tplCurrency = {
-						type = "input",
-						name = "Loot Currency Template",
-						desc = "Message template codes: %e=currency link/name, %a=amount gained, %t=total quantity.",
-						order = 3,
-						width = "full",
-						get = function() return getTpl("lootCurrency", "+%a %e (%t)") end,
-						set = function(_, v) setTpl("lootCurrency", v) end,
-					},
-					showCreated = {
-						type = "toggle",
-						name = "Show Created/Pushed Items",
-						order = 4,
-						width = "full",
-						get = function()
-							local p = ZSBT.db and ZSBT.db.profile
-							local loot = p and p.loot
-							return loot and loot.showCreated == true
-						end,
-						set = function(_, v)
-							ZSBT.db.profile.loot = ZSBT.db.profile.loot or {}
-							ZSBT.db.profile.loot.showCreated = v and true or false
-							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-						end,
-					},
-					alwaysShowQuest = {
-						type = "toggle",
-						name = "Always Show Quest Items",
-						order = 5,
-						width = "full",
-						get = function()
-							local p = ZSBT.db and ZSBT.db.profile
-							local loot = p and p.loot
-							return loot == nil or loot.alwaysShowQuestItems ~= false
-						end,
-						set = function(_, v)
-							ZSBT.db.profile.loot = ZSBT.db.profile.loot or {}
-							ZSBT.db.profile.loot.alwaysShowQuestItems = v and true or false
-							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-						end,
-					},
-					qualityHeader = { type = "header", name = "Quality Filters", order = 6 },
-					quality0 = {
-						type = "toggle",
-						name = "Hide Poor",
-						order = 6.1,
-						get = function()
-							local loot = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.loot
-							return loot and loot.qualityExclusions and loot.qualityExclusions[(LE_ITEM_QUALITY_POOR or (Enum and Enum.ItemQuality and Enum.ItemQuality.Poor) or 0)] == true
-						end,
-						set = function(_, v)
-							local q = (LE_ITEM_QUALITY_POOR or (Enum and Enum.ItemQuality and Enum.ItemQuality.Poor) or 0)
-							ZSBT.db.profile.loot = ZSBT.db.profile.loot or {}
-							ZSBT.db.profile.loot.qualityExclusions = ZSBT.db.profile.loot.qualityExclusions or {}
-							ZSBT.db.profile.loot.qualityExclusions[q] = v and true or nil
-							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-						end,
-					},
-					quality1 = {
-						type = "toggle",
-						name = "Hide Common",
-						order = 6.2,
-						get = function()
-							local loot = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.loot
-							return loot and loot.qualityExclusions and loot.qualityExclusions[(LE_ITEM_QUALITY_COMMON or (Enum and Enum.ItemQuality and Enum.ItemQuality.Common) or 1)] == true
-						end,
-						set = function(_, v)
-							local q = (LE_ITEM_QUALITY_COMMON or (Enum and Enum.ItemQuality and Enum.ItemQuality.Common) or 1)
-							ZSBT.db.profile.loot = ZSBT.db.profile.loot or {}
-							ZSBT.db.profile.loot.qualityExclusions = ZSBT.db.profile.loot.qualityExclusions or {}
-							ZSBT.db.profile.loot.qualityExclusions[q] = v and true or nil
-							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-						end,
-					},
-					quality2 = {
-						type = "toggle",
-						name = "Hide Uncommon",
-						order = 6.3,
-						get = function()
-							local loot = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.loot
-							return loot and loot.qualityExclusions and loot.qualityExclusions[(LE_ITEM_QUALITY_UNCOMMON or (Enum and Enum.ItemQuality and Enum.ItemQuality.Uncommon) or 2)] == true
-						end,
-						set = function(_, v)
-							local q = (LE_ITEM_QUALITY_UNCOMMON or (Enum and Enum.ItemQuality and Enum.ItemQuality.Uncommon) or 2)
-							ZSBT.db.profile.loot = ZSBT.db.profile.loot or {}
-							ZSBT.db.profile.loot.qualityExclusions = ZSBT.db.profile.loot.qualityExclusions or {}
-							ZSBT.db.profile.loot.qualityExclusions[q] = v and true or nil
-							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-						end,
-					},
-					quality3 = {
-						type = "toggle",
-						name = "Hide Rare",
-						order = 6.4,
-						get = function()
-							local loot = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.loot
-							return loot and loot.qualityExclusions and loot.qualityExclusions[(LE_ITEM_QUALITY_RARE or (Enum and Enum.ItemQuality and Enum.ItemQuality.Rare) or 3)] == true
-						end,
-						set = function(_, v)
-							local q = (LE_ITEM_QUALITY_RARE or (Enum and Enum.ItemQuality and Enum.ItemQuality.Rare) or 3)
-							ZSBT.db.profile.loot = ZSBT.db.profile.loot or {}
-							ZSBT.db.profile.loot.qualityExclusions = ZSBT.db.profile.loot.qualityExclusions or {}
-							ZSBT.db.profile.loot.qualityExclusions[q] = v and true or nil
-							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-						end,
-					},
-					quality4 = {
-						type = "toggle",
-						name = "Hide Epic",
-						order = 6.5,
-						get = function()
-							local loot = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.loot
-							return loot and loot.qualityExclusions and loot.qualityExclusions[(LE_ITEM_QUALITY_EPIC or (Enum and Enum.ItemQuality and Enum.ItemQuality.Epic) or 4)] == true
-						end,
-						set = function(_, v)
-							local q = (LE_ITEM_QUALITY_EPIC or (Enum and Enum.ItemQuality and Enum.ItemQuality.Epic) or 4)
-							ZSBT.db.profile.loot = ZSBT.db.profile.loot or {}
-							ZSBT.db.profile.loot.qualityExclusions = ZSBT.db.profile.loot.qualityExclusions or {}
-							ZSBT.db.profile.loot.qualityExclusions[q] = v and true or nil
-							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-						end,
-					},
-					exclusions = {
-						type = "input",
-						name = "Item Exclusions (one per line)",
-						desc = "Items listed here will be hidden.",
-						order = 7,
-						width = "full",
-						multiline = 6,
-						get = function()
-							local loot = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.loot
-							return setToLines(loot and loot.itemExclusions)
-						end,
-						set = function(_, v)
-							ZSBT.db.profile.loot = ZSBT.db.profile.loot or {}
-							ZSBT.db.profile.loot.itemExclusions = splitLinesToSet(v)
-							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-						end,
-					},
-					allowed = {
-						type = "input",
-						name = "Items Allowed (one per line)",
-						desc = "Items listed here will always be shown, even if excluded by quality or name.",
-						order = 8,
-						width = "full",
-						multiline = 6,
-						get = function()
-							local loot = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.loot
-							return setToLines(loot and loot.itemsAllowed)
-						end,
-						set = function(_, v)
-							ZSBT.db.profile.loot = ZSBT.db.profile.loot or {}
-							ZSBT.db.profile.loot.itemsAllowed = splitLinesToSet(v)
-							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-						end,
-					},
-				},
-			},
-			tradeSkillAlerts = {
-				type = "group",
-				name = "Trade Skill Alerts",
-				order = 7.6,
-				args = {
-					tplUps = {
-						type = "input",
-						name = "Skill Up Template",
-						desc = "Message template codes: %e=skill name, %a=+amount, %t=new level.",
-						order = 1,
-						width = "full",
-						get = function() return getTpl("tradeskillUps", "%e +%a (%t)") end,
-						set = function(_, v) setTpl("tradeskillUps", v) end,
-					},
-					tplLearned = {
-						type = "input",
-						name = "Learned Template",
-						desc = "Message template codes: %e=recipe/spell link or name.",
-						order = 2,
-						width = "full",
-						get = function() return getTpl("tradeskillLearned", "Learned: %e") end,
-						set = function(_, v) setTpl("tradeskillLearned", v) end,
-					},
-				},
-			},
-			cooldowns = {
-				type  = "toggle",
-				name  = "Cooldown Ready",
-				order = 8,
-				width = "full",
-				get   = function() return getCat("cooldowns") end,
-				set   = function(_, v) setCat("cooldowns", v) end,
-			},
-			cooldownsRouteHelp = {
-				type = "description",
-				name = "Routing for cooldown ready messages is configured in the Cooldowns tab (Cooldowns -> Scroll Area).",
-				order = 8.1,
-				width = "full",
-				fontSize = "small",
-			},
-			auras = {
-				type  = "toggle",
-				name  = "Auras (Buff/Debuff Gain/Fade)",
-				order = 9,
-				width = "full",
-				get   = function() return getCat("auras") end,
-				set   = function(_, v) setCat("auras", v) end,
-			},
-			aurasRoute = routeSelect("auras", 9.1),
 			power = {
 				type  = "toggle",
 				name  = "Power Full",
-				order = 10,
+				order = 8,
 				width = "full",
 				get   = function() return getCat("power") end,
 				set   = function(_, v) setCat("power", v) end,
 			},
-			powerRoute = routeSelect("power", 10.1),
-			procs = {
-				type  = "toggle",
-				name  = "Procs / Reactives",
-				order = 11,
-				width = "full",
-				get   = function() return getCat("procs") end,
-				set   = function(_, v) setCat("procs", v) end,
-			},
-			procsRoute = routeSelect("procs", 11.1),
-			triggers = {
-				type  = "toggle",
-				name  = "Custom Triggers",
-				order = 12,
-				width = "full",
-				get   = function() return getCat("triggers") end,
-				set   = function(_, v) setCat("triggers", v) end,
-			},
-			triggersRouteHelp = {
-				type = "description",
-				name = "Routing for triggers is configured per trigger (Triggers -> Action -> Scroll Area).",
-				order = 12.1,
-				width = "full",
-				fontSize = "small",
-			},
+			powerRoute = routeSelect("power", 8.1),
 		},
 	}
 end
-
-
 ------------------------------------------------------------------------
 -- TAB 2: SCROLL AREAS
 -- Create/delete/rename scroll areas and configure their geometry.
