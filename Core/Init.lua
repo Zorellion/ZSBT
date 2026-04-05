@@ -1378,6 +1378,9 @@ function Addon:HandleSlashCommand(input)
     if cmd == "debug" then
         self:HandleDebugCommand(rest)
         return
+    elseif cmd == "cddebug" then
+        self:HandleCooldownDebugCommand(rest)
+        return
     elseif cmd == "reset" then
         self:HandleResetCommand()
         return
@@ -1583,6 +1586,21 @@ function Addon:HandleDebugCommand(levelStr)
 		[5] = "Correlation",
 	}
     self:Print("Debug level set to " .. level .. " (" .. names[level] .. ")")
+end
+
+------------------------------------------------------------------------
+-- Cooldown Debug Level Command
+------------------------------------------------------------------------
+function Addon:HandleCooldownDebugCommand(levelStr)
+	local level = tonumber(levelStr)
+	if not level or level < 0 or level > 5 then
+		self:Print("Usage: /zsbt cddebug [0-5]")
+		self:Print("  0 = Off, 1 = Basic, 2 = Events, 3 = Timers, 4 = Cooldown API, 5 = Very Noisy")
+		return
+	end
+
+	self.db.profile.diagnostics.cooldownsDebugLevel = level
+	self:Print("Cooldown debug level set to " .. level)
 end
 
 ------------------------------------------------------------------------

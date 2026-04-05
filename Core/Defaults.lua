@@ -359,6 +359,7 @@ ZSBT.DEFAULTS = {
         ------------------------------------------------------------------------
         diagnostics = {
             debugLevel     = 0,
+            cooldownsDebugLevel = 0,
             captureEnabled = false,
             maxEntries     = 1000,
             qHead          = 1,

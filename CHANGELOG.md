@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.8
+- Cooldowns: improved cooldown-ready notifications to work more reliably in combat with additional debug tracing and safer cooldown API handling.
+- Cooldowns: disabled cooldown-ready notifications for multi-charge spells in WoW 12.0 Midnight due to unreliable/secret charge + recharge data.
+
 ## 2.0.7
 - Fixed reputation, honor, and XP progress notifications not displaying amounts.
 - Updated parser to pass amounts directly in event payloads, avoiding timing issues with rawPipe lookups.

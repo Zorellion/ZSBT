@@ -10,6 +10,15 @@ ZSBT.Core.Cooldowns = ZSBT.Core.Cooldowns or {}
 local Cooldowns = ZSBT.Core.Cooldowns
 local Addon     = ZSBT.Addon
 
+local function CdDbg(requiredLevel, msg)
+	if not (Addon and Addon.Print) then return end
+	local level = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
+		and ZSBT.db.profile.diagnostics.cooldownsDebugLevel or 0
+	if level and level >= requiredLevel then
+		Addon:Print("|cFF00CCFF[CD]|r " .. tostring(msg))
+	end
+end
+
 function Cooldowns:Enable()
     if Addon and Addon.DebugPrint then
         Addon:DebugPrint(1, "Cooldowns:Enable()")
@@ -30,9 +39,14 @@ function Cooldowns:OnCooldownReady(event)
     if not event or not event.spellName then return end
 
     local db = ZSBT.db and ZSBT.db.profile
-    if not db or not db.cooldowns or not db.cooldowns.enabled then return end
+	CdDbg(2, "OnCooldownReady spellId=" .. tostring(event.spellId) .. " spellName=" .. tostring(event.spellName))
+    if not db or not db.cooldowns or not db.cooldowns.enabled then
+		CdDbg(1, "Cooldowns notify suppressed: db.cooldowns.enabled is false")
+		return
+	end
 	if ZSBT.Core and ZSBT.Core.IsNotificationCategoryEnabled then
 		if ZSBT.Core:IsNotificationCategoryEnabled("cooldowns") == false then
+			CdDbg(1, "Cooldowns notify suppressed: Notifications category 'cooldowns' disabled")
 			return
 		end
 	end
@@ -62,6 +76,8 @@ function Cooldowns:OnCooldownReady(event)
         ZSBT.DisplayText(area, text, color, meta)
     elseif ZSBT.Core and ZSBT.Core.Display and ZSBT.Core.Display.Emit then
         ZSBT.Core.Display:Emit(area, text, color, meta)
+	else
+		CdDbg(1, "Cooldowns notify suppressed: no display backend")
     end
 
 	-- Fire custom triggers (optional)

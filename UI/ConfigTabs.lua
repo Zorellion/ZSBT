@@ -6958,6 +6958,35 @@ function ZSBT.BuildTab_Cooldowns()
                 name  = "Cooldown Notifications",
                 order = 1,
             },
+            midnightChargeNote = {
+				type  = "description",
+				name  = "|cFFFFD100Midnight 12.0 note:|r Multi-charge spells (charges) may not be reliably trackable because charge/recharge data can be hidden (\"secret\"). Cooldown ready notifications for charge spells may be delayed or unavailable.",
+				order = 1.1,
+				width = "full",
+			},
+			cooldownsDebugLevel = {
+				type  = "select",
+				name  = "Cooldown Debug Level",
+				desc  = "Debug output for cooldown tracking only (prints [CD] lines).",
+				order = 1.5,
+				values = function()
+					return {
+						[0] = "0 - Off",
+						[1] = "1 - Basic",
+						[2] = "2 - Events",
+						[3] = "3 - Timers",
+						[4] = "4 - Cooldown API",
+						[5] = "5 - Very Noisy",
+					}
+				end,
+				get = function()
+					local d = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
+					return (d and tonumber(d.cooldownsDebugLevel)) or 0
+				end,
+				set = function(_, val)
+					ZSBT.db.profile.diagnostics.cooldownsDebugLevel = tonumber(val) or 0
+				end,
+			},
             enabled = {
                 type  = "toggle",
                 name  = "Show Cooldown Notifications",
