@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.10
+- Blizzard Combat Text: replaced the single "Suppress All" toggle with modular suppression modes (None/All/Incoming/Outgoing).
+- Blizzard Combat Text: suppression OFF is now "no-touch" and no longer forces Blizzard combat text back on.
+
 ## 2.0.9
 - Cooldowns: added "Show Spell Icon" toggles for Cooldown notifications and COOLDOWN_READY triggers.
 - Cooldowns/Triggers: COOLDOWN_READY triggers now fire without requiring the spell to be tracked under Alerts > Cooldowns.

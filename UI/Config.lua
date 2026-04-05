@@ -2435,7 +2435,7 @@ If custom fonts or sounds don’t appear in dropdowns:
 ## Incoming heals/damage showing from Blizzard
 If you see Blizzard combat text (for example, incoming heals) while ZSBT is enabled:
 
-- Enable `/zsbt` -> `General` -> `Suppress All Blizzard Combat Text`.
+- Set `/zsbt` -> `General` -> `Blizzard Combat Text Suppression` to `Suppress All` (or `Suppress Incoming Only`).
 - If you prefer Blizzard outgoing numbers above enemy heads, enable `/zsbt` -> `Outgoing` -> `Turn off ZSBT outgoing and use Blizzard FCT`.
 
 ## Useful command

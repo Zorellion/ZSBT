@@ -55,6 +55,7 @@ ZSBT.DEFAULTS = {
 
             -- Suppress Blizzard's floating combat text on load
             suppressBlizzardFCT = true,
+            blizzardFCTSuppressMode = "all",
         },
 
         notifications = {
