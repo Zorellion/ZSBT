@@ -12,7 +12,7 @@ If you prefer Blizzard's outgoing damage numbers above enemy heads, you can disa
 - Location: `Outgoing` tab
 
 Notes:
-- This is designed to work with `General` -> `Suppress All Blizzard Combat Text` enabled, so Blizzard incoming combat text stays suppressed.
+- This is designed to work with `General` -> `Blizzard Combat Text Suppression` set to `Suppress Incoming Only` (or `Suppress All`), so Blizzard incoming combat text stays suppressed.
 - This toggle only affects outgoing output. ZSBT can still provide incoming text and notifications.
 
 ## Step-by-step setup

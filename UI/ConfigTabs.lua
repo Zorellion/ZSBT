@@ -1530,26 +1530,32 @@ function ZSBT.BuildTab_QuickStart()
 			},
 
 			blizzardHeader = { type = "header", name = "Blizzard Combat Text", order = 20 },
-			suppressBlizzardFCT = {
-				type = "toggle",
-				name = "Suppress All Blizzard Combat Text",
-				desc = "Disable Blizzard's floating combat text (incoming) and outgoing damage/crit numbers above enemy heads. ZSBT replaces them.\n\nThis setting modifies Blizzard CVars, which persist even if you disable or uninstall ZSBT. To restore, turn this off and use the button below (or run /zsbt restorefct). Before uninstalling, turn this setting OFF.",
+			blizzardFCTSuppressMode = {
+				type = "select",
+				name = "Blizzard Combat Text Suppression",
+				desc = "Controls whether ZSBT suppresses Blizzard combat text.\n\nThis modifies Blizzard CVars, which persist even if you disable or uninstall ZSBT. To restore, use the button below (or run /zsbt restorefct). Before uninstalling, set this to 'None' and restore.",
 				order = 21,
 				width = "full",
+				values = {
+					none = "None (no-touch)",
+					all = "Suppress All (incoming + outgoing)",
+					incoming = "Suppress Incoming Only (keep outgoing)" ,
+					outgoing = "Suppress Outgoing Only (keep incoming)",
+				},
 				get = function()
-					local g = general(); return g and g.suppressBlizzardFCT == true
+					local g = general(); if not g then return "none" end
+					local mode = g.blizzardFCTSuppressMode
+					if mode == nil then
+						return (g.suppressBlizzardFCT == true) and "all" or "none"
+					end
+					return mode
 				end,
 				set = function(_, v)
 					local g = general(); if not g then return end
-					g.suppressBlizzardFCT = v and true or false
-					local c = core()
-					if c then
-						if g.suppressBlizzardFCT and c.SuppressBlizzardFCT then
-							c:SuppressBlizzardFCT()
-						elseif (not g.suppressBlizzardFCT) and c.RestoreBlizzardFCT then
-							c:RestoreBlizzardFCT()
-						end
-					end
+					g.blizzardFCTSuppressMode = v
+					-- Back-compat: keep the old boolean in sync.
+					g.suppressBlizzardFCT = (v ~= "none") and true or false
+					local c = core(); if c and c.ApplyBlizzardFCTCVars then c:ApplyBlizzardFCTCVars() end
 					notify()
 				end,
 			},
@@ -1560,7 +1566,10 @@ function ZSBT.BuildTab_QuickStart()
 				order = 22,
 				width = "full",
 				disabled = function()
-					local g = general(); return g and g.suppressBlizzardFCT == true
+					local g = general(); if not g then return true end
+					local mode = g.blizzardFCTSuppressMode
+					if mode == nil then return g.suppressBlizzardFCT == true end
+					return mode ~= "none"
 				end,
 				func = function()
 					local c = core(); if c and c.RestoreBlizzardFCT then c:RestoreBlizzardFCT() end
@@ -1872,19 +1881,35 @@ function ZSBT.BuildTab_General()
                 end,
             },
 
-			suppressBlizzardFCT = {
-				type  = "toggle",
-				name  = "Suppress All Blizzard Combat Text",
-				desc  = "Disable Blizzard's floating combat text (incoming) and outgoing damage/crit numbers above enemy heads. ZSBT replaces them.\n\nThis setting modifies Blizzard CVars, which persist even if you disable or uninstall ZSBT. To restore, turn this off and use the button below (or run /zsbt restorefct). Before uninstalling, turn this setting OFF.",
+			blizzardFCTSuppressMode = {
+				type = "select",
+				name = "Blizzard Combat Text Suppression",
+				desc = "Controls whether ZSBT suppresses Blizzard combat text.\n\nThis modifies Blizzard CVars, which persist even if you disable or uninstall ZSBT. To restore, use the button below (or run /zsbt restorefct). Before uninstalling, set this to 'None' and restore.",
 				order = 3.5,
 				width = "full",
-				get   = function() return ZSBT.db.profile.general.suppressBlizzardFCT end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.suppressBlizzardFCT = val
-					if val then
-						ZSBT.Core:SuppressBlizzardFCT()
-					else
-						ZSBT.Core:RestoreBlizzardFCT()
+				values = {
+					none = "None (no-touch)",
+					all = "Suppress All (incoming + outgoing)",
+					incoming = "Suppress Incoming Only (keep outgoing)",
+					outgoing = "Suppress Outgoing Only (keep incoming)",
+				},
+				get = function()
+					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+					if not g then return "none" end
+					local mode = g.blizzardFCTSuppressMode
+					if mode == nil then
+						return (g.suppressBlizzardFCT == true) and "all" or "none"
+					end
+					return mode
+				end,
+				set = function(_, v)
+					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+					if not g then return end
+					g.blizzardFCTSuppressMode = v
+					-- Back-compat: keep the old boolean in sync.
+					g.suppressBlizzardFCT = (v ~= "none") and true or false
+					if ZSBT.Core and ZSBT.Core.ApplyBlizzardFCTCVars then
+						ZSBT.Core:ApplyBlizzardFCTCVars()
 					end
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
@@ -1895,7 +1920,13 @@ function ZSBT.BuildTab_General()
 				desc  = "Restore Blizzard floating combat text CVars to their previous values (before ZSBT suppression).",
 				order = 3.55,
 				width = "full",
-				disabled = function() return ZSBT.db.profile.general.suppressBlizzardFCT == true end,
+				disabled = function()
+					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+					if not g then return true end
+					local mode = g.blizzardFCTSuppressMode
+					if mode == nil then return g.suppressBlizzardFCT == true end
+					return mode ~= "none"
+				end,
 				func = function()
 					if ZSBT.Core and ZSBT.Core.RestoreBlizzardFCT then
 						ZSBT.Core:RestoreBlizzardFCT()
@@ -5051,7 +5082,7 @@ function ZSBT.BuildTab_Outgoing()
 			turnOffZSBTOutgoingUseBlizzFCT = {
 				type  = "toggle",
 				name  = "Turn off ZSBT outgoing and use Blizzard FCT",
-				desc  = "Disables ZSBT outgoing scroll area output and enables Blizzard's outgoing combat text (numbers above enemy heads).\n\nIf 'Suppress All Blizzard Combat Text' is enabled in General, this overrides suppression for outgoing only (incoming stays suppressed).",
+				desc  = "Disables ZSBT outgoing scroll area output and enables Blizzard's outgoing combat text (numbers above enemy heads).\n\nIf 'Blizzard Combat Text Suppression' is set to suppress Blizzard combat text in General, this overrides suppression for outgoing only (incoming stays suppressed).",
 				width = "full",
 				order = 1.05,
 				get   = function() return ZSBT.db.profile.outgoing.useBlizzardFCTInstead == true end,

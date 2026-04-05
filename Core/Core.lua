@@ -308,6 +308,18 @@ local BLIZZARD_FCT_OUTGOING_CVARS = {
 	"floatingCombatTextCombatDamageAllAutos_v2",
 }
 
+-- Best-effort: CVars that primarily affect "incoming" style text (heals/mitigation)
+-- while leaving outgoing damage numbers off.
+local BLIZZARD_FCT_INCOMING_CVARS = {
+	"enableFloatingCombatText",
+	"floatingCombatTextCombatHealing",
+	"floatingCombatTextCombatHealing_v2",
+	"floatingCombatTextCombatHealingAbsorbSelf",
+	"floatingCombatTextCombatHealingAbsorbSelf_v2",
+	"floatingCombatTextCombatHealingAbsorbTarget",
+	"floatingCombatTextCombatHealingAbsorbTarget_v2",
+}
+
 local function getFCTStateTable()
     local db = ZSBT and ZSBT.db
     if not db then return nil end
@@ -473,6 +485,20 @@ local function suppressBlizzardFCTExceptOutgoing()
 	suppressCombatTextAddFns()
 end
 
+local function suppressBlizzardFCTExceptIncoming()
+	snapshotBlizzardFCTCVarsOnce()
+	snapshotCombatTextFramesOnce()
+	snapshotCombatTextAddFnsOnce()
+	-- Best-effort: suppress all known Blizzard FCT CVars, then re-enable only
+	-- "incoming" (healing/absorb) ones.
+	for _, cvar in ipairs(BLIZZARD_FCT_CVARS) do
+		trySetCVar(cvar, "0")
+	end
+	for _, cvar in ipairs(BLIZZARD_FCT_INCOMING_CVARS) do
+		trySetCVar(cvar, "1")
+	end
+end
+
 local function cvarsLookSuppressed()
     local v1 = tryGetCVar("enableFloatingCombatText")
     local dmg = tryGetCVar("floatingCombatTextCombatDamage")
@@ -579,18 +605,28 @@ function Core:ApplyBlizzardFCTCVars()
     trySetCVar("CombatHealing", "1")
 
     -- Suppress Blizzard's own floating combat text
-    if g.suppressBlizzardFCT then
-		local out = ZSBT.db.profile.outgoing
-		if out and out.useBlizzardFCTInstead == true then
-			suppressBlizzardFCTExceptOutgoing()
-		else
-			self:SuppressBlizzardFCT()
-		end
-    else
-        -- If we are NOT suppressing, ensure the key CVars are on.
-        -- Do not restore full backups here, since this runs repeatedly.
-        self:EnsureBlizzardFCTEnabled()
-    end
+	local mode = g.blizzardFCTSuppressMode
+	if mode == nil then
+		mode = (g.suppressBlizzardFCT == true) and "all" or "none"
+	end
+
+	-- Back-compat: if the user explicitly enabled the "use Blizzard FCT for outgoing" mode,
+	-- prefer keeping outgoing visible (suppress incoming only).
+	local out = ZSBT.db.profile.outgoing
+	if (mode == "all" or mode == true) and out and out.useBlizzardFCTInstead == true then
+		mode = "incoming"
+	end
+
+	if mode == "all" then
+		self:SuppressBlizzardFCT()
+	elseif mode == "incoming" then
+		suppressBlizzardFCTExceptOutgoing()
+	elseif mode == "outgoing" then
+		suppressBlizzardFCTExceptIncoming()
+	else
+		-- No-touch: do not force-enable Blizzard FCT CVars when suppression is off.
+		-- This preserves user settings like Options -> Combat -> Scrolling combat text for Self.
+	end
 
     -- Option C: if ZSBT previously suppressed and the CVars still look off,
     -- prompt to restore the user's previous values.
