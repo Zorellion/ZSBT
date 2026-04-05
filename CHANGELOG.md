@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.9
+- Cooldowns: added "Show Spell Icon" toggles for Cooldown notifications and COOLDOWN_READY triggers.
+- Cooldowns/Triggers: COOLDOWN_READY triggers now fire without requiring the spell to be tracked under Alerts > Cooldowns.
+- Cooldowns: added resync on login/combat transitions to (when readable) schedule cooldown ready timers for watched spells.
+- Auras: suppressed buff gain notification spam on login/zone/reload by seeding aura state silently.
+
 ## 2.0.8
 - Cooldowns: improved cooldown-ready notifications to work more reliably in combat with additional debug tracing and safer cooldown API handling.
 - Cooldowns: disabled cooldown-ready notifications for multi-charge spells in WoW 12.0 Midnight due to unreliable/secret charge + recharge data.

@@ -324,6 +324,7 @@ ZSBT.DEFAULTS = {
             scrollArea = "Notifications",
             format     = "%s Ready!",
             sound      = "None",
+			showSpellIcon = false,
             tracked    = {},
         },
 

@@ -841,10 +841,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 				type = "select",
 				name = "Scroll Area",
 				order = 11,
-				values = function()
-					local names = ZSBT.GetScrollAreaNames()
-					return names
-				end,
+				values = function() return ZSBT.GetScrollAreaNames() end,
 				get = function()
 					local t = getTrigger(); local a = t and t.action
 					return (type(a) == "table" and type(a.scrollArea) == "string" and a.scrollArea ~= "") and a.scrollArea or "Notifications"
@@ -852,6 +849,22 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 				set = function(_, v)
 					local t = ensureTrigger(); if not t then return end
 					t.action.scrollArea = (type(v) == "string" and v ~= "") and v or "Notifications"
+					notify()
+				end,
+			},
+			showSpellIcon = {
+				type = "toggle",
+				name = "Show Spell Icon",
+				desc = "Include the spell icon in this trigger notification (only when SpellID is known).",
+				order = 11.5,
+				width = "full",
+				get = function()
+					local t = getTrigger(); local a = t and t.action
+					return type(a) == "table" and a.showSpellIcon == true
+				end,
+				set = function(_, v)
+					local t = ensureTrigger(); if not t then return end
+					t.action.showSpellIcon = v and true or false
 					notify()
 				end,
 			},

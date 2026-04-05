@@ -174,6 +174,21 @@ local function FireReady(spellId, method)
     if state and state.lastFiredAt and (GetTime() - state.lastFiredAt) < 1.0 then
         return
     end
+
+	-- Charge spells are disabled (Midnight 12.0 limitation).
+	-- Ensure READY events never emit notifications or triggers for multi-charge spells.
+	if IsChargeSpell(spellId) == true then
+		CdDbg(3, "FireReady suppressed for charge spellId=" .. tostring(spellId) .. " method=" .. tostring(method))
+		if state then
+			SafeCancelTimer(state.readyTimer)
+			state.readyTimer = nil
+			state.readyAt = nil
+			state.isOnCD = false
+			state.seenStart = false
+		end
+		return
+	end
+
     if state then state.lastFiredAt = GetTime() end
 	if state then
 		SafeCancelTimer(state.readyTimer)
@@ -513,6 +528,35 @@ local function EnsureTrackedInitialized(spellId)
     end
 end
 
+local function GetCooldownReadyTriggerWatch()
+	local tdb = ZSBT.db and ZSBT.db.char and ZSBT.db.char.triggers
+	if not tdb or tdb.enabled ~= true then return nil end
+	local items = tdb.items
+	if type(items) ~= "table" then return nil end
+	local watch
+	for _, trig in ipairs(items) do
+		if type(trig) == "table" and trig.enabled ~= false and trig.eventType == "COOLDOWN_READY" then
+			local sid = trig.spellId
+			if type(sid) == "number" and sid > 0 then
+				watch = watch or {}
+				watch[sid] = true
+			end
+		end
+	end
+	return watch
+end
+
+local function IsSpellWatched(spellId, tracked, trigWatch)
+	if not spellId then return false end
+	if type(tracked) == "table" and (tracked[spellId] or tracked[tostring(spellId)]) then
+		return true
+	end
+	if type(trigWatch) == "table" and trigWatch[spellId] then
+		return true
+	end
+	return false
+end
+
 ------------------------------------------------------------------------
 -- Cast Detection
 ------------------------------------------------------------------------
@@ -521,12 +565,10 @@ local function OnSpellcastSucceeded(_, event, unit, _, spellId)
     if not Cooldowns._enabled then return end
     if not spellId then return end
 
-    local pdb = ZSBT.db and ZSBT.db.profile
-    if not pdb or not pdb.cooldowns or not pdb.cooldowns.enabled then return end
     local cdb = ZSBT.db and ZSBT.db.char and ZSBT.db.char.cooldowns
     local tracked = cdb and cdb.tracked
-    if not tracked then return end
-    if not (tracked[spellId] or tracked[tostring(spellId)]) then return end
+	local trigWatch = GetCooldownReadyTriggerWatch()
+	if not IsSpellWatched(spellId, tracked, trigWatch) then return end
     EnsureTrackedInitialized(spellId)
 
     local name = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or tostring(spellId)
@@ -569,17 +611,19 @@ end
 ------------------------------------------------------------------------
 local function OnSpellUpdate(source)
     if not Cooldowns._enabled then return end
-    local pdb = ZSBT.db and ZSBT.db.profile
-    if not pdb or not pdb.cooldowns or not pdb.cooldowns.enabled then return end
     local cdb = ZSBT.db and ZSBT.db.char and ZSBT.db.char.cooldowns
     local tracked = cdb and cdb.tracked
-    if type(tracked) ~= "table" then return end
+	local trigWatch = GetCooldownReadyTriggerWatch()
+	if type(tracked) ~= "table" and type(trigWatch) ~= "table" then return end
 
-    	for idKey, _ in pairs(tracked) do
-		local spellId = tonumber(idKey)
-		if spellId then
-			EnsureTrackedInitialized(spellId)
-			local state = Cooldowns._state[spellId]
+	local seen = {}
+	if type(tracked) == "table" then
+		for idKey, _ in pairs(tracked) do
+			local spellId = tonumber(idKey)
+			if spellId then
+				seen[spellId] = true
+				EnsureTrackedInitialized(spellId)
+				local state = Cooldowns._state[spellId]
 
 			-- Charge spells are disabled (Midnight 12.0 limitation).
 			if IsChargeSpell(spellId) == true then
@@ -614,8 +658,111 @@ local function OnSpellUpdate(source)
 					end
 				end
 			end
+			end
 		end
 	end
+	if type(trigWatch) == "table" then
+		for spellId, _ in pairs(trigWatch) do
+			if type(spellId) == "number" and seen[spellId] ~= true then
+				EnsureTrackedInitialized(spellId)
+				local state = Cooldowns._state[spellId]
+
+				if IsChargeSpell(spellId) == true then
+					if state then
+						SafeCancelTimer(state.readyTimer)
+						state.readyTimer = nil
+						state.readyAt = nil
+						state.isOnCD = false
+						state.seenStart = false
+					end
+				else
+					if C_Spell and C_Spell.GetSpellCooldown and state then
+						local info, err = SafeGetSpellCooldown(spellId)
+						if err == "error" then
+							CdDbg(1, "OnSpellUpdate GetSpellCooldown ERROR spellId=" .. tostring(spellId) .. " src=" .. tostring(source))
+							return
+						end
+						local dur = info and info.duration
+						local start = info and info.startTime
+						local isOnGCD = info and info.isOnGCD
+						if state.isOnCD == true and state.seenStart == true then
+							CdDbg(5, "OnSpellUpdate spellId=" .. tostring(spellId) .. " start=" .. tostring(start) .. " dur=" .. tostring(dur)
+								.. " isOnGCD=" .. tostring(isOnGCD) .. " src=" .. tostring(source))
+						end
+
+						if state.isOnCD == true and state.seenStart == true and isOnGCD ~= true then
+							if ZSBT.IsSafeNumber(dur) and ZSBT.IsSafeNumber(start) and dur and dur > MIN_REAL_CD_SEC and start and start > 0 then
+								ScheduleReadyTimer(spellId, start, dur, source)
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+local function ResyncCooldowns(source)
+	if not Cooldowns._enabled then return end
+	if not (C_Timer and C_Timer.After) then return end
+
+	C_Timer.After(0.25, function()
+		if not Cooldowns._enabled then return end
+
+		local cdb = ZSBT.db and ZSBT.db.char and ZSBT.db.char.cooldowns
+		local tracked = cdb and cdb.tracked
+		local trigWatch = GetCooldownReadyTriggerWatch()
+		if type(tracked) ~= "table" and type(trigWatch) ~= "table" then return end
+
+		local function considerSpell(spellId)
+			if type(spellId) ~= "number" then return end
+			EnsureTrackedInitialized(spellId)
+			local state = Cooldowns._state[spellId]
+			if not state then return end
+
+			-- Charge spells are disabled (Midnight 12.0 limitation).
+			if IsChargeSpell(spellId) == true then
+				SafeCancelTimer(state.readyTimer)
+				state.readyTimer = nil
+				state.readyAt = nil
+				state.isOnCD = false
+				state.seenStart = false
+				return
+			end
+
+			if not (C_Spell and C_Spell.GetSpellCooldown) then return end
+			local info, err = SafeGetSpellCooldown(spellId)
+			if err == "error" then
+				CdDbg(1, "ResyncCooldowns GetSpellCooldown ERROR spellId=" .. tostring(spellId) .. " src=" .. tostring(source))
+				return
+			end
+			local dur = info and info.duration
+			local start = info and info.startTime
+			local isOnGCD = info and info.isOnGCD
+
+			if isOnGCD == true then return end
+			if ZSBT.IsSafeNumber(dur) and ZSBT.IsSafeNumber(start) and dur and dur > MIN_REAL_CD_SEC and start and start > 0 then
+				state.isOnCD = true
+				state.seenStart = true
+				ScheduleReadyTimer(spellId, start, dur, source)
+			end
+		end
+
+		if type(tracked) == "table" then
+			for idKey, _ in pairs(tracked) do
+				local sid = tonumber(idKey)
+				if sid then considerSpell(sid) end
+			end
+		end
+		if type(trigWatch) == "table" then
+			for sid, _ in pairs(trigWatch) do
+				considerSpell(sid)
+			end
+		end
+
+		-- Also keep timers in sync for spells already marked on-cooldown.
+		OnSpellUpdate(source)
+	end)
 end
 
 ------------------------------------------------------------------------
@@ -635,6 +782,12 @@ function Cooldowns:Enable()
                 end)
             elseif event == "SPELL_UPDATE_COOLDOWN" then
                 OnSpellUpdate("CD_EVENT")
+			elseif event == "PLAYER_ENTERING_WORLD" then
+				ResyncCooldowns("ENTERING_WORLD")
+			elseif event == "PLAYER_REGEN_ENABLED" then
+				ResyncCooldowns("REGEN_ENABLED")
+			elseif event == "PLAYER_REGEN_DISABLED" then
+				ResyncCooldowns("REGEN_DISABLED")
             end
         end)
     end
@@ -642,26 +795,44 @@ function Cooldowns:Enable()
     self._frame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
     self._frame:RegisterEvent("SPELL_UPDATE_CHARGES")
     self._frame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+	self._frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+	self._frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+	self._frame:RegisterEvent("PLAYER_REGEN_DISABLED")
 
     self._state = {}
     self._enabled = true
 
-    local pdb = ZSBT.db and ZSBT.db.profile
     local cdb = ZSBT.db and ZSBT.db.char and ZSBT.db.char.cooldowns
     local tracked = cdb and cdb.tracked
-    if pdb and pdb.cooldowns and pdb.cooldowns.enabled and type(tracked) == "table" then
-        local names = {}
-        for idKey, _ in pairs(tracked) do
-            local sid = tonumber(idKey)
-            if sid then
-                local n = ZSBT.CleanSpellName and ZSBT.CleanSpellName(sid) or tostring(sid)
-                names[#names + 1] = n
-                CreateCDFrame(sid)
-                self._state[sid] = { isOnCD = false, lastFiredAt = 0, seenStart = false, readyAt = nil, readyTimer = nil }
-            end
-        end
-        CdDebug("Enabled. Tracking: " .. table.concat(names, ", "))
-    end
+	local trigWatch = GetCooldownReadyTriggerWatch()
+	local names = {}
+	local added = {}
+	if type(tracked) == "table" then
+		for idKey, _ in pairs(tracked) do
+			local sid = tonumber(idKey)
+			if sid then
+				added[sid] = true
+				local n = ZSBT.CleanSpellName and ZSBT.CleanSpellName(sid) or tostring(sid)
+				names[#names + 1] = n
+				CreateCDFrame(sid)
+				self._state[sid] = { isOnCD = false, lastFiredAt = 0, seenStart = false, readyAt = nil, readyTimer = nil }
+			end
+		end
+	end
+	if type(trigWatch) == "table" then
+		for sid, _ in pairs(trigWatch) do
+			if type(sid) == "number" and added[sid] ~= true then
+				local n = ZSBT.CleanSpellName and ZSBT.CleanSpellName(sid) or tostring(sid)
+				names[#names + 1] = n
+				CreateCDFrame(sid)
+				self._state[sid] = { isOnCD = false, lastFiredAt = 0, seenStart = false, readyAt = nil, readyTimer = nil }
+			end
+		end
+	end
+	if #names > 0 then
+		CdDebug("Enabled. Tracking: " .. table.concat(names, ", "))
+	end
+	ResyncCooldowns("ENABLE")
 end
 
 function Cooldowns:Disable()
@@ -670,6 +841,9 @@ function Cooldowns:Disable()
         self._frame:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
         self._frame:UnregisterEvent("SPELL_UPDATE_CHARGES")
         self._frame:UnregisterEvent("SPELL_UPDATE_COOLDOWN")
+		self._frame:UnregisterEvent("PLAYER_ENTERING_WORLD")
+		self._frame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+		self._frame:UnregisterEvent("PLAYER_REGEN_DISABLED")
     end
     for _, cd in pairs(self._cdFrames) do
         cd:SetCooldown(0, 0)
