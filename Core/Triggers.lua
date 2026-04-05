@@ -123,6 +123,10 @@ local function EmitAction(action, ctx)
 		triggerFontSize = tonumber(action.fontSize),
 		triggerFontScale = tonumber(action.fontScale),
 	}
+	if action.showSpellIcon == true and ctx and ctx.spellId and ZSBT and ZSBT.CleanSpellIcon then
+		local tex = ZSBT.CleanSpellIcon(ctx.spellId)
+		if tex then meta.spellIcon = tex end
+	end
 	if ZSBT.Core and ZSBT.Core.IsNotificationCategoryEnabled then
 		if ZSBT.Core:IsNotificationCategoryEnabled("triggers") == false then
 			return

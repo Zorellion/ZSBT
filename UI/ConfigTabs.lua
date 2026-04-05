@@ -7006,6 +7006,16 @@ function ZSBT.BuildTab_Cooldowns()
                 get      = function() return ZSBT.db.profile.cooldowns.scrollArea end,
                 set      = function(_, val) ZSBT.db.profile.cooldowns.scrollArea = val end,
             },
+            showSpellIcon = {
+                type  = "toggle",
+                name  = "Show Spell Icon",
+                desc  = "Include the spell icon in cooldown notifications.",
+                order = 3.5,
+                width = "full",
+                disabled = function() return not ZSBT.db.profile.cooldowns.enabled end,
+                get   = function() return ZSBT.db.profile.cooldowns.showSpellIcon == true end,
+                set   = function(_, v) ZSBT.db.profile.cooldowns.showSpellIcon = v and true or false end,
+            },
             format = {
                 type     = "input",
                 name     = "Notification Format",

@@ -2067,18 +2067,18 @@ function Core:InitBuffTracking()
     self._buffFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     self._buffFrame:SetScript("OnEvent", function(_, event, unit, ...)
         local info = ...
-        if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
-            Core._auraInstanceMap = {}
-            Core._trackedAuraNames = {}
+		if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
+			Core._auraInstanceMap = {}
+			Core._trackedAuraNames = {}
 			Core._auraInstanceSpellIDs = {}
 			Core._auraRuleLastShown = {}
-            C_Timer.After(0.5, function()
-                if Core.IsMasterEnabled and Core:IsMasterEnabled() then
-                    Core:ScanPlayerAuras(nil)
-                end
-            end)
-            return
-        end
+			C_Timer.After(0.5, function()
+				if Core.IsMasterEnabled and Core:IsMasterEnabled() then
+					Core:ScanPlayerAuras(nil, true)
+				end
+			end)
+			return
+		end
 
         if event == "PLAYER_REGEN_DISABLED" then
             if not Core:IsMasterEnabled() then return end

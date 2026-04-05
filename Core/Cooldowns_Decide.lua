@@ -40,6 +40,12 @@ function Cooldowns:OnCooldownReady(event)
 
     local db = ZSBT.db and ZSBT.db.profile
 	CdDbg(2, "OnCooldownReady spellId=" .. tostring(event.spellId) .. " spellName=" .. tostring(event.spellName))
+
+	-- Fire triggers independent of the Cooldowns notification settings.
+	local trg = ZSBT.Core and ZSBT.Core.Triggers
+	if trg and trg.OnCooldownReady then
+		trg:OnCooldownReady(event)
+	end
     if not db or not db.cooldowns or not db.cooldowns.enabled then
 		CdDbg(1, "Cooldowns notify suppressed: db.cooldowns.enabled is false")
 		return
@@ -72,19 +78,17 @@ function Cooldowns:OnCooldownReady(event)
 
     -- Emit to display
     local meta = { kind = "notification", cooldown = true, spellId = event.spellId }
+    if db and db.cooldowns and db.cooldowns.showSpellIcon == true and event.spellId and ZSBT and ZSBT.CleanSpellIcon then
+        local tex = ZSBT.CleanSpellIcon(event.spellId)
+        if tex then meta.spellIcon = tex end
+    end
     if ZSBT.DisplayText then
         ZSBT.DisplayText(area, text, color, meta)
     elseif ZSBT.Core and ZSBT.Core.Display and ZSBT.Core.Display.Emit then
         ZSBT.Core.Display:Emit(area, text, color, meta)
-	else
-		CdDbg(1, "Cooldowns notify suppressed: no display backend")
+    else
+        CdDbg(1, "Cooldowns notify suppressed: no display backend")
     end
-
-	-- Fire custom triggers (optional)
-	local trg = ZSBT.Core and ZSBT.Core.Triggers
-	if trg and trg.OnCooldownReady then
-		trg:OnCooldownReady(event)
-	end
 
     if Addon and Addon.DebugPrint then
         Addon:DebugPrint(2, "Cooldown ready: " .. text)
