@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.0.12
+- Cooldowns: fixed cooldown_ready trigger firing late in combat by preventing timer drift from SPELL_UPDATE_COOLDOWN jitter.
+- Cooldowns: cooldown timer now refuses to reschedule to a later ready time once a timer is active.
+- Auras: fixed secret-value debug crash in combat (AceConsole concat error) by using safe debug printing.
+- Triggers: fixed COOLDOWN_READY trigger matching to work without spellId specified.
+- Triggers: removed heavy SpellUsable/AuraSync debug output to reduce combat overhead.
+
+## 2.0.11
+- Auras: suppressed buff notification spam on login/reload/zone change by tracking auras seen during initialization.
+- Auras: added grace period after aura removal to suppress gain notifications from instance ID refreshes.
+- Auras: added fallback lookup for fade notifications when instance IDs are not in cache.
+- Auras: suppressed fade notifications during init window (1.5s after reload) when instance IDs are unstable.
+
 ## 2.0.10
 - Blizzard Combat Text: replaced the single "Suppress All" toggle with modular suppression modes (None/All/Incoming/Outgoing).
 - Blizzard Combat Text: suppression OFF is now "no-touch" and no longer forces Blizzard combat text back on.

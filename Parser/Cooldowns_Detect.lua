@@ -230,6 +230,15 @@ local function ScheduleReadyTimer(spellId, startTime, duration, source)
     local delay = readyAt - GetTime()
     if not (delay and delay > 0) then return end
 
+    -- If we already have a ready timer running, never allow updates to move READY later.
+    -- Only reschedule when the new computed readyAt is meaningfully earlier.
+    if state.readyTimer and state.readyAt then
+        -- Later or essentially the same: keep existing timer.
+        if readyAt >= (state.readyAt - 0.25) then
+            return
+        end
+    end
+
     SafeCancelTimer(state.readyTimer)
     state.readyAt = readyAt
     CdDbg(3, "ScheduleReadyTimer spellId=" .. tostring(spellId) .. " start=" .. tostring(startTime) .. " dur=" .. tostring(duration)
@@ -368,6 +377,7 @@ local function ConfirmCooldownStart(spellId, source, attempt)
     if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(useStart) and ZSBT.IsSafeNumber(useDur)
         and useStart and useStart > 0 and useDur and useDur > MIN_REAL_CD_SEC then
         ScheduleReadyTimer(spellId, useStart, useDur, source)
+        EnsureTrackedInitialized(spellId)
         local applied = ApplyCooldownToFrame and ApplyCooldownToFrame(spellId)
         CdDbg(3, "ConfirmCooldownStart appliedFrame=" .. tostring(applied) .. " spellId=" .. tostring(spellId) .. " src=" .. tostring(source))
         return

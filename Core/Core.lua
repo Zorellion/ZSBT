@@ -60,17 +60,33 @@ end
 function Core:ShouldEmitBuffNotif(spellID, isGain)
 	if type(spellID) ~= "number" then return true end
 	local rule = getAuraRuleForSpell(spellID)
+	local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
 	if not rule then
 		local sc = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
 		local g = sc and sc.auraGlobal
-		if isGain and g and g.showUnconfiguredGains == false then return false end
-		if (not isGain) and g and g.showUnconfiguredFades == false then return false end
+		if isGain and g and g.showUnconfiguredGains == false then 
+			if dl >= 4 then local ZSBTAddon = ZSBT and ZSBT.Addon if ZSBTAddon and ZSBTAddon.Print then ZSBTAddon:Print("[AURA] ShouldEmit: blocked unconfigured gain sid=" .. tostring(spellID)) end end
+			return false 
+		end
+		if (not isGain) and g and g.showUnconfiguredFades == false then 
+			if dl >= 4 then local ZSBTAddon = ZSBT and ZSBT.Addon if ZSBTAddon and ZSBTAddon.Print then ZSBTAddon:Print("[AURA] ShouldEmit: blocked unconfigured fade sid=" .. tostring(spellID)) end end
+			return false 
+		end
 		return true
 	end
-	if rule.disabled then return false end
+	if rule.disabled then 
+		if dl >= 4 then local ZSBTAddon = ZSBT and ZSBT.Addon if ZSBTAddon and ZSBTAddon.Print then ZSBTAddon:Print("[AURA] ShouldEmit: rule disabled sid=" .. tostring(spellID)) end end
+		return false 
+	end
 
-	if isGain and rule.suppressGain then return false end
-	if (not isGain) and rule.suppressFade then return false end
+	if isGain and rule.suppressGain then 
+		if dl >= 4 then local ZSBTAddon = ZSBT and ZSBT.Addon if ZSBTAddon and ZSBTAddon.Print then ZSBTAddon:Print("[AURA] ShouldEmit: suppressGain sid=" .. tostring(spellID)) end end
+		return false 
+	end
+	if (not isGain) and rule.suppressFade then 
+		if dl >= 4 then local ZSBTAddon = ZSBT and ZSBT.Addon if ZSBTAddon and ZSBTAddon.Print then ZSBTAddon:Print("[AURA] ShouldEmit: suppressFade sid=" .. tostring(spellID)) end end
+		return false 
+	end
 
 	local throttle = tonumber(rule.throttleSec) or 0
 	if throttle <= 0 then return true end
@@ -1969,9 +1985,9 @@ function Core:EmitNotification(text, color, category)
 			area = self:GetNotificationScrollArea(category)
 		end
 		if ZSBT.DisplayText then
-			ZSBT.DisplayText(area, text, color, { kind = "notification" })
+			ZSBT.DisplayText(area, text, color, { kind = "notification", category = category })
 		elseif self.Display and self.Display.Emit then
-			self.Display:Emit(area, text, color, { kind = "notification" })
+			self.Display:Emit(area, text, color, { kind = "notification", category = category })
 		end
 		return
 	end
@@ -1979,7 +1995,7 @@ function Core:EmitNotification(text, color, category)
 	if type(category) == "string" and category ~= "" and self.GetNotificationScrollArea then
 		area = self:GetNotificationScrollArea(category)
 	end
-	local meta = { kind = "notification" }
+	local meta = { kind = "notification", category = category }
 	local finalColor = color
 	local conf = type(category) == "string" and category ~= "" and self.GetNotificationPerTypeConfig and self:GetNotificationPerTypeConfig(category) or nil
 	if conf then
@@ -2103,14 +2119,83 @@ function Core:InitBuffTracking()
     self._buffFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     self._buffFrame:SetScript("OnEvent", function(_, event, unit, ...)
         local info = ...
-		if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
+		if event == "PLAYER_ENTERING_WORLD" then
+			-- On login/reload: populate tracking tables without clearing
+			-- Mark auras seen during init to suppress their notifications later
+			Core._auraInitInProgress = true
+			Core._aurasSeenDuringInit = {}
+			Core._auraGracePeriodUntil = 0
+			-- Immediate scan to capture current auras before any removal happens
+			-- Deferred by 0.1s to let the game fully load auras
+			C_Timer.After(0.1, function()
+				local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+				if dl >= 4 then
+					local ZSBTAddon = ZSBT and ZSBT.Addon
+					if ZSBTAddon and ZSBTAddon.Print then
+						ZSBTAddon:Print("[AURA] PEW deferred scan masterEnabled=" .. tostring(Core:IsMasterEnabled()))
+					end
+				end
+				if Core.IsMasterEnabled and Core:IsMasterEnabled() then
+					Core:ScanPlayerAuras(nil, true)
+					if dl >= 4 then
+						local count = 0
+						local ids = {}
+						for id, name in pairs(Core._auraInstanceMap or {}) do
+							count = count + 1
+							if count <= 5 then
+								table.insert(ids, tostring(id) .. "=" .. tostring(name))
+							end
+						end
+						local ZSBTAddon = ZSBT and ZSBT.Addon
+						if ZSBTAddon and ZSBTAddon.Print then
+							ZSBTAddon:Print("[AURA] Deferred scan complete, tracked auras: " .. tostring(count) .. " sampleIDs: " .. table.concat(ids, ", "))
+						end
+					end
+				elseif dl >= 4 then
+					local ZSBTAddon = ZSBT and ZSBT.Addon
+					if ZSBTAddon and ZSBTAddon.Print then
+						ZSBTAddon:Print("[AURA] SKIPPED deferred scan - not enabled")
+					end
+				end
+			end)
+			-- Follow-up scans at 0.5s and 1.5s to catch any late-loading auras
+			C_Timer.After(0.5, function()
+				if Core.IsMasterEnabled and Core:IsMasterEnabled() then
+					Core:ScanPlayerAuras(nil, true)
+				end
+			end)
+			C_Timer.After(1.5, function()
+				if Core.IsMasterEnabled and Core:IsMasterEnabled() then
+					Core:ScanPlayerAuras(nil, true)
+					Core._auraInitInProgress = false
+					-- Keep suppression table for 60 seconds to prevent buff spam when removing auras
+					C_Timer.After(60.0, function()
+						Core._aurasSeenDuringInit = nil
+					end)
+				end
+			end)
+			return
+		end
+
+		if event == "ZONE_CHANGED_NEW_AREA" then
+			-- On zone change (flying, teleport): clear tracking and suppress briefly
+			-- This prevents buff spam during loading screens between zones
 			Core._auraInstanceMap = {}
 			Core._trackedAuraNames = {}
 			Core._auraInstanceSpellIDs = {}
 			Core._auraRuleLastShown = {}
+			Core._auraInitInProgress = true
+			Core._aurasSeenDuringInit = {}
+			Core._auraGracePeriodUntil = 0
+			Core._suppressAurasUntil = (GetTime and GetTime() or 0) + 2.0
 			C_Timer.After(0.5, function()
 				if Core.IsMasterEnabled and Core:IsMasterEnabled() then
 					Core:ScanPlayerAuras(nil, true)
+					Core._auraInitInProgress = false
+					-- Keep suppression table for 60 seconds to prevent buff spam when removing auras
+					C_Timer.After(60.0, function()
+						Core._aurasSeenDuringInit = nil
+					end)
 				end
 			end)
 			return
@@ -2311,6 +2396,16 @@ end
 function Core:ScanPlayerAuras(updateInfo, silent)
     if not self._auraInstanceMap then self._auraInstanceMap = {} end
     if not self._trackedAuraNames then self._trackedAuraNames = {} end
+    
+    -- Check loading/transition suppression (zone changes only)
+    if not silent and self._suppressAurasUntil then
+        local now = GetTime and GetTime() or 0
+        if now < self._suppressAurasUntil then
+            silent = true
+        else
+            self._suppressAurasUntil = nil
+        end
+    end
 
 	local function ResolveSpellIdByName(name)
 		if type(name) ~= "string" then return nil end
@@ -2349,27 +2444,45 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 
             local sid = isHelpful and ResolveSafeAuraSpellID(auraData) or nil
             local name = extractAuraInfo(auraData)
-			if isHelpful and not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid)) then
+			if isHelpful and type(sid) ~= "number" then
 				sid = ResolveSpellIdByName(name)
 			end
             if not newInstances[instanceId] then
                 newInstances[instanceId] = name or defaultName
-                if isHelpful and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid) then
+                if isHelpful and type(sid) == "number" then
                     self._auraInstanceSpellIDs[instanceId] = sid
                     self:RecordRecentBuff(sid)
                 end
+                -- Track auras seen during init to suppress their notifications later
+                if silent and self._auraInitInProgress and type(sid) == "number" then
+                    self._aurasSeenDuringInit[sid] = true
+                end
                 if not oldInstances[instanceId] then
-                    if not silent then
+                    -- Skip notification if this aura was seen during init (prevents reload spam)
+                    local seenDuringInit = type(sid) == "number" and self._aurasSeenDuringInit and self._aurasSeenDuringInit[sid]
+                    -- Skip notification during grace period after aura removal (prevents instance ID refresh spam)
+                    local inGracePeriod = self._auraGracePeriodUntil and (GetTime and GetTime() or 0) < self._auraGracePeriodUntil
+                    if not silent and not seenDuringInit and not inGracePeriod then
                         local okToShow = true
-                        if isHelpful and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid) then
+                        if isHelpful and type(sid) == "number" then
                             okToShow = self:ShouldEmitBuffNotif(sid, true)
                         end
-                        if isHelpful and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid) then
+                        if isHelpful and type(sid) == "number" then
                             local trg = ZSBT.Core and ZSBT.Core.Triggers
-                            if trg and trg.OnAuraGain then trg:OnAuraGain(sid) end
+                            if trg then
+                                -- Skip synthetic auras to prevent double events
+                                local isSynthetic = trg._syntheticAuraExpireAt and type(trg._syntheticAuraExpireAt[sid]) == "number"
+                                if isSynthetic then
+                                    local now = GetTime and GetTime() or 0
+                                    isSynthetic = now < (trg._syntheticAuraExpireAt[sid] or 0)
+                                end
+                                if not isSynthetic and trg.OnAuraGain then
+                                    trg:OnAuraGain(sid, "core")
+                                end
+                            end
                         end
                         if okToShow then
-                            if isHelpful and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid) then
+                            if isHelpful and type(sid) == "number" then
                                 self:EmitBuffNotification(sid, BuildAuraNotifText("+", newInstances[instanceId]), gainColor, "auras")
                             else
                                 self:EmitNotification(BuildAuraNotifText("+", newInstances[instanceId]), gainColor, "auras")
@@ -2468,7 +2581,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                         okToShow = self:ShouldEmitBuffNotif(sid, false)
                     end
                     if okToShow then
-                        if type(sid) == "number" then
+                        if sid and type(sid) == "number" then
                             self:EmitBuffNotification(sid, BuildAuraNotifText("-", oldName or "Aura"), {r = 0.6, g = 0.6, b = 0.6}, "auras")
                         else
                             self:EmitNotification(BuildAuraNotifText("-", oldName or "Aura"), {r = 0.6, g = 0.6, b = 0.6}, "auras")
@@ -2477,7 +2590,17 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                 end
                 if type(sid) == "number" then
                     local trg = ZSBT.Core and ZSBT.Core.Triggers
-                    if trg and trg.OnAuraFade then trg:OnAuraFade(sid) end
+                    if trg then
+                        -- Skip synthetic auras to prevent double events
+                        local isSynthetic = trg._syntheticAuraExpireAt and type(trg._syntheticAuraExpireAt[sid]) == "number"
+                        if isSynthetic then
+                            local now = GetTime and GetTime() or 0
+                            isSynthetic = now < (trg._syntheticAuraExpireAt[sid] or 0)
+                        end
+                        if not isSynthetic and trg.OnAuraFade then
+                            trg:OnAuraFade(sid, "core")
+                        end
+                    end
                 end
                 if self._auraInstanceSpellIDs then
                     self._auraInstanceSpellIDs[oldInstanceId] = nil
@@ -2502,7 +2625,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
             local sid = nil
             if isHarmful ~= true then
                 sid = ResolveSafeAuraSpellID(aura)
-				if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid)) then
+				if type(sid) ~= "number" then
 					sid = ResolveSpellIdByName(name)
 				end
             end
@@ -2519,7 +2642,11 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                     if isHarmful ~= true and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid) then
                         self:RecordRecentBuff(sid)
                     end
-                    if not silent then
+                    -- Skip notification if this aura was seen during init (prevents reload spam)
+                    local seenDuringInit = type(sid) == "number" and self._aurasSeenDuringInit and self._aurasSeenDuringInit[sid]
+                    -- Skip notification during grace period after aura removal (prevents instance ID refresh spam)
+                    local inGracePeriod = self._auraGracePeriodUntil and (GetTime and GetTime() or 0) < self._auraGracePeriodUntil
+                    if not silent and not seenDuringInit and not inGracePeriod then
                         local okToShow = true
                         if isHarmful ~= true and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid) then
                             okToShow = self:ShouldEmitBuffNotif(sid, true)
@@ -2536,10 +2663,20 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 							end
                         end
                     end
-                    if isHarmful ~= true and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid) then
+                    if isHarmful ~= true then
                         local trg = ZSBT.Core and ZSBT.Core.Triggers
-                        if trg and trg.OnAuraGain then trg:OnAuraGain(sid) end
-						if self._auraInstanceSpellIDs and instanceId then
+                        if trg and type(sid) == "number" then
+                            -- Skip synthetic auras to prevent double events
+                            local isSynthetic = trg._syntheticAuraExpireAt and type(trg._syntheticAuraExpireAt[sid]) == "number"
+                            if isSynthetic then
+                                local now = GetTime and GetTime() or 0
+                                isSynthetic = now < (trg._syntheticAuraExpireAt[sid] or 0)
+                            end
+                            if not isSynthetic and trg.OnAuraGain then
+                                trg:OnAuraGain(sid, "core-inc")
+                            end
+                        end
+						if self._auraInstanceSpellIDs and instanceId and type(sid) == "number" then
 							self._auraInstanceSpellIDs[instanceId] = sid
 						end
                     end
@@ -2601,27 +2738,107 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 			pcall(function() trg:SyncWatchedAurasFromCore() end)
 		end
         local needsRescan = false
+        local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
         for _, instanceId in ipairs(updateInfo.removedAuraInstanceIDs) do
             local name = self._auraInstanceMap[instanceId]
+            local sid = self._auraInstanceSpellIDs and self._auraInstanceSpellIDs[instanceId]
+            -- Fallback: if not in cache, try to resolve from game API
+            if not name and C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
+                local ok, auraData = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, "player", instanceId)
+                if ok and auraData then
+                    name = auraData.name
+                    if auraData.spellId then
+                        sid = auraData.spellId
+                    end
+                end
+            end
+            if dl >= 4 then
+                local ZSBTAddon = ZSBT and ZSBT.Addon
+                if ZSBTAddon and ZSBTAddon.Print then
+                    local function safeDbg(v)
+                        if v == nil then return "nil" end
+                        if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
+                        if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
+                        return "<secret>"
+                    end
+                    pcall(function()
+                        ZSBTAddon:Print("[AURA] REMOVE instanceId=" .. safeDbg(instanceId)
+                            .. " name=" .. safeDbg(name)
+                            .. " inCache=" .. safeDbg(self._auraInstanceMap[instanceId] ~= nil)
+                            .. " sid=" .. safeDbg(sid))
+                    end)
+                end
+            end
             if name then
-                local sid = self._auraInstanceSpellIDs and self._auraInstanceSpellIDs[instanceId]
                 self._auraInstanceMap[instanceId] = nil
-                if not silent then
+                -- Skip fade notifications during init (instance IDs are unstable after reload)
+                local inInitWindow = Core._auraInitInProgress
+                if dl >= 4 then
+                    local ZSBTAddon = ZSBT and ZSBT.Addon
+                    if ZSBTAddon and ZSBTAddon.Print then
+                        local function safeDbg(v)
+                            if v == nil then return "nil" end
+                            if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
+                            if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
+                            return "<secret>"
+                        end
+                        pcall(function()
+                            ZSBTAddon:Print("[AURA] FADE check silent=" .. safeDbg(silent)
+                                .. " init=" .. safeDbg(inInitWindow)
+                                .. " sid=" .. safeDbg(sid)
+                                .. " name=" .. safeDbg(name))
+                        end)
+                    end
+                end
+                if silent ~= true and not inInitWindow then
                     local okToShow = true
                     if type(sid) == "number" then
                         okToShow = self:ShouldEmitBuffNotif(sid, false)
                     end
+                    if dl >= 4 then
+                        local ZSBTAddon = ZSBT and ZSBT.Addon
+                        if ZSBTAddon and ZSBTAddon.Print then
+                            ZSBTAddon:Print("[AURA] FADE okToShow=" .. tostring(okToShow))
+                        end
+                    end
                     if okToShow then
                         if sid and ZSBT.IsSafeNumber(sid) then
+                            if dl >= 4 then
+                                local ZSBTAddon = ZSBT and ZSBT.Addon
+                                if ZSBTAddon and ZSBTAddon.Print then
+                                    ZSBTAddon:Print("[AURA] FADE EMITTING sid=" .. tostring(sid))
+                                end
+                            end
                             self:EmitBuffNotification(sid, BuildAuraNotifText("-", name), {r = 0.6, g = 0.6, b = 0.6}, "auras")
                         else
+                            if dl >= 4 then
+                                local ZSBTAddon = ZSBT and ZSBT.Addon
+                                if ZSBTAddon and ZSBTAddon.Print then
+                                    ZSBTAddon:Print("[AURA] FADE EMITTING (no sid) name=" .. tostring(name))
+                                end
+                            end
                             self:EmitNotification(BuildAuraNotifText("-", name), {r = 0.6, g = 0.6, b = 0.6}, "auras")
+                        end
+                    elseif dl >= 4 then
+                        local ZSBTAddon = ZSBT and ZSBT.Addon
+                        if ZSBTAddon and ZSBTAddon.Print then
+                            ZSBTAddon:Print("[AURA] FADE BLOCKED by ShouldEmitBuffNotif sid=" .. tostring(sid))
                         end
                     end
                 end
                 if type(sid) == "number" then
                     local trg = ZSBT.Core and ZSBT.Core.Triggers
-                    if trg and trg.OnAuraFade then trg:OnAuraFade(sid) end
+                    if trg then
+                        -- Skip synthetic auras to prevent double events
+                        local isSynthetic = trg._syntheticAuraExpireAt and type(trg._syntheticAuraExpireAt[sid]) == "number"
+                        if isSynthetic then
+                            local now = GetTime and GetTime() or 0
+                            isSynthetic = now < (trg._syntheticAuraExpireAt[sid] or 0)
+                        end
+                        if not isSynthetic and trg.OnAuraFade then
+                            trg:OnAuraFade(sid, "core-rm")
+                        end
+                    end
                 end
                 if self._auraInstanceSpellIDs then
                     self._auraInstanceSpellIDs[instanceId] = nil
@@ -2633,8 +2850,29 @@ function Core:ScanPlayerAuras(updateInfo, silent)
         end
 
         if needsRescan then
+            -- Set grace period BEFORE rescan so it catches the refreshed auras
+            local graceStart = GetTime and GetTime() or 0
+            self._auraGracePeriodUntil = graceStart + 1.0
+            local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+            if dl >= 4 then
+                local ZSBTAddon = ZSBT and ZSBT.Addon
+                if ZSBTAddon and ZSBTAddon.Print then
+                    ZSBTAddon:Print("[AURA] SET grace period (rescan) until=" .. tostring(self._auraGracePeriodUntil))
+                end
+            end
             self:ScanPlayerAuras(nil)
             return
+        end
+        -- Set grace period AFTER processing removals to suppress gain notifications from instance ID refreshes
+        -- This ensures fade notifications are shown before suppression kicks in
+        local graceStart = GetTime and GetTime() or 0
+        self._auraGracePeriodUntil = graceStart + 1.0
+        local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+        if dl >= 4 then
+            local ZSBTAddon = ZSBT and ZSBT.Addon
+            if ZSBTAddon and ZSBTAddon.Print then
+                ZSBTAddon:Print("[AURA] SET grace period until=" .. tostring(self._auraGracePeriodUntil))
+            end
         end
     end
 
@@ -2873,6 +3111,7 @@ end
 -- Dedup: COMBAT_TEXT_UPDATE path sets timestamps; CHAT_MSG skips if recent.
 ------------------------------------------------------------------------
 Core._lastXPNotifAt = 0
+Core._lastCompanionXPNotifAt = 0
 Core._lastHonorNotifAt = 0
 Core._lastRepNotifAt = 0
 local PROGRESS_DEDUP_WINDOW = 1.0  -- 1 second dedup window
@@ -2880,26 +3119,251 @@ local PROGRESS_DEDUP_WINDOW = 1.0  -- 1 second dedup window
 Core._utKillLastAt = 0
 Core._utKillChain = 0
 
+local _repChangePatterns = nil
+
+local function _escapeLuaPattern(s)
+	return (s:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1"))
+end
+
+local function _formatToLuaPattern(fmt)
+	if type(fmt) ~= "string" or fmt == "" then return nil end
+	local litPercent = "\002"
+	local tokenS = "\003"
+	local tokenD = "\004"
+	local s = fmt
+	s = s:gsub("%%%%", litPercent)
+	s = s:gsub("%%[%d%$]*s", tokenS)
+	s = s:gsub("%%[%d%$]*d", tokenD)
+	s = _escapeLuaPattern(s)
+	s = s:gsub(litPercent, "%%")
+	s = s:gsub(tokenS, "(.+)")
+	s = s:gsub(tokenD, "([%d,]+)")
+	return s
+end
+
+local function _initRepChangePatterns()
+	if _repChangePatterns then return end
+	_repChangePatterns = {}
+
+	local function add(fmt, sign)
+		local pat = _formatToLuaPattern(fmt)
+		if pat and pat ~= "" then
+			table.insert(_repChangePatterns, { pat = pat, sign = sign })
+		end
+	end
+
+	add(_G.FACTION_STANDING_INCREASED, 1)
+	add(_G.FACTION_STANDING_INCREASED_GENERIC, 1)
+	add(_G.FACTION_STANDING_INCREASED_ACH_BONUS, 1)
+	add(_G.FACTION_STANDING_INCREASED_ACH_BONUS_GENERIC, 1)
+	add(_G.FACTION_STANDING_DECREASED, -1)
+	add(_G.FACTION_STANDING_DECREASED_GENERIC, -1)
+
+	add("Reputation with %s increased by %d.", 1)
+	add("Reputation with %s decreased by %d.", -1)
+	add("Your reputation with %s has increased by %d.", 1)
+	add("Your reputation with %s has decreased by %d.", -1)
+
+	table.insert(_repChangePatterns, { pat = "Reputation with (.+) increased by ([%d,]+)", sign = 1 })
+	table.insert(_repChangePatterns, { pat = "Reputation with (.+) decreased by ([%d,]+)", sign = -1 })
+	table.insert(_repChangePatterns, { pat = "Your reputation with (.+) has increased by ([%d,]+)", sign = 1 })
+	table.insert(_repChangePatterns, { pat = "Your reputation with (.+) has decreased by ([%d,]+)", sign = -1 })
+end
+
+function Core:ParseReputationChangeMessage(msg)
+	_initRepChangePatterns()
+	if type(msg) ~= "string" or msg == "" then return nil end
+
+	for _, entry in ipairs(_repChangePatterns) do
+		local a, b = msg:match(entry.pat)
+		if a and b then
+			local na = tonumber((tostring(a):gsub(",", "")))
+			local nb = tonumber((tostring(b):gsub(",", "")))
+			local faction, amount
+			if na and not nb then
+				amount = na
+				faction = tostring(b)
+			elseif nb and not na then
+				amount = nb
+				faction = tostring(a)
+			elseif nb and na then
+				amount = nb
+				faction = tostring(a)
+			else
+				amount = tonumber((tostring(b):gsub(",", "")))
+				faction = tostring(a)
+			end
+
+			if type(amount) == "number" and amount > 0 and faction and faction ~= "" then
+				return entry.sign * amount, faction
+			end
+		end
+	end
+
+	return nil
+end
+
+function Core:GetWatchedFactionName()
+	if C_Reputation and type(C_Reputation.GetWatchedFactionData) == "function" then
+		local data = C_Reputation.GetWatchedFactionData()
+		if data and type(data.name) == "string" and data.name ~= "" then
+			return data.name
+		end
+	end
+
+	if type(GetWatchedFactionInfo) == "function" then
+		local name = GetWatchedFactionInfo()
+		if type(name) == "string" and name ~= "" then
+			return name
+		end
+	end
+
+	return nil
+end
+
+Core._lastWatchedRepValue = Core._lastWatchedRepValue
+
+function Core:GetWatchedReputationValue()
+	if type(GetWatchedFactionInfo) == "function" then
+		local name, _, _, _, _, barValue = GetWatchedFactionInfo()
+		if type(name) == "string" and name ~= "" and type(barValue) == "number" then
+			return barValue, name
+		end
+	end
+
+	if C_Reputation and type(C_Reputation.GetWatchedFactionData) == "function" then
+		local data = C_Reputation.GetWatchedFactionData()
+		if data and type(data.name) == "string" and data.name ~= "" then
+			local candidates = { "currentReputation", "currentStanding", "barValue", "currentValue", "value" }
+			for _, k in ipairs(candidates) do
+				if type(data[k]) == "number" then
+					return data[k], data.name
+				end
+			end
+		end
+	end
+
+	return nil
+end
+
+function Core:ComputeWatchedReputationDelta()
+	local current, name = self:GetWatchedReputationValue()
+	if type(current) ~= "number" then
+		return nil
+	end
+	local prev = self._lastWatchedRepValue
+	self._lastWatchedRepValue = current
+	if type(prev) ~= "number" then
+		return nil
+	end
+	local delta = current - prev
+	if delta == 0 then
+		return nil
+	end
+	return delta, name
+end
+
 function Core:InitProgressTracking()
     if self._progressFrame then return end
     self._progressFrame = CreateFrame("Frame")
     self._progressFrame:RegisterEvent("CHAT_MSG_COMBAT_XP_GAIN")
+	self._progressFrame:RegisterEvent("CHAT_MSG_SYSTEM")
+	self._progressFrame:RegisterEvent("CHAT_MSG_COMBAT_MISC_INFO")
     self._progressFrame:RegisterEvent("CHAT_MSG_COMBAT_HONOR_GAIN")
     self._progressFrame:RegisterEvent("CHAT_MSG_COMBAT_FACTION_CHANGE")
+	pcall(function() self._progressFrame:RegisterEvent("CHAT_MSG_COMBAT_FACTION_CHANGE_STAT") end)
+	if not self._companionXPChatHooked then
+		self._companionXPChatHooked = true
+		pcall(function()
+			local function hookChatFrame(f)
+				if not f or type(f) ~= "table" then return end
+				if type(f.AddMessage) ~= "function" then return end
+				hooksecurefunc(f, "AddMessage", function(_, text)
+					if not Core:IsMasterEnabled() then return end
+					if type(text) ~= "string" then return end
+					local isSafeText = (ZSBT.IsSafeString and ZSBT.IsSafeString(text)) == true
+					-- WoW 12.x can pass "secret" strings through chat output; never index/match them.
+					if not isSafeText then return end
+					local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+					local okName, playerName = pcall(UnitName, "player")
+					if not okName or type(playerName) ~= "string" then playerName = nil end
+					local who, amt = text:match("(.+) has gained (%d[%d,]+) experience")
+					if not who or not amt then
+						who, amt = text:match("(.+) gains (%d[%d,]+) experience")
+					end
+					if not who or not amt then return end
+					if playerName and who == playerName then return end
+					local tNow = GetTime()
+					if (tNow - (Core._lastCompanionXPNotifAt or 0)) < PROGRESS_DEDUP_WINDOW then return end
+					local xp = amt:gsub(",", "")
+					Core._lastCompanionXPNotifAt = tNow
+					local whoLabel = who
+					if not (ZSBT.IsSafeString and ZSBT.IsSafeString(whoLabel)) then
+						whoLabel = "Companion"
+					end
+					Core:EmitNotification("+" .. xp .. " XP (" .. whoLabel .. ")", {r = 0.6, g = 0.4, b = 1.0}, "companionXP")
+					if dl >= 4 and ZSBT.Addon and ZSBT.Addon.Print then
+						local okS, sText = pcall(tostring, text)
+						if not okS or type(sText) ~= "string" then sText = "<secret>" end
+						ZSBT.Addon:Print("[XPDBG] ev=CHATFRAME safe=" .. tostring(isSafeText) .. " who=" .. tostring(whoLabel) .. " xp=" .. tostring(xp) .. " msg=" .. sText)
+					end
+				end)
+			end
+			hookChatFrame(DEFAULT_CHAT_FRAME)
+			hookChatFrame(ChatFrame1)
+		end)
+	end
     self._progressFrame:SetScript("OnEvent", function(_, event, msg)
         if not Core:IsMasterEnabled() then return end
         if not msg or type(msg) ~= "string" then return end
-        if not ZSBT.IsSafeString(msg) then return end
+		local isSafe = (ZSBT.IsSafeString and ZSBT.IsSafeString(msg)) == true
+		local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+		local isXPEvent = event == "CHAT_MSG_COMBAT_XP_GAIN" or event == "CHAT_MSG_SYSTEM" or event == "CHAT_MSG_COMBAT_MISC_INFO"
+		if not isSafe and not isXPEvent then return end
         local t = GetTime()
 
-        if event == "CHAT_MSG_COMBAT_XP_GAIN" then
-            if (t - Core._lastXPNotifAt) < PROGRESS_DEDUP_WINDOW then return end
-            local xp = msg:match("(%d[%d,]+) experience")
-            if xp then
-                xp = xp:gsub(",", "")
-                Core._lastXPNotifAt = t
-                Core:EmitNotification("+" .. xp .. " XP", {r = 0.6, g = 0.4, b = 1.0}, "progress")
-            end
+		if event == "CHAT_MSG_COMBAT_XP_GAIN" or event == "CHAT_MSG_SYSTEM" or event == "CHAT_MSG_COMBAT_MISC_INFO" then
+			local okName, playerName = pcall(UnitName, "player")
+			if not okName or type(playerName) ~= "string" then playerName = nil end
+			local xp, whoXP = nil, nil
+			pcall(function()
+				xp = msg:match("You gain (%d[%d,]+) experience")
+				if not xp then
+					local who, amt = msg:match("(.+) gains (%d[%d,]+) experience")
+					if not who or not amt then
+						who, amt = msg:match("(.+) has gained (%d[%d,]+) experience")
+					end
+					if who and amt then
+						if playerName and who == playerName then
+							xp = amt
+						else
+							whoXP = who
+							xp = amt
+						end
+					end
+				end
+			end)
+			if dl >= 4 and ZSBT.Addon and ZSBT.Addon.Print then
+				local okS, sMsg = pcall(tostring, msg)
+				if not okS or type(sMsg) ~= "string" then sMsg = "<secret>" end
+				ZSBT.Addon:Print("[XPDBG] ev=" .. tostring(event) .. " safe=" .. tostring(isSafe) .. " who=" .. tostring(whoXP) .. " xp=" .. tostring(xp) .. " msg=" .. sMsg)
+			end
+			if xp then
+				xp = xp:gsub(",", "")
+				if whoXP and whoXP ~= "" then
+					if (t - Core._lastCompanionXPNotifAt) < PROGRESS_DEDUP_WINDOW then return end
+					Core._lastCompanionXPNotifAt = t
+					local whoLabel = whoXP
+					if not (ZSBT.IsSafeString and ZSBT.IsSafeString(whoLabel)) then
+						whoLabel = "Companion"
+					end
+					Core:EmitNotification("+" .. xp .. " XP (" .. whoLabel .. ")", {r = 0.6, g = 0.4, b = 1.0}, "companionXP")
+				elseif isSafe then
+					if (t - Core._lastXPNotifAt) < PROGRESS_DEDUP_WINDOW then return end
+					Core._lastXPNotifAt = t
+					Core:EmitNotification("+" .. xp .. " XP", {r = 0.6, g = 0.4, b = 1.0}, "progress")
+				end
+			end
         elseif event == "CHAT_MSG_COMBAT_HONOR_GAIN" then
             if (t - Core._lastHonorNotifAt) < PROGRESS_DEDUP_WINDOW then return end
             local honor = msg:match("(%d[%d,]+) honor")
@@ -2908,19 +3372,17 @@ function Core:InitProgressTracking()
                 Core._lastHonorNotifAt = t
                 Core:EmitNotification("+" .. honor .. " Honor", {r = 1.0, g = 0.5, b = 0.0}, "progress")
             end
-        elseif event == "CHAT_MSG_COMBAT_FACTION_CHANGE" then
-            if (t - Core._lastRepNotifAt) < PROGRESS_DEDUP_WINDOW then return end
-            local faction, amount = msg:match("Reputation with (.+) increased by (%d+)")
-            if faction and amount then
-                Core._lastRepNotifAt = t
-                Core:EmitNotification("+" .. amount .. " " .. faction, {r = 0.0, g = 0.8, b = 0.6}, "progress")
-            else
-                local factionLoss, amountLoss = msg:match("Reputation with (.+) decreased by (%d+)")
-                if factionLoss and amountLoss then
-                    Core._lastRepNotifAt = t
-                    Core:EmitNotification("-" .. amountLoss .. " " .. factionLoss, {r = 0.8, g = 0.2, b = 0.2}, "progress")
-                end
-            end
+		elseif event == "CHAT_MSG_COMBAT_FACTION_CHANGE" or event == "CHAT_MSG_COMBAT_FACTION_CHANGE_STAT" then
+			if (t - Core._lastRepNotifAt) < PROGRESS_DEDUP_WINDOW then return end
+			local delta, faction = Core:ParseReputationChangeMessage(msg)
+			if delta and faction then
+				Core._lastRepNotifAt = t
+				if delta > 0 then
+					Core:EmitNotification("+" .. tostring(delta) .. " " .. faction, {r = 0.0, g = 0.8, b = 0.6}, "progress")
+				else
+					Core:EmitNotification(tostring(delta) .. " " .. faction, {r = 0.8, g = 0.2, b = 0.2}, "progress")
+				end
+			end
         end
     end)
 end
