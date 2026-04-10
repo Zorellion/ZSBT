@@ -741,6 +741,12 @@ function Engine:flushBucket()
 			local s = v:gsub(",", "")
 			local n = tonumber(s)
 			if n ~= nil then return n end
+			local digits = s:match("(%d[%d,]*)")
+			if digits then
+				digits = digits:gsub(",", "")
+				local n2 = tonumber(digits)
+				if n2 ~= nil then return n2 end
+			end
 		end
 		return nil
 	end
@@ -957,6 +963,7 @@ function Engine:flushBucket()
 				end
 			elseif et == "COMBAT_TEXT_REP" then
 				local text = "Reputation"
+				local hasAmount = false
 				do
 					local n = coerceProgressAmount(sample.amount)
 					if not n then
@@ -968,13 +975,39 @@ function Engine:flushBucket()
 						n = coerceProgressAmount(val)
 						if ec then ec._rawPipe[sample.rawPipeId] = nil end
 					end
+					if not n and ZSBT.Core and ZSBT.Core.ComputeWatchedReputationDelta then
+						local delta = ZSBT.Core:ComputeWatchedReputationDelta()
+						if type(delta) == "number" and delta ~= 0 then
+							n = math.abs(delta)
+						end
+					end
 					if n then
-						text = "+" .. tostring(math.floor(n + 0.5)) .. " Rep"
+						hasAmount = true
+						local factionName = ZSBT.Core and ZSBT.Core.GetWatchedFactionName and ZSBT.Core:GetWatchedFactionName() or nil
+						if type(factionName) == "string" and factionName ~= "" then
+							text = "+" .. tostring(math.floor(n + 0.5)) .. " " .. factionName
+						else
+							text = "+" .. tostring(math.floor(n + 0.5)) .. " Rep"
+						end
 					end
 				end
-				if ZSBT.Core and ZSBT.Core.EmitNotification then
-					ZSBT.Core._lastRepNotifAt = GetTime()
-					ZSBT.Core:EmitNotification(text, {r = 0.0, g = 0.8, b = 0.6}, "progress")
+				if hasAmount and ZSBT.Core and ZSBT.Core.EmitNotification then
+					local tNow = GetTime()
+					local dedupWindow = 1.0
+					local fallbackDelay = 0.25
+					if C_Timer and type(C_Timer.After) == "function" then
+						C_Timer.After(fallbackDelay, function()
+							if not ZSBT.Core or not ZSBT.Core.EmitNotification then return end
+							if (GetTime() - (ZSBT.Core._lastRepNotifAt or 0)) < dedupWindow then return end
+							ZSBT.Core._lastRepNotifAt = GetTime()
+							ZSBT.Core:EmitNotification(text, {r = 0.0, g = 0.8, b = 0.6}, "progress")
+						end)
+					else
+						if (tNow - (ZSBT.Core._lastRepNotifAt or 0)) >= dedupWindow then
+							ZSBT.Core._lastRepNotifAt = tNow
+							ZSBT.Core:EmitNotification(text, {r = 0.0, g = 0.8, b = 0.6}, "progress")
+						end
+					end
 				end
 			elseif et == "COMBAT_TEXT_PROC" then
 				-- Spell proc / reactive ability -> notification

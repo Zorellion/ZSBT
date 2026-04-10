@@ -164,6 +164,8 @@ function Triggers:FireEvent(eventType, ctx)
 	local list = tdb and tdb.items
 	if type(list) ~= "table" then return end
 	local skipThrottle = (type(ctx) == "table" and ctx._skipThrottle == true)
+	local ctxSpellId = type(ctx) == "table" and ctx.spellId or nil
+	TrigDebug("FireEvent ENTER eventType=" .. tostring(eventType) .. " spellId=" .. tostring(ctxSpellId) .. " triggers=" .. tostring(#list))
 
 	for _, trig in ipairs(list) do
 		if type(trig) == "table" and trig.enabled ~= false then
@@ -171,9 +173,20 @@ function Triggers:FireEvent(eventType, ctx)
 				if skipThrottle or PassThrottle(self, trig) then
 					local match = true
 					if eventType == "AURA_GAIN" or eventType == "AURA_FADE" or eventType == "COOLDOWN_READY" or eventType == "SPELL_USABLE" or eventType == "AURA_STACKS" or eventType == "SPELLCAST_SUCCEEDED" then
-						if type(trig.spellId) == "number" then
-							match = (type(ctx) == "table" and ctx.spellId == trig.spellId)
+						local trigSpellId = trig.spellId
+						local ctxSpellId = type(ctx) == "table" and ctx.spellId or nil
+						if type(trigSpellId) == "number" and type(ctxSpellId) == "number" then
+							-- Both have valid spellIds - require exact match
+							match = (ctxSpellId == trigSpellId)
+						elseif type(trigSpellId) == "number" then
+							-- Trigger has spellId but event doesn't - no match
+							match = false
+						elseif type(ctxSpellId) == "number" and (eventType == "AURA_GAIN" or eventType == "AURA_FADE") then
+							-- For aura events only: event has spellId but trigger doesn't - no match (prevents catch-all doubles)
+							TrigDebug("Trigger skipped: eventType=" .. tostring(eventType) .. " has specific spellId=" .. tostring(ctxSpellId) .. " but trigger has no spellId")
+							match = false
 						end
+						-- If both spellIds are nil/invalid, match stays true (catch-all triggers only match catch-all events)
 					end
 
 					if match then
@@ -186,9 +199,17 @@ function Triggers:FireEvent(eventType, ctx)
 	end
 end
 
-function Triggers:OnAuraGain(spellId)
+function Triggers:OnAuraGain(spellId, source)
+	if type(spellId) ~= "number" or spellId <= 0 then return end
+	self._auraPresent = self._auraPresent or {}
+	if self._auraPresent[spellId] == true then
+		-- Already present, skip duplicate
+		TrigDebug("OnAuraGain DEDUP BLOCKED spellId=" .. tostring(spellId) .. " src=" .. tostring(source or "?"))
+		return
+	end
+	self._auraPresent[spellId] = true
 	local name = SafeSpellName(spellId)
-	TrigDebug("OnAuraGain spellId=" .. tostring(spellId) .. " name=" .. tostring(name))
+	TrigDebug("OnAuraGain EMITTING spellId=" .. tostring(spellId) .. " name=" .. tostring(name) .. " src=" .. tostring(source or "?"))
 	self:FireEvent("AURA_GAIN", {
 		eventType = "AURA_GAIN",
 		event = "GAIN",
@@ -213,7 +234,8 @@ function Triggers:_IsAuraPresent(spellId)
 			local ok, name, _, count, _, _, _, _, _, sid = pcall(UnitAura, "player", i, "HELPFUL")
 			if not ok then break end
 			if not name then break end
-			if sid == spellId then
+			local okEq, eq = pcall(function() return sid == spellId end)
+			if okEq and eq then
 				aura = { applications = count }
 				break
 			end
@@ -223,7 +245,8 @@ function Triggers:_IsAuraPresent(spellId)
 				local ok, name, _, count, _, _, _, _, _, sid = pcall(UnitAura, "player", i, "HARMFUL")
 				if not ok then break end
 				if not name then break end
-				if sid == spellId then
+				local okEq, eq = pcall(function() return sid == spellId end)
+				if okEq and eq then
 					aura = { applications = count }
 					break
 				end
@@ -258,9 +281,17 @@ function Triggers:_CheckAuraGainFade()
 	end
 end
 
-function Triggers:OnAuraFade(spellId)
+function Triggers:OnAuraFade(spellId, source)
+	if type(spellId) ~= "number" or spellId <= 0 then return end
+	self._auraPresent = self._auraPresent or {}
+	if self._auraPresent[spellId] == false then
+		-- Already not present, skip duplicate
+		TrigDebug("OnAuraFade DEDUP BLOCKED spellId=" .. tostring(spellId) .. " src=" .. tostring(source or "?"))
+		return
+	end
+	self._auraPresent[spellId] = false
 	local name = SafeSpellName(spellId)
-	TrigDebug("OnAuraFade spellId=" .. tostring(spellId) .. " name=" .. tostring(name))
+	TrigDebug("OnAuraFade EMITTING spellId=" .. tostring(spellId) .. " name=" .. tostring(name) .. " src=" .. tostring(source or "?"))
 	self:FireEvent("AURA_FADE", {
 		eventType = "AURA_FADE",
 		event = "FADE",
@@ -285,11 +316,20 @@ function Triggers:SyncWatchedAurasFromCore()
 	local function SafeAuraSpellId(auraData)
 		if type(auraData) ~= "table" then return nil end
 		local sid = auraData.spellId or auraData.spellID
-		return (type(sid) == "number" and sid > 0) and sid or nil
+		-- WoW 12.x can surface "secret" numeric values that are unsafe to order-compare.
+		return (type(sid) == "number") and sid or nil
 	end
 
 	local function IsAuraPresent(sid)
 		if type(sid) ~= "number" or sid <= 0 then return false end
+		-- Synthetic presence fallback for auras that cannot be enumerated reliably in WoW 12.x during combat.
+		if self._syntheticAuraExpireAt and type(self._syntheticAuraExpireAt[sid]) == "number" then
+			local now = GetTime and GetTime() or 0
+			if now < (self._syntheticAuraExpireAt[sid] or 0) then
+				return true
+			end
+		end
+		local wantName = SafeSpellName(sid)
 		-- Fast path if available
 		if AuraUtil and AuraUtil.FindAuraBySpellId then
 			local ok, aura = pcall(AuraUtil.FindAuraBySpellId, sid, "player", "HELPFUL")
@@ -305,7 +345,12 @@ function Triggers:SyncWatchedAurasFromCore()
 			pcall(function()
 				AuraUtil.ForEachAura("player", "HELPFUL", 255, function(auraData)
 					local asid = SafeAuraSpellId(auraData)
-					if asid == sid then found = true; return false end
+					local okEq, eq = pcall(function() return asid == sid end)
+					if okEq and eq then found = true; return false end
+					if wantName and type(auraData) == "table" and type(auraData.name) == "string" then
+						local okNameEq, nameEq = pcall(function() return auraData.name == wantName end)
+						if okNameEq and nameEq then found = true; return false end
+					end
 					return true
 				end, true)
 			end)
@@ -313,10 +358,45 @@ function Triggers:SyncWatchedAurasFromCore()
 			pcall(function()
 				AuraUtil.ForEachAura("player", "HARMFUL", 255, function(auraData)
 					local asid = SafeAuraSpellId(auraData)
-					if asid == sid then found = true; return false end
+					local okEq, eq = pcall(function() return asid == sid end)
+					if okEq and eq then found = true; return false end
+					if wantName and type(auraData) == "table" and type(auraData.name) == "string" then
+						local okNameEq, nameEq = pcall(function() return auraData.name == wantName end)
+						if okNameEq and nameEq then found = true; return false end
+					end
 					return true
 				end, true)
 			end)
+			if (not found) and sid == 107574 then
+				local dl = (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0)) or 0
+				if dl >= 4 then
+					local tNow = GetTime and GetTime() or 0
+					if (tNow - (self._avatarAuraDebugAt or 0)) > 1.0 then
+						self._avatarAuraDebugAt = tNow
+						local okWN, sWN = pcall(tostring, wantName)
+						if not okWN or type(sWN) ~= "string" then sWN = "<nil>" end
+						local parts = {}
+						pcall(function()
+							local seen = 0
+							AuraUtil.ForEachAura("player", "HELPFUL", 40, function(auraData)
+								seen = seen + 1
+								local an = type(auraData) == "table" and auraData.name or nil
+								local asid = SafeAuraSpellId(auraData)
+								local okN, sN = pcall(tostring, an)
+								if not okN or type(sN) ~= "string" then sN = "<noname>" end
+								local okSid, sSid = pcall(tostring, asid)
+								if not okSid or type(sSid) ~= "string" then sSid = "<nosid>" end
+								parts[#parts + 1] = sN .. "#" .. sSid
+								if seen >= 12 then return false end
+								return true
+							end, true)
+						end)
+						pcall(function()
+							TrigDebug("AuraSync: Avatar not found; wantName=" .. sWN .. " helpful[1..12]=" .. table.concat(parts, ","))
+						end)
+					end
+				end
+			end
 			return found
 		end
 
@@ -325,15 +405,84 @@ function Triggers:SyncWatchedAurasFromCore()
 				local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
 				if not ok or not auraData then break end
 				local asid = SafeAuraSpellId(auraData)
-				if asid == sid then return true end
+				local okEq, eq = pcall(function() return asid == sid end)
+				if okEq and eq then return true end
+				if wantName and type(auraData.name) == "string" then
+					local okNameEq, nameEq = pcall(function() return auraData.name == wantName end)
+					if okNameEq and nameEq then return true end
+				end
 			end
 			for i = 1, 255 do
 				local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HARMFUL")
 				if not ok or not auraData then break end
 				local asid = SafeAuraSpellId(auraData)
-				if asid == sid then return true end
+				local okEq, eq = pcall(function() return asid == sid end)
+				if okEq and eq then return true end
+				if wantName and type(auraData.name) == "string" then
+					local okNameEq, nameEq = pcall(function() return auraData.name == wantName end)
+					if okNameEq and nameEq then return true end
+				end
 			end
-			return false
+			-- fall through to UnitAura fallback
+		end
+
+		-- Last-resort fallback: UnitAura iteration.
+		-- In some 12.x builds, spellId on auraData can be secret/unreliable; UnitAura can still provide usable spellId/name.
+		if UnitAura then
+			for i = 1, 40 do
+				local ok, name, _, _, _, _, _, _, _, sid2 = pcall(UnitAura, "player", i, "HELPFUL")
+				if not ok then break end
+				if not name then break end
+				local okEq, eq = pcall(function() return sid2 == sid end)
+				if okEq and eq then return true end
+				if wantName and type(name) == "string" then
+					local okNameEq, nameEq = pcall(function() return name == wantName end)
+					if okNameEq and nameEq then return true end
+				end
+			end
+			for i = 1, 40 do
+				local ok, name, _, _, _, _, _, _, _, sid2 = pcall(UnitAura, "player", i, "HARMFUL")
+				if not ok then break end
+				if not name then break end
+				local okEq, eq = pcall(function() return sid2 == sid end)
+				if okEq and eq then return true end
+				if wantName and type(name) == "string" then
+					local okNameEq, nameEq = pcall(function() return name == wantName end)
+					if okNameEq and nameEq then return true end
+				end
+			end
+		end
+
+		-- Debug helper: when Avatar can't be found, dump what we *do* see.
+		if sid == 107574 then
+			local dl = (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0)) or 0
+			if dl >= 4 and UnitAffectingCombat and UnitAffectingCombat("player") then
+				local tNow = GetTime and GetTime() or 0
+				if (tNow - (self._avatarAuraDebugAt or 0)) > 1.0 then
+					self._avatarAuraDebugAt = tNow
+					local okWN, sWN = pcall(tostring, wantName)
+					if not okWN or type(sWN) ~= "string" then sWN = "<nil>" end
+					local parts = {}
+					if AuraUtil and AuraUtil.ForEachAura then
+						pcall(function()
+							local seen = 0
+							AuraUtil.ForEachAura("player", "HELPFUL", 40, function(auraData)
+								seen = seen + 1
+								local an = type(auraData) == "table" and auraData.name or nil
+								local asid = SafeAuraSpellId(auraData)
+								local okN, sN = pcall(tostring, an)
+								if not okN or type(sN) ~= "string" then sN = "<noname>" end
+								local okSid, sSid = pcall(tostring, asid)
+								if not okSid or type(sSid) ~= "string" then sSid = "<nosid>" end
+								parts[#parts + 1] = sN .. "#" .. sSid
+								if seen >= 12 then return false end
+								return true
+							end, true)
+						end)
+					end
+					TrigDebug("AuraSync: Avatar not found; wantName=" .. sWN .. " helpful[1..12]=" .. table.concat(parts, ","))
+				end
+			end
 		end
 
 		return false
@@ -344,25 +493,35 @@ function Triggers:SyncWatchedAurasFromCore()
 		TrigDebug("AuraSync: skip (watchCount=0; no AURA_GAIN/AURA_FADE spellIds configured?)")
 		return
 	end
-	TrigDebug("AuraSync: watchCount=" .. tostring(watchCount) .. " watchingAvatar=" .. tostring(watch[107574] == true)
-		.. " hasFindAuraBySpellId=" .. tostring(AuraUtil and AuraUtil.FindAuraBySpellId ~= nil)
-		.. " hasForEachAura=" .. tostring(AuraUtil and AuraUtil.ForEachAura ~= nil)
-		.. " hasAuraByIndex=" .. tostring(C_UnitAuras and C_UnitAuras.GetAuraDataByIndex ~= nil))
 
 	for sid in pairs(watch) do
-		if type(sid) == "number" and sid > 0 then
+		if type(sid) == "number" then
 			local present = IsAuraPresent(sid)
 			if sid == 107574 then
 				TrigDebug("AuraSync: Avatar present=" .. tostring(present))
 			end
-
-			local was = self._auraPresent[sid] == true
-			if present and not was then
-				self._auraPresent[sid] = true
-				self:OnAuraGain(sid)
-			elseif (not present) and was then
-				self._auraPresent[sid] = false
-				self:OnAuraFade(sid)
+			-- OnAuraGain/OnAuraFade handle their own state tracking and deduplication
+			-- Skip calling for auras under synthetic detection to prevent doubles
+			if self._syntheticAuraExpireAt and type(self._syntheticAuraExpireAt[sid]) == "number" then
+				local now = GetTime and GetTime() or 0
+				if now < (self._syntheticAuraExpireAt[sid] or 0) then
+					-- Synthetic is active for this aura, let synthetic handler manage it
+					-- Just update our state to match without firing events
+					self._auraPresent[sid] = true
+				else
+					-- Synthetic expired, handle normally
+					if present then
+						self:OnAuraGain(sid, "sync")
+					else
+						self:OnAuraFade(sid, "sync")
+					end
+				end
+			else
+				if present then
+					self:OnAuraGain(sid, "sync")
+				else
+					self:OnAuraFade(sid, "sync")
+				end
 			end
 		end
 	end
@@ -372,12 +531,14 @@ function Triggers:OnCooldownReady(event)
 	if type(event) ~= "table" then return end
 	local spellId = event.spellId
 	local spellName = event.spellName or SafeSpellName(spellId)
+	TrigDebug("OnCooldownReady ENTER spellId=" .. tostring(spellId) .. " spellName=" .. tostring(spellName))
 	self:FireEvent("COOLDOWN_READY", {
 		eventType = "COOLDOWN_READY",
 		event = "READY",
 		spellId = spellId,
 		spellName = spellName or (spellId and ("Spell #" .. tostring(spellId)) or "Cooldown"),
 	})
+	TrigDebug("OnCooldownReady EXIT spellId=" .. tostring(spellId))
 end
 
 function Triggers:OnLowHealth(pct, threshold)
@@ -458,6 +619,37 @@ function Triggers:OnSpellcastSucceeded(unit, spellId)
 		spellId = spellId,
 		spellName = name or ("Spell #" .. tostring(spellId)),
 	})
+
+	-- WoW 12.x: some auras may not be enumerable during combat via AuraUtil/C_UnitAuras/UnitAura.
+	-- For watched auras, synthesize AURA_GAIN/FADE based on cast success as a fallback.
+	-- Map: spellId -> duration (seconds). Add entries here for auras that need synthetic detection.
+	local SYNTHETIC_AURA_DURATIONS = {
+		[107574] = 20.0, -- Avatar (Arms/Fury)
+	}
+	if unit == "player" and type(spellId) == "number" then
+		local dur = SYNTHETIC_AURA_DURATIONS[spellId]
+		if dur and dur > 0 then
+			GetTrackedTriggerList(self)
+			local watch = self._auraWatchIds
+			if type(watch) == "table" and watch[spellId] == true then
+				self._syntheticAuraExpireAt = self._syntheticAuraExpireAt or {}
+				local now = GetTime and GetTime() or 0
+				self._syntheticAuraExpireAt[spellId] = now + dur
+				self:OnAuraGain(spellId, "cast")
+				if C_Timer and C_Timer.After then
+					C_Timer.After(dur + 0.10, function()
+						local now2 = GetTime and GetTime() or 0
+						if self._syntheticAuraExpireAt and type(self._syntheticAuraExpireAt[spellId]) == "number" then
+							if now2 >= (self._syntheticAuraExpireAt[spellId] or 0) then
+								self._syntheticAuraExpireAt[spellId] = nil
+								self:OnAuraFade(spellId, "expire")
+							end
+						end
+					end)
+				end
+			end
+		end
+	end
 end
 
 function Triggers:OnEnterCombat()
@@ -866,22 +1058,8 @@ function Triggers:_CheckSpellUsable()
 						spellId = sid,
 						spellName = SafeSpellName(sid) or ("Spell #" .. tostring(sid)),
 					})
-					TrigDebug("SpellUsable fire: sid=" .. tostring(sid) .. " combat=" .. tostring(inCombat) .. "")
-				else
-					TrigDebug("SpellUsable check: sid=" .. tostring(sid)
-						.. " usable=" .. tostring(usable)
-						.. " cdDur=" .. tostring(cdDur)
-						.. " cdStart=" .. tostring(cdStart)
-						.. " ch=" .. tostring(chCur) .. "/" .. tostring(chMax)
-						.. " wasUsable=" .. tostring(wasUsable)
-						.. " edge=" .. tostring(isEdge)
-						.. " rearmSec=" .. tostring(rearmSec)
-						.. " sinceUnusable=" .. tostring(sinceUnusable)
-						.. " passThrottle=" .. tostring(passThrottle)
-						.. " combat=" .. tostring(inCombat) .. "")
 				end
 			else
-				TrigDebug("SpellUsable skip: sid=" .. tostring(sid) .. " (not in combat)")
 			end
 		end
 	end
