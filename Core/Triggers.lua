@@ -129,6 +129,7 @@ local function EmitAction(action, ctx)
 	end
 	if ZSBT.Core and ZSBT.Core.IsNotificationCategoryEnabled then
 		if ZSBT.Core:IsNotificationCategoryEnabled("triggers") == false then
+			TrigDebug("EmitAction suppressed: triggers category disabled")
 			return
 		end
 	end
@@ -167,10 +168,11 @@ function Triggers:FireEvent(eventType, ctx)
 	local ctxSpellId = type(ctx) == "table" and ctx.spellId or nil
 	TrigDebug("FireEvent ENTER eventType=" .. tostring(eventType) .. " spellId=" .. tostring(ctxSpellId) .. " triggers=" .. tostring(#list))
 
-	for _, trig in ipairs(list) do
+	for _, trig in pairs(list) do
 		if type(trig) == "table" and trig.enabled ~= false then
 			if trig.eventType == eventType then
-				if skipThrottle or PassThrottle(self, trig) then
+				local passedThrottle = skipThrottle or PassThrottle(self, trig)
+				if passedThrottle then
 					local match = true
 					if eventType == "AURA_GAIN" or eventType == "AURA_FADE" or eventType == "COOLDOWN_READY" or eventType == "SPELL_USABLE" or eventType == "AURA_STACKS" or eventType == "SPELLCAST_SUCCEEDED" then
 						local trigSpellId = trig.spellId
@@ -185,6 +187,11 @@ function Triggers:FireEvent(eventType, ctx)
 							-- For aura events only: event has spellId but trigger doesn't - no match (prevents catch-all doubles)
 							TrigDebug("Trigger skipped: eventType=" .. tostring(eventType) .. " has specific spellId=" .. tostring(ctxSpellId) .. " but trigger has no spellId")
 							match = false
+						elseif type(ctxSpellId) == "number" and eventType == "SPELLCAST_SUCCEEDED" then
+							-- SPELLCAST_SUCCEEDED: allow catch-all triggers to match pet/player casts
+							-- even when event has specific spellId and trigger has none
+							-- (this allows single trigger to catch all spellcasts)
+							match = true
 						end
 						-- If both spellIds are nil/invalid, match stays true (catch-all triggers only match catch-all events)
 					end
@@ -192,7 +199,11 @@ function Triggers:FireEvent(eventType, ctx)
 					if match then
 						TrigDebug("FireEvent match: eventType=" .. tostring(eventType) .. " trigId=" .. tostring(trig.id or trig._key) .. " spellId=" .. tostring(ctx and ctx.spellId))
 						EmitAction(trig.action, ctx)
+					elseif eventType == "SPELLCAST_SUCCEEDED" then
+						TrigDebug("FireEvent no-match: trigId=" .. tostring(trig.id or trig._key) .. " trigSpellId=" .. tostring(trig.spellId) .. " ctxSpellId=" .. tostring(ctx and ctx.spellId))
 					end
+				elseif eventType == "SPELLCAST_SUCCEEDED" then
+					TrigDebug("FireEvent throttled: trigId=" .. tostring(trig.id or trig._key) .. " throttleSec=" .. tostring(trig.throttleSec))
 				end
 			end
 		end
@@ -562,7 +573,7 @@ GetTrackedTriggerList = function(self)
 
 	local su, res, ast = {}, {}, {}
 	local watch = {}
-	for _, trig in ipairs(list) do
+	for idx, trig in pairs(list) do
 		if type(trig) == "table" and trig.enabled ~= false and type(trig.eventType) == "string" then
 			-- Coerce spellId to number for spellId-based triggers when the UI stores it as a string.
 			if trig.eventType == "SPELL_USABLE" or trig.eventType == "COOLDOWN_READY" or trig.eventType == "SPELLCAST_SUCCEEDED" or trig.eventType == "AURA_STACKS" then
@@ -596,7 +607,12 @@ GetTrackedTriggerList = function(self)
 				if type(sid) == "number" and sid > 0 then
 					watch[sid] = true
 				else
-					TrigDebug("Aura trigger missing numeric spellId: eventType=" .. tostring(trig.eventType) .. " spellId=" .. tostring(sid))
+					self._warnMissingAuraSpellId = self._warnMissingAuraSpellId or {}
+					local warnKey = tostring(trig.id or trig._key or ("idx_" .. tostring(idx) .. "_" .. tostring(trig.eventType)))
+					if self._warnMissingAuraSpellId[warnKey] ~= true then
+						self._warnMissingAuraSpellId[warnKey] = true
+						TrigDebug("Aura trigger missing numeric spellId: eventType=" .. tostring(trig.eventType) .. " spellId=" .. tostring(sid))
+					end
 				end
 			end
 		end

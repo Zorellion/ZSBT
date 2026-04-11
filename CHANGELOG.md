@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.0
+- Cooldowns: fixed late READY notifications and false READY on cast/regen by implementing combat-only `isActive==false` detection with 1s suppression window after combat transitions.
+- Cooldowns: removed `start=0/dur=0` as a readiness signal to prevent transient API glitches from firing READY early.
+- Cooldowns: removed action-button Cooldown widget readiness path due to unstable/tainted values in combat.
+- Cooldowns: added `StartUsablePoll` system with proper combat-state tracking and `C_Spell.GetSpellCooldown` polling for reliable early-ready detection.
+
 ## 2.0.12
 - Cooldowns: fixed cooldown_ready trigger firing late in combat by preventing timer drift from SPELL_UPDATE_COOLDOWN jitter.
 - Cooldowns: cooldown timer now refuses to reschedule to a later ready time once a timer is active.

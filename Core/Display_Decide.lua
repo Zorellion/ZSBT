@@ -167,6 +167,7 @@ end
 local mergeBuffer = {}
 
 local function FlushMerge(areaName)
+    local tok = ZSBT.Addon and ZSBT.Addon.PerfBegin and ZSBT.Addon:PerfBegin("UI.FlushMerge")
     local entry = mergeBuffer[areaName]
     if not entry then return end
     mergeBuffer[areaName] = nil
@@ -190,16 +191,19 @@ local function FlushMerge(areaName)
     ZSBT.FireTestText(text, entry.area, entry.fontFace, entry.fontSize,
         entry.outlineFlag, entry.fontAlpha, entry.anchorH, entry.dirMult,
         entry.duration, entry.color, entry.meta)
+	if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
 end
 
 local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
                         fontAlpha, anchorH, dirMult, duration, color, meta)
+    local tok = ZSBT.Addon and ZSBT.Addon.PerfBegin and ZSBT.Addon:PerfBegin("UI.TryMerge")
     -- Check if merging is enabled
     local profile = ZSBT.db and ZSBT.db.profile
     local mergeConf = profile and profile.spamControl and profile.spamControl.merging
     if not mergeConf or not mergeConf.enabled then
         ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             fontAlpha, anchorH, dirMult, duration, color, meta)
+		if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
         return
     end
 
@@ -211,6 +215,7 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
         FlushMerge(areaName)
         ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             fontAlpha, anchorH, dirMult, duration, color, meta)
+		if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
         return
     end
 
@@ -234,6 +239,7 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
             existing.timer = C_Timer.NewTimer(0.1, function()
                 FlushMerge(areaName)
             end)
+			if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
             return
         else
             FlushMerge(areaName)
@@ -260,10 +266,12 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
             FlushMerge(areaName)
         end),
     }
+	if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
 end
 
 -- Primary contract: engine calls this to request output.
 function Display:Emit(areaName, text, color, meta)
+    local tok = ZSBT.Addon and ZSBT.Addon.PerfBegin and ZSBT.Addon:PerfBegin("UI.DisplayEmit")
     if Addon and Addon.DebugPrint then
     end
 
@@ -272,11 +280,13 @@ function Display:Emit(areaName, text, color, meta)
     local isNotification = meta and meta.kind == "notification"
     if not isNotification then
         if ZSBT.Core and ZSBT.Core.ShouldEmitNow and not ZSBT.Core:ShouldEmitNow() then
+            if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
             return
         end
     else
         -- Notifications still respect master enable
         if ZSBT.Core and ZSBT.Core.IsMasterEnabled and not ZSBT.Core:IsMasterEnabled() then
+            if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
             return
         end
     end
@@ -289,6 +299,7 @@ function Display:Emit(areaName, text, color, meta)
         local general = profile and profile.general
         if general and general.notificationsEnabled == false then
             if type(areaName) == "string" and areaName == "Notifications" then
+                if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
                 return
             end
         end
@@ -297,6 +308,7 @@ function Display:Emit(areaName, text, color, meta)
     -- text may be a tainted secret value — do NOT compare it directly.
     -- Use type() checks instead of truthiness tests.
     if type(areaName) == "nil" or type(text) == "nil" then
+		if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
         return
     end
 
@@ -493,6 +505,7 @@ function Display:Emit(areaName, text, color, meta)
 
     TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag, fontAlpha,
         anchorH, dirMult, duration, color, meta)
+	if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
 end
 
 -- Backward-compat contract

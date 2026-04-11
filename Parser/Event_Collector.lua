@@ -483,7 +483,7 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 	if unit == "pet" then
 		local trg = ZSBT.Core and ZSBT.Core.Triggers
 		if trg and trg.OnSpellcastSucceeded then
-			pcall(function() trg:OnSpellcastSucceeded(unit, guid, spellId) end)
+			pcall(function() trg:OnSpellcastSucceeded(unit, spellId) end)
 		end
 		return
 	end

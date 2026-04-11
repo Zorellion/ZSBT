@@ -84,3 +84,49 @@ function Addon:ClearDiagnosticLog()
         self:Print("Diagnostic log cleared.")
     end
 end
+
+function Addon:_perfEnabled()
+	local d = self.db and self.db.profile and self.db.profile.diagnostics
+	return d and d.perfEnabled == true and type(debugprofilestop) == "function"
+end
+
+function Addon:PerfBegin(key)
+	if not self:_perfEnabled() then return nil end
+	if type(key) ~= "string" or key == "" then return nil end
+	return { debugprofilestop(), key }
+end
+
+function Addon:PerfEnd(token)
+	if not token then return end
+	local startMs, key = token[1], token[2]
+	if type(startMs) ~= "number" or type(key) ~= "string" then return end
+	local stopMs = debugprofilestop()
+	local dt = stopMs - startMs
+	if dt < 0 then return end
+	self._perf = self._perf or { lastReportAt = 0, acc = {}, cnt = {} }
+	local p = self._perf
+	p.acc[key] = (p.acc[key] or 0) + dt
+	p.cnt[key] = (p.cnt[key] or 0) + 1
+
+	local now = (GetTime and GetTime()) or 0
+	if (now - (p.lastReportAt or 0)) < 1.0 then return end
+	p.lastReportAt = now
+
+	local out = {}
+	for k, v in pairs(p.acc) do
+		out[#out + 1] = { k = k, ms = v, c = p.cnt[k] or 0 }
+	end
+	table.sort(out, function(a, b) return (a.ms or 0) > (b.ms or 0) end)
+	local parts = {}
+	local maxShow = 6
+	for i = 1, math.min(#out, maxShow) do
+		local it = out[i]
+		parts[#parts + 1] = tostring(it.k) .. "=" .. string.format("%.2f", it.ms) .. "ms(" .. tostring(it.c) .. ")"
+	end
+	if #parts > 0 then
+		self:Print("|cFFCC66FF[PERF]|r " .. table.concat(parts, " "))
+	end
+	wipe(p.acc)
+	wipe(p.cnt)
+end
+

@@ -375,8 +375,10 @@ function Engine:_ensureDamageMeterTicker()
 	end
 	self._dmgMeterTicker = C_Timer.NewTicker(0.10, function()
 		if Engine and Engine._enabled then
+			local tok = ZSBT.Addon and ZSBT.Addon.PerfBegin and ZSBT.Addon:PerfBegin("PE.DmgMeter")
 			Engine:_pollDamageMeterOutgoing()
 			Engine:_pollDamageMeterIncoming()
+			if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
 		end
 	end)
 end
@@ -729,6 +731,16 @@ function Engine:_processHealth(_)
 end
 
 function Engine:flushBucket()
+	local budgetMs = nil
+	local tStart = nil
+	do
+		local d = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
+		local b = d and tonumber(d.pulseBudgetMs)
+		if type(b) == "number" and b > 0 and type(debugprofilestop) == "function" then
+			budgetMs = b
+			tStart = debugprofilestop()
+		end
+	end
 	local bucket = self._bucket
 	local count = self._qCount or 0
 	local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
@@ -759,6 +771,15 @@ function Engine:flushBucket()
 	end
 	-- Ensure pending pet merge flushes on time even if other events keep arriving.
 	self:_flushPetMerge(now())
+	-- Cooldown readiness fallback: fire overdue timers even if C_Timer callbacks are delayed.
+	local cds = ZSBT.Parser and ZSBT.Parser.Cooldowns
+	if cds and cds.CheckReadyTimers then
+		local tNow = now()
+		if (tNow - (self._lastCooldownPollAt or 0)) >= 0.10 then
+			self._lastCooldownPollAt = tNow
+			pcall(function() cds:CheckReadyTimers(tNow) end)
+		end
+	end
 	if count <= 0 then
 		return
 	end
@@ -766,6 +787,12 @@ function Engine:flushBucket()
 	local maxSize = self._maxBucketSize or 120
 	local work = math.min(count, self._maxWorkPerPulse or 80)
 	for _ = 1, work do
+		if budgetMs and tStart then
+			local elapsedMs = debugprofilestop() - tStart
+			if elapsedMs >= budgetMs then
+				return
+			end
+		end
 		local idx = self._qHead
 		local sample = bucket[idx]
 		bucket[idx] = nil
@@ -1357,7 +1384,9 @@ function Engine:_onUpdate(elapsed)
 
 	-- Preserve overrun remainder rather than zeroing for stable pacing.
 	self._accumulator = self._accumulator - self._pulseInterval
+	local tok = ZSBT.Addon and ZSBT.Addon.PerfBegin and ZSBT.Addon:PerfBegin("PE.Flush")
 	self:flushBucket()
+	if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
 end
 
 function Engine:Enable()
