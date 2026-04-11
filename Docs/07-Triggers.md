@@ -80,6 +80,10 @@ Triggers let you create your own notifications when specific events happen.
 - **Sticky Jiggle (shake)**: optional shake animation for Sticky.
 - **Font Override**: choose a specific font/outline for this trigger.
 
+## Aura gain/fade notes
+- Aura gain/fade triggers are detected via player aura tracking and periodic sync/rescan.
+- ZSBT tries to avoid false repeats caused by transient aura enumeration issues during loading screens.
+
 ## Text placeholders
 The trigger text supports simple placeholders you can include in the Action text.
 

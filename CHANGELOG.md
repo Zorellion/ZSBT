@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.2.2
+- Triggers: improved watched aura sync so it only emits `AURA_GAIN`/`AURA_FADE` on actual state transitions (reduces sync dedup spam).
+- Triggers: reduced loading-screen aura flapping causing false re-triggers (example: Bloodlust lockout debuffs like Sated/Fatigued/Temporal Displacement).
+
 ## 2.2.1
 - Sticky: added a separate `Sticky Jiggle (shake)` toggle (Triggers and Crit Sticky settings) so you can disable shaking while keeping sticky placement/scale/duration.
 - Sticky: improved the Pow-style sticky animation to feel more like a slam on entry.
