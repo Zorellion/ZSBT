@@ -3076,7 +3076,69 @@ function ZSBT.BuildOptionsTable()
                         name = "|cFFFFD100Troubleshooting|r",
                         order = 2,
                         childGroups = "tree",
-                        args = buildHelpTopicArgs("troubleshooting"),
+                        args = (function()
+							local args = buildHelpTopicArgs("troubleshooting")
+							args.troubleshooting_perfHeader = {
+								type = "header",
+								name = "Performance Profiling",
+								order = 0.01,
+							}
+							args.troubleshooting_perfEnabled = {
+								type = "toggle",
+								name = "Enable Performance Profiling",
+								desc = "When enabled, ZSBT prints a [PERF] summary once per second showing where time is spent (animation engine, pulse engine, etc). Use only while troubleshooting.",
+								width = "full",
+								order = 0.02,
+								get = function()
+									local d = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
+									return d and d.perfEnabled == true
+								end,
+								set = function(_, v)
+									ZSBT.db.profile.diagnostics.perfEnabled = (v == true)
+								end,
+							}
+							args.troubleshooting_animBudgetMs = {
+								type = "range",
+								name = "Animation Budget (ms per frame)",
+								desc = "Optional cap on how much time ZSBT's animation engine can spend per frame. Helps prevent UI starvation in heavy combat. 0 disables.",
+								min = 0,
+								max = 10,
+								step = 0.25,
+								order = 0.025,
+								width = "full",
+								get = function()
+									local d = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
+									return (d and tonumber(d.animBudgetMs)) or 0
+								end,
+								set = function(_, v)
+									ZSBT.db.profile.diagnostics.animBudgetMs = tonumber(v) or 0
+								end,
+							}
+							args.troubleshooting_pulseBudgetMs = {
+								type = "range",
+								name = "Pulse Budget (ms per pulse)",
+								desc = "Optional cap on how much time ZSBT's pulse engine can spend per 20ms pulse. 0 disables.",
+								min = 0,
+								max = 10,
+								step = 0.25,
+								order = 0.026,
+								width = "full",
+								get = function()
+									local d = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
+									return (d and tonumber(d.pulseBudgetMs)) or 0
+								end,
+								set = function(_, v)
+									ZSBT.db.profile.diagnostics.pulseBudgetMs = tonumber(v) or 0
+								end,
+							}
+							args.troubleshooting_perfSpacer = {
+								type = "description",
+								name = " ",
+								order = 0.03,
+								width = "full",
+							}
+							return args
+						end)(),
                     },
                 },
             },

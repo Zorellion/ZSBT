@@ -2814,7 +2814,15 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                             if dl >= 4 then
                                 local ZSBTAddon = ZSBT and ZSBT.Addon
                                 if ZSBTAddon and ZSBTAddon.Print then
-                                    ZSBTAddon:Print("[AURA] FADE EMITTING (no sid) name=" .. tostring(name))
+                                    local function safeDbg(v)
+                                        if v == nil then return "nil" end
+                                        if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
+                                        if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
+                                        return "<secret>"
+                                    end
+                                    pcall(function()
+                                        ZSBTAddon:Print("[AURA] FADE EMITTING (no sid) name=" .. safeDbg(name))
+                                    end)
                                 end
                             end
                             self:EmitNotification(BuildAuraNotifText("-", name), {r = 0.6, g = 0.6, b = 0.6}, "auras")

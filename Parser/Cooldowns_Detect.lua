@@ -33,11 +33,369 @@ local CHARGE_RECHARGE_OVERRIDE_SEC = {
 	[871] = 90, -- Shield Wall
 }
 
+local function FindActionSlotForSpell(spellId)
+	if type(spellId) ~= "number" or spellId <= 0 then return nil end
+	if type(GetActionInfo) ~= "function" then return nil end
+	local hasGetMacroSpell = (type(GetMacroSpell) == "function")
+	local hasFindButtons = (C_ActionBar and type(C_ActionBar.FindSpellActionButtons) == "function")
+	-- Cache: spellId -> actionSlot (number) or false for not found
+	Cooldowns._spellToActionSlot = Cooldowns._spellToActionSlot or {}
+	local cached = Cooldowns._spellToActionSlot[spellId]
+	if cached == false then return nil end
+	if type(cached) == "number" then return cached end
+
+	-- Prefer Blizzard-maintained lookup when available.
+	if hasFindButtons then
+		local okF, slots = pcall(C_ActionBar.FindSpellActionButtons, spellId)
+		if okF and type(slots) == "table" then
+			for i = 1, #slots do
+				local slot = slots[i]
+				if type(slot) == "number" and slot > 0 then
+					local ok, atype, actionID = pcall(GetActionInfo, slot)
+					if ok and atype == "spell" and actionID == spellId then
+						Cooldowns._spellToActionSlot[spellId] = slot
+						return slot
+					end
+				end
+			end
+		end
+	end
+
+	-- Scan typical action slot range. Use a wider range to cover extra/override bars.
+	for slot = 1, 240 do
+		local ok, atype, actionID = pcall(GetActionInfo, slot)
+		if ok and atype == "spell" and actionID == spellId then
+			Cooldowns._spellToActionSlot[spellId] = slot
+			return slot
+		elseif ok and atype == "macro" and hasGetMacroSpell and type(actionID) == "number" and actionID > 0 then
+			local ok2, macroSpellId = pcall(GetMacroSpell, actionID)
+			if ok2 and type(macroSpellId) == "number" and macroSpellId == spellId then
+				Cooldowns._spellToActionSlot[spellId] = slot
+				return slot
+			end
+		end
+	end
+	Cooldowns._spellToActionSlot[spellId] = false
+	return nil
+end
+
+local function SafeGetActionCooldownForSpell(spellId)
+	if type(GetActionCooldown) ~= "function" then return nil, "no_api" end
+	local slot = FindActionSlotForSpell(spellId)
+	if type(slot) ~= "number" then return nil, "no_slot" end
+	local ok, start, dur, enabled, modRate = pcall(GetActionCooldown, slot)
+	if not ok then return nil, "error" end
+	-- Some clients return nil/secret in combat. Treat non-numeric as unreadable.
+	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(start) and ZSBT.IsSafeNumber(dur)) then
+		return { startTime = start, duration = dur, isEnabled = enabled, modRate = modRate, _slot = slot }, "unreadable"
+	end
+	return { startTime = start, duration = dur, isEnabled = enabled, modRate = modRate, _slot = slot }, nil
+end
+
+local function DefaultButtonForActionSlot(slot)
+	if type(slot) ~= "number" then return nil end
+	local idx = nil
+	local prefix = nil
+	if slot >= 1 and slot <= 12 then
+		prefix = "ActionButton"
+		idx = slot
+	elseif slot >= 13 and slot <= 24 then
+		prefix = "MultiBarBottomLeftButton"
+		idx = slot - 12
+	elseif slot >= 25 and slot <= 36 then
+		prefix = "MultiBarBottomRightButton"
+		idx = slot - 24
+	elseif slot >= 37 and slot <= 48 then
+		prefix = "MultiBarRightButton"
+		idx = slot - 36
+	elseif slot >= 49 and slot <= 60 then
+		prefix = "MultiBarLeftButton"
+		idx = slot - 48
+	end
+	if not prefix or not idx then return nil end
+	return _G[prefix .. tostring(idx)]
+end
+
+local function AnyButtonForActionSlot(slot)
+	if type(slot) ~= "number" or slot <= 0 then return nil end
+	Cooldowns._slotToButton = Cooldowns._slotToButton or {}
+	local cached = Cooldowns._slotToButton[slot]
+	if cached == false then return nil end
+	if type(cached) == "table" then
+		return cached
+	end
+
+	if type(EnumerateFrames) ~= "function" then
+		Cooldowns._slotToButton[slot] = false
+		return nil
+	end
+	if type(debugprofilestop) ~= "function" then
+		Cooldowns._slotToButton[slot] = false
+		return nil
+	end
+
+	local startMs = debugprofilestop()
+	local f = EnumerateFrames()
+	while f do
+		-- Keep scan bounded to avoid hitching.
+		if (debugprofilestop() - startMs) >= 5.0 then
+			break
+		end
+		local okAttr, a = pcall(function()
+			if f and f.GetAttribute then
+				return f:GetAttribute("action")
+			end
+			return nil
+		end)
+		if okAttr and a == slot then
+			Cooldowns._slotToButton[slot] = f
+			return f
+		end
+		f = EnumerateFrames(f)
+	end
+
+	Cooldowns._slotToButton[slot] = false
+	return nil
+end
+
+local function EnsureActionButtonHook(spellId)
+	if type(spellId) ~= "number" or spellId <= 0 then return end
+	Cooldowns._actionBtnHooks = Cooldowns._actionBtnHooks or {}
+	if Cooldowns._actionBtnHooks[spellId] then return end
+	local slot = FindActionSlotForSpell(spellId)
+	if type(slot) ~= "number" then return end
+	local btn = DefaultButtonForActionSlot(slot)
+	if not btn then
+		btn = AnyButtonForActionSlot(slot)
+	end
+	if not btn then return end
+	local cds = {
+		btn.cooldown,
+		btn.chargeCooldown,
+		btn.lossOfControlCooldown,
+	}
+	local hookedAny = false
+	for i = 1, #cds do
+		local cd = cds[i]
+		if cd and type(cd.HookScript) == "function" then
+			hookedAny = true
+			pcall(function()
+				cd:HookScript("OnCooldownDone", function()
+					if not Cooldowns._enabled then return end
+					local st = Cooldowns._state and Cooldowns._state[spellId]
+					if not st or st.isOnCD ~= true or st.seenStart ~= true then return end
+					st.isOnCD = false
+					st.seenStart = false
+					local dbgLevel = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.cooldownsDebugLevel or 0
+					if dbgLevel and dbgLevel >= 4 and Addon and Addon.Print then
+						Addon:Print("|cFF00CCFF[CD]|r ActionBtn OnCooldownDone spellId=" .. tostring(spellId) .. " slot=" .. tostring(slot))
+					end
+					FireReady(spellId, "ACTION_BTN")
+				end)
+			end)
+		end
+	end
+	if not hookedAny then return end
+
+	Cooldowns._actionBtnHooks[spellId] = { slot = slot, btn = btn, cds = cds }
+	local dbgLevel = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.cooldownsDebugLevel or 0
+	if dbgLevel and dbgLevel >= 4 and Addon and Addon.Print then
+		Addon:Print("|cFF00CCFF[CD]|r ActionBtnHook spellId=" .. tostring(spellId) .. " slot=" .. tostring(slot) .. " btn=" .. tostring(btn and btn.GetName and btn:GetName()))
+	end
+end
+
 local function SafeCancelTimer(t)
 	if not t then return end
 	if type(t) == "table" and type(t.Cancel) == "function" then
 		pcall(function() t:Cancel() end)
 	end
+end
+
+local function SafeCancelTicker(t)
+	if not t then return end
+	if type(t) == "table" and type(t.Cancel) == "function" then
+		pcall(function() t:Cancel() end)
+	end
+end
+
+local CdDbg
+local FireReady
+local ScheduleReadyTimer
+
+local function StartUsablePoll(spellId, source)
+	if not Cooldowns._enabled then return end
+	local st = Cooldowns._state and Cooldowns._state[spellId]
+	if not st then return end
+	if st._usablePollTicker then return end
+	CdDbg(2, "StartUsablePoll spellId=" .. tostring(spellId) .. " src=" .. tostring(source))
+
+	st._pollSawOnCd = false
+	st._pollSawUnreadable = false
+	st._pollStartedAt = (GetTime and GetTime()) or 0
+	st._usablePollTicker = C_Timer.NewTicker(0.25, function()
+		if not Cooldowns._enabled then
+			SafeCancelTicker(st._usablePollTicker)
+			st._usablePollTicker = nil
+			return
+		end
+		local cur = Cooldowns._state and Cooldowns._state[spellId]
+		if not cur or cur.isOnCD ~= true or cur.seenStart ~= true then
+			SafeCancelTicker(st._usablePollTicker)
+			st._usablePollTicker = nil
+			return
+		end
+
+		local tNow = (GetTime and GetTime()) or 0
+		local confirmedReady = false
+		local sawAnySignal = false
+
+		-- Prefer cooldown completion signals over IsUsableSpell, because IsUsableSpell
+		-- can be false due to resource/stance even when the cooldown is finished.
+		local pollAge = 0
+		if st._pollStartedAt and type(st._pollStartedAt) == "number" and tNow then
+			pollAge = tNow - st._pollStartedAt
+		end
+		local inCombatNow = (InCombatLockdown and InCombatLockdown()) or false
+		local combatFlipAt = Cooldowns._combatFlipAt or 0
+		local combatFlipAge = 999
+		if type(combatFlipAt) == "number" and combatFlipAt > 0 then
+			combatFlipAge = tNow - combatFlipAt
+		end
+		local allowIsActiveReady = (inCombatNow == true and combatFlipAge > 1.0)
+
+		-- Spell cooldown (if readable)
+		if C_Spell and type(C_Spell.GetSpellCooldown) == "function" then
+			local okC, info = pcall(C_Spell.GetSpellCooldown, spellId)
+			if okC and type(info) == "table" then
+				local start = info.startTime
+				local dur = info.duration
+				local isActive = info.isActive
+				-- Some builds expose isActive even when start/duration are secret.
+				-- Treat isActive==false as readiness only when firmly in combat (regen transitions can glitch it).
+				if isActive == false and allowIsActiveReady == true then
+					sawAnySignal = true
+					local contradicts = false
+					if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(start) and ZSBT.IsSafeNumber(dur) and start and dur
+						and start > 0 and dur > 0 then
+						st._pollSawOnCd = true
+						local okCmp, stillOnCd = pcall(function()
+							return tNow < (start + dur - 0.05)
+						end)
+						if okCmp and stillOnCd == true then
+							contradicts = true
+						end
+					end
+					if contradicts ~= true then
+						if (st._pollSawOnCd == true or st._pollSawUnreadable == true) and pollAge >= 1.0 then
+							confirmedReady = true
+						end
+					end
+				end
+				if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(start) and ZSBT.IsSafeNumber(dur) and start and dur then
+					sawAnySignal = true
+					if start > 0 and dur > 0 then
+						st._pollSawOnCd = true
+						local okCmp, isReady = pcall(function()
+							return tNow >= (start + dur - 0.05)
+						end)
+						if okCmp and isReady == true and st._pollSawOnCd == true then
+							confirmedReady = true
+						end
+					end
+				else
+					-- Unreadable/secret values: treat as evidence the cooldown is active.
+					if st._pollSawUnreadable ~= true then
+						st._pollSawUnreadable = true
+					end
+				end
+			end
+		elseif type(GetSpellCooldown) == "function" then
+			local okL, start, dur = pcall(GetSpellCooldown, spellId)
+			if okL and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(start) and ZSBT.IsSafeNumber(dur) and start and dur then
+				sawAnySignal = true
+				if start > 0 and dur > 0 then
+					st._pollSawOnCd = true
+					local okCmp, isReady = pcall(function()
+						return tNow >= (start + dur - 0.05)
+					end)
+					if okCmp and isReady == true and st._pollSawOnCd == true then
+						confirmedReady = true
+					end
+				end
+			else
+				-- Unreadable/secret values: treat as evidence the cooldown is active.
+				if st._pollSawUnreadable ~= true then
+					st._pollSawUnreadable = true
+				end
+			end
+		end
+
+		-- Action cooldown (if the spell is on a bar/macro). This often remains authoritative.
+		if confirmedReady ~= true then
+			local aInfo, aErr
+			if type(SafeGetActionCooldownForSpell) == "function" then
+				aInfo, aErr = SafeGetActionCooldownForSpell(spellId)
+				-- If the slot exists but cooldown is unreadable, drop the cached slot and retry next tick.
+				if aErr == "unreadable" then
+					if st._pollSawUnreadable ~= true then
+						st._pollSawUnreadable = true
+					end
+					Cooldowns._spellToActionSlot = Cooldowns._spellToActionSlot or {}
+					Cooldowns._spellToActionSlot[spellId] = nil
+				end
+			else
+				aInfo, aErr = nil, "no_fn"
+			end
+			local aStart = aInfo and aInfo.startTime
+			local aDur = aInfo and aInfo.duration
+			if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(aStart) and ZSBT.IsSafeNumber(aDur) and aStart and aDur then
+				sawAnySignal = true
+				if aStart > 0 and aDur > 0 and tNow >= (aStart + aDur - 0.05) then
+					confirmedReady = true
+				end
+			else
+				-- Action cooldown unavailable/unreadable; keep polling.
+				local dbgLevel = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.cooldownsDebugLevel or 0
+				if dbgLevel and dbgLevel >= 4 then
+					cur._lastActionMissAt = cur._lastActionMissAt or 0
+					if (tNow - cur._lastActionMissAt) >= 1.0 then
+						cur._lastActionMissAt = tNow
+						CdDbg(4, "UsablePoll actionCD miss spellId=" .. tostring(spellId)
+							.. " err=" .. tostring(aErr)
+							.. " slot=" .. tostring(aInfo and aInfo._slot))
+					end
+				end
+			end
+		end
+
+		-- NOTE: Do not use the action button Cooldown widget as readiness signal.
+		-- In some builds it can return secret/unstable values (especially around regen transitions).
+
+		-- Secondary hint: usability. NOTE: IsUsableSpell does NOT indicate cooldown state;
+		-- it only reflects resource/stance/etc. Do not use it to confirm readiness.
+		if type(IsUsableSpell) == "function" then
+			local okU, u1 = pcall(IsUsableSpell, spellId)
+			if okU and u1 == true then
+				sawAnySignal = true
+			end
+		end
+		if sawAnySignal ~= true then
+			-- Nothing readable yet; keep polling.
+		end
+
+		if confirmedReady == true then
+			SafeCancelTicker(st._usablePollTicker)
+			st._usablePollTicker = nil
+			cur.isOnCD = false
+			cur.seenStart = false
+			pcall(function()
+				if FireReady then
+					CdDbg(2, "UsablePoll READY spellId=" .. tostring(spellId) .. " src=" .. tostring(source))
+					FireReady(spellId, tostring(source or "USABLE_POLL"))
+				end
+			end)
+		end
+	end)
 end
 
 local function SafeToString(v)
@@ -100,7 +458,7 @@ local function CdDebug(msg)
 	end
 end
 
-local function CdDbg(requiredLevel, msg)
+CdDbg = function(requiredLevel, msg)
 	if not Addon then return end
 	local db = (Addon and Addon.db) or ZSBT.db
 	local level = db and db.profile and db.profile.diagnostics
@@ -111,6 +469,16 @@ local function CdDbg(requiredLevel, msg)
 			Addon:Print("|cFF00CCFF[CD]|r " .. SafeToString(msg))
 		end)
 	end
+end
+
+local function Stamp()
+	local gt = (GetTime and GetTime()) or 0
+	local ms = math.floor((gt - math.floor(gt)) * 1000 + 0.5)
+	local st = (GetServerTime and GetServerTime()) or nil
+	if type(st) == "number" then
+		return (date("%H:%M:%S", st) .. "." .. string.format("%03d", ms) .. " gt=" .. string.format("%.3f", gt))
+	end
+	return ("gt=" .. string.format("%.3f", gt))
 end
 
 ------------------------------------------------------------------------
@@ -169,8 +537,9 @@ end
 ------------------------------------------------------------------------
 -- Fire "ready" notification (debounce: 1s)
 ------------------------------------------------------------------------
-local function FireReady(spellId, method)
-    local state = Cooldowns._state[spellId]
+FireReady = function(spellId, method)
+	if not spellId then return end
+	local state = Cooldowns._state[spellId]
     if state and state.lastFiredAt and (GetTime() - state.lastFiredAt) < 1.0 then
         return
     end
@@ -194,13 +563,27 @@ local function FireReady(spellId, method)
 		SafeCancelTimer(state.readyTimer)
 		state.readyTimer = nil
 		state.readyAt = nil
+		SafeCancelTicker(state._dbgReadyTicker)
+		state._dbgReadyTicker = nil
+		SafeCancelTicker(state._usablePollTicker)
+		state._usablePollTicker = nil
 	end
 
-    local spellName = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId)
-        or (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(spellId))
-        or ("Spell #" .. spellId)
+    	local spellName = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId)
+		or (C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(spellId))
+		or ("Spell #" .. spellId)
 
-	CdDbg(1, spellName .. " -> READY! (" .. method .. ")")
+	local tNow = (GetTime and GetTime()) or 0
+	local castAt = state and state.castTime
+	local elapsed = (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(castAt) and castAt and castAt > 0) and (tNow - castAt) or nil
+
+	CdDbg(1, "ts=" .. Stamp() .. " " .. spellName .. " -> READY! (" .. method .. ")")
+	if elapsed ~= nil then
+		CdDbg(1, "ts=" .. Stamp() .. " " .. spellName .. " READY elapsed=" .. string.format("%.3f", elapsed)
+			.. "s method=" .. tostring(method)
+			.. " castTs=" .. SafeToString(state and state.castStamp)
+			.. " castGt=" .. SafeToString(state and state.castTime))
+	end
 	if state then
 		state.waitingCharge = false
 		state.waitingFull = false
@@ -219,7 +602,7 @@ local function FireReady(spellId, method)
     end
 end
 
-local function ScheduleReadyTimer(spellId, startTime, duration, source)
+ScheduleReadyTimer = function(spellId, startTime, duration, source)
     local state = Cooldowns._state[spellId]
     if not state then return end
     if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(startTime) and ZSBT.IsSafeNumber(duration)) then return end
@@ -240,16 +623,67 @@ local function ScheduleReadyTimer(spellId, startTime, duration, source)
     end
 
     SafeCancelTimer(state.readyTimer)
-    state.readyAt = readyAt
-    CdDbg(3, "ScheduleReadyTimer spellId=" .. tostring(spellId) .. " start=" .. tostring(startTime) .. " dur=" .. tostring(duration)
+	SafeCancelTicker(state._dbgReadyTicker)
+	state._dbgReadyTicker = nil
+    	state.readyAt = readyAt
+	state.readySource = source
+	state._schedStart = startTime
+	state._schedDur = duration
+	CdDbg(3, "ScheduleReadyTimer spellId=" .. tostring(spellId) .. " start=" .. tostring(startTime) .. " dur=" .. tostring(duration)
         .. " readyAt=" .. string.format("%.3f", readyAt) .. " delay=" .. string.format("%.3f", delay) .. " src=" .. tostring(source))
+
+	-- Debug countdown ticker: prints remaining seconds until READY (cddebug>=4).
+	local dbgLevel = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
+		and ZSBT.db.profile.diagnostics.cooldownsDebugLevel or 0
+	if dbgLevel and dbgLevel >= 4 and C_Timer and C_Timer.NewTicker then
+		local ticker
+		local lastTickAt
+		ticker = C_Timer.NewTicker(1.0, function()
+			if not Cooldowns._enabled then
+				SafeCancelTicker(ticker)
+				return
+			end
+			if dbgLevel >= 5 then
+				local n = (GetTime and GetTime()) or 0
+				if lastTickAt then
+					CdDbg(5, "ts=" .. Stamp() .. " READY TICK dt=" .. string.format("%.3f", (n - lastTickAt)) .. "s spellId=" .. tostring(spellId))
+				end
+				lastTickAt = n
+			end
+			local st = Cooldowns._state[spellId]
+			if not st or st.isOnCD ~= true or st.seenStart ~= true or not st.readyAt then
+				SafeCancelTicker(ticker)
+				return
+			end
+			local remain = (st.readyAt - ((GetTime and GetTime()) or 0))
+			if remain < 0 then remain = 0 end
+			CdDbg(4, "ts=" .. Stamp() .. " READY T-" .. tostring(math.floor(remain + 0.5)) .. "s spellId=" .. tostring(spellId) .. " src=" .. tostring(source))
+			if remain <= 0.01 then
+				SafeCancelTicker(ticker)
+			end
+		end)
+		state._dbgReadyTicker = ticker
+	end
 	state.readyTimer = C_Timer and C_Timer.NewTimer and C_Timer.NewTimer(delay, function()
 		if not Cooldowns._enabled then return end
 		local st = Cooldowns._state[spellId]
 		if not st or st.isOnCD ~= true or st.seenStart ~= true then return end
+		local tNow = (GetTime and GetTime()) or 0
+		if CdDbg then
+			local rAt = st.readyAt
+			if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(rAt) and rAt and rAt > 0 then
+				CdDbg(3, "ts=" .. Stamp() .. " READY drift spellId=" .. tostring(spellId)
+					.. " now=" .. string.format("%.3f", tNow)
+					.. " readyAt=" .. string.format("%.3f", rAt)
+					.. " driftSec=" .. string.format("%.3f", (tNow - rAt))
+					.. " src=" .. tostring(source))
+			end
+		end
 
 		-- BASE_CD fallback: treat timer expiry as ready.
 		if source == "BASE_CD" then
+			SafeCancelTicker(st._dbgReadyTicker)
+			st._dbgReadyTicker = nil
 			st.isOnCD = false
 			st.seenStart = false
 			CdDbg(2, "BASE_CD timer expired; firing READY spellId=" .. tostring(spellId))
@@ -260,6 +694,8 @@ local function ScheduleReadyTimer(spellId, startTime, duration, source)
 		-- CHARGE timers are scheduled from recharge info when readable.
 		-- Treat timer expiry as charge regained; cooldown confirmation may be secret.
 		if source == "CHARGE" then
+			SafeCancelTicker(st._dbgReadyTicker)
+			st._dbgReadyTicker = nil
 			st.isOnCD = false
 			st.seenStart = false
 			CdDbg(2, "CHARGE timer expired; firing READY spellId=" .. tostring(spellId))
@@ -272,6 +708,8 @@ local function ScheduleReadyTimer(spellId, startTime, duration, source)
 		local dur = info and info.duration
 		local start = info and info.startTime
 		if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(dur) and ZSBT.IsSafeNumber(start) and dur == 0 and start == 0 then
+			SafeCancelTicker(st._dbgReadyTicker)
+			st._dbgReadyTicker = nil
 			st.isOnCD = false
 			st.seenStart = false
 			FireReady(spellId, tostring(source or "TIMER"))
@@ -283,6 +721,43 @@ local function ScheduleReadyTimer(spellId, startTime, duration, source)
 	end) or nil
 
 	CdDbg(2, "Scheduled READY in " .. string.format("%.2f", delay) .. "s via " .. tostring(source) .. " for spellId=" .. tostring(spellId))
+	-- Under-the-hood fallback: poll usability so READY can fire even if cast timestamps/events are delayed.
+	if source == "BASE_CD" or source == "ACTION_CD" then
+		EnsureActionButtonHook(spellId)
+		StartUsablePoll(spellId, source)
+	end
+
+end
+
+-- Polling fallback: under heavy combat load some clients can delay C_Timer callbacks.
+-- Pulse_Engine can call this frequently to fire overdue READY events.
+function Cooldowns:CheckReadyTimers(tNow)
+	if not self._enabled then return end
+	tNow = (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(tNow) and tNow) or (GetTime and GetTime()) or 0
+	local stTbl = self._state
+	if type(stTbl) ~= "table" then return end
+	for sid, st in pairs(stTbl) do
+		if type(sid) == "number" and type(st) == "table" then
+			local readyAt = st.readyAt
+			if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(readyAt) and readyAt > 0 then
+				if st.isOnCD == true and st.seenStart == true and tNow >= readyAt then
+					-- Avoid double-firing if we already fired very recently.
+					local last = st.lastFiredAt
+					if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(last) and (tNow - last) < 0.50) then
+						st.isOnCD = false
+						st.seenStart = false
+						CdDbg(3, "READY drift spellId=" .. tostring(sid)
+							.. " now=" .. string.format("%.3f", tNow)
+							.. " readyAt=" .. string.format("%.3f", readyAt)
+							.. " driftSec=" .. string.format("%.3f", (tNow - readyAt))
+							.. " src=POLL")
+						CdDbg(3, "Polling READY: firing spellId=" .. tostring(sid) .. " overdue=" .. string.format("%.3f", (tNow - readyAt)))
+						FireReady(sid, "POLL")
+					end
+				end
+			end
+		end
+	end
 end
 
 local function SafeGetSpellCooldown(spellId)
@@ -295,6 +770,7 @@ local function SafeGetSpellCooldown(spellId)
 end
 
 local ApplyCooldownToFrame
+local EnsureTrackedInitialized
 
 local function ConfirmCooldownStart(spellId, source, attempt)
     attempt = tonumber(attempt) or 1
@@ -330,6 +806,36 @@ local function ConfirmCooldownStart(spellId, source, attempt)
 		.. " dur=" .. SafeToString(dur) .. (durErr and ("(" .. durErr .. ")") or "")
 		.. " isOnGCD=" .. SafeToString(isOnGCD)
 		.. " enabled=" .. SafeToString(isEnabled))
+
+	-- Always try to anchor to action bar cooldown if present.
+	-- This is the authoritative timing the player sees on the button swipe.
+	local aInfo, aErr = SafeGetActionCooldownForSpell(spellId)
+	local aStart = aInfo and aInfo.startTime
+	local aDur = aInfo and aInfo.duration
+	if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(aStart) and ZSBT.IsSafeNumber(aDur)
+		and aStart and aStart > 0 and aDur and aDur > MIN_REAL_CD_SEC then
+		local ct = state and state.castTime
+		local delta = (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(ct) and ct and (ct - aStart)) or nil
+		CdDbg(2, "ConfirmCooldownStart actionCD spellId=" .. tostring(spellId)
+			.. " slot=" .. SafeToString(aInfo and aInfo._slot)
+			.. " start=" .. SafeToString(aStart)
+			.. " dur=" .. SafeToString(aDur)
+			.. " castMinusAction=" .. SafeToString(delta)
+			.. " err=" .. SafeToString(aErr)
+			.. " attempt=" .. tostring(attempt))
+
+		ScheduleReadyTimer(spellId, aStart, aDur, "ACTION_CD")
+		EnsureTrackedInitialized(spellId)
+		local applied = ApplyCooldownToFrame and ApplyCooldownToFrame(spellId, aStart, aDur, aInfo and aInfo.modRate, "ACTION_CD")
+		CdDbg(3, "ConfirmCooldownStart actionCD appliedFrame=" .. tostring(applied) .. " spellId=" .. tostring(spellId))
+		return
+	elseif attempt == 1 then
+		CdDbg(3, "ConfirmCooldownStart actionCD unavailable spellId=" .. tostring(spellId)
+			.. " err=" .. SafeToString(aErr)
+			.. " slot=" .. SafeToString(aInfo and aInfo._slot)
+			.. " start=" .. SafeToString(aStart)
+			.. " dur=" .. SafeToString(aDur))
+	end
 
     -- Legacy fallback (some spells return more reliable values here)
     local legacy, lerr = SafeGetLegacySpellCooldown(spellId)
@@ -369,16 +875,16 @@ local function ConfirmCooldownStart(spellId, source, attempt)
     end
 
     -- Prefer C_Spell values if safe, else fallback to legacy values.
-    local useStart, useDur = start, dur
+    local useStart, useDur, useModRate = start, dur, cModRate
     if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(useStart) and ZSBT.IsSafeNumber(useDur)) then
-        useStart, useDur = lStart, lDur
+        useStart, useDur, useModRate = lStart, lDur, nil
     end
 
     if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(useStart) and ZSBT.IsSafeNumber(useDur)
         and useStart and useStart > 0 and useDur and useDur > MIN_REAL_CD_SEC then
         ScheduleReadyTimer(spellId, useStart, useDur, source)
         EnsureTrackedInitialized(spellId)
-        local applied = ApplyCooldownToFrame and ApplyCooldownToFrame(spellId)
+        local applied = ApplyCooldownToFrame and ApplyCooldownToFrame(spellId, useStart, useDur, useModRate, tostring(source or "SPELL_CD"))
         CdDbg(3, "ConfirmCooldownStart appliedFrame=" .. tostring(applied) .. " spellId=" .. tostring(spellId) .. " src=" .. tostring(source))
         return
     end
@@ -427,10 +933,13 @@ local function ConfirmCooldownStart(spellId, source, attempt)
 			CdDbg(2, "ConfirmCooldownStart baseCD fallback spellId=" .. tostring(spellId)
 				.. " castTime=" .. string.format("%.3f", ct) .. " baseSec=" .. string.format("%.3f", baseSec))
 			ScheduleReadyTimer(spellId, ct, baseSec, "BASE_CD")
-			local applied = ApplyCooldownToFrame and ApplyCooldownToFrame(spellId)
+			EnsureTrackedInitialized(spellId)
+			local applied = ApplyCooldownToFrame and ApplyCooldownToFrame(spellId, ct, baseSec, nil, "BASE_CD")
 			CdDbg(3, "ConfirmCooldownStart baseCD appliedFrame=" .. tostring(applied) .. " spellId=" .. tostring(spellId))
 			state.waitingCharge = true
-			return
+			-- IMPORTANT: Do not return here. In some clients the real cooldown start/duration
+			-- becomes readable shortly after the cast. Allow the retry loop to continue so
+			-- ScheduleReadyTimer can reschedule earlier (never later) to match the true cooldown.
 		else
 			CdDbg(2, "ConfirmCooldownStart baseCD unavailable spellId=" .. tostring(spellId) .. " baseSec=" .. SafeToString(baseSec))
 		end
@@ -447,12 +956,26 @@ local function ConfirmCooldownStart(spellId, source, attempt)
     end
 end
 
+--- Apply cooldown to the hidden CooldownFrame.
 ------------------------------------------------------------------------
--- Apply cooldown to the hidden CooldownFrame.
-------------------------------------------------------------------------
-ApplyCooldownToFrame = function(spellId)
+ApplyCooldownToFrame = function(spellId, overrideStart, overrideDur, overrideModRate, overrideSource)
     local cd = Cooldowns._cdFrames[spellId]
     if not cd then return false end
+
+    -- Allow caller-provided timing (e.g. action bar cooldown) so we can drive
+    -- OnCooldownDone even when spell cooldown APIs are secret/unreadable.
+    if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(overrideStart) and ZSBT.IsSafeNumber(overrideDur)
+        and overrideStart and overrideStart > 0 and overrideDur and overrideDur > 0 then
+        if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(overrideModRate) and overrideModRate then
+            cd:SetCooldown(overrideStart, overrideDur, overrideModRate)
+        else
+            cd:SetCooldown(overrideStart, overrideDur)
+        end
+        CdDbg(3, "Applied OVERRIDE CD to frame for spellId=" .. tostring(spellId)
+            .. " start=" .. tostring(overrideStart) .. " dur=" .. tostring(overrideDur)
+            .. " src=" .. tostring(overrideSource))
+        return true
+    end
 
     if C_Spell and C_Spell.GetSpellCooldown then
         local ok, info = pcall(C_Spell.GetSpellCooldown, spellId)
@@ -517,7 +1040,7 @@ local function CreateCDFrame(spellId)
             if not st then return end
 
             -- Check if spell is still on CD (another charge recharging)
-            local applied = ApplyCooldownToFrame(spellId)
+            local applied = ApplyCooldownToFrame and ApplyCooldownToFrame(spellId)
             if applied then
                 st.isOnCD = true
                 CdDbg(2, "Re-applied CD — tracking next charge for spellId=" .. tostring(spellId))
@@ -528,7 +1051,7 @@ local function CreateCDFrame(spellId)
     Cooldowns._cdFrames[spellId] = cd
 end
 
-local function EnsureTrackedInitialized(spellId)
+EnsureTrackedInitialized = function(spellId)
     if not spellId then return end
     if not Cooldowns._cdFrames[spellId] then
         CreateCDFrame(spellId)
@@ -583,7 +1106,7 @@ local function OnSpellcastSucceeded(_, event, unit, _, spellId)
 
     local name = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or tostring(spellId)
     local inCombat = (UnitAffectingCombat and UnitAffectingCombat("player")) == true
-    CdDbg(2, "Cast: " .. tostring(name) .. " (ID:" .. tostring(spellId) .. ") inCombat=" .. tostring(inCombat))
+    CdDbg(2, "ts=" .. Stamp() .. " Cast: " .. tostring(name) .. " (ID:" .. tostring(spellId) .. ") inCombat=" .. tostring(inCombat))
 
 	-- Charge spells are disabled (Midnight 12.0 limitation).
 	if IsChargeSpell(spellId) == true then
@@ -601,6 +1124,7 @@ local function OnSpellcastSucceeded(_, event, unit, _, spellId)
 
     local state = Cooldowns._state[spellId] or {}
 	state.castTime = GetTime()
+	state.castStamp = Stamp()
 
 	state.isOnCD = true
 	state.seenStart = true
@@ -783,7 +1307,7 @@ function Cooldowns:Enable()
 
     if not self._frame then
         self._frame = CreateFrame("Frame")
-        self._frame:SetScript("OnEvent", function(_, event, ...)
+        		self._frame:SetScript("OnEvent", function(_, event, ...)
             if event == "UNIT_SPELLCAST_SUCCEEDED" then
                 OnSpellcastSucceeded(nil, event, ...)
             elseif event == "SPELL_UPDATE_CHARGES" then
@@ -792,11 +1316,18 @@ function Cooldowns:Enable()
                 end)
             elseif event == "SPELL_UPDATE_COOLDOWN" then
                 OnSpellUpdate("CD_EVENT")
+			elseif event == "ACTIONBAR_SLOT_CHANGED" or event == "ACTIONBAR_UPDATE_COOLDOWN" or event == "SPELLS_CHANGED" or event == "UPDATE_MACROS" then
+				-- Action bar layout can change; invalidate spell->slot cache for action cooldown fallback.
+				Cooldowns._spellToActionSlot = nil
 			elseif event == "PLAYER_ENTERING_WORLD" then
 				ResyncCooldowns("ENTERING_WORLD")
 			elseif event == "PLAYER_REGEN_ENABLED" then
+				Cooldowns._playerInCombat = false
+				Cooldowns._combatFlipAt = (GetTime and GetTime()) or 0
 				ResyncCooldowns("REGEN_ENABLED")
 			elseif event == "PLAYER_REGEN_DISABLED" then
+				Cooldowns._playerInCombat = true
+				Cooldowns._combatFlipAt = (GetTime and GetTime()) or 0
 				ResyncCooldowns("REGEN_DISABLED")
             end
         end)
@@ -805,9 +1336,15 @@ function Cooldowns:Enable()
     self._frame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
     self._frame:RegisterEvent("SPELL_UPDATE_CHARGES")
     self._frame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+	pcall(function() self._frame:RegisterEvent("ACTIONBAR_SLOT_CHANGED") end)
+	pcall(function() self._frame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN") end)
+	pcall(function() self._frame:RegisterEvent("SPELLS_CHANGED") end)
+	pcall(function() self._frame:RegisterEvent("UPDATE_MACROS") end)
 	self._frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 	self._frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 	self._frame:RegisterEvent("PLAYER_REGEN_DISABLED")
+	Cooldowns._playerInCombat = (InCombatLockdown and InCombatLockdown()) or false
+	Cooldowns._combatFlipAt = (GetTime and GetTime()) or 0
 
     self._state = {}
     self._enabled = true

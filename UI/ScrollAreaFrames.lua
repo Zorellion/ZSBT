@@ -832,6 +832,17 @@ end
 
 AnimEngine._frame:SetScript("OnUpdate", function(_, dt)
 	if not AnimEngine._enabled then return end
+	local tok = ZSBT.Addon and ZSBT.Addon.PerfBegin and ZSBT.Addon:PerfBegin("UI.Anim")
+	local budgetMs = nil
+	local tStart = nil
+	do
+		local d = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
+		local b = d and tonumber(d.animBudgetMs)
+		if type(b) == "number" and b > 0 and type(debugprofilestop) == "function" then
+			budgetMs = b
+			tStart = debugprofilestop()
+		end
+	end
 
 	local allEmpty = true
 	for areaKey, st in pairs(AnimEngine._areas) do
@@ -845,9 +856,17 @@ AnimEngine._frame:SetScript("OnUpdate", function(_, dt)
 					AE_RecycleEvent(ev)
 					table.remove(events, i)
 				end
+				if budgetMs and tStart then
+					local elapsedMs = debugprofilestop() - tStart
+					if elapsedMs >= budgetMs then
+						if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
+						return
+					end
+				end
 			end
 		end
 	end
+	if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
 
 	if allEmpty then
 		AnimEngine._frame:Hide()
@@ -1678,6 +1697,7 @@ end
 --                      uses ZSBT.COLORS.ACCENT.
 function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
                            fontAlpha, anchorH, dirMult, duration, color, meta)
+	local tok = ZSBT.Addon and ZSBT.Addon.PerfBegin and ZSBT.Addon:PerfBegin("UI.FireText")
     -- Validate area data with safe defaults
     local xOff = (type(area.xOffset) == "number") and area.xOffset or 0
     local yOff = (type(area.yOffset) == "number") and area.yOffset or 0
@@ -1968,6 +1988,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             RecycleFontString(fs)
             RecycleIconFS(iconFS)
             if iconTex then iconTex:Hide(); iconTex:SetParent(recyclingBin) end
+			if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
             return
         end
     end
@@ -2132,6 +2153,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
 
         local ok = AnimEngine:Enqueue(parentKey, ev)
         if ok then
+			if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
             return
         end
     end
@@ -2145,6 +2167,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             RecycleIconFS(iconFS)
             if iconTex then iconTex:Hide(); iconTex:SetParent(recyclingBin) end
             RecycleAnimFrame(self)
+			if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
             return
         end
 
