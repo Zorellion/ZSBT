@@ -501,6 +501,9 @@ function Triggers:SyncWatchedAurasFromCore()
 		TrigDebug("AuraSync: skip (watchCount=0; no AURA_GAIN/AURA_FADE spellIds configured?)")
 		return
 	end
+	local now = GetTime and GetTime() or 0
+	self._auraPresent = self._auraPresent or {}
+	self._auraSyncLastSeenAt = self._auraSyncLastSeenAt or {}
 
 	for sid in pairs(watch) do
 		if type(sid) == "number" then
@@ -508,27 +511,36 @@ function Triggers:SyncWatchedAurasFromCore()
 			if sid == 107574 then
 				TrigDebug("AuraSync: Avatar present=" .. tostring(present))
 			end
-			-- OnAuraGain/OnAuraFade handle their own state tracking and deduplication
+			local was = (self._auraPresent[sid] == true)
+			if present then
+				self._auraSyncLastSeenAt[sid] = now
+			end
 			-- Skip calling for auras under synthetic detection to prevent doubles
 			if self._syntheticAuraExpireAt and type(self._syntheticAuraExpireAt[sid]) == "number" then
-				local now = GetTime and GetTime() or 0
 				if now < (self._syntheticAuraExpireAt[sid] or 0) then
 					-- Synthetic is active for this aura, let synthetic handler manage it
 					-- Just update our state to match without firing events
 					self._auraPresent[sid] = true
 				else
 					-- Synthetic expired, handle normally
-					if present then
+					if present and not was then
 						self:OnAuraGain(sid, "sync")
-					else
+					elseif (not present) and was then
 						self:OnAuraFade(sid, "sync")
 					end
 				end
 			else
-				if present then
+				if present and not was then
 					self:OnAuraGain(sid, "sync")
-				else
-					self:OnAuraFade(sid, "sync")
+				elseif (not present) and was then
+					-- Debounce sync-driven fades to avoid transient false negatives
+					-- during loading screens / API unavailability.
+					local lastSeen = tonumber(self._auraSyncLastSeenAt[sid]) or 0
+					if lastSeen > 0 and (now - lastSeen) < 2.0 then
+						-- Keep state as-present for now; a later sync will confirm real removal.
+					else
+						self:OnAuraFade(sid, "sync")
+					end
 				end
 			end
 		end
