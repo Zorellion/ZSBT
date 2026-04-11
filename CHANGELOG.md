@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.2.1
+- Sticky: added a separate `Sticky Jiggle (shake)` toggle (Triggers and Crit Sticky settings) so you can disable shaking while keeping sticky placement/scale/duration.
+- Sticky: improved the Pow-style sticky animation to feel more like a slam on entry.
+
 ## 2.2.0
 
 ### Debug / Diagnostics overhaul

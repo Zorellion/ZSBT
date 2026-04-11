@@ -839,12 +839,14 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
             meta.critRouted = true
             if critConf.sticky ~= false then
                 meta.stickyCrit = true
+                meta.stickyJiggle = (critConf.stickyJiggle ~= false)
                 meta.stickyScale = 1.12
                 meta.stickyDurationMult = 1.25
             end
         elseif evt.isCrit and critConf and critConf.sticky ~= false then
             -- Even without routing, allow sticky styling when enabled.
             meta.stickyCrit = true
+            meta.stickyJiggle = (critConf.stickyJiggle ~= false)
             meta.stickyScale = 1.12
             meta.stickyDurationMult = 1.25
         end
@@ -1006,19 +1008,22 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 
 		maybePlayCritSound(critConf, rawPipeValue, isTainted)
 
-        if evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
+        		if evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
 			areaToUse = critConf.scrollArea
 			meta.critRouted = true
 			if critConf.sticky ~= false then
 				meta.stickyCrit = true
+				meta.stickyJiggle = (critConf.stickyJiggle ~= false)
 				meta.stickyScale = 1.12
 				meta.stickyDurationMult = 1.25
-            end
-        elseif evt.isCrit and critConf and critConf.sticky ~= false then
-            meta.stickyCrit = true
-            meta.stickyScale = 1.12
-            meta.stickyDurationMult = 1.25
-        end
+			end
+		elseif evt.isCrit and critConf and critConf.sticky ~= false then
+			-- Even without routing, allow sticky styling when enabled.
+			meta.stickyCrit = true
+			meta.stickyJiggle = (critConf.stickyJiggle ~= false)
+			meta.stickyScale = 1.12
+			meta.stickyDurationMult = 1.25
+		end
 
         -- Dungeon-safe visual filtering for heals
         if rawPipeValue ~= nil and not ZSBT.IsSafeNumber(rawPipeValue) then

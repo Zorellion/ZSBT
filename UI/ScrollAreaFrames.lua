@@ -145,7 +145,7 @@ end
 
 local function AE_ResolveStyleId(ev)
 	-- Sticky crits always use Pow by default.
-	if ev.meta and ev.meta.stickyCrit == true then return "Pow" end
+	if ev.meta and (ev.meta.stickyCrit == true or ev.meta.sticky == true) then return "Pow" end
 	if ev.usePow then return "Pow" end
 	local style = ev.animStyle or "Straight"
 	style = tostring(style)
@@ -252,16 +252,20 @@ end
 local function AE_MSBT_AnimatePowJiggle(displayEvent, animationProgress)
 	local fadeInPercent = MSBT_POW_FADE_IN_TIME / displayEvent.scrollTime
 	if animationProgress <= fadeInPercent then
-		local d = (displayEvent.meta and displayEvent.meta.stickyCrit == true) and MSBT_POW_TEXT_DELTA_STICKY or MSBT_POW_TEXT_DELTA
-		displayEvent.fontString:SetTextHeight(displayEvent.fontSize * (1 + ((1 - animationProgress / fadeInPercent) * d)))
+		local isSticky = (displayEvent.meta and (displayEvent.meta.stickyCrit == true or displayEvent.meta.sticky == true))
+		local d = isSticky and MSBT_POW_TEXT_DELTA_STICKY or MSBT_POW_TEXT_DELTA
+		local t = (fadeInPercent > 0) and (animationProgress / fadeInPercent) or 1
+		local k = 1 - t
+		local slam = isSticky and 1.35 or 1.0
+		displayEvent.fontString:SetTextHeight(displayEvent.fontSize * (1 + ((k * k) * d * slam)))
 		return
 	end
 
 	if animationProgress <= (displayEvent.fadePercent or MSBT_DEFAULT_FADE_PERCENT) then
 		local elapsedTime = displayEvent.elapsedTime or 0
 		local last = displayEvent.timeLastJiggled or 0
-		local delay = (displayEvent.meta and displayEvent.meta.stickyCrit == true) and MSBT_JIGGLE_DELAY_TIME_STICKY or MSBT_JIGGLE_DELAY_TIME
-		local range = (displayEvent.meta and displayEvent.meta.stickyCrit == true) and MSBT_JIGGLE_RANGE_STICKY or 1
+		local delay = (displayEvent.meta and (displayEvent.meta.stickyCrit == true or displayEvent.meta.sticky == true)) and MSBT_JIGGLE_DELAY_TIME_STICKY or MSBT_JIGGLE_DELAY_TIME
+		local range = (displayEvent.meta and (displayEvent.meta.stickyCrit == true or displayEvent.meta.sticky == true)) and MSBT_JIGGLE_RANGE_STICKY or 1
 		if (elapsedTime - last) > delay then
 			displayEvent.positionX = (displayEvent.originalPositionX or 0) + math.random(-range, range)
 			displayEvent.positionY = (displayEvent.originalPositionY or 0) + math.random(-range, range)
@@ -291,7 +295,12 @@ end
 local function AE_MSBT_AnimatePowNormal(displayEvent, animationProgress)
 	local fadeInPercent = MSBT_POW_FADE_IN_TIME / displayEvent.scrollTime
 	if animationProgress <= fadeInPercent then
-		displayEvent.fontString:SetTextHeight(displayEvent.fontSize * (1 + ((1 - animationProgress / fadeInPercent) * MSBT_POW_TEXT_DELTA)))
+		local isSticky = (displayEvent.meta and (displayEvent.meta.stickyCrit == true or displayEvent.meta.sticky == true))
+		local d = isSticky and MSBT_POW_TEXT_DELTA_STICKY or MSBT_POW_TEXT_DELTA
+		local t = (fadeInPercent > 0) and (animationProgress / fadeInPercent) or 1
+		local k = 1 - t
+		local slam = isSticky and 1.35 or 1.0
+		displayEvent.fontString:SetTextHeight(displayEvent.fontSize * (1 + ((k * k) * d * slam)))
 	else
 		if not displayEvent._powFontRestored then
 			local fontPath, _, fontOutline = displayEvent.fontString:GetFont()
@@ -306,7 +315,9 @@ local function AE_MSBT_InitPow(newDisplayEvent, activeDisplayEvents, direction)
 	local scrollTime = MSBT_POW_FADE_IN_TIME + (MSBT_POW_DISPLAY_TIME / animationSpeed) + MSBT_POW_FADE_OUT_TIME
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
 	newDisplayEvent.fadePercent = (MSBT_POW_FADE_IN_TIME + (MSBT_POW_DISPLAY_TIME / animationSpeed)) / scrollTime
-	local wantJiggle = (newDisplayEvent.meta and newDisplayEvent.meta.stickyCrit == true)
+	local wantJiggle = (newDisplayEvent.meta
+		and (newDisplayEvent.meta.stickyCrit == true or newDisplayEvent.meta.sticky == true)
+		and newDisplayEvent.meta.stickyJiggle ~= false)
 	newDisplayEvent.animationHandler = wantJiggle and AE_MSBT_AnimatePowJiggle or AE_MSBT_AnimatePowNormal
 
 	local anchorPoint = newDisplayEvent.anchorPoint

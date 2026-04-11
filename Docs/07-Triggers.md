@@ -77,6 +77,7 @@ Triggers let you create your own notifications when specific events happen.
 - **Sound**: choose from the sound dropdown.
 - **Color**: set the message color.
 - **Sticky**: make it pop like a crit.
+- **Sticky Jiggle (shake)**: optional shake animation for Sticky.
 - **Font Override**: choose a specific font/outline for this trigger.
 
 ## Text placeholders

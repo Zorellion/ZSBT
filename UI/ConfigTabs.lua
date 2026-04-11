@@ -4442,6 +4442,25 @@ function ZSBT.BuildTab_Incoming()
 					ZSBT.db.profile.incoming.critDamage.sticky = v and true or false
 				end,
 			},
+			critDamageStickyJiggle = {
+				type  = "toggle",
+				name  = "Sticky Jiggle (shake)",
+				desc  = "When Sticky is enabled, also apply the shake/jiggle animation. Disable this if you want Sticky sizing/placement without shaking.",
+				width = "full",
+				order = 4.451,
+				hidden = function()
+					local c = ZSBT.db.profile.incoming.critDamage
+					return not (c == nil or c.sticky ~= false)
+				end,
+				get   = function()
+					local c = ZSBT.db.profile.incoming.critDamage
+					return c == nil or c.stickyJiggle ~= false
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.stickyJiggle = v and true or false
+				end,
+			},
 			critDamageSoundEnabled = {
 				type = "toggle",
 				name = "Play a Sound on Incoming Crit Damage",
@@ -4864,6 +4883,25 @@ function ZSBT.BuildTab_Incoming()
 				set   = function(_, v)
 					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
 					ZSBT.db.profile.incoming.critHealing.sticky = v and true or false
+				end,
+			},
+			critHealingStickyJiggle = {
+				type  = "toggle",
+				name  = "Sticky Jiggle (shake)",
+				desc  = "When Sticky is enabled, also apply the shake/jiggle animation. Disable this if you want Sticky sizing/placement without shaking.",
+				width = "full",
+				order = 15.401,
+				hidden = function()
+					local c = ZSBT.db.profile.incoming.critHealing
+					return not (c == nil or c.sticky ~= false)
+				end,
+				get   = function()
+					local c = ZSBT.db.profile.incoming.critHealing
+					return c == nil or c.stickyJiggle ~= false
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.stickyJiggle = v and true or false
 				end,
 			},
 			critHealingSoundEnabled = {
@@ -5473,6 +5511,25 @@ function ZSBT.BuildTab_Outgoing()
 					ZSBT.db.profile.outgoing.critDamage.sticky = v and true or false
 				end,
 			},
+			critDamageStickyJiggle = {
+				type  = "toggle",
+				name  = "Sticky Jiggle (shake)",
+				desc  = "When Sticky is enabled, also apply the shake/jiggle animation. Disable this if you want Sticky sizing/placement without shaking.",
+				width = "full",
+				order = 8.451,
+				hidden = function()
+					local c = ZSBT.db.profile.outgoing.critDamage
+					return not (c == nil or c.sticky ~= false)
+				end,
+				get   = function()
+					local c = ZSBT.db.profile.outgoing.critDamage
+					return c == nil or c.stickyJiggle ~= false
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.stickyJiggle = v and true or false
+				end,
+			},
 			critDamageSoundEnabled = {
 				type = "toggle",
 				name = "Play a Sound on Outgoing Crit Damage",
@@ -5860,6 +5917,25 @@ function ZSBT.BuildTab_Outgoing()
 				set   = function(_, v)
 					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
 					ZSBT.db.profile.outgoing.critHealing.sticky = v and true or false
+				end,
+			},
+			critHealingStickyJiggle = {
+				type  = "toggle",
+				name  = "Sticky Jiggle (shake)",
+				desc  = "When Sticky is enabled, also apply the shake/jiggle animation. Disable this if you want Sticky sizing/placement without shaking.",
+				width = "full",
+				order = 15.401,
+				hidden = function()
+					local c = ZSBT.db.profile.outgoing.critHealing
+					return not (c == nil or c.sticky ~= false)
+				end,
+				get   = function()
+					local c = ZSBT.db.profile.outgoing.critHealing
+					return c == nil or c.stickyJiggle ~= false
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.stickyJiggle = v and true or false
 				end,
 			},
 			critHealingSoundEnabled = {
