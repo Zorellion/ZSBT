@@ -688,6 +688,7 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
     if evt.isCrit and resolvedCritConf and resolvedCritConf.enabled == true then
         if resolvedCritConf.sticky ~= false then
             meta.stickyCrit = true
+            meta.stickyJiggle = (resolvedCritConf.stickyJiggle ~= false)
             meta.stickyScale = 1.12
             meta.stickyDurationMult = 1.25
         end

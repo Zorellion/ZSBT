@@ -775,6 +775,27 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 					notify()
 				end,
 			},
+			stickyJiggle = {
+				type = "toggle",
+				name = "Sticky Jiggle (shake)",
+				desc = "When Sticky is enabled, also apply the shake/jiggle animation. Disable this if you want Sticky sizing/placement without shaking.",
+				order = 6.205,
+				width = "full",
+				hidden = function()
+					local t = getTrigger(); local a = t and t.action
+					return not (type(a) == "table" and a.sticky == true)
+				end,
+				get = function()
+					local t = getTrigger(); local a = t and t.action
+					return type(a) == "table" and (a.stickyJiggle ~= false) or true
+				end,
+				set = function(_, v)
+					local t = ensureTrigger(); if not t then return end
+					t.action = t.action or {}
+					t.action.stickyJiggle = v and true or false
+					notify()
+				end,
+			},
 			stickyScale = {
 				type = "range",
 				name = "Sticky Scale",

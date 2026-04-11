@@ -43,6 +43,7 @@ Notes:
 ## Crits
 - Crits can be enabled separately.
 - If you want crits to stand out, use sticky crit styling.
+- Sticky crit styling also includes an optional `Sticky Jiggle (shake)` toggle.
 
 ## Spell names and icons
 - `Show Spell Names` shows the ability name (when available).

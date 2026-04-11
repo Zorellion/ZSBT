@@ -109,6 +109,7 @@ local function EmitAction(action, ctx)
 		eventType = ctx and ctx.eventType,
 		spellId = ctx and ctx.spellId,
 		sticky = action.sticky == true,
+		stickyJiggle = (action.stickyJiggle ~= false),
 		stickyScale = tonumber(action.stickyScale),
 		stickyDurationMult = tonumber(action.stickyDurationMult),
 		triggerFontOverride = action.fontOverride == true,
