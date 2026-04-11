@@ -60,31 +60,67 @@ end
 function Core:ShouldEmitBuffNotif(spellID, isGain)
 	if type(spellID) ~= "number" then return true end
 	local rule = getAuraRuleForSpell(spellID)
-	local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+	local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("core"))
+		or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 	if not rule then
 		local sc = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
 		local g = sc and sc.auraGlobal
 		if isGain and g and g.showUnconfiguredGains == false then 
-			if dl >= 4 then local ZSBTAddon = ZSBT and ZSBT.Addon if ZSBTAddon and ZSBTAddon.Print then ZSBTAddon:Print("[AURA] ShouldEmit: blocked unconfigured gain sid=" .. tostring(spellID)) end end
+			if dl >= 4 then
+				if Addon and Addon.Dbg then
+					Addon:Dbg("core", 4, "[AURA] ShouldEmit: blocked unconfigured gain sid=" .. tostring(spellID))
+				else
+					local ZSBTAddon = ZSBT and ZSBT.Addon
+					if ZSBTAddon and ZSBTAddon.Print then ZSBTAddon:Print("[AURA] ShouldEmit: blocked unconfigured gain sid=" .. tostring(spellID)) end
+				end
+			end
 			return false 
 		end
 		if (not isGain) and g and g.showUnconfiguredFades == false then 
-			if dl >= 4 then local ZSBTAddon = ZSBT and ZSBT.Addon if ZSBTAddon and ZSBTAddon.Print then ZSBTAddon:Print("[AURA] ShouldEmit: blocked unconfigured fade sid=" .. tostring(spellID)) end end
+			if dl >= 4 then
+				if Addon and Addon.Dbg then
+					Addon:Dbg("core", 4, "[AURA] ShouldEmit: blocked unconfigured fade sid=" .. tostring(spellID))
+				else
+					local ZSBTAddon = ZSBT and ZSBT.Addon
+					if ZSBTAddon and ZSBTAddon.Print then ZSBTAddon:Print("[AURA] ShouldEmit: blocked unconfigured fade sid=" .. tostring(spellID)) end
+				end
+			end
 			return false 
 		end
 		return true
 	end
 	if rule.disabled then 
-		if dl >= 4 then local ZSBTAddon = ZSBT and ZSBT.Addon if ZSBTAddon and ZSBTAddon.Print then ZSBTAddon:Print("[AURA] ShouldEmit: rule disabled sid=" .. tostring(spellID)) end end
+		if dl >= 4 then
+			if Addon and Addon.Dbg then
+				Addon:Dbg("core", 4, "[AURA] ShouldEmit: rule disabled sid=" .. tostring(spellID))
+			else
+				local ZSBTAddon = ZSBT and ZSBT.Addon
+				if ZSBTAddon and ZSBTAddon.Print then ZSBTAddon:Print("[AURA] ShouldEmit: rule disabled sid=" .. tostring(spellID)) end
+			end
+		end
 		return false 
 	end
 
 	if isGain and rule.suppressGain then 
-		if dl >= 4 then local ZSBTAddon = ZSBT and ZSBT.Addon if ZSBTAddon and ZSBTAddon.Print then ZSBTAddon:Print("[AURA] ShouldEmit: suppressGain sid=" .. tostring(spellID)) end end
+		if dl >= 4 then
+			if Addon and Addon.Dbg then
+				Addon:Dbg("core", 4, "[AURA] ShouldEmit: suppressGain sid=" .. tostring(spellID))
+			else
+				local ZSBTAddon = ZSBT and ZSBT.Addon
+				if ZSBTAddon and ZSBTAddon.Print then ZSBTAddon:Print("[AURA] ShouldEmit: suppressGain sid=" .. tostring(spellID)) end
+			end
+		end
 		return false 
 	end
 	if (not isGain) and rule.suppressFade then 
-		if dl >= 4 then local ZSBTAddon = ZSBT and ZSBT.Addon if ZSBTAddon and ZSBTAddon.Print then ZSBTAddon:Print("[AURA] ShouldEmit: suppressFade sid=" .. tostring(spellID)) end end
+		if dl >= 4 then
+			if Addon and Addon.Dbg then
+				Addon:Dbg("core", 4, "[AURA] ShouldEmit: suppressFade sid=" .. tostring(spellID))
+			else
+				local ZSBTAddon = ZSBT and ZSBT.Addon
+				if ZSBTAddon and ZSBTAddon.Print then ZSBTAddon:Print("[AURA] ShouldEmit: suppressFade sid=" .. tostring(spellID)) end
+			end
+		end
 		return false 
 	end
 
@@ -675,9 +711,11 @@ function Core:Init()
     if self._initialized then return end
     self._initialized = true
 
-    if Addon and Addon.DebugPrint then
-        Addon:DebugPrint(1, "Core:Init()")
-    end
+    if Addon and Addon.Dbg then
+		Addon:Dbg("core", 3, "Core:Init()")
+	elseif Addon and Addon.DebugPrint then
+		Addon:DebugPrint(1, "Core:Init()")
+	end
 
     if self.IncomingProbe and self.IncomingProbe.Init then
         self.IncomingProbe:Init()
@@ -689,9 +727,11 @@ function Core:Enable()
     self:Init()
     self._enabled = true
 
-    if Addon and Addon.DebugPrint then
-        Addon:DebugPrint(1, "Core:Enable()")
-    end
+    if Addon and Addon.Dbg then
+		Addon:Dbg("core", 3, "Core:Enable()")
+	elseif Addon and Addon.DebugPrint then
+		Addon:DebugPrint(1, "Core:Enable()")
+	end
 
     self:ApplyBlizzardFCTCVars()
 
@@ -714,9 +754,11 @@ function Core:Disable()
     if not self._enabled then return end
     self._enabled = false
 
-    if Addon and Addon.DebugPrint then
-        Addon:DebugPrint(1, "Core:Disable()")
-    end
+    if Addon and Addon.Dbg then
+		Addon:Dbg("core", 3, "Core:Disable()")
+	elseif Addon and Addon.DebugPrint then
+		Addon:DebugPrint(1, "Core:Disable()")
+	end
 
     if self.Combat and self.Combat.Disable then self.Combat:Disable() end
     if self.Cooldowns and self.Cooldowns.Disable then self.Cooldowns:Disable() end
@@ -938,6 +980,10 @@ function Core:InitInterruptTracking()
 	end
 
 	local function SafeDbgPrint(msg)
+		if Addon and Addon.Dbg then
+			Addon:Dbg("notifications", 5, msg)
+			return
+		end
 		if not (ZSBT and ZSBT.Addon and ZSBT.Addon.Print) then return end
 		if type(msg) ~= "string" then return end
 		if ZSBT.IsSafeString and not ZSBT.IsSafeString(msg) then return end
@@ -1137,7 +1183,8 @@ function Core:InitInterruptTracking()
 							endTime = endTime / 1000.0,
 							castGuid = castGuid,
 						}
-						local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+						local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("notifications"))
+							or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 						if dl >= 5 then
 							SafeDbgPrint("[Cast Start] unit=" .. tostring(unit) .. " spellId=" .. tostring(spellId) .. " endTime=" .. string.format("%.3f", endTime / 1000.0))
 						end
@@ -1152,7 +1199,8 @@ function Core:InitInterruptTracking()
 		if event == "UNIT_SPELLCAST_SUCCEEDED" then
 			local unit, _, spellId = msg, ...
 			if unit == "player" and type(spellId) == "number" then
-				local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+				local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("notifications"))
+					or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 				Core._lastStopperSpellId = spellId
 
 				if INTERRUPT_SPELL_IDS[spellId] then
@@ -1306,7 +1354,8 @@ function Core:InitInterruptTracking()
 							-- for casts ending naturally near the attempt time).
 							if not seenAt or (attemptAt - seenAt) > 0.25 then return end
 
-							local dl2 = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+							local dl2 = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("notifications"))
+								or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 							if dl2 >= 5 then
 								SafeDbgPrint("[CastStop Poll] dt=" .. string.format("%.3f", (GetTime() - attemptAt)) .. " castSpellId=" .. tostring(castSpellId))
 							end
@@ -1381,7 +1430,8 @@ function Core:InitInterruptTracking()
 		if isCastEndEvent then
 			local unit, castGuid, interruptedSpellId = msg, ...
 			local tNow = GetTime and GetTime() or 0
-			local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+			local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("notifications"))
+				or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 			local lastInterruptAt = Core._lastInterruptAttemptAt or 0
 			local lastCastStopAt = Core._lastCastStopAttemptAt or 0
 
@@ -1535,7 +1585,8 @@ function Core:InitInterruptTracking()
 		if event == "COMBAT_TEXT_UPDATE" then
 			local ctType = msg
 			if ctType == "SPELL_INTERRUPT" then
-				local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+				local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("notifications"))
+					or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 				local a1, a2, a3, a4 = ...
 				if dl >= 4 then
 					SafeDbgPrint("[Interrupt CT] a1=" .. safeStr(a1) .. " a2=" .. safeStr(a2) .. " a3=" .. safeStr(a3) .. " a4=" .. safeStr(a4))
@@ -1671,7 +1722,8 @@ function Core:InitKillAnnouncer()
 
 	self._killAnnouncerFrame:SetScript("OnEvent", function(_, event, msg, ...)
 		if not Core:IsMasterEnabled() then return end
-		local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+		local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("notifications"))
+			or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 		if event == "COMBAT_TEXT_UPDATE" then
 			local ctType = msg
 			if ctType ~= "PARTYKILL" and ctType ~= "PARTY_KILL" then return end
@@ -1824,7 +1876,8 @@ function Core:InitKillAnnouncer()
 
 		if type(msg) ~= "string" then return end
 
-		local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+		local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("notifications"))
+			or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 		local msgIsSafe = (not ZSBT.IsSafeString) or (ZSBT.IsSafeString and ZSBT.IsSafeString(msg))
 		if dl >= 4 and ZSBT.Addon and ZSBT.Addon.Print then
 			local safeMsg = msgIsSafe and msg or "<secret>"
@@ -2128,11 +2181,16 @@ function Core:InitBuffTracking()
 			-- Immediate scan to capture current auras before any removal happens
 			-- Deferred by 0.1s to let the game fully load auras
 			C_Timer.After(0.1, function()
-				local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+				local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("core"))
+					or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 				if dl >= 4 then
-					local ZSBTAddon = ZSBT and ZSBT.Addon
-					if ZSBTAddon and ZSBTAddon.Print then
-						ZSBTAddon:Print("[AURA] PEW deferred scan masterEnabled=" .. tostring(Core:IsMasterEnabled()))
+					if Addon and Addon.Dbg then
+						Addon:Dbg("core", 4, "[AURA] PEW deferred scan masterEnabled=" .. tostring(Core:IsMasterEnabled()))
+					else
+						local ZSBTAddon = ZSBT and ZSBT.Addon
+						if ZSBTAddon and ZSBTAddon.Print then
+							ZSBTAddon:Print("[AURA] PEW deferred scan masterEnabled=" .. tostring(Core:IsMasterEnabled()))
+						end
 					end
 				end
 				if Core.IsMasterEnabled and Core:IsMasterEnabled() then
@@ -2146,15 +2204,23 @@ function Core:InitBuffTracking()
 								table.insert(ids, tostring(id) .. "=" .. tostring(name))
 							end
 						end
-						local ZSBTAddon = ZSBT and ZSBT.Addon
-						if ZSBTAddon and ZSBTAddon.Print then
-							ZSBTAddon:Print("[AURA] Deferred scan complete, tracked auras: " .. tostring(count) .. " sampleIDs: " .. table.concat(ids, ", "))
+						if Addon and Addon.Dbg then
+							Addon:Dbg("core", 4, "[AURA] Deferred scan complete, tracked auras: " .. tostring(count) .. " sampleIDs: " .. table.concat(ids, ", "))
+						else
+							local ZSBTAddon = ZSBT and ZSBT.Addon
+							if ZSBTAddon and ZSBTAddon.Print then
+								ZSBTAddon:Print("[AURA] Deferred scan complete, tracked auras: " .. tostring(count) .. " sampleIDs: " .. table.concat(ids, ", "))
+							end
 						end
 					end
 				elseif dl >= 4 then
-					local ZSBTAddon = ZSBT and ZSBT.Addon
-					if ZSBTAddon and ZSBTAddon.Print then
-						ZSBTAddon:Print("[AURA] SKIPPED deferred scan - not enabled")
+					if Addon and Addon.Dbg then
+						Addon:Dbg("core", 4, "[AURA] SKIPPED deferred scan - not enabled")
+					else
+						local ZSBTAddon = ZSBT and ZSBT.Addon
+						if ZSBTAddon and ZSBTAddon.Print then
+							ZSBTAddon:Print("[AURA] SKIPPED deferred scan - not enabled")
+						end
 					end
 				end
 			end)
@@ -2450,7 +2516,6 @@ function Core:ScanPlayerAuras(updateInfo, silent)
             if not newInstances[instanceId] then
                 newInstances[instanceId] = name or defaultName
                 if isHelpful and type(sid) == "number" then
-                    self._auraInstanceSpellIDs[instanceId] = sid
                     self:RecordRecentBuff(sid)
                 end
                 -- Track auras seen during init to suppress their notifications later
@@ -2643,10 +2708,11 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                         self:RecordRecentBuff(sid)
                     end
                     -- Skip notification if this aura was seen during init (prevents reload spam)
-                    local seenDuringInit = type(sid) == "number" and self._aurasSeenDuringInit and self._aurasSeenDuringInit[sid]
-                    -- Skip notification during grace period after aura removal (prevents instance ID refresh spam)
-                    local inGracePeriod = self._auraGracePeriodUntil and (GetTime and GetTime() or 0) < self._auraGracePeriodUntil
-                    if not silent and not seenDuringInit and not inGracePeriod then
+                    local seenDuringInit = Core._auraInitInProgress
+                    if seenDuringInit and type(sid) == "number" then
+                        self._aurasSeenDuringInit[sid] = true
+                    end
+                    if not silent and not seenDuringInit then
                         local okToShow = true
                         if isHarmful ~= true and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid) then
                             okToShow = self:ShouldEmitBuffNotif(sid, true)
@@ -2665,7 +2731,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                     end
                     if isHarmful ~= true then
                         local trg = ZSBT.Core and ZSBT.Core.Triggers
-                        if trg and type(sid) == "number" then
+                        if trg then
                             -- Skip synthetic auras to prevent double events
                             local isSynthetic = trg._syntheticAuraExpireAt and type(trg._syntheticAuraExpireAt[sid]) == "number"
                             if isSynthetic then
@@ -2738,10 +2804,11 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 			pcall(function() trg:SyncWatchedAurasFromCore() end)
 		end
         local needsRescan = false
-        local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
-        for _, instanceId in ipairs(updateInfo.removedAuraInstanceIDs) do
-            local name = self._auraInstanceMap[instanceId]
-            local sid = self._auraInstanceSpellIDs and self._auraInstanceSpellIDs[instanceId]
+        local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("core"))
+			or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
+		for _, instanceId in ipairs(updateInfo.removedAuraInstanceIDs) do
+			local name = self._auraInstanceMap[instanceId]
+			local sid = self._auraInstanceSpellIDs and self._auraInstanceSpellIDs[instanceId]
             -- Fallback: if not in cache, try to resolve from game API
             if not name and C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
                 local ok, auraData = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, "player", instanceId)
@@ -2753,135 +2820,189 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                 end
             end
             if dl >= 4 then
-                local ZSBTAddon = ZSBT and ZSBT.Addon
-                if ZSBTAddon and ZSBTAddon.Print then
-                    local function safeDbg(v)
-                        if v == nil then return "nil" end
-                        if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
-                        if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
-                        return "<secret>"
-                    end
-                    pcall(function()
-                        ZSBTAddon:Print("[AURA] REMOVE instanceId=" .. safeDbg(instanceId)
-                            .. " name=" .. safeDbg(name)
-                            .. " inCache=" .. safeDbg(self._auraInstanceMap[instanceId] ~= nil)
-                            .. " sid=" .. safeDbg(sid))
-                    end)
-                end
-            end
-            if name then
-                self._auraInstanceMap[instanceId] = nil
-                -- Skip fade notifications during init (instance IDs are unstable after reload)
-                local inInitWindow = Core._auraInitInProgress
-                if dl >= 4 then
-                    local ZSBTAddon = ZSBT and ZSBT.Addon
-                    if ZSBTAddon and ZSBTAddon.Print then
-                        local function safeDbg(v)
-                            if v == nil then return "nil" end
-                            if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
-                            if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
-                            return "<secret>"
-                        end
-                        pcall(function()
-                            ZSBTAddon:Print("[AURA] FADE check silent=" .. safeDbg(silent)
-                                .. " init=" .. safeDbg(inInitWindow)
-                                .. " sid=" .. safeDbg(sid)
-                                .. " name=" .. safeDbg(name))
-                        end)
-                    end
-                end
-                if silent ~= true and not inInitWindow then
-                    local okToShow = true
-                    if type(sid) == "number" then
-                        okToShow = self:ShouldEmitBuffNotif(sid, false)
-                    end
-                    if dl >= 4 then
-                        local ZSBTAddon = ZSBT and ZSBT.Addon
-                        if ZSBTAddon and ZSBTAddon.Print then
-                            ZSBTAddon:Print("[AURA] FADE okToShow=" .. tostring(okToShow))
-                        end
-                    end
-                    if okToShow then
-                        if sid and ZSBT.IsSafeNumber(sid) then
-                            if dl >= 4 then
-                                local ZSBTAddon = ZSBT and ZSBT.Addon
-                                if ZSBTAddon and ZSBTAddon.Print then
-                                    ZSBTAddon:Print("[AURA] FADE EMITTING sid=" .. tostring(sid))
-                                end
-                            end
-                            self:EmitBuffNotification(sid, BuildAuraNotifText("-", name), {r = 0.6, g = 0.6, b = 0.6}, "auras")
-                        else
-                            if dl >= 4 then
-                                local ZSBTAddon = ZSBT and ZSBT.Addon
-                                if ZSBTAddon and ZSBTAddon.Print then
-                                    local function safeDbg(v)
-                                        if v == nil then return "nil" end
-                                        if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
-                                        if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
-                                        return "<secret>"
-                                    end
-                                    pcall(function()
-                                        ZSBTAddon:Print("[AURA] FADE EMITTING (no sid) name=" .. safeDbg(name))
-                                    end)
-                                end
-                            end
-                            self:EmitNotification(BuildAuraNotifText("-", name), {r = 0.6, g = 0.6, b = 0.6}, "auras")
-                        end
-                    elseif dl >= 4 then
-                        local ZSBTAddon = ZSBT and ZSBT.Addon
-                        if ZSBTAddon and ZSBTAddon.Print then
-                            ZSBTAddon:Print("[AURA] FADE BLOCKED by ShouldEmitBuffNotif sid=" .. tostring(sid))
-                        end
-                    end
-                end
-                if type(sid) == "number" then
-                    local trg = ZSBT.Core and ZSBT.Core.Triggers
-                    if trg then
-                        -- Skip synthetic auras to prevent double events
-                        local isSynthetic = trg._syntheticAuraExpireAt and type(trg._syntheticAuraExpireAt[sid]) == "number"
-                        if isSynthetic then
-                            local now = GetTime and GetTime() or 0
-                            isSynthetic = now < (trg._syntheticAuraExpireAt[sid] or 0)
-                        end
-                        if not isSynthetic and trg.OnAuraFade then
-                            trg:OnAuraFade(sid, "core-rm")
-                        end
-                    end
-                end
-                if self._auraInstanceSpellIDs then
-                    self._auraInstanceSpellIDs[instanceId] = nil
-                end
-            else
-                -- If our cache missed a prior add, rescan to resync.
-                needsRescan = true
-            end
-        end
-
-        if needsRescan then
-            -- Set grace period BEFORE rescan so it catches the refreshed auras
-            local graceStart = GetTime and GetTime() or 0
-            self._auraGracePeriodUntil = graceStart + 1.0
-            local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
-            if dl >= 4 then
-                local ZSBTAddon = ZSBT and ZSBT.Addon
-                if ZSBTAddon and ZSBTAddon.Print then
-                    ZSBTAddon:Print("[AURA] SET grace period (rescan) until=" .. tostring(self._auraGracePeriodUntil))
-                end
-            end
-            self:ScanPlayerAuras(nil)
-            return
-        end
+				if Addon and Addon.Dbg then
+					local function safeDbg(v)
+						if v == nil then return "nil" end
+						if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
+						if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
+						return "<secret>"
+					end
+					Addon:Dbg("core", 4, "[AURA] REMOVE instanceId=" .. safeDbg(instanceId)
+						.. " name=" .. safeDbg(name)
+						.. " inCache=" .. safeDbg(self._auraInstanceMap[instanceId] ~= nil)
+						.. " sid=" .. safeDbg(sid))
+				else
+					local ZSBTAddon = ZSBT and ZSBT.Addon
+					if ZSBTAddon and ZSBTAddon.Print then
+						local function safeDbg(v)
+							if v == nil then return "nil" end
+							if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
+							if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
+							return "<secret>"
+						end
+						pcall(function()
+							ZSBTAddon:Print("[AURA] REMOVE instanceId=" .. safeDbg(instanceId)
+								.. " name=" .. safeDbg(name)
+								.. " inCache=" .. safeDbg(self._auraInstanceMap[instanceId] ~= nil)
+								.. " sid=" .. safeDbg(sid))
+						end)
+					end
+				end
+			end
+			if name then
+				self._auraInstanceMap[instanceId] = nil
+				-- Skip fade notifications during init (instance IDs are unstable after reload)
+				local inInitWindow = Core._auraInitInProgress
+				if dl >= 4 then
+					if Addon and Addon.Dbg then
+						local function safeDbg(v)
+							if v == nil then return "nil" end
+							if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
+							if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
+							return "<secret>"
+						end
+						Addon:Dbg("core", 4, "[AURA] FADE check silent=" .. safeDbg(silent)
+							.. " init=" .. safeDbg(inInitWindow)
+							.. " sid=" .. safeDbg(sid)
+							.. " name=" .. safeDbg(name))
+					else
+						local ZSBTAddon = ZSBT and ZSBT.Addon
+						if ZSBTAddon and ZSBTAddon.Print then
+							local function safeDbg(v)
+								if v == nil then return "nil" end
+								if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
+								if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
+								return "<secret>"
+							end
+							pcall(function()
+								ZSBTAddon:Print("[AURA] FADE check silent=" .. safeDbg(silent)
+									.. " init=" .. safeDbg(inInitWindow)
+									.. " sid=" .. safeDbg(sid)
+									.. " name=" .. safeDbg(name))
+							end)
+						end
+					end
+				end
+				if silent ~= true and not inInitWindow then
+					local okToShow = true
+					if type(sid) == "number" then
+						okToShow = self:ShouldEmitBuffNotif(sid, false)
+					end
+					if dl >= 4 then
+						if Addon and Addon.Dbg then
+							Addon:Dbg("core", 4, "[AURA] FADE okToShow=" .. tostring(okToShow))
+						else
+							local ZSBTAddon = ZSBT and ZSBT.Addon
+							if ZSBTAddon and ZSBTAddon.Print then
+								ZSBTAddon:Print("[AURA] FADE okToShow=" .. tostring(okToShow))
+							end
+						end
+					end
+					if okToShow then
+						if sid and ZSBT.IsSafeNumber(sid) then
+							if dl >= 4 then
+								if Addon and Addon.Dbg then
+									Addon:Dbg("core", 4, "[AURA] FADE EMITTING sid=" .. tostring(sid))
+								else
+									local ZSBTAddon = ZSBT and ZSBT.Addon
+									if ZSBTAddon and ZSBTAddon.Print then
+										ZSBTAddon:Print("[AURA] FADE EMITTING sid=" .. tostring(sid))
+									end
+								end
+							end
+							self:EmitBuffNotification(sid, BuildAuraNotifText("-", name), {r = 0.6, g = 0.6, b = 0.6}, "auras")
+						else
+							if dl >= 4 then
+								if Addon and Addon.Dbg then
+									local function safeDbg(v)
+										if v == nil then return "nil" end
+										if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
+										if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
+										return "<secret>"
+									end
+									Addon:Dbg("core", 4, "[AURA] FADE EMITTING (no sid) name=" .. safeDbg(name))
+								else
+									local ZSBTAddon = ZSBT and ZSBT.Addon
+									if ZSBTAddon and ZSBTAddon.Print then
+										local function safeDbg(v)
+											if v == nil then return "nil" end
+											if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
+											if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
+											return "<secret>"
+										end
+										pcall(function()
+											ZSBTAddon:Print("[AURA] FADE EMITTING (no sid) name=" .. safeDbg(name))
+										end)
+									end
+								end
+							end
+							self:EmitNotification(BuildAuraNotifText("-", name), {r = 0.6, g = 0.6, b = 0.6}, "auras")
+						end
+					elseif dl >= 4 then
+						if Addon and Addon.Dbg then
+							Addon:Dbg("core", 4, "[AURA] FADE BLOCKED by ShouldEmitBuffNotif sid=" .. tostring(sid))
+						else
+							local ZSBTAddon = ZSBT and ZSBT.Addon
+							if ZSBTAddon and ZSBTAddon.Print then
+								ZSBTAddon:Print("[AURA] FADE BLOCKED by ShouldEmitBuffNotif sid=" .. tostring(sid))
+							end
+						end
+					end
+				end
+				if type(sid) == "number" then
+					local trg = ZSBT.Core and ZSBT.Core.Triggers
+					if trg then
+						-- Skip synthetic auras to prevent double events
+						local isSynthetic = trg._syntheticAuraExpireAt and type(trg._syntheticAuraExpireAt[sid]) == "number"
+						if isSynthetic then
+							local now = GetTime and GetTime() or 0
+							isSynthetic = now < (trg._syntheticAuraExpireAt[sid] or 0)
+						end
+						if not isSynthetic and trg.OnAuraFade then
+							trg:OnAuraFade(sid, "core-rm")
+						end
+					end
+				end
+				if self._auraInstanceSpellIDs then
+					self._auraInstanceSpellIDs[instanceId] = nil
+				end
+			end
+		end
+		if needsRescan then
+			-- Set grace period BEFORE rescan so it catches the refreshed auras
+			local graceStart = GetTime and GetTime() or 0
+			self._auraGracePeriodUntil = graceStart + 1.0
+			local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("core"))
+				or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
+			if dl >= 4 then
+				if Addon and Addon.Dbg then
+					Addon:Dbg("core", 4, "[AURA] SET grace period (rescan) until=" .. tostring(self._auraGracePeriodUntil))
+				else
+					local ZSBTAddon = ZSBT and ZSBT.Addon
+					if ZSBTAddon and ZSBTAddon.Print then
+						ZSBTAddon:Print("[AURA] SET grace period (rescan) until=" .. tostring(self._auraGracePeriodUntil))
+					end
+				end
+			end
+			self:ScanPlayerAuras(nil)
+			return
+		end
         -- Set grace period AFTER processing removals to suppress gain notifications from instance ID refreshes
         -- This ensures fade notifications are shown before suppression kicks in
         local graceStart = GetTime and GetTime() or 0
         self._auraGracePeriodUntil = graceStart + 1.0
-        local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+        local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("core"))
+			or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
         if dl >= 4 then
-            local ZSBTAddon = ZSBT and ZSBT.Addon
-            if ZSBTAddon and ZSBTAddon.Print then
-                ZSBTAddon:Print("[AURA] SET grace period until=" .. tostring(self._auraGracePeriodUntil))
-            end
-        end
+			if Addon and Addon.Dbg then
+				Addon:Dbg("core", 4, "[AURA] SET grace period until=" .. tostring(self._auraGracePeriodUntil))
+			else
+				local ZSBTAddon = ZSBT and ZSBT.Addon
+				if ZSBTAddon and ZSBTAddon.Print then
+					ZSBTAddon:Print("[AURA] SET grace period until=" .. tostring(self._auraGracePeriodUntil))
+				end
+			end
+		end
     end
 
     -- Fallback: if neither added nor removed, do full rescan
@@ -3292,7 +3413,8 @@ function Core:InitProgressTracking()
 					local isSafeText = (ZSBT.IsSafeString and ZSBT.IsSafeString(text)) == true
 					-- WoW 12.x can pass "secret" strings through chat output; never index/match them.
 					if not isSafeText then return end
-					local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+					local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("diagnostics"))
+						or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 					local okName, playerName = pcall(UnitName, "player")
 					if not okName or type(playerName) ~= "string" then playerName = nil end
 					local who, amt = text:match("(.+) has gained (%d[%d,]+) experience")
@@ -3310,7 +3432,14 @@ function Core:InitProgressTracking()
 						whoLabel = "Companion"
 					end
 					Core:EmitNotification("+" .. xp .. " XP (" .. whoLabel .. ")", {r = 0.6, g = 0.4, b = 1.0}, "companionXP")
-					if dl >= 4 and ZSBT.Addon and ZSBT.Addon.Print then
+					if dl >= 4 and Addon and Addon.Dbg then
+						local okS, sText = pcall(tostring, text)
+						if not okS or type(sText) ~= "string" then sText = "<secret>" end
+						Addon:Dbg("diagnostics", 4, "[XPDBG] ev=CHATFRAME safe=" .. tostring(isSafeText)
+							.. " who=" .. tostring(whoLabel)
+							.. " xp=" .. tostring(xp)
+							.. " msg=" .. sText)
+					elseif dl >= 4 and ZSBT.Addon and ZSBT.Addon.Print then
 						local okS, sText = pcall(tostring, text)
 						if not okS or type(sText) ~= "string" then sText = "<secret>" end
 						ZSBT.Addon:Print("[XPDBG] ev=CHATFRAME safe=" .. tostring(isSafeText) .. " who=" .. tostring(whoLabel) .. " xp=" .. tostring(xp) .. " msg=" .. sText)
@@ -3325,7 +3454,8 @@ function Core:InitProgressTracking()
         if not Core:IsMasterEnabled() then return end
         if not msg or type(msg) ~= "string" then return end
 		local isSafe = (ZSBT.IsSafeString and ZSBT.IsSafeString(msg)) == true
-		local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+		local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("diagnostics"))
+			or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 		local isXPEvent = event == "CHAT_MSG_COMBAT_XP_GAIN" or event == "CHAT_MSG_SYSTEM" or event == "CHAT_MSG_COMBAT_MISC_INFO"
 		if not isSafe and not isXPEvent then return end
         local t = GetTime()
@@ -3351,7 +3481,15 @@ function Core:InitProgressTracking()
 					end
 				end
 			end)
-			if dl >= 4 and ZSBT.Addon and ZSBT.Addon.Print then
+			if dl >= 4 and Addon and Addon.Dbg then
+				local okS, sMsg = pcall(tostring, msg)
+				if not okS or type(sMsg) ~= "string" then sMsg = "<secret>" end
+				Addon:Dbg("diagnostics", 4, "[XPDBG] ev=" .. tostring(event)
+					.. " safe=" .. tostring(isSafe)
+					.. " who=" .. tostring(whoXP)
+					.. " xp=" .. tostring(xp)
+					.. " msg=" .. sMsg)
+			elseif dl >= 4 and ZSBT.Addon and ZSBT.Addon.Print then
 				local okS, sMsg = pcall(tostring, msg)
 				if not okS or type(sMsg) ~= "string" then sMsg = "<secret>" end
 				ZSBT.Addon:Print("[XPDBG] ev=" .. tostring(event) .. " safe=" .. tostring(isSafe) .. " who=" .. tostring(whoXP) .. " xp=" .. tostring(xp) .. " msg=" .. sMsg)

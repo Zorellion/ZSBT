@@ -7,13 +7,128 @@ local ADDON_NAME, ZSBT = ...
 local Addon = ZSBT.Addon
 
 ------------------------------------------------------------------------
--- Debug Print (respects current debug level)
+-- Debug Print (channel + severity)
 ------------------------------------------------------------------------
+local function SafeToString(v)
+	if v == nil then return "nil" end
+	if ZSBT and type(ZSBT.IsSecret) == "function" then
+		local okS, isSecret = pcall(ZSBT.IsSecret, v)
+		if okS and isSecret == true then
+			return "<secret>"
+		end
+	end
+	local ok, s = pcall(tostring, v)
+	if not ok or type(s) ~= "string" then
+		return "<secret>"
+	end
+	if ZSBT and type(ZSBT.IsSafeString) == "function" then
+		local ok2, safe = pcall(ZSBT.IsSafeString, s)
+		if ok2 and safe ~= true then
+			return "<secret>"
+		end
+	end
+	return s
+end
+
+function Addon:GetDebugLevel(channel)
+	local d = self.db and self.db.profile and self.db.profile.diagnostics
+	if type(d) ~= "table" then return 0 end
+
+	local defaultLevel = tonumber(d.debugDefaultLevel)
+	if type(defaultLevel) ~= "number" then
+		defaultLevel = tonumber(d.debugLevel) or 0
+	end
+
+	if type(channel) ~= "string" or channel == "" then
+		return defaultLevel
+	end
+
+	local ch = d.debugChannels
+	if type(ch) ~= "table" then
+		return defaultLevel
+	end
+	local v = ch[channel]
+	if v == nil then
+		return defaultLevel
+	end
+	local n = tonumber(v)
+	if type(n) ~= "number" then
+		return defaultLevel
+	end
+	return n
+end
+
+local function ChannelPrefix(channel)
+	if type(channel) ~= "string" or channel == "" then
+		channel = "debug"
+	end
+	local map = {
+		core = "CORE",
+		cooldowns = "CD",
+		incoming = "IN",
+		outgoing = "OUT",
+		triggers = "TRIG",
+		notifications = "NOTIF",
+		ui = "UI",
+		diagnostics = "DIAG",
+		safety = "SAFE",
+		perf = "PERF",
+	}
+	local short = map[channel] or channel:upper()
+	return "|cFF00CC66[" .. short .. "]|r"
+end
+
+-- level: 0=off, 1=error, 2=warn, 3=info, 4=debug, 5=trace
+function Addon:Dbg(channel, requiredLevel, ...)
+	requiredLevel = tonumber(requiredLevel) or 0
+	if requiredLevel <= 0 then return end
+	local cur = self:GetDebugLevel(channel)
+	if (tonumber(cur) or 0) < requiredLevel then return end
+
+	local prefix = ChannelPrefix(channel)
+	local n = select('#', ...)
+	if n <= 0 then
+		self:Print(prefix)
+		return
+	end
+	local parts = {}
+	for i = 1, n do
+		parts[#parts + 1] = SafeToString(select(i, ...))
+	end
+	self:Print(prefix .. " " .. table.concat(parts, " "))
+end
+
+function Addon:DbgOnce(key, channel, requiredLevel, ...)
+	if type(key) ~= "string" or key == "" then
+		return self:Dbg(channel, requiredLevel, ...)
+	end
+	self._dbgOnce = self._dbgOnce or {}
+	if self._dbgOnce[key] == true then return end
+	self._dbgOnce[key] = true
+	return self:Dbg(channel, requiredLevel, ...)
+end
+
+function Addon:DbgRate(key, sec, channel, requiredLevel, ...)
+	if type(key) ~= "string" or key == "" then
+		return self:Dbg(channel, requiredLevel, ...)
+	end
+	sec = tonumber(sec) or 0
+	if sec <= 0 then
+		return self:Dbg(channel, requiredLevel, ...)
+	end
+	local now = (GetTime and GetTime()) or 0
+	self._dbgRate = self._dbgRate or {}
+	local last = tonumber(self._dbgRate[key]) or 0
+	if last > 0 and (now - last) < sec then
+		return
+	end
+	self._dbgRate[key] = now
+	return self:Dbg(channel, requiredLevel, ...)
+end
+
+-- Back-compat: treat legacy DebugPrint(level, ...) as DIAG channel.
 function Addon:DebugPrint(requiredLevel, ...)
-    local currentLevel = self.db and self.db.profile.diagnostics.debugLevel or 0
-    if currentLevel >= requiredLevel then
-        self:Print("|cFF00CC66[Debug " .. requiredLevel .. "]|r", ...)
-    end
+	return self:Dbg("diagnostics", requiredLevel, ...)
 end
 
 ------------------------------------------------------------------------
@@ -86,13 +201,34 @@ function Addon:ClearDiagnosticLog()
 end
 
 function Addon:_perfEnabled()
-	local d = self.db and self.db.profile and self.db.profile.diagnostics
-	return d and d.perfEnabled == true and type(debugprofilestop) == "function"
+	local enabled = false
+	if self.GetDebugLevel then
+		enabled = (tonumber(self:GetDebugLevel("perf")) or 0) > 0
+	else
+		local d = self.db and self.db.profile and self.db.profile.diagnostics
+		enabled = (d and d.perfEnabled == true) or false
+	end
+	local hasClock = type(debugprofilestop) == "function"
+	if enabled and not hasClock then
+		-- Avoid silent failure when profiling is enabled but the client doesn't expose debugprofilestop().
+		if self.DbgOnce then
+			self:DbgOnce("perf_no_debugprofilestop", "safety", 1, "Performance profiling enabled but debugprofilestop() is unavailable in this client.")
+		elseif self.Dbg then
+			self:Dbg("safety", 1, "Performance profiling enabled but debugprofilestop() is unavailable in this client.")
+		else
+			self:Print("Performance profiling enabled but debugprofilestop() is unavailable in this client.")
+		end
+	end
+	return enabled and hasClock
 end
 
 function Addon:PerfBegin(key)
 	if not self:_perfEnabled() then return nil end
 	if type(key) ~= "string" or key == "" then return nil end
+	-- Self-diagnosing: confirm profiling is actually running (rate-limited).
+	if self.DbgRate then
+		self:DbgRate("perf_active", 2.0, "perf", 3, "Perf profiling active")
+	end
 	return { debugprofilestop(), key }
 end
 
@@ -124,7 +260,13 @@ function Addon:PerfEnd(token)
 		parts[#parts + 1] = tostring(it.k) .. "=" .. string.format("%.2f", it.ms) .. "ms(" .. tostring(it.c) .. ")"
 	end
 	if #parts > 0 then
-		self:Print("|cFFCC66FF[PERF]|r " .. table.concat(parts, " "))
+		-- Profiling is enabled by the perf debug channel; output verbosity is
+		-- also controlled by the unified debug channel.
+		if self.Dbg then
+			self:Dbg("perf", 3, table.concat(parts, " "))
+		else
+			self:Print("|cFFCC66FF[PERF]|r " .. table.concat(parts, " "))
+		end
 	end
 	wipe(p.acc)
 	wipe(p.cnt)

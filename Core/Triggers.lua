@@ -26,18 +26,12 @@ local function SafeToString(v)
 end
 
 local function TrigDebug(msg)
-	local level = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
-		and tonumber(ZSBT.db.profile.diagnostics.debugLevel) or 0
-	if level == 5 then
+	if Addon and Addon.Dbg then
+		Addon:Dbg("triggers", 4, msg)
 		return
 	end
-	if level >= 2 then
-		local out = "|cFF00CCFF[TRG]|r " .. SafeToString(msg)
-		if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-			DEFAULT_CHAT_FRAME:AddMessage(out)
-		elseif Addon and Addon.Print then
-			Addon:Print(out)
-		end
+	if Addon and Addon.Print then
+		Addon:Print("|cFF00CCFF[TRG]|r " .. SafeToString(msg))
 	end
 end
 
@@ -379,7 +373,8 @@ function Triggers:SyncWatchedAurasFromCore()
 				end, true)
 			end)
 			if (not found) and sid == 107574 then
-				local dl = (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0)) or 0
+				local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("triggers"))
+					or ((ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0)) or 0)
 				if dl >= 4 then
 					local tNow = GetTime and GetTime() or 0
 					if (tNow - (self._avatarAuraDebugAt or 0)) > 1.0 then
@@ -466,7 +461,8 @@ function Triggers:SyncWatchedAurasFromCore()
 
 		-- Debug helper: when Avatar can't be found, dump what we *do* see.
 		if sid == 107574 then
-			local dl = (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0)) or 0
+			local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("triggers"))
+				or ((ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0)) or 0)
 			if dl >= 4 and UnitAffectingCombat and UnitAffectingCombat("player") then
 				local tNow = GetTime and GetTime() or 0
 				if (tNow - (self._avatarAuraDebugAt or 0)) > 1.0 then

@@ -65,11 +65,17 @@ end
 
 -- Forward parsed events to the configured sink callback.
 local function emit(eventType, payload)
-	if ZSBT.Addon and ZSBT.Addon.DebugPrint then
-	end
 	if Collector._sink then
 		Collector._sink(eventType, payload)
 	end
+end
+
+local function OutDbgLevel()
+	local Addon = ZSBT and ZSBT.Addon
+	if Addon and Addon.GetDebugLevel then
+		return tonumber(Addon:GetDebugLevel("outgoing")) or 0
+	end
+	return (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (tonumber(ZSBT.db.profile.diagnostics.debugLevel) or 0)) or 0
 end
 
 -- AceConsole's Print() concatenates varargs; passing a Secret Value will
@@ -87,8 +93,13 @@ local function dbgSafe(v)
 end
 
 local function ECPrint(msg)
-	if ZSBT and ZSBT.Addon and ZSBT.Addon.Print then
-		ZSBT.Addon:Print("|cFF00CC66[EC]|r " .. dbgSafe(msg))
+	local Addon = ZSBT and ZSBT.Addon
+	if Addon and Addon.Dbg then
+		Addon:Dbg("outgoing", 4, dbgSafe(msg))
+		return
+	end
+	if Addon and Addon.Print then
+		Addon:Print(dbgSafe(msg))
 	end
 end
 
@@ -203,14 +214,16 @@ local function flushBestOutgoing(self, token)
 	local bucket = self._bestOutgoingByToken and self._bestOutgoingByToken[token]
 	if not bucket then return end
 	self._bestOutgoingByToken[token] = nil
-	local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+	local Addon = ZSBT and ZSBT.Addon
+	local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("outgoing"))
+		or ((ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0)) or 0)
 
 	local pipeId = self._rawPipeCount + 1
 	self._rawPipeCount = pipeId
 	self._rawPipe[pipeId] = bucket.amount
 	self._lastOutgoingCombatAt = bucket.timestamp
 	self._lastOutgoingCombatTargetName = bucket.targetName
-	if dl >= 4 then
+	if (tonumber(dl) or 0) >= 4 then
 		ECPrint(("FLUSH_BEST token=%s spellId=%s amt=%s school=%s crit=%s cnt=%s max=%s second=%s")
 			:format(dbgSafe(token), dbgSafe(bucket.spellId), dbgSafe(bucket.amount), dbgSafe(bucket.schoolMask), dbgSafe(bucket.isCrit), dbgSafe(bucket._seenCount), dbgSafe(bucket._seenMax), dbgSafe(bucket._seenSecond)))
 	end
@@ -501,7 +514,7 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 			self._drainLifeUntil = now() + 6.0
 			self._drainLifeLastTickAt = 0
 		end
-		local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+		local dl = OutDbgLevel()
 		if dl >= 5 and isWhirlwindSpellId(spellId) then
 			local tNow = now()
 			local lastRecv = Collector._dbgWWChatRecvAt or 0
@@ -682,7 +695,7 @@ local function wwAggPush(self, t, spellId, amount, isCrit, allowInfer)
 		end
 	end
 	if critLike == true and isCrit ~= true then
-		local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+		local dl = OutDbgLevel()
 		if dl >= 5 then
 			ECPrint(("WW_CRIT_INFER token=%s spellId=%s amt=%s prevMin=%s")
 				:format(dbgSafe(self._castToken), dbgSafe(spellId), dbgSafe(amount), dbgSafe(prevMin)))
@@ -720,7 +733,7 @@ end
 
 local function dbgChatPush(self, row)
 	if not self then return nil end
-	local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+	local dl = OutDbgLevel()
 	if dl < 5 then return nil end
 	self._dbgChatSeq = (self._dbgChatSeq or 0) + 1
 	local id = self._dbgChatSeq
@@ -759,7 +772,7 @@ function Collector:handleChatSelfDamage(event, msg)
 	if ZSBT.IsSafeString and not ZSBT.IsSafeString(msg) then
 		isSafeMsg = false
 	end
-	local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+	local dl = OutDbgLevel()
 	local quietMode = isQuietOutgoingWhenIdle()
 
 	-- In instances, some clients can mark chat combat messages as secret/unsafe.
@@ -1235,7 +1248,7 @@ function Collector:handleCombatTextUpdate(arg1)
 
 	-- High-signal trace: confirm COMBAT_TEXT_UPDATE is firing and what tokens
 	-- the client is using for event type.
-	local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+	local dl = OutDbgLevel()
 	if dl >= 4 and ZSBT.Addon and ZSBT.Addon.Print then
 		local tNow = now()
 		if (tNow - (Collector._dbgLastCombatTextAnyAt or 0)) > 0.20 then
@@ -1264,7 +1277,7 @@ function Collector:handleCombatTextUpdate(arg1)
 		local isPeriodic = PERIODIC_TYPES[arg1] or false
 		local tNow = now()
 		self._lastCombatTextDamageAt = tNow
-		if ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) >= 3 then
+		if OutDbgLevel() >= 3 then
 			if ZSBT.Addon and ZSBT.Addon.Print and (tNow - (Collector._dbgLastCombatTextDamageAt or 0)) > 0.25 then
 				Collector._dbgLastCombatTextDamageAt = tNow
 				ECPrint(("CT_DAMAGE evt=%s raw=%s ctSpellId=%s lastPlayerSpellId=%s")
@@ -1746,7 +1759,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				end
 			end
 		end
-		local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+		local dl = OutDbgLevel()
 		local function getAdaptiveBigHitThreshold(tNow)
 			local base = BIG_HIT_THRESHOLD
 			local maxRecent = self._recentOutgoingMax or 0
@@ -2022,7 +2035,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				if type(rAt) == "number" then
 					local ageCast = t - rAt
 					if ageCast >= 0 and ageCast <= 24.0 and actionStr == "WOUND" and ZSBT.IsSafeNumber(amount) and amount > 0 then
-						local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+						local dl = OutDbgLevel()
 						local debuffOk = hasTargetDebuffSpellId(772)
 						local nextTickAt = self._rendNextTickAt
 						local isNearExpected = false
@@ -2164,7 +2177,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 										isPeriodic = true,
 										schoolMask = 1,
 									})
-									local dl2 = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+									local dl2 = OutDbgLevel()
 									if dl2 >= 5 then
 										ECPrint(("REND_EMIT ageCast=%.3f amt=%s cand=%s streak=%s near=%s debuffOk=%s")
 											:format(ageCast, dbgSafe(amount), dbgSafe(st.amt), dbgSafe(st.streak), dbgSafe(isNearExpected), dbgSafe(debuffOk)))
@@ -2525,7 +2538,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 	local t = now()
 	if (t - self._lastCombatTextDamageAt) < DEDUP_WINDOW then return end
 	if unit == "player" and action == "WOUND" then
-		if ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) >= 3 then
+		if OutDbgLevel() >= 3 then
 			if ZSBT.Addon and ZSBT.Addon.Print and (t - (Collector._dbgLastUnitCombatPlayerAt or 0)) > 0.25 then
 				Collector._dbgLastUnitCombatPlayerAt = t
 				ECPrint(("UNIT_COMBAT_PLAYER action=%s desc=%s amt=%s")
@@ -2682,7 +2695,7 @@ function Collector:handleUnitHealth(unit)
 	-- Some units (notably training/healing dummies) can have scripted health
 	-- resets/regen that produce enormous deltas unrelated to actual spells.
 	-- Clamp implausible deltas to prevent fake multi-million heal/damage events.
-	local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+	local dl = OutDbgLevel()
 	local absDelta = math.abs(delta)
 	local maxN = healthMax
 	local maxFrac = 0
@@ -2775,7 +2788,7 @@ end
 function Collector:Enable()
 	if self._enabled then return end
 	resetFallingState()
-	local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+	local dl = OutDbgLevel()
 	if dl >= 5 and self._dbgWWInferGatePrinted ~= true then
 		self._dbgWWInferGatePrinted = true
 		ECPrint("WW_INFER_GATE prevMin>=600 (UNIT_COMBAT only); chat uses explicit crit only")
@@ -2794,7 +2807,7 @@ function Collector:Enable()
 			elseif event == "UNIT_COMBAT" then
 				Collector:handleUnitCombat(...)
 			elseif CHAT_OUTGOING_EVENTS[event] then
-				local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+				local dl = OutDbgLevel()
 				local msg = select(1, ...)
 				if dl >= 5 then
 					if type(msg) == "string" and (msg:find("Whirlwind", 1, true) or msg:find("whirlwind", 1, true)) then
@@ -2829,12 +2842,12 @@ function Collector:Enable()
 			if type(_G[fnName]) == "function" then
 				self._combatTextAddHooked = true
 				hooksecurefunc(fnName, function(message, scrollFunction, r, g, b, displayType, isSticky)
-					local dl = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
-					if dl >= 4 and ZSBT.Addon and ZSBT.Addon.Print then
+					local dl = OutDbgLevel()
+					if dl >= 4 then
 						local tNow = now()
 						if (tNow - (Collector._dbgLastCombatTextAddAt or 0)) > 0.20 then
 							Collector._dbgLastCombatTextAddAt = tNow
-							ZSBT.Addon:Print("|cFF00CC66[EC]|r", ("CT_ADD fn=%s msg=%s type=%s sticky=%s")
+							ECPrint(("CT_ADD fn=%s msg=%s type=%s sticky=%s")
 								:format(dbgSafe(fnName), dbgSafe(message), dbgSafe(displayType), dbgSafe(isSticky)))
 						end
 					end

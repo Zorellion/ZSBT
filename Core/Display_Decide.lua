@@ -49,15 +49,19 @@ local function ResolveFontForArea(areaName)
 end
 
 function Display:Enable()
-    if Addon and Addon.DebugPrint then
-        Addon:DebugPrint(1, "Display:Enable()")
-    end
+	if Addon and Addon.Dbg then
+		Addon:Dbg("ui", 3, "Display:Enable()")
+	elseif Addon and Addon.DebugPrint then
+		Addon:DebugPrint(1, "Display:Enable()")
+	end
 end
 
 function Display:Disable()
-    if Addon and Addon.DebugPrint then
-        Addon:DebugPrint(1, "Display:Disable()")
-    end
+	if Addon and Addon.Dbg then
+		Addon:Dbg("ui", 3, "Display:Disable()")
+	elseif Addon and Addon.DebugPrint then
+		Addon:DebugPrint(1, "Display:Disable()")
+	end
 end
 
 local function ResolveCritFont(meta)
@@ -312,13 +316,22 @@ function Display:Emit(areaName, text, color, meta)
         return
     end
 
-	local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+	local dbg = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("ui"))
+		or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 	local prof = ZSBT.db and ZSBT.db.profile
 	local outHealArea = nil
 	if prof and prof.outgoing and prof.outgoing.healing and type(prof.outgoing.healing.scrollArea) == "string" then
 		outHealArea = prof.outgoing.healing.scrollArea
 	end
-	if dbg >= 3 and Addon and Addon.Print and meta and meta.kind == "heal" then
+	if dbg >= 3 and Addon and Addon.Dbg and meta and meta.kind == "heal" then
+		local function safeDbg(v)
+			if v == nil then return "nil" end
+			if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
+			if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
+			return "<secret>"
+		end
+		Addon:Dbg("ui", 3, "EMIT", safeDbg(areaName), "kind=heal", "text=" .. safeDbg(text))
+	elseif dbg >= 3 and Addon and Addon.Print and meta and meta.kind == "heal" then
 		local function safeDbg(v)
 			if v == nil then return "nil" end
 			if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
@@ -326,7 +339,7 @@ function Display:Emit(areaName, text, color, meta)
 			return "<secret>"
 		end
 		Addon:Print("|cFF00CC66[EMIT]|r " .. safeDbg(areaName) .. " kind=heal text=" .. safeDbg(text))
-	elseif dbg >= 4 and Addon and Addon.Print and type(areaName) == "string" then
+	elseif dbg >= 4 and type(areaName) == "string" then
 		local isOutgoingArea = (areaName == "Outgoing") or (outHealArea and areaName == outHealArea)
 		if isOutgoingArea and (not (ZSBT.IsSafeString and ZSBT.IsSafeString(text))) then
 			local function safeDbg(v)
@@ -335,9 +348,13 @@ function Display:Emit(areaName, text, color, meta)
 				if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
 				return "<secret>"
 			end
-			Addon:Print("|cFF00CC66[EMIT_SECRET]|r " .. safeDbg(areaName)
-				.. " kind=" .. safeDbg(meta and meta.kind)
-				.. " text=" .. safeDbg(text))
+			if Addon and Addon.Dbg then
+				Addon:Dbg("safety", 4, "EMIT_SECRET", safeDbg(areaName), "kind=" .. safeDbg(meta and meta.kind), "text=" .. safeDbg(text))
+			elseif Addon and Addon.Print then
+				Addon:Print("|cFF00CC66[EMIT_SECRET]|r " .. safeDbg(areaName)
+					.. " kind=" .. safeDbg(meta and meta.kind)
+					.. " text=" .. safeDbg(text))
+			end
 		elseif isOutgoingArea and ZSBT.IsSafeString and ZSBT.IsSafeString(text) then
 			local function parseBigNumber(s)
 				if type(s) ~= "string" then return nil end
@@ -365,9 +382,13 @@ function Display:Emit(areaName, text, color, meta)
 					if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
 					return "<secret>"
 				end
-				Addon:Print("|cFF00CC66[EMIT_BIG]|r " .. safeDbg(areaName)
-					.. " kind=" .. safeDbg(meta and meta.kind)
-					.. " text=" .. safeDbg(text))
+				if Addon and Addon.Dbg then
+					Addon:Dbg("ui", 4, "EMIT_BIG", safeDbg(areaName), "kind=" .. safeDbg(meta and meta.kind), "text=" .. safeDbg(text))
+				elseif Addon and Addon.Print then
+					Addon:Print("|cFF00CC66[EMIT_BIG]|r " .. safeDbg(areaName)
+						.. " kind=" .. safeDbg(meta and meta.kind)
+						.. " text=" .. safeDbg(text))
+				end
 			end
 		end
 		if ZSBT.IsSafeString and ZSBT.IsSafeString(text) then
@@ -397,9 +418,13 @@ function Display:Emit(areaName, text, color, meta)
 					if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
 					return "<secret>"
 				end
-				Addon:Print("|cFF00CC66[EMIT_MILLION]|r " .. safeDbg(areaName)
-					.. " kind=" .. safeDbg(meta and meta.kind)
-					.. " text=" .. safeDbg(text))
+				if Addon and Addon.Dbg then
+					Addon:Dbg("ui", 4, "EMIT_MILLION", safeDbg(areaName), "kind=" .. safeDbg(meta and meta.kind), "text=" .. safeDbg(text))
+				elseif Addon and Addon.Print then
+					Addon:Print("|cFF00CC66[EMIT_MILLION]|r " .. safeDbg(areaName)
+						.. " kind=" .. safeDbg(meta and meta.kind)
+						.. " text=" .. safeDbg(text))
+				end
 			end
 		end
 	end

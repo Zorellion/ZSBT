@@ -186,9 +186,14 @@ local function EnsureActionButtonHook(spellId)
 					if not st or st.isOnCD ~= true or st.seenStart ~= true then return end
 					st.isOnCD = false
 					st.seenStart = false
-					local dbgLevel = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.cooldownsDebugLevel or 0
-					if dbgLevel and dbgLevel >= 4 and Addon and Addon.Print then
-						Addon:Print("|cFF00CCFF[CD]|r ActionBtn OnCooldownDone spellId=" .. tostring(spellId) .. " slot=" .. tostring(slot))
+					if Addon and Addon.Dbg then
+						Addon:Dbg("cooldowns", 4, "ActionBtn OnCooldownDone spellId=" .. tostring(spellId) .. " slot=" .. tostring(slot))
+					else
+						local dbgLevel = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("cooldowns"))
+							or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.cooldownsDebugLevel or 0)
+						if dbgLevel and dbgLevel >= 4 and Addon and Addon.Print then
+							Addon:Print("ActionBtn OnCooldownDone spellId=" .. tostring(spellId) .. " slot=" .. tostring(slot))
+						end
 					end
 					FireReady(spellId, "ACTION_BTN")
 				end)
@@ -198,9 +203,14 @@ local function EnsureActionButtonHook(spellId)
 	if not hookedAny then return end
 
 	Cooldowns._actionBtnHooks[spellId] = { slot = slot, btn = btn, cds = cds }
-	local dbgLevel = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.cooldownsDebugLevel or 0
-	if dbgLevel and dbgLevel >= 4 and Addon and Addon.Print then
-		Addon:Print("|cFF00CCFF[CD]|r ActionBtnHook spellId=" .. tostring(spellId) .. " slot=" .. tostring(slot) .. " btn=" .. tostring(btn and btn.GetName and btn:GetName()))
+	if Addon and Addon.Dbg then
+		Addon:Dbg("cooldowns", 4, "ActionBtnHook spellId=" .. tostring(spellId) .. " slot=" .. tostring(slot) .. " btn=" .. tostring(btn and btn.GetName and btn:GetName()))
+	else
+		local dbgLevel = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("cooldowns"))
+			or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.cooldownsDebugLevel or 0)
+		if dbgLevel and dbgLevel >= 4 and Addon and Addon.Print then
+			Addon:Print("ActionBtnHook spellId=" .. tostring(spellId) .. " slot=" .. tostring(slot) .. " btn=" .. tostring(btn and btn.GetName and btn:GetName()))
+		end
 	end
 end
 
@@ -355,7 +365,8 @@ local function StartUsablePoll(spellId, source)
 				end
 			else
 				-- Action cooldown unavailable/unreadable; keep polling.
-				local dbgLevel = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.cooldownsDebugLevel or 0
+				local dbgLevel = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("cooldowns"))
+					or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.cooldownsDebugLevel or 0)
 				if dbgLevel and dbgLevel >= 4 then
 					cur._lastActionMissAt = cur._lastActionMissAt or 0
 					if (tNow - cur._lastActionMissAt) >= 1.0 then
@@ -453,20 +464,28 @@ local function CdDebug(msg)
 	level = tonumber(level) or 0
 	if level and level >= 1 then
 		pcall(function()
-			Addon:Print("|cFF00CCFF[CD]|r " .. SafeToString(msg))
+			Addon:Print(SafeToString(msg))
 		end)
 	end
 end
 
 CdDbg = function(requiredLevel, msg)
 	if not Addon then return end
+	-- Legacy cooldownsDebugLevel used 1..5 as increasing verbosity.
+	-- Map to new severity/verbosity scale: 1-2=INFO(3), 3=DEBUG(4), 4-5=TRACE(5)
+	local map = { [1] = 3, [2] = 3, [3] = 4, [4] = 5, [5] = 5 }
+	local lvl = map[tonumber(requiredLevel) or 0] or 4
+	if Addon.Dbg then
+		Addon:Dbg("cooldowns", lvl, msg)
+		return
+	end
 	local db = (Addon and Addon.db) or ZSBT.db
 	local level = db and db.profile and db.profile.diagnostics
 		and db.profile.diagnostics.cooldownsDebugLevel or 0
 	level = tonumber(level) or 0
 	if level and level >= requiredLevel then
 		pcall(function()
-			Addon:Print("|cFF00CCFF[CD]|r " .. SafeToString(msg))
+			Addon:Print(SafeToString(msg))
 		end)
 	end
 end
@@ -633,8 +652,8 @@ ScheduleReadyTimer = function(spellId, startTime, duration, source)
         .. " readyAt=" .. string.format("%.3f", readyAt) .. " delay=" .. string.format("%.3f", delay) .. " src=" .. tostring(source))
 
 	-- Debug countdown ticker: prints remaining seconds until READY (cddebug>=4).
-	local dbgLevel = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
-		and ZSBT.db.profile.diagnostics.cooldownsDebugLevel or 0
+	local dbgLevel = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("cooldowns"))
+		or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.cooldownsDebugLevel or 0)
 	if dbgLevel and dbgLevel >= 4 and C_Timer and C_Timer.NewTicker then
 		local ticker
 		local lastTickAt

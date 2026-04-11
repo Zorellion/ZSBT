@@ -62,16 +62,8 @@ local INCOMING_MERGE_WINDOW = 0.20
 local incomingMerge = {}
 
 local function EmitToDisplay(area, text, color, meta)
-	local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
-	if dbg >= 3 and Addon and Addon.Print then
-		local function safeDbg(v)
-			if v == nil then return "nil" end
-			if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
-			if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
-			return "<secret>"
-		end
-		local msg = "|cFF00CC66[IN ]|r " .. safeDbg(area) .. " " .. safeDbg(meta and meta.kind) .. " " .. safeDbg(meta and meta.targetName) .. " " .. safeDbg(meta and meta.spellId) .. " " .. safeDbg(text)
-		Addon:Print(msg)
+	if Addon and Addon.Dbg then
+		Addon:Dbg("incoming", 4, "EMIT", area, meta and meta.kind, meta and meta.targetName, meta and meta.spellId, text)
 	end
 
     if ZSBT.DisplayText then
@@ -158,7 +150,11 @@ local function PushIncomingMerge(key, area, kind, isCrit, schoolMask, mode, amou
 end
 
 local function Debug(level, ...)
-    if Addon and Addon.DebugPrint then Addon:DebugPrint(level, ...) end
+	if Addon and Addon.Dbg then
+		Addon:Dbg("incoming", level, ...)
+		return
+	end
+	if Addon and Addon.DebugPrint then Addon:DebugPrint(level, ...) end
 end
 
 local function PushEvent(evt)

@@ -1,5 +1,44 @@
 # Changelog
 
+## 2.2.0
+
+### Debug / Diagnostics overhaul
+- Replaced legacy debug gating (`diagnostics.debugLevel`, `cooldownsDebugLevel`, and ad-hoc tagged `Addon:Print()` debug lines) with a unified **channel-based** debug system.
+- New API:
+  - `Addon:GetDebugLevel(channel)`
+  - `Addon:Dbg(channel, level, ...)`
+  - (internally supported helpers for one-time / rate-limited debug where needed)
+- Debug levels are standardized across the addon:
+  - `0` Off
+  - `1` Error
+  - `2` Warn
+  - `3` Info
+  - `4` Debug
+  - `5` Trace
+- Debug output is now routed through safe formatting to avoid crashes from WoW 12.x “secret value” restrictions.
+
+### Debug UI (new)
+- Added a dedicated Debug UI panel for controlling:
+  - Default debug level
+  - Per-channel debug level overrides
+
+### Commands (how to use)
+- Show current levels:
+  - `/zsbt debug show`
+- Set global default debug level:
+  - `/zsbt debug <0-5>`
+- Set a specific channel:
+  - `/zsbt debug <channel> <0-5>`
+- Common channels:
+  - `core`, `cooldowns`, `incoming`, `outgoing`, `triggers`, `notifications`, `ui`, `diagnostics`, `safety`, `perf`
+
+### Troubleshooting quality-of-life
+- Added an `Open Debug UI` button under:
+  - `/zsbt` -> `Help and Support` -> `Troubleshooting`
+
+### Outgoing
+- Fixed: custom crit damage color now applies even when crits are not routed to a separate scroll area (staying in the default Outgoing area).
+
 ## 2.1.0
 - Cooldowns: fixed late READY notifications and false READY on cast/regen by implementing combat-only `isActive==false` detection with 1s suppression window after combat transitions.
 - Cooldowns: removed `start=0/dur=0` as a readiness signal to prevent transient API glitches from firing READY early.

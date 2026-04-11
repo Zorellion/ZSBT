@@ -814,8 +814,10 @@ local function getPlayerSpecNameTag(classTag)
 end
 
 DebugPrint = function(msg)
-	if Addon and Addon.Print then
-		Addon:Print(msg)
+	if Addon and Addon.Dbg then
+		Addon:Dbg("diagnostics", 3, msg)
+	elseif Addon and Addon.Print then
+		Addon:Print(tostring(msg))
 	elseif DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
 		DEFAULT_CHAT_FRAME:AddMessage("ZSBT: " .. tostring(msg))
 	end
@@ -7003,11 +7005,11 @@ function ZSBT.BuildTab_Cooldowns()
 			cooldownsDebugLevel = {
 				type  = "select",
 				name  = "Cooldown Debug Level",
-				desc  = "Debug output for cooldown tracking only (prints [CD] lines).",
+				desc  = "Debug output for cooldown tracking only (cooldowns debug channel). Use /zsbt debug cooldowns <0-5>.",
 				order = 1.5,
 				values = function()
 					return {
-						[0] = "0 - Off",
+						[0] = "Off",
 						[1] = "1 - Basic",
 						[2] = "2 - Events",
 						[3] = "3 - Timers",

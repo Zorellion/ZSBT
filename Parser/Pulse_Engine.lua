@@ -7,6 +7,8 @@ local Engine = ZSBT.Parser.PulseEngine
 local StateManager = ZSBT.Parser.StateManager
 local CorrelationLogic = ZSBT.Parser.CorrelationLogic
 
+local Addon = ZSBT.Addon
+
 Engine._enabled = Engine._enabled or false
 Engine._pulseInterval = 0.020 -- 20ms target pulse (phase 1 requirement)
 Engine._accumulator = Engine._accumulator or 0
@@ -108,7 +110,12 @@ local function wipeTable(t)
 end
 
 local function Dbg5(prefix, msg)
-	local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
+	if Addon and Addon.Dbg then
+		Addon:Dbg("diagnostics", 5, prefix, msg)
+		return
+	end
+	local dbg = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("diagnostics"))
+		or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0)
 	if dbg >= 5 and ZSBT.Addon and ZSBT.Addon.Print then
 		local function safeToString(v)
 			if v == nil then return "" end
@@ -267,7 +274,8 @@ function Engine:_pollDamageMeterOutgoing()
 	end
 	self._dmgMeterOutgoingLastPollAt = tNow
 
-	local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0
+	local dbg = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("diagnostics"))
+		or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 	local wantDbg = dbg >= 4
 	local idsSeen = nil
 	if wantDbg then
@@ -338,7 +346,7 @@ function Engine:_pollDamageMeterOutgoing()
 		end
 	end
 
-	if wantDbg and idsSeen and ZSBT.Addon and ZSBT.Addon.Print then
+	if wantDbg and idsSeen then
 		local lastAt = self._dmgMeterDbgLastAt or 0
 		if (tNow - lastAt) >= 1.00 then
 			self._dmgMeterDbgLastAt = tNow
@@ -361,7 +369,11 @@ function Engine:_pollDamageMeterOutgoing()
 				out[#out + 1] = sidText
 			end
 			local suffix = (#idsSeen > maxShow) and (" … +" .. tostring(#idsSeen - maxShow)) or ""
-			ZSBT.Addon:Print("|cFFCC66FF[DM]|r spells=" .. table.concat(out, ",") .. suffix .. " has6603=" .. tostring(has6603) .. " has1=" .. tostring(has1))
+			if Addon and Addon.Dbg then
+				Addon:Dbg("diagnostics", 4, "DM spells=" .. table.concat(out, ",") .. suffix, "has6603=" .. tostring(has6603), "has1=" .. tostring(has1))
+			elseif ZSBT.Addon and ZSBT.Addon.Print then
+				ZSBT.Addon:Print("DM spells=" .. table.concat(out, ",") .. suffix .. " has6603=" .. tostring(has6603) .. " has1=" .. tostring(has1))
+			end
 		end
 	end
 end
@@ -391,7 +403,12 @@ function Engine:_stopDamageMeterTicker()
 end
 
 local function Dbg4(prefix, msg)
-	local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
+	if Addon and Addon.Dbg then
+		Addon:Dbg("diagnostics", 4, prefix, msg)
+		return
+	end
+	local dbg = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("diagnostics"))
+		or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0)
 	if dbg >= 4 and ZSBT.Addon and ZSBT.Addon.Print then
 		local function safeToString(v)
 			if v == nil then return "" end
@@ -500,14 +517,15 @@ function Engine:collect(eventType, payload)
 	if not self._enabled then return end
 	if not eventType or not payload then return end
 
-	local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
-	if dbg >= 3 and dbg < 5 and ZSBT.Addon and ZSBT.Addon.Print then
+	local dbg = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("diagnostics"))
+		or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0)
+	if dbg >= 3 and dbg < 5 and Addon and Addon.Dbg then
 		local tNow = now()
 		if (tNow - (self._dbgLastCollectAt or 0)) >= 0.25 then
 			-- Only sample interesting types to keep chat readable.
 			if eventType == "UNIT_COMBAT" or eventType == "INCOMING_DAMAGE" or eventType == "INCOMING_HEAL_COMBAT" or eventType == "FALL_DAMAGE" or eventType == "COMBAT_TEXT_UPDATE" or eventType == "COMBAT_TEXT_DAMAGE" or eventType == "OUTGOING_DAMAGE_COMBAT" or eventType == "OUTGOING_HEAL_COMBAT" or eventType == "PET_DAMAGE_COMBAT" or eventType == "HEALTH_DAMAGE" or eventType == "HEALTH_HEAL" or eventType == "SPELLCAST_SUCCEEDED" or eventType == "UNIT_HEALTH" then
 				self._dbgLastCollectAt = tNow
-				ZSBT.Addon:Print("|cFF00CC66[PE]|r collect " .. tostring(eventType) .. " qCount=" .. tostring(self._qCount or 0))
+				Addon:Dbg("diagnostics", 3, "PE collect", tostring(eventType), "qCount=" .. tostring(self._qCount or 0))
 			end
 		end
 	end
@@ -536,8 +554,6 @@ function Engine:collect(eventType, payload)
 end
 
 function Engine:_emitOutgoing(ev)
-	if ZSBT.Addon and ZSBT.Addon.DebugPrint then
-	end
 	local parser = ZSBT.Parser and ZSBT.Parser.Outgoing
 	if parser and parser.ProcessEvent then
 		parser:ProcessEvent(ev)
@@ -545,8 +561,6 @@ function Engine:_emitOutgoing(ev)
 end
 
 function Engine:_emitIncoming(ev)
-	if ZSBT.Addon and ZSBT.Addon.DebugPrint then
-	end
 	local parser = ZSBT.Parser and ZSBT.Parser.Incoming
 	if parser and parser.ProcessEvent then
 		parser:ProcessEvent(ev)
@@ -743,7 +757,8 @@ function Engine:flushBucket()
 	end
 	local bucket = self._bucket
 	local count = self._qCount or 0
-	local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
+	local dbg = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("diagnostics"))
+		or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0)
 	local function coerceProgressAmount(v)
 		if v == nil then return nil end
 		if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then
@@ -762,11 +777,11 @@ function Engine:flushBucket()
 		end
 		return nil
 	end
-	if dbg >= 3 and dbg < 5 and ZSBT.Addon and ZSBT.Addon.Print then
+	if dbg >= 3 and dbg < 5 and Addon and Addon.Dbg then
 		local tNow = now()
 		if (tNow - (self._dbgLastHeartbeatAt or 0)) >= 1.0 then
 			self._dbgLastHeartbeatAt = tNow
-			ZSBT.Addon:Print("|cFF00CC66[PE]|r heartbeat qCount=" .. tostring(count))
+			Addon:Dbg("diagnostics", 3, "PE heartbeat", "qCount=" .. tostring(count))
 		end
 	end
 	-- Ensure pending pet merge flushes on time even if other events keep arriving.
@@ -801,8 +816,9 @@ function Engine:flushBucket()
 		self._qCount = (self._qCount or 1) - 1
 		if sample then
 			local et = sample.eventType
-			local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
-			if dbg >= 3 and dbg < 5 and ZSBT.Addon and ZSBT.Addon.Print then
+			local dbg = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("diagnostics"))
+				or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0)
+			if dbg >= 3 and dbg < 5 and Addon and Addon.Dbg then
 				if et == "COMBAT_TEXT_DAMAGE" or et == "OUTGOING_DAMAGE_COMBAT" or et == "OUTGOING_HEAL_COMBAT" or et == "HEALTH_DAMAGE" or et == "HEALTH_HEAL" or et == "INCOMING_DAMAGE" or et == "FALL_DAMAGE" or et == "INCOMING_HEAL_COMBAT" then
 					local function safeDbg(v)
 						if v == nil then return "nil" end
@@ -810,8 +826,14 @@ function Engine:flushBucket()
 						if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
 						return "<secret>"
 					end
-					local msg = "|cFF00CC66[PE]|r " .. safeDbg(et) .. " unit=" .. safeDbg(sample.unit) .. " spellId=" .. safeDbg(sample.spellId) .. " rawPipeId=" .. safeDbg(sample.rawPipeId) .. " amt=" .. safeDbg(sample.amount) .. " amtText=" .. safeDbg(sample.amountText)
-					ZSBT.Addon:Print(msg)
+					Addon:Dbg("diagnostics", 3, "PE",
+						safeDbg(et),
+						"unit=" .. safeDbg(sample.unit),
+						"spellId=" .. safeDbg(sample.spellId),
+						"rawPipeId=" .. safeDbg(sample.rawPipeId),
+						"amt=" .. safeDbg(sample.amount),
+						"amtText=" .. safeDbg(sample.amountText)
+					)
 				end
 			end
 			if et == "SPELLCAST_SUCCEEDED" then
@@ -1076,16 +1098,17 @@ function Engine:flushBucket()
 				Dbg4("|cFFCC66FF[OUTDBG]|r", ("PATH OUTGOING_DAMAGE_COMBAT rawPipeId=%s spellId=%s target=%s")
 					:format(tostring(sample.rawPipeId), tostring(sample.spellId), tostring(sample.targetName)))
 				Dbg5("|cFFCC66FF[OUTDBG]|r", ("CORR OUTGOING_DAMAGE_COMBAT dbgChatId=%s src=%s rawPipeId=%s spellId=%s target=%s")
-					:format(tostring(sample.dbgChatId), tostring(sample.amountSource), tostring(sample.rawPipeId), tostring(sample.spellId), tostring(sample.targetName)))
-				do
-					local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
-					if dbg >= 5 then
-						local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
-						if ec and ec._dbgCorrOutgoingNote then
-							pcall(function() ec:_dbgCorrOutgoingNote(sample) end)
-						end
+				:format(tostring(sample.dbgChatId), tostring(sample.amountSource), tostring(sample.rawPipeId), tostring(sample.spellId), tostring(sample.targetName)))
+			do
+				local dbg = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("diagnostics"))
+					or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0)
+				if dbg >= 5 then
+					local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
+					if ec and ec._dbgCorrOutgoingNote then
+						pcall(function() ec:_dbgCorrOutgoingNote(sample) end)
 					end
 				end
+			end
 				self:_noteOutgoingSignal(sample.timestamp)
 
 				-- Only allow trusted outgoing amounts. COMBAT_TEXT_UPDATE is ideal; when it is

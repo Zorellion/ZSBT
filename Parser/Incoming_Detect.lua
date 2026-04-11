@@ -2,12 +2,18 @@ local ADDON_NAME, ZSBT = ...
 ZSBT.Parser = ZSBT.Parser or {}
 ZSBT.Parser.Incoming = ZSBT.Parser.Incoming or {}
 local Incoming = ZSBT.Parser.Incoming
+
+local Addon = ZSBT.Addon
 local function Debug(level, ...)
-    if ZSBT.Core and ZSBT.Core.Debug then
-        ZSBT.Core:Debug(level, ...)
-    elseif ZSBT.Debug then
-        ZSBT.Debug(level, ...)
-    end
+	if Addon and Addon.Dbg then
+		Addon:Dbg("incoming", level, ...)
+		return
+	end
+	if ZSBT.Core and ZSBT.Core.Debug then
+		ZSBT.Core:Debug(level, ...)
+	elseif ZSBT.Debug then
+		ZSBT.Debug(level, ...)
+	end
 end
 
 -- ============================================================
