@@ -10,20 +10,26 @@ local Combat = ZSBT.Core.Combat
 local Addon  = ZSBT.Addon
 
 function Combat:Enable()
-    if Addon and Addon.DebugPrint then
-        Addon:DebugPrint(1, "Combat:Enable()")
-    end
+	if Addon and Addon.Dbg then
+		Addon:Dbg("core", 3, "Combat:Enable()")
+	elseif Addon and Addon.DebugPrint then
+		Addon:DebugPrint(1, "Combat:Enable()")
+	end
 end
 
 function Combat:Disable()
-    if Addon and Addon.DebugPrint then
-        Addon:DebugPrint(1, "Combat:Disable()")
-    end
+	if Addon and Addon.Dbg then
+		Addon:Dbg("core", 3, "Combat:Disable()")
+	elseif Addon and Addon.DebugPrint then
+		Addon:DebugPrint(1, "Combat:Disable()")
+	end
 end
 
 -- Contract for Parser -> Core handoff (not used yet)
 function Combat:OnCombatEvent(event)
-    if Addon and Addon.DebugPrint then
-        Addon:DebugPrint(3, "Combat:OnCombatEvent() (stub)")
-    end
+	if Addon and Addon.Dbg then
+		Addon:Dbg("core", 4, "Combat:OnCombatEvent() (stub)")
+	elseif Addon and Addon.DebugPrint then
+		Addon:DebugPrint(3, "Combat:OnCombatEvent() (stub)")
+	end
 end

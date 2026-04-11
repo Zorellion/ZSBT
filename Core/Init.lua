@@ -350,6 +350,61 @@ function Addon:OnInitialize()
 	migrateGeneralDefaultsOnce()
 	migrateGeneralDefaults_v2()
 
+	-- Diagnostics migration: seed new channel-based debug settings from legacy fields.
+	local function migrateDiagnosticsDebugChannels_v1()
+		if not self.db then return end
+		self.db.global = self.db.global or {}
+		self.db.global.migrations = self.db.global.migrations or {}
+		if self.db.global.migrations.diagnosticsDebugChannels_v1 == true then return end
+
+		local defaults = ZSBT.DEFAULTS and ZSBT.DEFAULTS.profile and ZSBT.DEFAULTS.profile.diagnostics or nil
+		local profiles = self.db.profiles
+		if type(profiles) == "table" then
+			for _, prof in pairs(profiles) do
+				if type(prof) == "table" then
+					prof.diagnostics = prof.diagnostics or {}
+					local d = prof.diagnostics
+
+					-- Seed default level from legacy debugLevel if new field is missing.
+					if d.debugDefaultLevel == nil then
+						local legacy = tonumber(d.debugLevel) or 0
+						d.debugDefaultLevel = legacy
+					end
+
+					-- Ensure channel table exists.
+					if type(d.debugChannels) ~= "table" then
+						d.debugChannels = {}
+					end
+					local ch = d.debugChannels
+
+					-- Fill any missing channels from defaults.
+					if type(defaults) == "table" and type(defaults.debugChannels) == "table" then
+						for k, v in pairs(defaults.debugChannels) do
+							if ch[k] == nil then
+								ch[k] = v
+							end
+						end
+					end
+
+					-- Seed cooldowns channel override from legacy cooldownsDebugLevel if unset.
+					if ch.cooldowns == nil then
+						ch.cooldowns = 0
+					end
+					if (tonumber(ch.cooldowns) or 0) == 0 then
+						local legacyCd = tonumber(d.cooldownsDebugLevel) or 0
+						if legacyCd > 0 then
+							ch.cooldowns = legacyCd
+						end
+					end
+				end
+			end
+		end
+
+		self.db.global.migrations.diagnosticsDebugChannels_v1 = true
+	end
+
+	migrateDiagnosticsDebugChannels_v1()
+
 	ZSBT.Presets = ZSBT.Presets or {}
 	local Presets = ZSBT.Presets
 
@@ -1256,6 +1311,13 @@ function Addon:OnInitialize()
 			end)
 			self.configDialog:SetDefaultSize("ZSBT_TriggerEditor", 560, 520)
 		end
+
+		if ZSBT.BuildDebugOptionsTable then
+			LibStub("AceConfig-3.0"):RegisterOptionsTable("ZSBT_Debug", function()
+				return ZSBT.BuildDebugOptionsTable()
+			end)
+			self.configDialog:SetDefaultSize("ZSBT_Debug", 620, 520)
+		end
 	end
 
     self:Print("|cFF00CC66" .. ZSBT.ADDON_TITLE .. "|r |cFF808C9Ev" .. ZSBT.VERSION ..
@@ -1330,17 +1392,20 @@ function Addon:OnDisable()
     DisableParsers()
     if ZSBT.Core and ZSBT.Core.Disable then ZSBT.Core:Disable() end
 end
-
-------------------------------------------------------------------------
 -- Slash Command Router
 ------------------------------------------------------------------------
 function Addon:HandleSlashCommand(input)
-    local cmd, rest = self:GetArgs(input, 2)
+	local cmd, nextPos = self:GetArgs(input, 1)
+	local rest = ""
+	if type(input) == "string" and type(nextPos) == "number" and nextPos ~= 1e9 then
+		rest = input:sub(nextPos)
+		rest = rest:gsub("^%s+", "")
+	end
 
-    if not cmd or cmd == "" then
-        self:OpenConfig()
-        return
-    end
+	if not cmd or cmd == "" then
+		self:OpenConfig()
+		return
+	end
 
     cmd = cmd:lower()
 
@@ -1453,7 +1518,7 @@ function Addon:HandleSlashCommand(input)
 	end
 
     self:Print("|cFF808C9EUnknown command:|r " .. cmd)
-    self:Print("|cFF00CC66Usage:|r /zsbt [minimap | debug 0-5 | reset | version | auratest | restorefct | dumpcvars]")
+	self:Print("|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | reset | version | auratest | restorefct | dumpcvars]")
 end
 
 ------------------------------------------------------------------------
@@ -1539,6 +1604,12 @@ function Addon:OpenBuffRulesManager()
     end
 end
 
+function Addon:OpenDebugConfig()
+	if self.configDialog then
+		self.configDialog:Open("ZSBT_Debug")
+	end
+end
+
 function Addon:OpenSpellRuleEditor(spellID)
 	if type(spellID) ~= "number" then return end
 	ZSBT._editingSpellRuleSpellID = spellID
@@ -1568,24 +1639,80 @@ end
 -- Debug Level Command
 ------------------------------------------------------------------------
 function Addon:HandleDebugCommand(levelStr)
-    local level = tonumber(levelStr)
-    if not level or level < ZSBT.DEBUG_LEVEL_NONE or level >
-		ZSBT.DEBUG_LEVEL_CORRELATION then
-		self:Print("Usage: /zsbt debug [0-5]")
-		self:Print("  0 = Off, 1 = Suppressed, 2 = Confidence, 3 = All Events, 4 = Trace, 5 = Correlation")
-		return
-    end
+	local function usage()
+		self:Print("Usage:")
+		self:Print("  /zsbt debug show")
+		self:Print("  /zsbt debug <0-5>                 (set global default)")
+		self:Print("  /zsbt debug <channel> <0-5>       (set per-channel override)")
+		self:Print("Levels: 0=Off, 1=Error, 2=Warn, 3=Info, 4=Debug, 5=Trace")
+		self:Print("Channels: core, cooldowns, incoming, outgoing, triggers, notifications, ui, diagnostics, safety, perf")
+	end
 
-    self.db.profile.diagnostics.debugLevel = level
-    	local names = {
-		[0] = "Off",
-		[1] = "Suppressed",
-		[2] = "Confidence",
-		[3] = "All Events",
-		[4] = "Trace",
-		[5] = "Correlation",
-	}
-    self:Print("Debug level set to " .. level .. " (" .. names[level] .. ")")
+	local function show()
+		local d = self.db and self.db.profile and self.db.profile.diagnostics
+		if type(d) ~= "table" then
+			self:Print("Diagnostics not initialized.")
+			return
+		end
+		local def = tonumber(d.debugDefaultLevel)
+		if type(def) ~= "number" then def = tonumber(d.debugLevel) or 0 end
+		self:Print("Debug default level: " .. tostring(def))
+		local ch = d.debugChannels
+		if type(ch) ~= "table" then
+			self:Print("Debug channels: <none>")
+			return
+		end
+		local keys = {}
+		for k in pairs(ch) do keys[#keys + 1] = k end
+		table.sort(keys)
+		for i = 1, #keys do
+			local k = keys[i]
+			self:Print("  " .. tostring(k) .. "=" .. tostring(ch[k]))
+		end
+	end
+
+	local input = (type(levelStr) == "string") and levelStr or ""
+	input = input:gsub("^%s+", ""):gsub("%s+$", "")
+	if input == "" then
+		if self.OpenDebugConfig then
+			self:OpenDebugConfig()
+		else
+			show()
+		end
+		return
+	end
+
+	local a, b = self:GetArgs(input, 2)
+	a = a and a:lower() or nil
+
+	if a == "show" then
+		show()
+		return
+	end
+
+	-- /zsbt debug <0-5>
+	local nA = tonumber(a)
+	if nA ~= nil and b == nil then
+		local level = nA
+		if level < 0 or level > 5 then
+			usage()
+			return
+		end
+		self.db.profile.diagnostics.debugDefaultLevel = level
+		self:Print("Debug default level set to " .. tostring(level))
+		return
+	end
+
+	-- /zsbt debug <channel> <0-5>
+	local channel = a
+	local level = tonumber(b)
+	if type(channel) ~= "string" or channel == "" or level == nil or level < 0 or level > 5 then
+		usage()
+		return
+	end
+	self.db.profile.diagnostics.debugChannels = self.db.profile.diagnostics.debugChannels or {}
+	self.db.profile.diagnostics.debugChannels[channel] = level
+	self:Print("Debug channel '" .. tostring(channel) .. "' set to " .. tostring(level))
 end
 
 ------------------------------------------------------------------------
@@ -1595,12 +1722,14 @@ function Addon:HandleCooldownDebugCommand(levelStr)
 	local level = tonumber(levelStr)
 	if not level or level < 0 or level > 5 then
 		self:Print("Usage: /zsbt cddebug [0-5]")
-		self:Print("  0 = Off, 1 = Basic, 2 = Events, 3 = Timers, 4 = Cooldown API, 5 = Very Noisy")
+		self:Print("  Alias for: /zsbt debug cooldowns <0-5>")
 		return
 	end
 
 	self.db.profile.diagnostics.cooldownsDebugLevel = level
-	self:Print("Cooldown debug level set to " .. level)
+	self.db.profile.diagnostics.debugChannels = self.db.profile.diagnostics.debugChannels or {}
+	self.db.profile.diagnostics.debugChannels.cooldowns = level
+	self:Print("Cooldown debug channel set to " .. tostring(level))
 end
 
 ------------------------------------------------------------------------

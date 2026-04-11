@@ -11,24 +11,35 @@ local Cooldowns = ZSBT.Core.Cooldowns
 local Addon     = ZSBT.Addon
 
 local function CdDbg(requiredLevel, msg)
-	if not (Addon and Addon.Print) then return end
-	local level = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
-		and ZSBT.db.profile.diagnostics.cooldownsDebugLevel or 0
-	if level and level >= requiredLevel then
-		Addon:Print("|cFF00CCFF[CD]|r " .. tostring(msg))
+	if not Addon then return end
+	-- Legacy cooldownsDebugLevel used 1..5 as increasing verbosity.
+	-- Map to new severity/verbosity scale: 1-2=INFO(3), 3=DEBUG(4), 4-5=TRACE(5)
+	local map = { [1] = 3, [2] = 3, [3] = 4, [4] = 5, [5] = 5 }
+	local lvl = map[tonumber(requiredLevel) or 0] or 4
+	if Addon.Dbg then
+		Addon:Dbg("cooldowns", lvl, msg)
+		return
+	end
+	-- Fallback if diagnostics module not loaded yet
+	if Addon.Print then
+		Addon:Print(tostring(msg))
 	end
 end
 
 function Cooldowns:Enable()
-    if Addon and Addon.DebugPrint then
-        Addon:DebugPrint(1, "Cooldowns:Enable()")
-    end
+	if Addon and Addon.Dbg then
+		Addon:Dbg("cooldowns", 3, "Cooldowns:Enable()")
+	elseif Addon and Addon.DebugPrint then
+		Addon:DebugPrint(1, "Cooldowns:Enable()")
+	end
 end
 
 function Cooldowns:Disable()
-    if Addon and Addon.DebugPrint then
-        Addon:DebugPrint(1, "Cooldowns:Disable()")
-    end
+	if Addon and Addon.Dbg then
+		Addon:Dbg("cooldowns", 3, "Cooldowns:Disable()")
+	elseif Addon and Addon.DebugPrint then
+		Addon:DebugPrint(1, "Cooldowns:Disable()")
+	end
 end
 
 ------------------------------------------------------------------------
@@ -90,7 +101,9 @@ function Cooldowns:OnCooldownReady(event)
         CdDbg(1, "Cooldowns notify suppressed: no display backend")
     end
 
-    if Addon and Addon.DebugPrint then
-        Addon:DebugPrint(2, "Cooldown ready: " .. text)
-    end
+	if Addon and Addon.Dbg then
+		Addon:Dbg("cooldowns", 3, "Cooldown ready:", text)
+	elseif Addon and Addon.DebugPrint then
+		Addon:DebugPrint(2, "Cooldown ready: " .. text)
+	end
 end

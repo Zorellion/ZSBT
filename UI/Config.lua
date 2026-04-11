@@ -2168,18 +2168,32 @@ Diagnostics controls debug logging.
 ## Where to configure
 - `/zsbt` -> `Diagnostics`
 
-## Debug level
-- Use a higher debug level only when troubleshooting.
-- Higher values produce more chat/log spam.
+## Debug levels (0-5)
+- Use higher levels only when troubleshooting.
+- Higher values produce more chat spam.
+
+Levels:
+- `0` Off
+- `1` Error
+- `2` Warn
+- `3` Info
+- `4` Debug
+- `5` Trace
+
+## Debug channels
+ZSBT supports per-feature debug channels so you can enable logging for only the subsystem you’re debugging.
 
 ## Recommended bug report flow
-- Set debug level high.
+- Set debug level for the relevant channel.
 - Reproduce the issue once.
 - Copy/paste the relevant `ZSBT:` lines.
 - Set debug level back to `0`.
 
 ## Helpful commands
-- `/zsbt debug 0-4` Set debug level
+- `/zsbt debug show` Show current default + per-channel levels
+- `/zsbt debug <0-5>` Set global default debug level
+- `/zsbt debug <channel> <0-5>` Set a per-channel debug level
+- `/zsbt cddebug <0-5>` Alias for `/zsbt debug cooldowns <0-5>`
 
 ## Tips
 - Reset debug level back to `0` after troubleshooting.
@@ -2853,6 +2867,24 @@ local function buildHelpTreeArgs(orderKeys)
 						end
 					end,
 				}
+				groupArgs.openDebugUI = (key == "troubleshooting") and {
+					type = "execute",
+					name = "Open Debug UI",
+					desc = "Opens the Debug UI (debug channels/levels).",
+					order = 0.005,
+					width = "full",
+					func = function()
+						local Addon = ZSBT and ZSBT.Addon
+						if Addon and Addon.OpenDebugConfig then
+							pcall(function() Addon:OpenDebugConfig() end)
+							return
+						end
+						local ACD = LibStub and LibStub("AceConfigDialog-3.0", true)
+						if ACD and ACD.Open then
+							pcall(function() ACD:Open("ZSBT_Debug") end)
+						end
+					end,
+				} or nil
 				groupArgs.body = {
 					type = "description",
 					name = function()
@@ -3078,65 +3110,6 @@ function ZSBT.BuildOptionsTable()
                         childGroups = "tree",
                         args = (function()
 							local args = buildHelpTopicArgs("troubleshooting")
-							args.troubleshooting_perfHeader = {
-								type = "header",
-								name = "Performance Profiling",
-								order = 0.01,
-							}
-							args.troubleshooting_perfEnabled = {
-								type = "toggle",
-								name = "Enable Performance Profiling",
-								desc = "When enabled, ZSBT prints a [PERF] summary once per second showing where time is spent (animation engine, pulse engine, etc). Use only while troubleshooting.",
-								width = "full",
-								order = 0.02,
-								get = function()
-									local d = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
-									return d and d.perfEnabled == true
-								end,
-								set = function(_, v)
-									ZSBT.db.profile.diagnostics.perfEnabled = (v == true)
-								end,
-							}
-							args.troubleshooting_animBudgetMs = {
-								type = "range",
-								name = "Animation Budget (ms per frame)",
-								desc = "Optional cap on how much time ZSBT's animation engine can spend per frame. Helps prevent UI starvation in heavy combat. 0 disables.",
-								min = 0,
-								max = 10,
-								step = 0.25,
-								order = 0.025,
-								width = "full",
-								get = function()
-									local d = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
-									return (d and tonumber(d.animBudgetMs)) or 0
-								end,
-								set = function(_, v)
-									ZSBT.db.profile.diagnostics.animBudgetMs = tonumber(v) or 0
-								end,
-							}
-							args.troubleshooting_pulseBudgetMs = {
-								type = "range",
-								name = "Pulse Budget (ms per pulse)",
-								desc = "Optional cap on how much time ZSBT's pulse engine can spend per 20ms pulse. 0 disables.",
-								min = 0,
-								max = 10,
-								step = 0.25,
-								order = 0.026,
-								width = "full",
-								get = function()
-									local d = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
-									return (d and tonumber(d.pulseBudgetMs)) or 0
-								end,
-								set = function(_, v)
-									ZSBT.db.profile.diagnostics.pulseBudgetMs = tonumber(v) or 0
-								end,
-							}
-							args.troubleshooting_perfSpacer = {
-								type = "description",
-								name = " ",
-								order = 0.03,
-								width = "full",
-							}
 							return args
 						end)(),
                     },
@@ -3171,6 +3144,165 @@ function ZSBT.BuildSpellRulesOptionsTable()
 			},
 		},
     }
+end
+
+function ZSBT.BuildDebugOptionsTable()
+	local function ensureDiagnostics()
+		if not (ZSBT and ZSBT.db and ZSBT.db.profile) then return nil end
+		ZSBT.db.profile.diagnostics = ZSBT.db.profile.diagnostics or {}
+		local d = ZSBT.db.profile.diagnostics
+		if type(d.debugDefaultLevel) ~= "number" then
+			d.debugDefaultLevel = tonumber(d.debugLevel) or 0
+		end
+		d.debugChannels = d.debugChannels or {}
+		return d
+	end
+
+	local function notify()
+		local ACR = LibStub("AceConfigRegistry-3.0", true)
+		if ACR then
+			ACR:NotifyChange("ZSBT_Debug")
+			ACR:NotifyChange("ZSBT")
+		end
+	end
+
+	local LEVELS = {
+		[0] = "0 - Off",
+		[1] = "1 - Error",
+		[2] = "2 - Warn",
+		[3] = "3 - Info",
+		[4] = "4 - Debug",
+		[5] = "5 - Trace",
+	}
+
+	local CHANNEL_ORDER = {
+		"core",
+		"cooldowns",
+		"incoming",
+		"outgoing",
+		"triggers",
+		"notifications",
+		"ui",
+		"diagnostics",
+		"safety",
+		"perf",
+	}
+
+	local function setAllChannels(level)
+		local d = ensureDiagnostics()
+		if not d then return end
+		level = tonumber(level) or 0
+		d.debugDefaultLevel = level
+		for i = 1, #CHANNEL_ORDER do
+			local ch = CHANNEL_ORDER[i]
+			d.debugChannels[ch] = level
+		end
+		d.debugLevel = level
+		d.cooldownsDebugLevel = d.debugChannels.cooldowns or level
+		notify()
+	end
+
+	local function getDefault()
+		local d = ensureDiagnostics()
+		return (d and tonumber(d.debugDefaultLevel)) or 0
+	end
+
+	local function setDefault(_, val)
+		local d = ensureDiagnostics()
+		if not d then return end
+		local n = tonumber(val) or 0
+		d.debugDefaultLevel = n
+		d.debugLevel = n
+		notify()
+	end
+
+	local function getChannelLevel(channel)
+		local d = ensureDiagnostics()
+		if not d then return 0 end
+		local ch = d.debugChannels
+		local v = ch and tonumber(ch[channel])
+		if type(v) ~= "number" then
+			return getDefault()
+		end
+		return v
+	end
+
+	local function setChannelLevel(channel, val)
+		local d = ensureDiagnostics()
+		if not d then return end
+		local n = tonumber(val) or 0
+		d.debugChannels[channel] = n
+		if channel == "cooldowns" then
+			d.cooldownsDebugLevel = n
+		end
+		notify()
+	end
+
+	local args = {
+		header = {
+			type = "header",
+			name = "Debug Configuration",
+			order = 1,
+		},
+		globalDefault = {
+			type = "select",
+			name = "Default Debug Level",
+			desc = "Sets the global default debug severity. Channels can override this.",
+			order = 2,
+			width = "full",
+			values = function() return LEVELS end,
+			get = getDefault,
+			set = setDefault,
+		},
+		actionsHeader = {
+			type = "header",
+			name = "Quick Actions",
+			order = 3,
+		},
+		allOff = {
+			type = "execute",
+			name = "All Off",
+			desc = "Sets default and all channels to 0.",
+			order = 4,
+			width = "half",
+			func = function() setAllChannels(0) end,
+		},
+		allDebug = {
+			type = "execute",
+			name = "All Debug",
+			desc = "Sets default and all channels to 4.",
+			order = 5,
+			width = "half",
+			func = function() setAllChannels(4) end,
+		},
+		channelsHeader = {
+			type = "header",
+			name = "Per-Channel Overrides",
+			order = 6,
+		},
+	}
+
+	local order = 10
+	for i = 1, #CHANNEL_ORDER do
+		local ch = CHANNEL_ORDER[i]
+		args["channel_" .. ch] = {
+			type = "select",
+			name = ch,
+			desc = "Override level for this channel.",
+			order = order,
+			width = "full",
+			values = function() return LEVELS end,
+			get = function() return getChannelLevel(ch) end,
+			set = function(_, val) setChannelLevel(ch, val) end,
+		}
+		order = order + 1
+	end
+
+	return {
+		type = "group",
+		name = "|cFFFFD100Debug|r",
+		args = args,
+	}
 end
 
 ------------------------------------------------------------------------
@@ -3315,6 +3447,7 @@ function ZSBT.ApplyStrikeSilverStyling()
             or appName == "ZSBT_SpellRuleEditor"
             or appName == "ZSBT_BuffRuleEditor"
             or appName == "ZSBT_TriggerEditor"
+			or appName == "ZSBT_Debug"
     end
 
     local function ApplySavedMainConfigGeometry(f)
@@ -3804,9 +3937,12 @@ local function ResolveSpellIDFromCursor(cursorType, id, subType, extra1, extra2,
 	if not cursorType or not id then return nil end
 
 	local function dbg(msg)
-		local dl = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and tonumber(ZSBT.db.profile.diagnostics.debugLevel)
-		if dl and dl >= 2 and ZSBT.Addon and ZSBT.Addon.Print then
-			ZSBT.Addon:Print(msg)
+		local dl = (ZSBT and ZSBT.Addon and ZSBT.Addon.GetDebugLevel and ZSBT.Addon:GetDebugLevel("diagnostics"))
+			or (ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and tonumber(ZSBT.db.profile.diagnostics.debugLevel))
+		if dl and dl >= 2 and ZSBT and ZSBT.Addon and ZSBT.Addon.Dbg then
+			ZSBT.Addon:Dbg("diagnostics", 2, msg)
+		elseif dl and dl >= 2 and ZSBT and ZSBT.Addon and ZSBT.Addon.Print then
+			ZSBT.Addon:Print(tostring(msg))
 		end
 	end
 

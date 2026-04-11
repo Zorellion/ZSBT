@@ -61,7 +61,9 @@ ZSBT is built to behave safely under modern Retail restrictions ("secret values"
 
 ## Commands
 - `/zsbt` — Open configuration
-- `/zsbt debug 0-4` — Set debug level
+- `/zsbt debug show` — Show current default + per-channel debug levels
+- `/zsbt debug <0-5>` — Set global default debug level
+- `/zsbt debug <channel> <0-5>` — Set a per-channel debug level
 - `/zsbt reset` — Reset to defaults
 - `/zsbt minimap` — Toggle minimap button
 - `/zsbt version` — Show version

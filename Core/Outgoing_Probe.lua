@@ -52,14 +52,24 @@ local function Debug(level, ...)
 end
 
 local function Dbg4(prefix, msg)
-	local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
+	if Addon and Addon.Dbg then
+		Addon:Dbg("outgoing", 4, prefix, msg)
+		return
+	end
+	local dbg = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("outgoing"))
+		or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0)
 	if dbg >= 4 and Addon and Addon.Print then
 		Addon:Print(prefix .. " " .. msg)
 	end
 end
 
 local function Dbg5(prefix, msg)
-	local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
+	if Addon and Addon.Dbg then
+		Addon:Dbg("outgoing", 5, prefix, msg)
+		return
+	end
+	local dbg = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("outgoing"))
+		or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0)
 	if dbg >= 5 and Addon and Addon.Print then
 		Addon:Print(prefix .. " " .. msg)
 	end
@@ -736,17 +746,15 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				critConf = profOut.critDamage
 			end
 		end
-		-- Crit color: when routing to crit area, use configured crit color (if set)
-		if evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
-			local cc = critConf.color
+		-- Crit color: apply configured crit color whenever set (routing is optional)
+		if evt.isCrit then
+			local cc = critConf and critConf.color
 			if type(cc) == "table" and type(cc.r) == "number" and type(cc.g) == "number" and type(cc.b) == "number" then
 				color = { r = cc.r, g = cc.g, b = cc.b }
 			else
+				-- Default crit color: yellow for damage crits (overrides school)
 				color = {r = 1.00, g = 1.00, b = 0.00}
 			end
-		elseif evt.isCrit then
-			-- Default crit color: yellow for damage crits (overrides school)
-			color = {r = 1.00, g = 1.00, b = 0.00}
 		end
 
 		local meta = {
@@ -841,41 +849,56 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
             meta.stickyDurationMult = 1.25
         end
 
-        local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
-        if dbg >= 3 and Addon and Addon.Print then
-            local function safeDbg(v)
-                if v == nil then return "nil" end
-                if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
-                if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
-                return "<secret>"
-            end
-            Addon:Print("|cFF00CC66[OUT]|r " .. safeDbg(areaToUse) .. " " .. safeDbg(evt.spellId) .. " " .. safeDbg(text))
-        end
+        local dbg = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("outgoing"))
+			or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0)
+		if dbg >= 3 and Addon and Addon.Dbg then
+			local function safeDbg(v)
+				if v == nil then return "nil" end
+				if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
+				if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
+				return "<secret>"
+			end
+			Addon:Dbg("outgoing", 3, safeDbg(areaToUse), safeDbg(evt.spellId), safeDbg(text))
+		elseif dbg >= 3 and Addon and Addon.Print then
+			local function safeDbg(v)
+				if v == nil then return "nil" end
+				if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
+				if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
+				return "<secret>"
+			end
+			Addon:Print("|cFF00CC66[OUT]|r " .. safeDbg(areaToUse) .. " " .. safeDbg(evt.spellId) .. " " .. safeDbg(text))
+		end
 
-        if ZSBT.DisplayText then
-            ZSBT.DisplayText(areaToUse, text, color, meta)
-        elseif ZSBT.Core and ZSBT.Core.Display and ZSBT.Core.Display.Emit then
-            ZSBT.Core.Display:Emit(areaToUse, text, color, meta)
-        end
+		if ZSBT.DisplayText then
+			ZSBT.DisplayText(areaToUse, text, color, meta)
+		elseif ZSBT.Core and ZSBT.Core.Display and ZSBT.Core.Display.Emit then
+			ZSBT.Core.Display:Emit(areaToUse, text, color, meta)
+		end
 
-    else
-        local conf = prof.healing
-        if not conf or not conf.enabled then return end
+	else
+		local conf = prof.healing
+		if not conf or not conf.enabled then return end
 
-        local areaToUse = ruleArea or conf.scrollArea or defaultRuleArea or "Outgoing"
-        local text
+		local areaToUse = ruleArea or conf.scrollArea or defaultRuleArea or "Outgoing"
+		local text
 
-        local dbg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
-        if dbg >= 4 then
-            local at = evt and evt.amountText
-            if ZSBT.IsSafeString(at) then
-                local cleaned = at:gsub(",", "")
-                if tonumber(cleaned) == nil then
-                    Dbg4("|cFFCC66FF[OUTDBG]|r", ("HEAL_NONNUM amountText=%s amount=%s rawPipeId=%s tainted=%s")
-                        :format(tostring(at), tostring(evt and evt.amount), tostring(evt and evt.rawPipeId), tostring(isTainted)))
-                end
-            end
-        end
+		local dbg = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("outgoing"))
+			or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0)
+		if dbg >= 4 then
+			local at = evt and evt.amountText
+			if ZSBT.IsSafeString(at) then
+				local cleaned = at:gsub(",", "")
+				if tonumber(cleaned) == nil then
+					if Addon and Addon.Dbg then
+						Addon:Dbg("outgoing", 4, ("HEAL_NONNUM amountText=%s amount=%s rawPipeId=%s tainted=%s")
+							:format(tostring(at), tostring(evt and evt.amount), tostring(evt and evt.rawPipeId), tostring(isTainted)))
+					elseif Addon and Addon.Print then
+						Addon:Print("|cFFCC66FF[OUTDBG]|r", ("HEAL_NONNUM amountText=%s amount=%s rawPipeId=%s tainted=%s")
+							:format(tostring(at), tostring(evt and evt.amount), tostring(evt and evt.rawPipeId), tostring(isTainted)))
+					end
+				end
+			end
+		end
 
         -- Try raw pipe first (same as damage path)
         local healAmt = nil
@@ -962,17 +985,15 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				critConf = profOut.critDamage
 			end
 		end
-		-- Crit color: when routing to crit area, use configured crit color (if set)
-		if evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
-			local cc = critConf.color
+		-- Crit color: apply configured crit color whenever set (routing is optional)
+		if evt.isCrit then
+			local cc = critConf and critConf.color
 			if type(cc) == "table" and type(cc.r) == "number" and type(cc.g) == "number" and type(cc.b) == "number" then
 				color = { r = cc.r, g = cc.g, b = cc.b }
 			else
+				-- Default crit color: bright green for heal crits
 				color = {r = 0.20, g = 1.00, b = 0.40}
 			end
-		elseif evt.isCrit then
-			-- Default crit color: bright green for heal crits
-			color = {r = 0.20, g = 1.00, b = 0.40}
 		end
         local meta = {
             probe = true,
@@ -1023,8 +1044,11 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
             ZSBT.Core.Display:Emit(areaToUse, text, color, meta)
         end
 
-		local dbg3 = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0
-		if dbg3 >= 3 and Addon and Addon.Print then
+		local dbg3 = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("outgoing"))
+			or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0)
+		if dbg3 >= 3 and Addon and Addon.Dbg then
+			Addon:Dbg("outgoing", 3, safeDbg(areaToUse), safeDbg(evt.spellId), safeDbg(text))
+		elseif dbg3 >= 3 and Addon and Addon.Print then
 			local function safeDbg(v)
 				if v == nil then return "nil" end
 				if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
