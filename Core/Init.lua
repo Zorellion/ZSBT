@@ -655,8 +655,18 @@ function Addon:OnInitialize()
 
 		local prof = self.db.profile
 		local psc = prof and prof.spamControl
+		local function normalizeNumericKey(k)
+			if type(k) == "number" then return k end
+			if type(k) ~= "string" then return k end
+			local nk = tonumber(k)
+			if nk and tostring(nk) == k then
+				return nk
+			end
+			return k
+		end
 		if psc and type(psc.spellRules) == "table" then
 			for sid, rule in pairs(psc.spellRules) do
+				sid = normalizeNumericKey(sid)
 				if self.db.char.spamControl.spellRules[sid] == nil and type(rule) == "table" then
 					local copy = {}
 					for k, v in pairs(rule) do copy[k] = v end
@@ -667,6 +677,7 @@ function Addon:OnInitialize()
 		end
 		if psc and type(psc.auraRules) == "table" then
 			for sid, rule in pairs(psc.auraRules) do
+				sid = normalizeNumericKey(sid)
 				if self.db.char.spamControl.auraRules[sid] == nil and type(rule) == "table" then
 					local copy = {}
 					for k, v in pairs(rule) do copy[k] = v end
@@ -678,33 +689,68 @@ function Addon:OnInitialize()
 
 		local ptr = prof and prof.triggers
 		if ptr and type(ptr) == "table" then
+			local ok = true
 			if type(ptr.enabled) == "boolean" then
 				self.db.char.triggers.enabled = ptr.enabled
 			end
-			if type(ptr.items) == "table" and #self.db.char.triggers.items == 0 then
-				self.db.char.triggers.utDeletedPresets = self.db.char.triggers.utDeletedPresets or {}
-				local utDeleted = self.db.char.triggers.utDeletedPresets
-				for i, trig in ipairs(ptr.items) do
-					if type(trig) == "table" then
-						if type(trig.eventType) == "string" and utDeleted[trig.eventType] == true then
-							-- User deleted this shipped UT preset; keep deleted.
-						else
-							local copy = {}
-							for k, v in pairs(trig) do
-								if type(v) == "table" then
-									local sub = {}
-									for k2, v2 in pairs(v) do sub[k2] = v2 end
-									copy[k] = sub
-								else
-									copy[k] = v
+			if type(ptr.items) == "table" then
+				ok = pcall(function()
+					self.db.char.triggers.utDeletedPresets = self.db.char.triggers.utDeletedPresets or {}
+					local utDeleted = self.db.char.triggers.utDeletedPresets
+					local items = self.db.char.triggers.items
+					items = type(items) == "table" and items or {}
+					self.db.char.triggers.items = items
+
+					local function trigKey(trig)
+						if type(trig) ~= "table" then return nil end
+						if type(trig.id) == "string" and trig.id ~= "" then
+							return "id:" .. trig.id
+						end
+						local et = (type(trig.eventType) == "string") and trig.eventType or ""
+						local sid = trig.spellId
+						if type(sid) == "string" then
+							sid = normalizeNumericKey(sid)
+						end
+						sid = (type(sid) == "number") and sid or 0
+						return "et:" .. et .. ":sid:" .. tostring(sid)
+					end
+
+					local existing = {}
+					for _, trig in ipairs(items) do
+						local k = trigKey(trig)
+						if k then existing[k] = true end
+					end
+
+					for _, trig in ipairs(ptr.items) do
+						if type(trig) == "table" then
+							if type(trig.eventType) == "string" and utDeleted[trig.eventType] == true then
+								-- User deleted this shipped UT preset; keep deleted.
+							else
+								local copy = {}
+								for k, v in pairs(trig) do
+									if k == "spellId" then
+										copy[k] = normalizeNumericKey(v)
+									elseif type(v) == "table" then
+										local sub = {}
+										for k2, v2 in pairs(v) do sub[k2] = v2 end
+										copy[k] = sub
+									else
+										copy[k] = v
+									end
+								end
+								local k = trigKey(copy)
+								if k == nil or existing[k] ~= true then
+									items[#items + 1] = copy
+									if k then existing[k] = true end
 								end
 							end
-							self.db.char.triggers.items[i] = copy
 						end
 					end
-				end
+				end)
 			end
-			prof.triggers = nil
+			if ok then
+				prof.triggers = nil
+			end
 		end
 
 		self.db.global.migrations.rulesToChar_v1 = true
@@ -821,8 +867,13 @@ function Addon:OnInitialize()
 		local tracked = pc and pc.tracked
 		if type(tracked) == "table" then
 			for idKey, v in pairs(tracked) do
-				if self.db.char.cooldowns.tracked[idKey] == nil then
-					self.db.char.cooldowns.tracked[idKey] = v
+				local nk = idKey
+				if type(nk) == "string" then
+					local n2 = tonumber(nk)
+					if n2 and tostring(n2) == nk then nk = n2 end
+				end
+				if self.db.char.cooldowns.tracked[nk] == nil then
+					self.db.char.cooldowns.tracked[nk] = v
 				end
 			end
 			-- Keep profile.cooldowns.tracked for backward compatibility with older code,

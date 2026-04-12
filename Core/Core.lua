@@ -58,9 +58,8 @@ local function getAuraRuleForSpell(spellID)
 end
 
 function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride)
-	if type(spellID) ~= "number" then return true end
 	local isHarmful = (isHarmfulOverride == true)
-	if isHarmfulOverride == nil then
+	if isHarmfulOverride == nil and type(spellID) == "number" then
 		if type(AuraUtil) == "table" and type(AuraUtil.FindAuraBySpellId) == "function" then
 			local ok, aura = pcall(AuraUtil.FindAuraBySpellId, spellID, "player", "HARMFUL")
 			isHarmful = ok and aura ~= nil
@@ -116,6 +115,9 @@ function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride)
 			end
 			return false 
 		end
+		return true
+	end
+	if type(spellID) ~= "number" then
 		return true
 	end
 	if rule.disabled then 
@@ -2653,10 +2655,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                 -- Skip notification during grace period after aura removal (prevents instance ID refresh spam)
                 local inGracePeriod = self._auraGracePeriodUntil and (GetTime and GetTime() or 0) < self._auraGracePeriodUntil
                 if not silent and not seenDuringInit and not inGracePeriod then
-                    local okToShow = true
-                    if type(sid) == "number" then
-                        okToShow = self:ShouldEmitBuffNotif(sid, true, isHelpful ~= true)
-                    end
+                    local okToShow = self:ShouldEmitBuffNotif(sid, true, isHelpful ~= true)
                     if okToShow then
                         if sid and type(sid) == "number" then
                             self:EmitBuffNotification(sid, BuildAuraNotifText("+", newInstances[instanceId]), gainColor, "auras")
@@ -2755,10 +2754,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                     if isHarmful and (not sid) then
                         sid = self._auraInstanceHarmfulSpellIDs and self._auraInstanceHarmfulSpellIDs[oldInstanceId]
                     end
-                    local okToShow = true
-                    if type(sid) == "number" then
-                        okToShow = self:ShouldEmitBuffNotif(sid, false, isHarmful)
-                    end
+                    local okToShow = self:ShouldEmitBuffNotif(sid, false, isHarmful)
                     if okToShow then
                         if sid and type(sid) == "number" then
                             self:EmitBuffNotification(sid, BuildAuraNotifText("-", oldName or "Aura"), {r = 0.6, g = 0.6, b = 0.6}, "auras")
@@ -2833,10 +2829,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                         self._aurasSeenDuringInit[sid] = true
                     end
                     if not silent then
-                        local okToShow = true
-                        if type(sid) == "number" then
-                            okToShow = self:ShouldEmitBuffNotif(sid, true, isHarmful)
-                        end
+                        local okToShow = self:ShouldEmitBuffNotif(sid, true, isHarmful)
                         if okToShow then
 							if isHarmful then
 								self:EmitNotification(BuildAuraNotifText("+", self._auraInstanceMap[instanceId]), color, "auras")
@@ -3017,10 +3010,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 					end
 				end
 				if silent ~= true and not inInitWindow then
-					local okToShow = true
-					if type(sid) == "number" then
-						okToShow = self:ShouldEmitBuffNotif(sid, false, isHarmful)
-					end
+					local okToShow = self:ShouldEmitBuffNotif(sid, false, isHarmful)
 					if dl >= 4 then
 						if Addon and Addon.Dbg then
 							Addon:Dbg("core", 4, "[AURA] FADE okToShow=" .. tostring(okToShow))

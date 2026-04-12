@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.6
+- Spam Control: fixed unconfigured aura gain/fade notifications bypassing global toggles when spell ID cannot be resolved (common in combat).
+- Migration: hardened profile->char migrations for Spam Control rules, Triggers, and tracked cooldowns to normalize numeric string keys and avoid destructive trigger cleanup.
+- Troubleshooting: added a repair button to normalize Spam Control rule keys (string spell IDs -> numeric).
+- Diagnostics: fixed nil Addon initialization during early load.
+
 ## 2.2.5
 - Config UI: hardened AceConfig window behavior (prevents ZSBT config close/ESC handling from interfering with other addons).
 - Combat Text: replaced Blizzard combat text suppression dropdown with granular hide toggles (outgoing/incoming/heals/reactives/xp+rep+honor/resource gains/pet) and kept a manual restore button as a panic option.
