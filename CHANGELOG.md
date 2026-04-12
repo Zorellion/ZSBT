@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.3
+- Triggers: fixed `Sticky Jiggle (shake)` toggle in Trigger actions so it correctly persists and can be disabled.
+- Triggers: hardened watched aura sync presence checks to reduce false `AURA_FADE`/`AURA_GAIN` transitions during loading screens.
+- Media: registered additional bundled fonts/sounds via LibSharedMedia so they appear in dropdowns.
+
 ## 2.2.2
 - Triggers: improved watched aura sync so it only emits `AURA_GAIN`/`AURA_FADE` on actual state transitions (reduces sync dedup spam).
 - Triggers: reduced loading-screen aura flapping causing false re-triggers (example: Bloodlust lockout debuffs like Sated/Fatigued/Temporal Displacement).
