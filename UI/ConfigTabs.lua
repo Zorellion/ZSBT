@@ -6638,6 +6638,50 @@ function ZSBT.BuildTab_SpamControl()
 					sc.auraGlobal.showUnconfiguredFades = v and true or false
 				end,
 			},
+			auraShowUnconfiguredDebuffGains = {
+				type  = "toggle",
+				name  = "Show Debuff Gains Without Rules",
+				desc  = "If disabled, harmful debuff gain notifications only show when you have a Debuff Rule for that spell (whitelist mode).",
+				width = "full",
+				order = 29.91,
+				get   = function()
+					local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
+					local g = sc and sc.auraGlobal
+					if type(g) ~= "table" then return true end
+					if g.showUnconfiguredDebuffGains == nil then
+						return g.showUnconfiguredGains ~= false
+					end
+					return g.showUnconfiguredDebuffGains ~= false
+				end,
+				set   = function(_, v)
+					local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
+					if not sc then return end
+					sc.auraGlobal = sc.auraGlobal or {}
+					sc.auraGlobal.showUnconfiguredDebuffGains = v and true or false
+				end,
+			},
+			auraShowUnconfiguredDebuffFades = {
+				type  = "toggle",
+				name  = "Show Debuff Fades Without Rules",
+				desc  = "If disabled, harmful debuff fade notifications only show when you have a Debuff Rule for that spell (whitelist mode).",
+				width = "full",
+				order = 29.92,
+				get   = function()
+					local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
+					local g = sc and sc.auraGlobal
+					if type(g) ~= "table" then return true end
+					if g.showUnconfiguredDebuffFades == nil then
+						return g.showUnconfiguredFades ~= false
+					end
+					return g.showUnconfiguredDebuffFades ~= false
+				end,
+				set   = function(_, v)
+					local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
+					if not sc then return end
+					sc.auraGlobal = sc.auraGlobal or {}
+					sc.auraGlobal.showUnconfiguredDebuffFades = v and true or false
+				end,
+			},
 			rulesManagerDesc = {
 				type     = "description",
 				name     = "Manage per-spell outgoing throttles in a separate window.",

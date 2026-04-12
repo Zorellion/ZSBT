@@ -57,15 +57,44 @@ local function getAuraRuleForSpell(spellID)
 	return rule
 end
 
-function Core:ShouldEmitBuffNotif(spellID, isGain)
+function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride)
 	if type(spellID) ~= "number" then return true end
+	local isHarmful = (isHarmfulOverride == true)
+	if isHarmfulOverride == nil then
+		if type(AuraUtil) == "table" and type(AuraUtil.FindAuraBySpellId) == "function" then
+			local ok, aura = pcall(AuraUtil.FindAuraBySpellId, spellID, "player", "HARMFUL")
+			isHarmful = ok and aura ~= nil
+		end
+	end
 	local rule = getAuraRuleForSpell(spellID)
 	local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("core"))
 		or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 	if not rule then
 		local sc = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
 		local g = sc and sc.auraGlobal
-		if isGain and g and g.showUnconfiguredGains == false then 
+		if isHarmful and isGain and g and g.showUnconfiguredDebuffGains == false then
+			if dl >= 4 then
+				if Addon and Addon.Dbg then
+					Addon:Dbg("core", 4, "[AURA] ShouldEmit: blocked unconfigured debuff gain sid=" .. tostring(spellID))
+				else
+					local ZSBTAddon = ZSBT and ZSBT.Addon
+					if ZSBTAddon and ZSBTAddon.Print then ZSBTAddon:Print("[AURA] ShouldEmit: blocked unconfigured debuff gain sid=" .. tostring(spellID)) end
+				end
+			end
+			return false
+		end
+		if isHarmful and (not isGain) and g and g.showUnconfiguredDebuffFades == false then
+			if dl >= 4 then
+				if Addon and Addon.Dbg then
+					Addon:Dbg("core", 4, "[AURA] ShouldEmit: blocked unconfigured debuff fade sid=" .. tostring(spellID))
+				else
+					local ZSBTAddon = ZSBT and ZSBT.Addon
+					if ZSBTAddon and ZSBTAddon.Print then ZSBTAddon:Print("[AURA] ShouldEmit: blocked unconfigured debuff fade sid=" .. tostring(spellID)) end
+				end
+			end
+			return false
+		end
+		if (not isHarmful) and isGain and g and g.showUnconfiguredGains == false then 
 			if dl >= 4 then
 				if Addon and Addon.Dbg then
 					Addon:Dbg("core", 4, "[AURA] ShouldEmit: blocked unconfigured gain sid=" .. tostring(spellID))
@@ -76,7 +105,7 @@ function Core:ShouldEmitBuffNotif(spellID, isGain)
 			end
 			return false 
 		end
-		if (not isGain) and g and g.showUnconfiguredFades == false then 
+		if (not isHarmful) and (not isGain) and g and g.showUnconfiguredFades == false then 
 			if dl >= 4 then
 				if Addon and Addon.Dbg then
 					Addon:Dbg("core", 4, "[AURA] ShouldEmit: blocked unconfigured fade sid=" .. tostring(spellID))
@@ -2158,6 +2187,8 @@ end
 Core._trackedAuraNames = {}  -- [name] = true (currently active)
 Core._auraInstanceMap = {}   -- [auraInstanceID] = name
 Core._auraInstanceSpellIDs = {} -- [auraInstanceID] = spellID (helpful auras only)
+Core._auraInstanceHarmfulSpellIDs = {} -- [auraInstanceID] = spellID (harmful auras only)
+Core._auraInstanceIsHarmful = {} -- [auraInstanceID] = boolean
 Core._auraRuleLastShown = nil  -- [spellID] = { gain=ts, fade=ts }
 Core._recentBuffStats = nil -- runtime-only: [spellID] = { count=N, lastSeen=ts }
 
@@ -2249,6 +2280,8 @@ function Core:InitBuffTracking()
 			Core._auraInstanceMap = {}
 			Core._trackedAuraNames = {}
 			Core._auraInstanceSpellIDs = {}
+			Core._auraInstanceHarmfulSpellIDs = {}
+			Core._auraInstanceIsHarmful = {}
 			Core._auraRuleLastShown = {}
 			Core._auraInitInProgress = true
 			Core._aurasSeenDuringInit = {}
@@ -2508,50 +2541,46 @@ function Core:ScanPlayerAuras(updateInfo, silent)
             local instanceId = auraData.auraInstanceID
             if not instanceId then return end
 
-            local sid = isHelpful and ResolveSafeAuraSpellID(auraData) or nil
+            local sid = ResolveSafeAuraSpellID(auraData)
             local name = extractAuraInfo(auraData)
-			if isHelpful and type(sid) ~= "number" then
+			if type(sid) ~= "number" then
 				sid = ResolveSpellIdByName(name)
 			end
             if not newInstances[instanceId] then
                 newInstances[instanceId] = name or defaultName
+                if type(self._auraInstanceIsHarmful) == "table" then
+                    self._auraInstanceIsHarmful[instanceId] = isHelpful ~= true and true or false
+                end
                 if isHelpful and type(sid) == "number" then
                     self:RecordRecentBuff(sid)
+                end
+                if type(sid) == "number" then
+                    if isHelpful and self._auraInstanceSpellIDs then
+                        self._auraInstanceSpellIDs[instanceId] = sid
+                    elseif (not isHelpful) and self._auraInstanceHarmfulSpellIDs then
+                        self._auraInstanceHarmfulSpellIDs[instanceId] = sid
+                    end
                 end
                 -- Track auras seen during init to suppress their notifications later
                 if silent and self._auraInitInProgress and type(sid) == "number" then
                     self._aurasSeenDuringInit[sid] = true
                 end
-                if not oldInstances[instanceId] then
-                    -- Skip notification if this aura was seen during init (prevents reload spam)
-                    local seenDuringInit = type(sid) == "number" and self._aurasSeenDuringInit and self._aurasSeenDuringInit[sid]
-                    -- Skip notification during grace period after aura removal (prevents instance ID refresh spam)
-                    local inGracePeriod = self._auraGracePeriodUntil and (GetTime and GetTime() or 0) < self._auraGracePeriodUntil
-                    if not silent and not seenDuringInit and not inGracePeriod then
-                        local okToShow = true
-                        if isHelpful and type(sid) == "number" then
-                            okToShow = self:ShouldEmitBuffNotif(sid, true)
-                        end
-                        if isHelpful and type(sid) == "number" then
-                            local trg = ZSBT.Core and ZSBT.Core.Triggers
-                            if trg then
-                                -- Skip synthetic auras to prevent double events
-                                local isSynthetic = trg._syntheticAuraExpireAt and type(trg._syntheticAuraExpireAt[sid]) == "number"
-                                if isSynthetic then
-                                    local now = GetTime and GetTime() or 0
-                                    isSynthetic = now < (trg._syntheticAuraExpireAt[sid] or 0)
-                                end
-                                if not isSynthetic and trg.OnAuraGain then
-                                    trg:OnAuraGain(sid, "core")
-                                end
-                            end
-                        end
-                        if okToShow then
-                            if isHelpful and type(sid) == "number" then
-                                self:EmitBuffNotification(sid, BuildAuraNotifText("+", newInstances[instanceId]), gainColor, "auras")
-                            else
-                                self:EmitNotification(BuildAuraNotifText("+", newInstances[instanceId]), gainColor, "auras")
-                            end
+            end
+            if not oldInstances[instanceId] then
+                -- Skip notification if this aura was seen during init (prevents reload spam)
+                local seenDuringInit = type(sid) == "number" and self._aurasSeenDuringInit and self._aurasSeenDuringInit[sid]
+                -- Skip notification during grace period after aura removal (prevents instance ID refresh spam)
+                local inGracePeriod = self._auraGracePeriodUntil and (GetTime and GetTime() or 0) < self._auraGracePeriodUntil
+                if not silent and not seenDuringInit and not inGracePeriod then
+                    local okToShow = true
+                    if type(sid) == "number" then
+                        okToShow = self:ShouldEmitBuffNotif(sid, true, isHelpful ~= true)
+                    end
+                    if okToShow then
+                        if sid and type(sid) == "number" then
+                            self:EmitBuffNotification(sid, BuildAuraNotifText("+", newInstances[instanceId]), gainColor, "auras")
+                        else
+                            self:EmitNotification(BuildAuraNotifText("+", newInstances[instanceId]), gainColor, "auras")
                         end
                     end
                 end
@@ -2641,9 +2670,13 @@ function Core:ScanPlayerAuras(updateInfo, silent)
             if not newInstances[oldInstanceId] then
                 if not silent then
                     local sid = self._auraInstanceSpellIDs and self._auraInstanceSpellIDs[oldInstanceId]
+                    local isHarmful = self._auraInstanceIsHarmful and self._auraInstanceIsHarmful[oldInstanceId] == true
+                    if isHarmful and (not sid) then
+                        sid = self._auraInstanceHarmfulSpellIDs and self._auraInstanceHarmfulSpellIDs[oldInstanceId]
+                    end
                     local okToShow = true
                     if type(sid) == "number" then
-                        okToShow = self:ShouldEmitBuffNotif(sid, false)
+                        okToShow = self:ShouldEmitBuffNotif(sid, false, isHarmful)
                     end
                     if okToShow then
                         if sid and type(sid) == "number" then
@@ -2667,9 +2700,9 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                         end
                     end
                 end
-                if self._auraInstanceSpellIDs then
-                    self._auraInstanceSpellIDs[oldInstanceId] = nil
-                end
+                if self._auraInstanceSpellIDs then self._auraInstanceSpellIDs[oldInstanceId] = nil end
+                if self._auraInstanceHarmfulSpellIDs then self._auraInstanceHarmfulSpellIDs[oldInstanceId] = nil end
+                if self._auraInstanceIsHarmful then self._auraInstanceIsHarmful[oldInstanceId] = nil end
             end
         end
 
@@ -2687,13 +2720,10 @@ function Core:ScanPlayerAuras(updateInfo, silent)
         for _, aura in ipairs(updateInfo.addedAuras) do
             local name, isHarmful = extractAuraInfo(aura)
             local instanceId = aura.auraInstanceID
-            local sid = nil
-            if isHarmful ~= true then
-                sid = ResolveSafeAuraSpellID(aura)
-				if type(sid) ~= "number" then
-					sid = ResolveSpellIdByName(name)
-				end
-            end
+            local sid = ResolveSafeAuraSpellID(aura)
+			if type(sid) ~= "number" then
+				sid = ResolveSpellIdByName(name)
+			end
             if not instanceId then
                 -- Some combat updates can omit instance IDs; fall back to full rescan.
                 needsRescan = true
@@ -2704,24 +2734,33 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                     if isHarmful == true then
                         color = {r = 1.0, g = 0.4, b = 0.4}  -- debuff red
                     end
-                    if isHarmful ~= true and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid) then
+                    if isHarmful ~= true and type(sid) == "number" then
                         self:RecordRecentBuff(sid)
                     end
-                    -- Skip notification if this aura was seen during init (prevents reload spam)
-                    local seenDuringInit = Core._auraInitInProgress
-                    if seenDuringInit and type(sid) == "number" then
+                    if type(self._auraInstanceIsHarmful) == "table" then
+                        self._auraInstanceIsHarmful[instanceId] = isHarmful == true
+                    end
+                    if type(sid) == "number" then
+                        if isHarmful and self._auraInstanceHarmfulSpellIDs then
+                            self._auraInstanceHarmfulSpellIDs[instanceId] = sid
+                        elseif (not isHarmful) and self._auraInstanceSpellIDs then
+                            self._auraInstanceSpellIDs[instanceId] = sid
+                        end
+                    end
+                    -- Track auras seen during init to suppress their notifications later
+                    if silent and self._auraInitInProgress and type(sid) == "number" then
                         self._aurasSeenDuringInit[sid] = true
                     end
-                    if not silent and not seenDuringInit then
+                    if not silent then
                         local okToShow = true
-                        if isHarmful ~= true and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid) then
-                            okToShow = self:ShouldEmitBuffNotif(sid, true)
+                        if type(sid) == "number" then
+                            okToShow = self:ShouldEmitBuffNotif(sid, true, isHarmful)
                         end
                         if okToShow then
 							if isHarmful then
 								self:EmitNotification(BuildAuraNotifText("+", self._auraInstanceMap[instanceId]), color, "auras")
 							else
-								if sid and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid) then
+								if sid and type(sid) == "number" then
 									self:EmitBuffNotification(sid, BuildAuraNotifText("+", self._auraInstanceMap[instanceId]), color, "auras")
 								else
 									self:EmitNotification(BuildAuraNotifText("+", self._auraInstanceMap[instanceId]), color, "auras")
@@ -2729,7 +2768,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 							end
                         end
                     end
-                    if isHarmful ~= true then
+                    if type(sid) == "number" then
                         local trg = ZSBT.Core and ZSBT.Core.Triggers
                         if trg then
                             -- Skip synthetic auras to prevent double events
@@ -2742,9 +2781,6 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                                 trg:OnAuraGain(sid, "core-inc")
                             end
                         end
-						if self._auraInstanceSpellIDs and instanceId and type(sid) == "number" then
-							self._auraInstanceSpellIDs[instanceId] = sid
-						end
                     end
                 end
             end
@@ -2757,48 +2793,53 @@ function Core:ScanPlayerAuras(updateInfo, silent)
     end
 
     -- Incremental: handle refreshed/updated auras (same instance ID)
-    -- This catches recasts like Battle Shout that refresh an existing buff.
-    if updateInfo.updatedAuraInstanceIDs then
-        local needsRescan = false
-        for _, instanceId in ipairs(updateInfo.updatedAuraInstanceIDs) do
-            if instanceId then
-                local auraData = nil
-                if C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
-                    auraData = C_UnitAuras.GetAuraDataByAuraInstanceID("player", instanceId)
-                end
+	-- This catches recasts like Battle Shout that refresh an existing buff.
+	if updateInfo.updatedAuraInstanceIDs then
+		local needsRescan = false
+		for _, instanceId in ipairs(updateInfo.updatedAuraInstanceIDs) do
+			if instanceId then
+				local auraData = nil
+				if C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
+					-- In some builds, this can throw when payloads are secret.
+					pcall(function()
+						auraData = C_UnitAuras.GetAuraDataByAuraInstanceID("player", instanceId)
+					end)
+				end
 
-                if auraData then
-                    local name, isHarmful = extractAuraInfo(auraData)
-                    -- Only consider helpful buffs for the buff rules manager.
-                    if isHarmful ~= true then
-                        local sid = ResolveSafeAuraSpellID(auraData)
-                        if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid) then
-                            self:RecordRecentBuff(sid)
-                            if self._auraInstanceSpellIDs then
-                                self._auraInstanceSpellIDs[instanceId] = sid
-                            end
-                        end
+				if auraData then
+					local name, isHarmful = extractAuraInfo(auraData)
+					local sid = ResolveSafeAuraSpellID(auraData)
+					if type(sid) == "number" and isHarmful ~= true then
+						self:RecordRecentBuff(sid)
+					end
+					if type(self._auraInstanceIsHarmful) == "table" then
+						self._auraInstanceIsHarmful[instanceId] = isHarmful == true
+					end
+					if type(sid) == "number" then
+						if isHarmful == true and self._auraInstanceHarmfulSpellIDs then
+							self._auraInstanceHarmfulSpellIDs[instanceId] = sid
+						elseif isHarmful ~= true and self._auraInstanceSpellIDs then
+							self._auraInstanceSpellIDs[instanceId] = sid
+						end
+					end
+					if instanceId and name then
+						self._auraInstanceMap[instanceId] = name
+					end
+				else
+					-- Could not resolve the updated aura; rescan to resync.
+					needsRescan = true
+				end
+			end
+		end
 
-                        -- Keep cache name updated if we have one.
-                        if instanceId and name then
-                            self._auraInstanceMap[instanceId] = name
-                        end
-                    end
-                else
-                    -- Could not resolve the updated aura; rescan to resync.
-                    needsRescan = true
-                end
-            end
-        end
-
-        if needsRescan then
-            self:ScanPlayerAuras(nil)
-            return
-        end
-    end
+		if needsRescan then
+			self:ScanPlayerAuras(nil)
+			return
+		end
+	end
 
     -- Incremental: handle removed auras
-    if updateInfo.removedAuraInstanceIDs then
+	if updateInfo.removedAuraInstanceIDs then
 		local trg = ZSBT.Core and ZSBT.Core.Triggers
 		if trg and trg.SyncWatchedAurasFromCore then
 			pcall(function() trg:SyncWatchedAurasFromCore() end)
@@ -2809,13 +2850,24 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 		for _, instanceId in ipairs(updateInfo.removedAuraInstanceIDs) do
 			local name = self._auraInstanceMap[instanceId]
 			local sid = self._auraInstanceSpellIDs and self._auraInstanceSpellIDs[instanceId]
+			local isHarmful = self._auraInstanceIsHarmful and self._auraInstanceIsHarmful[instanceId] == true
+			if isHarmful and (not sid) then
+				sid = self._auraInstanceHarmfulSpellIDs and self._auraInstanceHarmfulSpellIDs[instanceId]
+			end
             -- Fallback: if not in cache, try to resolve from game API
             if not name and C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
                 local ok, auraData = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, "player", instanceId)
                 if ok and auraData then
-                    name = auraData.name
-                    if auraData.spellId then
-                        sid = auraData.spellId
+                    name = extractAuraInfo(auraData)
+                    if isHarmful == false and type(auraData.isHarmful) == "boolean" then
+                        local okH, v = pcall(function() return auraData.isHarmful == true end)
+                        if okH then isHarmful = v end
+                    end
+                    if type(sid) ~= "number" then
+                        sid = ResolveSafeAuraSpellID(auraData)
+                        if type(sid) ~= "number" then
+                            sid = ResolveSpellIdByName(name)
+                        end
                     end
                 end
             end
@@ -2886,7 +2938,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 				if silent ~= true and not inInitWindow then
 					local okToShow = true
 					if type(sid) == "number" then
-						okToShow = self:ShouldEmitBuffNotif(sid, false)
+						okToShow = self:ShouldEmitBuffNotif(sid, false, isHarmful)
 					end
 					if dl >= 4 then
 						if Addon and Addon.Dbg then
@@ -2899,7 +2951,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 						end
 					end
 					if okToShow then
-						if sid and ZSBT.IsSafeNumber(sid) then
+						if sid and type(sid) == "number" then
 							if dl >= 4 then
 								if Addon and Addon.Dbg then
 									Addon:Dbg("core", 4, "[AURA] FADE EMITTING sid=" .. tostring(sid))
@@ -2963,9 +3015,9 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 						end
 					end
 				end
-				if self._auraInstanceSpellIDs then
-					self._auraInstanceSpellIDs[instanceId] = nil
-				end
+				if self._auraInstanceSpellIDs then self._auraInstanceSpellIDs[instanceId] = nil end
+				if self._auraInstanceHarmfulSpellIDs then self._auraInstanceHarmfulSpellIDs[instanceId] = nil end
+				if self._auraInstanceIsHarmful then self._auraInstanceIsHarmful[instanceId] = nil end
 			end
 		end
 		if needsRescan then

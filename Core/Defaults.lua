@@ -300,6 +300,8 @@ ZSBT.DEFAULTS = {
             auraGlobal = {
                 showUnconfiguredGains = true,
                 showUnconfiguredFades = true,
+                showUnconfiguredDebuffGains = true,
+                showUnconfiguredDebuffFades = true,
             },
             routing = {
                 spellRulesDefaultArea = "Outgoing",
