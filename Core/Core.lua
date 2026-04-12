@@ -401,6 +401,51 @@ local BLIZZARD_FCT_INCOMING_CVARS = {
 	"floatingCombatTextCombatHealingAbsorbTarget_v2",
 }
 
+local BLIZZARD_FCT_INCOMING_DAMAGE_CVARS = {
+	"floatingCombatTextDodgeParryMiss",
+	"floatingCombatTextDodgeParryMiss_v2",
+	"floatingCombatTextDamageReduction",
+}
+
+local BLIZZARD_FCT_REACTIVES_CVARS = {
+	"floatingCombatTextReactives",
+	"floatingCombatTextReactives_v2",
+	"floatingCombatTextSpellMechanics",
+	"floatingCombatTextSpellMechanics_v2",
+	"floatingCombatTextSpellMechanicsOther",
+	"floatingCombatTextSpellMechanicsOther_v2",
+	"floatingCombatTextComboPoints",
+}
+
+local BLIZZARD_FCT_XP_REP_HONOR_CVARS = {
+	"floatingCombatTextCombatXP",
+	"floatingCombatTextCombatXP_v2",
+	"fctCombatXP",
+	"fctCombatXP_v2",
+	"floatingCombatTextRepChanges",
+	"floatingCombatTextHonorGains",
+}
+
+local BLIZZARD_FCT_RESOURCE_GAINS_CVARS = {
+	"floatingCombatTextEnergyGains",
+	"floatingCombatTextPeriodicEnergyGains",
+	"floatingCombatTextLowManaHealth",
+}
+
+local BLIZZARD_FCT_PET_CVARS = {
+	"floatingCombatTextPetMeleeDamage",
+	"floatingCombatTextPetMeleeDamage_v2",
+	"floatingCombatTextPetSpellDamage",
+	"floatingCombatTextPetSpellDamage_v2",
+}
+
+local function trySetCVarGroup(cvars, value)
+	if type(cvars) ~= "table" then return end
+	for _, cvar in ipairs(cvars) do
+		trySetCVar(cvar, value)
+	end
+end
+
 local function getFCTStateTable()
     local db = ZSBT and ZSBT.db
     if not db then return nil end
@@ -616,30 +661,29 @@ function Core:RestoreBlizzardFCT()
         restoreCombatTextFrames()
         restoreCombatTextAddFns()
         clearBlizzardFCTBackup()
-        return
+        return true
     end
 
-    -- Fallback: enable the most important CVars to recover from a "stuck off" state.
-    trySetCVar("enableFloatingCombatText", "1")
-    trySetCVar("floatingCombatTextCombatDamage", "1")
-    trySetCVar("floatingCombatTextCombatHealing", "1")
-    trySetCVar("floatingCombatTextCombatDamage_v2", "1")
-    trySetCVar("floatingCombatTextCombatHealing_v2", "1")
-    trySetCVar("floatingCombatTextReactives_v2", "1")
+	-- Fallback: explicitly re-enable the most important Blizzard FCT CVars.
+	-- This is used when the user clicks the restore button or sets suppression to None,
+	-- but no snapshot exists (nolib installs, prior restores, or other edge cases).
+	trySetCVar("enableFloatingCombatText", "1")
+	trySetCVar("floatingCombatTextCombatDamage", "1")
+	trySetCVar("floatingCombatTextCombatHealing", "1")
+	trySetCVar("floatingCombatTextCombatDamage_v2", "1")
+	trySetCVar("floatingCombatTextCombatHealing_v2", "1")
+	trySetCVar("floatingCombatTextReactives_v2", "1")
 
-    restoreCombatTextFrames()
-    restoreCombatTextAddFns()
+	restoreCombatTextFrames()
+	restoreCombatTextAddFns()
+	clearBlizzardFCTBackup()
+	return true
 end
 
 function Core:EnsureBlizzardFCTEnabled()
-    -- Do NOT restore from backup here. This path is called frequently (zoning, regen enabled)
-    -- and should never overwrite user preferences beyond ensuring combat text is not stuck OFF.
-    trySetCVar("enableFloatingCombatText", "1")
-    trySetCVar("floatingCombatTextCombatDamage", "1")
-    trySetCVar("floatingCombatTextCombatHealing", "1")
-    trySetCVar("floatingCombatTextCombatDamage_v2", "1")
-    trySetCVar("floatingCombatTextCombatHealing_v2", "1")
-    trySetCVar("floatingCombatTextReactives_v2", "1")
+    -- Deprecated: previously forced Blizzard FCT CVars on during lifecycle events.
+    -- This was reported as re-enabling Options -> Combat -> Scrolling combat text settings.
+    -- Keep as a no-op for backward compatibility.
 end
 
 function Core:MaybePromptRestoreBlizzardFCT()
@@ -680,33 +724,70 @@ function Core:ApplyBlizzardFCTCVars()
     local g = ZSBT.db.profile.general
     if not g.enabled then return end
 
+	if ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.outgoing and ZSBT.db.profile.outgoing.useBlizzardFCTInstead == true then
+		ZSBT.db.profile.outgoing.useBlizzardFCTInstead = false
+	end
+
+	if g.hideBlizzardFCT == nil then
+		local mode = g.blizzardFCTSuppressMode
+		if mode == nil then
+			mode = (g.suppressBlizzardFCT == true) and "all" or "none"
+		end
+		if mode == "none" then
+			g.hideBlizzardFCT = false
+		else
+			g.hideBlizzardFCT = true
+			g.hideBlizzardFCTOutgoing = (mode == "incoming") and false or true
+			g.hideBlizzardFCTIncomingDamage = (mode == "outgoing") and false or true
+			g.hideBlizzardFCTIncomingHealing = (mode == "outgoing") and false or true
+			g.hideBlizzardFCTReactives = true
+			g.hideBlizzardFCTXPRepHonor = true
+			g.hideBlizzardFCTResourceGains = true
+			g.hideBlizzardFCTPet = true
+		end
+	end
+
     -- CRITICAL: Always ensure CombatDamage/CombatHealing are ON.
     -- A previous build wrongly set these to 0, which kills UNIT_COMBAT events.
     trySetCVar("CombatDamage", "1")
     trySetCVar("CombatHealing", "1")
 
-    -- Suppress Blizzard's own floating combat text
-	local mode = g.blizzardFCTSuppressMode
-	if mode == nil then
-		mode = (g.suppressBlizzardFCT == true) and "all" or "none"
+	if g.hideBlizzardFCT ~= true then
+		self:RestoreBlizzardFCT()
+		return
 	end
 
-	-- Back-compat: if the user explicitly enabled the "use Blizzard FCT for outgoing" mode,
-	-- prefer keeping outgoing visible (suppress incoming only).
-	local out = ZSBT.db.profile.outgoing
-	if (mode == "all" or mode == true) and out and out.useBlizzardFCTInstead == true then
-		mode = "incoming"
-	end
+	snapshotBlizzardFCTCVarsOnce()
+	snapshotCombatTextFramesOnce()
+	snapshotCombatTextAddFnsOnce()
 
-	if mode == "all" then
-		self:SuppressBlizzardFCT()
-	elseif mode == "incoming" then
-		suppressBlizzardFCTExceptOutgoing()
-	elseif mode == "outgoing" then
-		suppressBlizzardFCTExceptIncoming()
+	local hideOutgoing = (g.hideBlizzardFCTOutgoing ~= false)
+	local hideInDmg = (g.hideBlizzardFCTIncomingDamage ~= false)
+	local hideInHeal = (g.hideBlizzardFCTIncomingHealing ~= false)
+	local hideReact = (g.hideBlizzardFCTReactives ~= false)
+	local hideXP = (g.hideBlizzardFCTXPRepHonor ~= false)
+	local hideRes = (g.hideBlizzardFCTResourceGains ~= false)
+	local hidePet = (g.hideBlizzardFCTPet ~= false)
+
+	local hideAll = hideOutgoing and hideInDmg and hideInHeal and hideReact and hideXP and hideRes and hidePet
+	local anyShow = not hideAll
+	trySetCVar("enableCombatText", anyShow and "1" or "0")
+	trySetCVar("enableFloatingCombatText", anyShow and "1" or "0")
+
+	trySetCVarGroup(BLIZZARD_FCT_OUTGOING_CVARS, hideOutgoing and "0" or "1")
+	trySetCVarGroup(BLIZZARD_FCT_INCOMING_CVARS, hideInHeal and "0" or "1")
+	trySetCVarGroup(BLIZZARD_FCT_INCOMING_DAMAGE_CVARS, hideInDmg and "0" or "1")
+	trySetCVarGroup(BLIZZARD_FCT_REACTIVES_CVARS, hideReact and "0" or "1")
+	trySetCVarGroup(BLIZZARD_FCT_XP_REP_HONOR_CVARS, hideXP and "0" or "1")
+	trySetCVarGroup(BLIZZARD_FCT_RESOURCE_GAINS_CVARS, hideRes and "0" or "1")
+	trySetCVarGroup(BLIZZARD_FCT_PET_CVARS, hidePet and "0" or "1")
+
+	if hideAll then
+		suppressCombatTextFrames()
+		suppressCombatTextAddFns()
 	else
-		-- No-touch: do not force-enable Blizzard FCT CVars when suppression is off.
-		-- This preserves user settings like Options -> Combat -> Scrolling combat text for Self.
+		restoreCombatTextFrames()
+		restoreCombatTextAddFns()
 	end
 
     -- Option C: if ZSBT previously suppressed and the CVars still look off,

@@ -1276,56 +1276,64 @@ function Addon:OnInitialize()
 				end
 			end
 		end
-        LibStub("AceConfig-3.0"):RegisterOptionsTable("ZSBT", options)
-        self.configDialog = LibStub("AceConfigDialog-3.0")
+		local ACR = LibStub("AceConfig-3.0", true)
+		local ACD = LibStub("AceConfigDialog-3.0", true)
+		if not ACR or not ACD then
+			self:Print("|cFFFF4444ZSBT config libraries are missing.|r")
+			self:Print("This usually means you installed a no-lib build or the addon was installed incompletely.")
+			self:Print("Fix: reinstall ZSBT with embedded libraries, or install the standalone 'Ace3' addon.")
+			return
+		end
+		ACR:RegisterOptionsTable("ZSBT", options)
+		self.configDialog = ACD
 
         -- Set the default size for the config dialog
         self.configDialog:SetDefaultSize("ZSBT", ZSBT.CONFIG_WIDTH,
                                          ZSBT.CONFIG_HEIGHT)
 
-        -- Apply Strike Silver color scheme to config frame
-        if ZSBT.ApplyStrikeSilverStyling then
-            ZSBT.ApplyStrikeSilverStyling()
-        end
+		-- Apply Strike Silver color scheme to config frame
+		if ZSBT.ApplyStrikeSilverStyling then
+			ZSBT.ApplyStrikeSilverStyling()
+		end
 
 		-- Register Spell Rules Manager as a separate config window
 		if ZSBT.BuildSpellRulesOptionsTable then
-			LibStub("AceConfig-3.0"):RegisterOptionsTable("ZSBT_SpellRules", function()
+			ACR:RegisterOptionsTable("ZSBT_SpellRules", function()
 				return ZSBT.BuildSpellRulesOptionsTable()
 			end)
 			self.configDialog:SetDefaultSize("ZSBT_SpellRules", 760, 620)
 		end
 
 		if ZSBT.BuildBuffRulesOptionsTable then
-			LibStub("AceConfig-3.0"):RegisterOptionsTable("ZSBT_BuffRules", function()
+			ACR:RegisterOptionsTable("ZSBT_BuffRules", function()
 				return ZSBT.BuildBuffRulesOptionsTable()
 			end)
 			self.configDialog:SetDefaultSize("ZSBT_BuffRules", 760, 620)
 		end
 
 		if ZSBT.BuildSpellRuleEditorOptionsTable then
-			LibStub("AceConfig-3.0"):RegisterOptionsTable("ZSBT_SpellRuleEditor", function()
+			ACR:RegisterOptionsTable("ZSBT_SpellRuleEditor", function()
 				return ZSBT.BuildSpellRuleEditorOptionsTable()
 			end)
 			self.configDialog:SetDefaultSize("ZSBT_SpellRuleEditor", 520, 420)
 		end
 
 		if ZSBT.BuildBuffRuleEditorOptionsTable then
-			LibStub("AceConfig-3.0"):RegisterOptionsTable("ZSBT_BuffRuleEditor", function()
+			ACR:RegisterOptionsTable("ZSBT_BuffRuleEditor", function()
 				return ZSBT.BuildBuffRuleEditorOptionsTable()
 			end)
 			self.configDialog:SetDefaultSize("ZSBT_BuffRuleEditor", 520, 470)
 		end
 
 		if ZSBT.BuildTriggerEditorOptionsTable then
-			LibStub("AceConfig-3.0"):RegisterOptionsTable("ZSBT_TriggerEditor", function()
+			ACR:RegisterOptionsTable("ZSBT_TriggerEditor", function()
 				return ZSBT.BuildTriggerEditorOptionsTable()
 			end)
 			self.configDialog:SetDefaultSize("ZSBT_TriggerEditor", 560, 520)
 		end
 
 		if ZSBT.BuildDebugOptionsTable then
-			LibStub("AceConfig-3.0"):RegisterOptionsTable("ZSBT_Debug", function()
+			ACR:RegisterOptionsTable("ZSBT_Debug", function()
 				return ZSBT.BuildDebugOptionsTable()
 			end)
 			self.configDialog:SetDefaultSize("ZSBT_Debug", 620, 520)
@@ -1537,77 +1545,15 @@ end
 -- Open Configuration Window
 ------------------------------------------------------------------------
 function Addon:OpenConfig()
-    if self.configDialog then
-        self.configDialog:Open("ZSBT")
-
-        local frame = self.configDialog.OpenFrames["ZSBT"]
-        if frame and frame.frame then
-            local f = frame.frame
-
-            -- Prevent AceConfigDialog from auto-closing when spellbook opens
-            if not f.zsbtHooked then
-                f.zsbtHooked = true
-
-                -- Store original Hide function
-                local origHide = f.Hide
-
-                -- Hook Hide to block auto-closes
-                f.Hide = function(self, ...)
-                    -- Only allow closes when explicitly permitted
-                    if not self.zsbtAllowClose then return end
-                    return origHide(self, ...)
-                end
-            end
-
-            -- Find the close button by searching the frame's children
-            local function findCloseButton(parent, depth)
-                depth = depth or 0
-                if depth > 0 then return end -- ONLY check depth 0!
-
-                for i = 1, parent:GetNumChildren() do
-                    local child = select(i, parent:GetChildren())
-                    if child and child.GetObjectType and child:GetObjectType() ==
-                        "Button" then
-                        local text = child:GetText()
-                        if text and (text:lower():match("close") or text == "X") then
-                            child:HookScript("PreClick", function()
-                                f.zsbtAllowClose = true
-                                C_Timer.After(0.05, function()
-                                    f.zsbtAllowClose = false
-                                end)
-                            end)
-                        end
-                    end
-                end
-            end
-
-            findCloseButton(f)
-
-            -- ESC key handler — protected in instances/combat.
-            -- Only set up when safe (not in combat).
-            if not InCombatLockdown() then
-                f:EnableKeyboard(true)
-                f:SetPropagateKeyboardInput(true)
-                f:SetScript("OnKeyDown", function(self, key)
-                    if key == "ESCAPE" then
-                        self.zsbtAllowClose = true
-                        self:Hide()
-                        C_Timer.After(0.05, function()
-                            if self then
-                                self.zsbtAllowClose = false
-                            end
-                        end)
-                    end
-                end)
-            end
-        end
-    end
+	if self.configDialog then
+		self.configDialog:Open("ZSBT")
+	end
 end
 
 function Addon:OpenSpellRulesManager()
-    if self.configDialog then
-        self.configDialog:Open("ZSBT_SpellRules")
-    end
+	if self.configDialog then
+		self.configDialog:Open("ZSBT_SpellRules")
+	end
 end
 
 function Addon:OpenBuffRulesManager()

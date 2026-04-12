@@ -1532,31 +1532,122 @@ function ZSBT.BuildTab_QuickStart()
 			},
 
 			blizzardHeader = { type = "header", name = "Blizzard Combat Text", order = 20 },
-			blizzardFCTSuppressMode = {
-				type = "select",
-				name = "Blizzard Combat Text Suppression",
-				desc = "Controls whether ZSBT suppresses Blizzard combat text.\n\nThis modifies Blizzard CVars, which persist even if you disable or uninstall ZSBT. To restore, use the button below (or run /zsbt restorefct). Before uninstalling, set this to 'None' and restore.",
+			hideBlizzardFCT = {
+				type = "toggle",
+				name = "Hide Blizzard Combat Text",
+				desc = "Controls whether ZSBT hides Blizzard combat text.\n\nThis modifies Blizzard CVars, which persist even if you disable or uninstall ZSBT. Turn this off to restore Blizzard combat text.",
 				order = 21,
 				width = "full",
-				values = {
-					none = "None (no-touch)",
-					all = "Suppress All (incoming + outgoing)",
-					incoming = "Suppress Incoming Only (keep outgoing)" ,
-					outgoing = "Suppress Outgoing Only (keep incoming)",
-				},
 				get = function()
-					local g = general(); if not g then return "none" end
+					local g = general(); if not g then return false end
+					if g.hideBlizzardFCT ~= nil then return g.hideBlizzardFCT == true end
 					local mode = g.blizzardFCTSuppressMode
 					if mode == nil then
-						return (g.suppressBlizzardFCT == true) and "all" or "none"
+						return g.suppressBlizzardFCT == true
 					end
-					return mode
+					return mode ~= "none"
 				end,
 				set = function(_, v)
 					local g = general(); if not g then return end
-					g.blizzardFCTSuppressMode = v
-					-- Back-compat: keep the old boolean in sync.
-					g.suppressBlizzardFCT = (v ~= "none") and true or false
+					g.hideBlizzardFCT = v and true or false
+					local c = core(); if c and c.ApplyBlizzardFCTCVars then c:ApplyBlizzardFCTCVars() end
+					notify()
+				end,
+			},
+			hideBlizzardFCTOutgoing = {
+				type = "toggle",
+				name = "Hide Blizzard Outgoing Damage",
+				order = 21.1,
+				width = "full",
+				hidden = function() local g = general(); return not (g and g.hideBlizzardFCT == true) end,
+				get = function() local g = general(); return g and g.hideBlizzardFCTOutgoing ~= false end,
+				set = function(_, v)
+					local g = general(); if not g then return end
+					g.hideBlizzardFCTOutgoing = v and true or false
+					local c = core(); if c and c.ApplyBlizzardFCTCVars then c:ApplyBlizzardFCTCVars() end
+					notify()
+				end,
+			},
+			hideBlizzardFCTIncomingDamage = {
+				type = "toggle",
+				name = "Hide Blizzard Incoming Damage",
+				order = 21.2,
+				width = "full",
+				hidden = function() local g = general(); return not (g and g.hideBlizzardFCT == true) end,
+				get = function() local g = general(); return g and g.hideBlizzardFCTIncomingDamage ~= false end,
+				set = function(_, v)
+					local g = general(); if not g then return end
+					g.hideBlizzardFCTIncomingDamage = v and true or false
+					local c = core(); if c and c.ApplyBlizzardFCTCVars then c:ApplyBlizzardFCTCVars() end
+					notify()
+				end,
+			},
+			hideBlizzardFCTIncomingHealing = {
+				type = "toggle",
+				name = "Hide Blizzard Incoming Healing",
+				order = 21.3,
+				width = "full",
+				hidden = function() local g = general(); return not (g and g.hideBlizzardFCT == true) end,
+				get = function() local g = general(); return g and g.hideBlizzardFCTIncomingHealing ~= false end,
+				set = function(_, v)
+					local g = general(); if not g then return end
+					g.hideBlizzardFCTIncomingHealing = v and true or false
+					local c = core(); if c and c.ApplyBlizzardFCTCVars then c:ApplyBlizzardFCTCVars() end
+					notify()
+				end,
+			},
+			hideBlizzardFCTReactives = {
+				type = "toggle",
+				name = "Hide Blizzard Reactives / Procs",
+				order = 21.4,
+				width = "full",
+				hidden = function() local g = general(); return not (g and g.hideBlizzardFCT == true) end,
+				get = function() local g = general(); return g and g.hideBlizzardFCTReactives ~= false end,
+				set = function(_, v)
+					local g = general(); if not g then return end
+					g.hideBlizzardFCTReactives = v and true or false
+					local c = core(); if c and c.ApplyBlizzardFCTCVars then c:ApplyBlizzardFCTCVars() end
+					notify()
+				end,
+			},
+			hideBlizzardFCTXPRepHonor = {
+				type = "toggle",
+				name = "Hide Blizzard XP / Rep / Honor",
+				order = 21.5,
+				width = "full",
+				hidden = function() local g = general(); return not (g and g.hideBlizzardFCT == true) end,
+				get = function() local g = general(); return g and g.hideBlizzardFCTXPRepHonor ~= false end,
+				set = function(_, v)
+					local g = general(); if not g then return end
+					g.hideBlizzardFCTXPRepHonor = v and true or false
+					local c = core(); if c and c.ApplyBlizzardFCTCVars then c:ApplyBlizzardFCTCVars() end
+					notify()
+				end,
+			},
+			hideBlizzardFCTResourceGains = {
+				type = "toggle",
+				name = "Hide Blizzard Resource Gains",
+				order = 21.6,
+				width = "full",
+				hidden = function() local g = general(); return not (g and g.hideBlizzardFCT == true) end,
+				get = function() local g = general(); return g and g.hideBlizzardFCTResourceGains ~= false end,
+				set = function(_, v)
+					local g = general(); if not g then return end
+					g.hideBlizzardFCTResourceGains = v and true or false
+					local c = core(); if c and c.ApplyBlizzardFCTCVars then c:ApplyBlizzardFCTCVars() end
+					notify()
+				end,
+			},
+			hideBlizzardFCTPet = {
+				type = "toggle",
+				name = "Hide Blizzard Pet Combat Text",
+				order = 21.7,
+				width = "full",
+				hidden = function() local g = general(); return not (g and g.hideBlizzardFCT == true) end,
+				get = function() local g = general(); return g and g.hideBlizzardFCTPet ~= false end,
+				set = function(_, v)
+					local g = general(); if not g then return end
+					g.hideBlizzardFCTPet = v and true or false
 					local c = core(); if c and c.ApplyBlizzardFCTCVars then c:ApplyBlizzardFCTCVars() end
 					notify()
 				end,
@@ -1564,14 +1655,15 @@ function ZSBT.BuildTab_QuickStart()
 			restoreBlizzardFCTNow = {
 				type = "execute",
 				name = "Restore Blizzard Combat Text Now",
-				desc = "Restore Blizzard floating combat text CVars to their previous values (before ZSBT suppression).",
+				desc = "Restore Blizzard combat text now (panic button).",
 				order = 22,
 				width = "full",
 				disabled = function()
 					local g = general(); if not g then return true end
+					if g.hideBlizzardFCT == true then return false end
 					local mode = g.blizzardFCTSuppressMode
-					if mode == nil then return g.suppressBlizzardFCT == true end
-					return mode ~= "none"
+					if mode == nil then return g.suppressBlizzardFCT ~= true end
+					return mode == "none"
 				end,
 				func = function()
 					local c = core(); if c and c.RestoreBlizzardFCT then c:RestoreBlizzardFCT() end
@@ -1883,51 +1975,141 @@ function ZSBT.BuildTab_General()
                 end,
             },
 
-			blizzardFCTSuppressMode = {
-				type = "select",
-				name = "Blizzard Combat Text Suppression",
-				desc = "Controls whether ZSBT suppresses Blizzard combat text.\n\nThis modifies Blizzard CVars, which persist even if you disable or uninstall ZSBT. To restore, use the button below (or run /zsbt restorefct). Before uninstalling, set this to 'None' and restore.",
+			hideBlizzardFCT = {
+				type = "toggle",
+				name = "Hide Blizzard Combat Text",
+				desc = "Controls whether ZSBT hides Blizzard combat text.",
 				order = 3.5,
 				width = "full",
-				values = {
-					none = "None (no-touch)",
-					all = "Suppress All (incoming + outgoing)",
-					incoming = "Suppress Incoming Only (keep outgoing)",
-					outgoing = "Suppress Outgoing Only (keep incoming)",
-				},
 				get = function()
 					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
-					if not g then return "none" end
-					local mode = g.blizzardFCTSuppressMode
-					if mode == nil then
-						return (g.suppressBlizzardFCT == true) and "all" or "none"
-					end
-					return mode
+					return g and g.hideBlizzardFCT == true
 				end,
 				set = function(_, v)
 					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
 					if not g then return end
-					g.blizzardFCTSuppressMode = v
-					-- Back-compat: keep the old boolean in sync.
-					g.suppressBlizzardFCT = (v ~= "none") and true or false
+					g.hideBlizzardFCT = v and true or false
 					if ZSBT.Core and ZSBT.Core.ApplyBlizzardFCTCVars then
 						ZSBT.Core:ApplyBlizzardFCTCVars()
 					end
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},
+			hideBlizzardFCTOutgoing = {
+				type = "toggle",
+				name = "Hide Blizzard Outgoing Damage",
+				order = 3.51,
+				width = "full",
+				hidden = function() local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general; return not (g and g.hideBlizzardFCT == true) end,
+				get = function() local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general; return g and g.hideBlizzardFCTOutgoing ~= false end,
+				set = function(_, v)
+					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+					if not g then return end
+					g.hideBlizzardFCTOutgoing = v and true or false
+					if ZSBT.Core and ZSBT.Core.ApplyBlizzardFCTCVars then ZSBT.Core:ApplyBlizzardFCTCVars() end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			hideBlizzardFCTIncomingDamage = {
+				type = "toggle",
+				name = "Hide Blizzard Incoming Damage",
+				order = 3.52,
+				width = "full",
+				hidden = function() local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general; return not (g and g.hideBlizzardFCT == true) end,
+				get = function() local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general; return g and g.hideBlizzardFCTIncomingDamage ~= false end,
+				set = function(_, v)
+					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+					if not g then return end
+					g.hideBlizzardFCTIncomingDamage = v and true or false
+					if ZSBT.Core and ZSBT.Core.ApplyBlizzardFCTCVars then ZSBT.Core:ApplyBlizzardFCTCVars() end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			hideBlizzardFCTIncomingHealing = {
+				type = "toggle",
+				name = "Hide Blizzard Incoming Healing",
+				order = 3.53,
+				width = "full",
+				hidden = function() local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general; return not (g and g.hideBlizzardFCT == true) end,
+				get = function() local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general; return g and g.hideBlizzardFCTIncomingHealing ~= false end,
+				set = function(_, v)
+					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+					if not g then return end
+					g.hideBlizzardFCTIncomingHealing = v and true or false
+					if ZSBT.Core and ZSBT.Core.ApplyBlizzardFCTCVars then ZSBT.Core:ApplyBlizzardFCTCVars() end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			hideBlizzardFCTReactives = {
+				type = "toggle",
+				name = "Hide Blizzard Reactives / Procs",
+				order = 3.54,
+				width = "full",
+				hidden = function() local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general; return not (g and g.hideBlizzardFCT == true) end,
+				get = function() local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general; return g and g.hideBlizzardFCTReactives ~= false end,
+				set = function(_, v)
+					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+					if not g then return end
+					g.hideBlizzardFCTReactives = v and true or false
+					if ZSBT.Core and ZSBT.Core.ApplyBlizzardFCTCVars then ZSBT.Core:ApplyBlizzardFCTCVars() end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			hideBlizzardFCTXPRepHonor = {
+				type = "toggle",
+				name = "Hide Blizzard XP / Rep / Honor",
+				order = 3.55,
+				width = "full",
+				hidden = function() local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general; return not (g and g.hideBlizzardFCT == true) end,
+				get = function() local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general; return g and g.hideBlizzardFCTXPRepHonor ~= false end,
+				set = function(_, v)
+					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+					if not g then return end
+					g.hideBlizzardFCTXPRepHonor = v and true or false
+					if ZSBT.Core and ZSBT.Core.ApplyBlizzardFCTCVars then ZSBT.Core:ApplyBlizzardFCTCVars() end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			hideBlizzardFCTResourceGains = {
+				type = "toggle",
+				name = "Hide Blizzard Resource Gains",
+				order = 3.56,
+				width = "full",
+				hidden = function() local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general; return not (g and g.hideBlizzardFCT == true) end,
+				get = function() local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general; return g and g.hideBlizzardFCTResourceGains ~= false end,
+				set = function(_, v)
+					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+					if not g then return end
+					g.hideBlizzardFCTResourceGains = v and true or false
+					if ZSBT.Core and ZSBT.Core.ApplyBlizzardFCTCVars then ZSBT.Core:ApplyBlizzardFCTCVars() end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			hideBlizzardFCTPet = {
+				type = "toggle",
+				name = "Hide Blizzard Pet Combat Text",
+				order = 3.57,
+				width = "full",
+				hidden = function() local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general; return not (g and g.hideBlizzardFCT == true) end,
+				get = function() local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general; return g and g.hideBlizzardFCTPet ~= false end,
+				set = function(_, v)
+					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+					if not g then return end
+					g.hideBlizzardFCTPet = v and true or false
+					if ZSBT.Core and ZSBT.Core.ApplyBlizzardFCTCVars then ZSBT.Core:ApplyBlizzardFCTCVars() end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
 			restoreBlizzardFCTNow = {
 				type  = "execute",
 				name  = "Restore Blizzard Combat Text Now",
-				desc  = "Restore Blizzard floating combat text CVars to their previous values (before ZSBT suppression).",
-				order = 3.55,
+				desc  = "Restore Blizzard combat text now (panic button).",
+				order = 3.58,
 				width = "full",
 				disabled = function()
 					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
 					if not g then return true end
-					local mode = g.blizzardFCTSuppressMode
-					if mode == nil then return g.suppressBlizzardFCT == true end
-					return mode ~= "none"
+					return g.hideBlizzardFCT ~= true
 				end,
 				func = function()
 					if ZSBT.Core and ZSBT.Core.RestoreBlizzardFCT then
@@ -5124,21 +5306,6 @@ function ZSBT.BuildTab_Outgoing()
                 name  = "Outgoing Damage",
                 order = 1,
             },
-			turnOffZSBTOutgoingUseBlizzFCT = {
-				type  = "toggle",
-				name  = "Turn off ZSBT outgoing and use Blizzard FCT",
-				desc  = "Disables ZSBT outgoing scroll area output and enables Blizzard's outgoing combat text (numbers above enemy heads).\n\nIf 'Blizzard Combat Text Suppression' is set to suppress Blizzard combat text in General, this overrides suppression for outgoing only (incoming stays suppressed).",
-				width = "full",
-				order = 1.05,
-				get   = function() return ZSBT.db.profile.outgoing.useBlizzardFCTInstead == true end,
-				set   = function(_, val)
-					ZSBT.db.profile.outgoing.useBlizzardFCTInstead = val and true or false
-					if ZSBT.Core and ZSBT.Core.ApplyBlizzardFCTCVars then
-						ZSBT.Core:ApplyBlizzardFCTCVars()
-					end
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
             damageEnabled = {
                 type  = "toggle",
                 name  = "Show Outgoing Damage",

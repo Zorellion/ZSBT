@@ -379,14 +379,6 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
     if not ZSBT.db or not ZSBT.db.profile or not ZSBT.db.profile.outgoing then
         return
     end
-	local o = ZSBT.db.profile.outgoing
-	if o and o.useBlizzardFCTInstead == true then
-		-- Still allow capture/replay harness to record, but do not emit to ZSBT scroll areas.
-		if self._capturing then
-			PushEvent(evt)
-		end
-		return
-	end
 
     local prof = ZSBT.db.profile.outgoing
 
