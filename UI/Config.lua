@@ -2867,6 +2867,79 @@ function ZSBT.UpdateHelpPopupIfOpen(topicKey)
 end
 
 local function buildHelpTreeArgs(orderKeys)
+	local function RepairSpamControlRuleKeys()
+		local Addon = ZSBT and ZSBT.Addon
+		local db = ZSBT and ZSBT.db
+		if not db then
+			if Addon and Addon.Print then Addon:Print("ZSBT: database not ready.") end
+			return
+		end
+
+		local function mergeMissing(dst, src)
+			if type(dst) ~= "table" or type(src) ~= "table" then return end
+			for k, v in pairs(src) do
+				if dst[k] == nil then
+					dst[k] = v
+				end
+			end
+		end
+
+		local function repairRuleMap(ruleMap)
+			if type(ruleMap) ~= "table" then return 0, 0 end
+			local scanned = 0
+			local repaired = 0
+			local toMove = {}
+			for k, v in pairs(ruleMap) do
+				scanned = scanned + 1
+				if type(k) == "string" then
+					local nk = tonumber(k)
+					if nk and tostring(nk) == k and type(v) == "table" then
+						toMove[#toMove + 1] = { from = k, to = nk, value = v }
+					end
+				end
+			end
+
+			for _, m in ipairs(toMove) do
+				local existing = ruleMap[m.to]
+				if type(existing) == "table" then
+					mergeMissing(existing, m.value)
+				else
+					ruleMap[m.to] = m.value
+				end
+				ruleMap[m.from] = nil
+				repaired = repaired + 1
+			end
+
+			return scanned, repaired
+		end
+
+		local scannedTotal, repairedTotal = 0, 0
+
+		local csc = db.char and db.char.spamControl
+		if csc then
+			local s1, r1 = repairRuleMap(csc.spellRules)
+			local s2, r2 = repairRuleMap(csc.auraRules)
+			scannedTotal = scannedTotal + s1 + s2
+			repairedTotal = repairedTotal + r1 + r2
+		end
+
+		local psc = db.profile and db.profile.spamControl
+		if psc then
+			local s1, r1 = repairRuleMap(psc.spellRules)
+			local s2, r2 = repairRuleMap(psc.auraRules)
+			scannedTotal = scannedTotal + s1 + s2
+			repairedTotal = repairedTotal + r1 + r2
+		end
+
+		if Addon and Addon.Print then
+			if repairedTotal > 0 then
+				Addon:Print("ZSBT: repaired Spam Control rule keys (migrated " .. tostring(repairedTotal) .. " entries).")
+			else
+				Addon:Print("ZSBT: no Spam Control rule keys needed repair.")
+			end
+		end
+	end
+
 	local args = {}
 	local order = 1
 	local keys = (type(orderKeys) == "table") and orderKeys or HELP_ORDER
@@ -2926,39 +2999,50 @@ local function buildHelpTreeArgs(orderKeys)
 				for _, childKey in ipairs(children) do
 					local child = HELP_TOPICS[childKey]
 					if type(child) == "table" and type(child.name) == "string" then
+						local childArgs = {
+							openPopup = {
+								type = "execute",
+								name = "Open In Window",
+								desc = "Open this help topic in a separate window so you can keep it visible while configuring ZSBT.",
+								order = 0.1,
+								width = "full",
+								func = function()
+									if ZSBT and ZSBT.OpenHelpTopicInPopup then
+										ZSBT.OpenHelpTopicInPopup(childKey)
+									end
+								end
+							},
+							repairSpamControlRuleKeys = (childKey == "troubleshooting_spam") and {
+								type = "execute",
+								name = "Repair Spam Control Rules",
+								desc = "If your Spell/Aura rules look missing after an update, this repairs rule keys that were saved as strings (\"12345\") instead of numbers (12345).",
+								order = 0.15,
+								width = "full",
+								func = function()
+									pcall(RepairSpamControlRuleKeys)
+								end,
+							} or nil,
+							body = {
+								type = "description",
+								name = function()
+									if type(child.text) == "string" and child.text ~= "" then
+										return child.text
+									end
+									if type(child.docKey) == "string" then
+										return prettyPrintMarkdown(HELP_MD[child.docKey])
+									end
+									return ""
+								end,
+								order = 1,
+								width = "full",
+								fontSize = "medium",
+							},
+						}
 						groupArgs[childKey] = {
 							type = "group",
 							name = child.name,
 							order = childOrder,
-							args = {
-								openPopup = {
-									type = "execute",
-									name = "Open In Window",
-									desc = "Open this help topic in a separate window so you can keep it visible while configuring ZSBT.",
-									order = 0.1,
-									width = "full",
-									func = function()
-										if ZSBT and ZSBT.OpenHelpTopicInPopup then
-											ZSBT.OpenHelpTopicInPopup(childKey)
-										end
-									end,
-								},
-								body = {
-									type = "description",
-									name = function()
-										if type(child.text) == "string" and child.text ~= "" then
-											return child.text
-										end
-										if type(child.docKey) == "string" then
-											return prettyPrintMarkdown(HELP_MD[child.docKey])
-										end
-										return ""
-									end,
-									order = 1,
-									width = "full",
-									fontSize = "medium",
-								},
-							},
+							args = childArgs,
 						}
 						childOrder = childOrder + 1
 					end
