@@ -121,8 +121,8 @@ These are common reports that can be expected behavior depending on settings and
 ## Blizzard combat text leaking (incoming heals/damage)
 If you see Blizzard combat text (for example, incoming heals) while ZSBT is enabled:
 
-- Go to `/zsbt` -> `General` -> `Blizzard Combat Text Suppression` and set it to `Suppress All` (or `Suppress Incoming Only`).
-- If you are using Blizzard outgoing numbers, enable `/zsbt` -> `Outgoing` -> `Turn off ZSBT outgoing and use Blizzard FCT`.
+- Go to `/zsbt` -> `General` -> `Blizzard Combat Text` and enable suppression.
+- Use the granular toggles to hide only the Blizzard categories you don’t want (incoming damage/healing, outgoing, reactives, etc.).
 - Use `/zsbt dumpcvars` to verify the Blizzard combat text CVars are set as expected.
 
 ## Blizzard XP / world text size is too small

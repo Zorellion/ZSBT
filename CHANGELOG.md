@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.2.7
+- Libraries: fixed embedded Ace3 TOC load order so ZSBT works standalone (loads AceGUI before AceConfigDialog, includes AceGUI XML, and includes AceConfig wrapper).
+
 ## 2.2.6
 - Spam Control: fixed unconfigured aura gain/fade notifications bypassing global toggles when spell ID cannot be resolved (common in combat).
 - Migration: hardened profile->char migrations for Spam Control rules, Triggers, and tracked cooldowns to normalize numeric string keys and avoid destructive trigger cleanup.
