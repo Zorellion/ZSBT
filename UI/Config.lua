@@ -787,7 +787,8 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 				end,
 				get = function()
 					local t = getTrigger(); local a = t and t.action
-					return type(a) == "table" and (a.stickyJiggle ~= false) or true
+					if type(a) ~= "table" then return true end
+					return a.stickyJiggle ~= false
 				end,
 				set = function(_, v)
 					local t = ensureTrigger(); if not t then return end

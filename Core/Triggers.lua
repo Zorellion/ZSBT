@@ -275,11 +275,9 @@ function Triggers:_CheckAuraGainFade()
 			local present = self:_IsAuraPresent(sid)
 			local was = self._auraPresent[sid] == true
 			if present and not was then
-				self._auraPresent[sid] = true
 				TrigDebug("AuraGain spellId=" .. tostring(sid))
 				self:OnAuraGain(sid)
 			elseif (not present) and was then
-				self._auraPresent[sid] = false
 				TrigDebug("AuraFade spellId=" .. tostring(sid))
 				self:OnAuraFade(sid)
 			end
@@ -342,7 +340,9 @@ function Triggers:SyncWatchedAurasFromCore()
 			if ok and aura then return true end
 			ok, aura = pcall(AuraUtil.FindAuraBySpellId, sid, "player", "HARMFUL")
 			if ok and aura then return true end
-			return false
+			-- Do NOT early-return false here. During loading screens / API transitional states,
+			-- FindAuraBySpellId can transiently fail to report an aura. Fall through to
+			-- enumeration and name matching below to reduce false negatives.
 		end
 
 		-- Fallback: enumerate auras and compare spellId when provided
