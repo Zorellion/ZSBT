@@ -504,6 +504,9 @@ function Triggers:SyncWatchedAurasFromCore()
 	local now = GetTime and GetTime() or 0
 	self._auraPresent = self._auraPresent or {}
 	self._auraSyncLastSeenAt = self._auraSyncLastSeenAt or {}
+	self._auraSyncMissCount = self._auraSyncMissCount or {}
+	self._auraSyncPresentCount = self._auraSyncPresentCount or {}
+	local coreInit = (ZSBT and ZSBT.Core and ZSBT.Core._auraInitInProgress) == true
 
 	for sid in pairs(watch) do
 		if type(sid) == "number" then
@@ -511,35 +514,125 @@ function Triggers:SyncWatchedAurasFromCore()
 			if sid == 107574 then
 				TrigDebug("AuraSync: Avatar present=" .. tostring(present))
 			end
-			local was = (self._auraPresent[sid] == true)
-			if present then
-				self._auraSyncLastSeenAt[sid] = now
-			end
-			-- Skip calling for auras under synthetic detection to prevent doubles
-			if self._syntheticAuraExpireAt and type(self._syntheticAuraExpireAt[sid]) == "number" then
-				if now < (self._syntheticAuraExpireAt[sid] or 0) then
-					-- Synthetic is active for this aura, let synthetic handler manage it
-					-- Just update our state to match without firing events
-					self._auraPresent[sid] = true
+			local wasVal = self._auraPresent[sid]
+			local was = (wasVal == true)
+			-- Bootstrap: do not emit gain/fade for auras that are already present (or absent)
+			-- the first time we ever observe them after reload/login.
+			if wasVal == nil then
+				self._auraPresent[sid] = present == true
+				if present then
+					self._auraSyncLastSeenAt[sid] = now
+					self._auraSyncMissCount[sid] = 0
+					self._auraSyncPresentCount[sid] = 0
 				else
-					-- Synthetic expired, handle normally
-					if present and not was then
-						self:OnAuraGain(sid, "sync")
-					elseif (not present) and was then
-						self:OnAuraFade(sid, "sync")
-					end
+					self._auraSyncPresentCount[sid] = 0
 				end
 			else
-				if present and not was then
-					self:OnAuraGain(sid, "sync")
-				elseif (not present) and was then
-					-- Debounce sync-driven fades to avoid transient false negatives
-					-- during loading screens / API unavailability.
-					local lastSeen = tonumber(self._auraSyncLastSeenAt[sid]) or 0
-					if lastSeen > 0 and (now - lastSeen) < 2.0 then
-						-- Keep state as-present for now; a later sync will confirm real removal.
+				if present then
+					self._auraSyncLastSeenAt[sid] = now
+					self._auraSyncMissCount[sid] = 0
+					self._auraSyncPresentCount[sid] = (tonumber(self._auraSyncPresentCount[sid]) or 0) + 1
+				else
+					self._auraSyncPresentCount[sid] = 0
+				end
+				-- Skip calling for auras under synthetic detection to prevent doubles
+				if self._syntheticAuraExpireAt and type(self._syntheticAuraExpireAt[sid]) == "number" then
+					if now < (self._syntheticAuraExpireAt[sid] or 0) then
+						-- Synthetic is active for this aura, let synthetic handler manage it
+						-- Just update our state to match without firing events
+						self._auraPresent[sid] = true
+						self._auraSyncLastSeenAt[sid] = now
+						self._auraSyncMissCount[sid] = 0
+						self._auraSyncPresentCount[sid] = (tonumber(self._auraSyncPresentCount[sid]) or 0) + 1
 					else
-						self:OnAuraFade(sid, "sync")
+						-- Synthetic expired, handle normally
+						if present and not was then
+							if coreInit then
+								-- During init windows (reload/login/zone load), sync state without emitting.
+								self._auraPresent[sid] = true
+								self._auraSyncLastSeenAt[sid] = now
+								self._auraSyncMissCount[sid] = 0
+								self._auraSyncPresentCount[sid] = 0
+							else
+								-- Zone/load transitions can produce a single "good" snapshot after a period
+								-- of flapping. Require multiple consecutive present scans before emitting.
+								local pc = tonumber(self._auraSyncPresentCount[sid]) or 0
+								if pc >= 2 then
+									self._auraSyncPresentCount[sid] = 0
+									self:OnAuraGain(sid, "sync")
+								end
+							end
+						elseif (not present) and was then
+							if coreInit then
+								-- During init windows, avoid transient fades; keep state as-present.
+								self._auraPresent[sid] = true
+								self._auraSyncLastSeenAt[sid] = now
+								self._auraSyncMissCount[sid] = 0
+								self._auraSyncPresentCount[sid] = 0
+							else
+								-- Even when synthetic tracking ends, zone/load transitions can produce
+								-- transient false negatives. Apply the same conservative fade gating
+								-- used by the non-synthetic path.
+								local lastSeen = tonumber(self._auraSyncLastSeenAt[sid]) or 0
+								local miss = tonumber(self._auraSyncMissCount[sid]) or 0
+								miss = miss + 1
+								self._auraSyncMissCount[sid] = miss
+								if lastSeen > 0 and (now - lastSeen) < 2.0 then
+									-- Keep state as-present for now; a later sync will confirm real removal.
+								elseif miss < 4 then
+									-- Require multiple consecutive misses before treating as a real fade.
+								else
+									self._auraSyncMissCount[sid] = 0
+									self:OnAuraFade(sid, "sync")
+								end
+							end
+						end
+					end
+				else
+					if present and not was then
+						if coreInit then
+							-- During init windows (reload/login/zone load), sync state without emitting.
+							self._auraPresent[sid] = true
+							self._auraSyncLastSeenAt[sid] = now
+							self._auraSyncMissCount[sid] = 0
+							self._auraSyncPresentCount[sid] = 0
+						else
+							-- Zone/load transitions can produce a single "good" snapshot after a period
+							-- of flapping. Require multiple consecutive present scans before emitting.
+							local pc = tonumber(self._auraSyncPresentCount[sid]) or 0
+							if pc >= 2 then
+								self._auraSyncPresentCount[sid] = 0
+								self:OnAuraGain(sid, "sync")
+							end
+						end
+					elseif (not present) and was then
+						if coreInit then
+							-- During init windows, avoid transient fades; keep state as-present.
+							self._auraPresent[sid] = true
+							self._auraSyncLastSeenAt[sid] = now
+							self._auraSyncMissCount[sid] = 0
+							self._auraSyncPresentCount[sid] = 0
+						else
+							-- Debounce sync-driven fades to avoid transient false negatives
+							-- during loading screens / API unavailability.
+							--
+							-- In practice, zone/load transitions can produce one or two bad aura snapshots.
+							-- Require multiple consecutive "missing" scans before emitting a FADE.
+							local lastSeen = tonumber(self._auraSyncLastSeenAt[sid]) or 0
+							local miss = tonumber(self._auraSyncMissCount[sid]) or 0
+							miss = miss + 1
+							self._auraSyncMissCount[sid] = miss
+							if lastSeen > 0 and (now - lastSeen) < 2.0 then
+								-- Keep state as-present for now; a later sync will confirm real removal.
+							elseif miss < 4 then
+								-- Require multiple consecutive misses before treating as a real fade.
+								-- (Sync ticker runs ~0.5s; miss>=4 is ~2s of continuous absence.)
+							else
+								self._auraSyncMissCount[sid] = 0
+								self._auraSyncPresentCount[sid] = 0
+								self:OnAuraFade(sid, "sync")
+							end
+						end
 					end
 				end
 			end

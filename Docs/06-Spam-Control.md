@@ -68,6 +68,9 @@ Buff Rules let you control which **buff gain/fade notifications** you see.
 The Spam Control tab has toggles that control whether **unconfigured** buffs are allowed:
 - If you disable showing gains/fades without rules, only buffs with a Buff Rule will display.
 
+There are separate toggles for **harmful debuffs**:
+- If you disable showing debuff gains/fades without rules, only debuffs with a Debuff Rule will display.
+
 ### Recently Seen Buffs
 The Buff Rules Manager includes **Recently Seen Buffs**:
 - Trigger a proc or gain buffs.
@@ -87,6 +90,9 @@ The Buff Rules Manager includes merge-only class templates:
 - **Example: Keep only important cooldown buffs**
   - Disable “Show Buff Gains Without Rules” and “Show Buff Fades Without Rules”.
   - Add rules only for the buffs you care about (major cooldowns, trinket procs, defensives).
+- **Example: Show debuffs only when configured**
+  - Disable “Show Debuff Gains Without Rules” and “Show Debuff Fades Without Rules”.
+  - Add rules only for the debuffs you care about (example: Bloodlust lockout debuffs).
 - **Example: Stop spam from stacking buffs**
   - Add a Buff Rule.
   - Set a small throttle like `1.0` to `3.0` seconds.

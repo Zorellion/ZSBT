@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.2.4
+- Triggers: fixed watched aura sync so auras already present at login/reload do not emit a new `AURA_GAIN` (prevents false re-notifies for debuffs like Temporal Displacement).
+- Spam Control: fixed harmful debuff gain notifications ("+Debuff") bypassing global unconfigured toggles when spell ID could not be resolved in incremental aura updates.
+
 ## 2.2.3
 - Triggers: fixed `Sticky Jiggle (shake)` toggle in Trigger actions so it correctly persists and can be disabled.
 - Triggers: hardened watched aura sync presence checks to reduce false `AURA_FADE`/`AURA_GAIN` transitions during loading screens.
