@@ -53,9 +53,17 @@ ZSBT.DEFAULTS = {
                 anim = "Pow",
             },
 
-            -- Suppress Blizzard's floating combat text on load
-            suppressBlizzardFCT = true,
-            blizzardFCTSuppressMode = "all",
+            			-- Suppress Blizzard's floating combat text on load
+			suppressBlizzardFCT = true,
+			blizzardFCTSuppressMode = "all",
+			hideBlizzardFCT = true,
+			hideBlizzardFCTOutgoing = true,
+			hideBlizzardFCTIncomingDamage = true,
+			hideBlizzardFCTIncomingHealing = true,
+			hideBlizzardFCTReactives = true,
+			hideBlizzardFCTXPRepHonor = true,
+			hideBlizzardFCTResourceGains = true,
+			hideBlizzardFCTPet = true,
         },
 
         notifications = {
@@ -226,12 +234,11 @@ ZSBT.DEFAULTS = {
         ------------------------------------------------------------------------
         -- Tab 4: Outgoing
         ------------------------------------------------------------------------
-        outgoing = {
-            useBlizzardFCTInstead = false,
-            damage = {
-                enabled        = true,
-                scrollArea     = "Outgoing",
-                showTargets    = false,
+        		outgoing = {
+			damage = {
+				enabled        = true,
+				scrollArea     = "Outgoing",
+				showTargets    = false,
                 autoAttackMode = "Show All",
                 minThreshold   = 0,
                 showMisses     = true,

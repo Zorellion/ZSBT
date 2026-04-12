@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.2.5
+- Config UI: hardened AceConfig window behavior (prevents ZSBT config close/ESC handling from interfering with other addons).
+- Combat Text: replaced Blizzard combat text suppression dropdown with granular hide toggles (outgoing/incoming/heals/reactives/xp+rep+honor/resource gains/pet) and kept a manual restore button as a panic option.
+
 ## 2.2.4
 - Triggers: fixed watched aura sync so auras already present at login/reload do not emit a new `AURA_GAIN` (prevents false re-notifies for debuffs like Temporal Displacement).
 - Spam Control: fixed harmful debuff gain notifications ("+Debuff") bypassing global unconfigured toggles when spell ID could not be resolved in incremental aura updates.
