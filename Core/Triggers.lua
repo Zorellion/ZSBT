@@ -154,6 +154,11 @@ local function PassThrottle(self, trig)
 	return true
 end
 
+local function IsBloodlustLockoutName(name)
+	if type(name) ~= "string" or name == "" then return false end
+	return name == "Fatigued" or name == "Exhaustion" or name == "Sated" or name == "Temporal Displacement" or name == "Insanity"
+end
+
 function Triggers:FireEvent(eventType, ctx)
 	if not self:IsEnabled() then return end
 	local tdb = GetDB()
@@ -215,6 +220,16 @@ function Triggers:OnAuraGain(spellId, source)
 	end
 	self._auraPresent[spellId] = true
 	local name = SafeSpellName(spellId)
+	if IsBloodlustLockoutName(name) then
+		self._recentAuraLockoutAt = self._recentAuraLockoutAt or {}
+		local now = Now()
+		local last = self._recentAuraLockoutAt[name]
+		if type(last) == "number" and (now - last) < 0.15 then
+			TrigDebug("OnAuraGain LOCKOUT DEDUP BLOCKED spellId=" .. tostring(spellId) .. " name=" .. tostring(name))
+			return
+		end
+		self._recentAuraLockoutAt[name] = now
+	end
 	TrigDebug("OnAuraGain EMITTING spellId=" .. tostring(spellId) .. " name=" .. tostring(name) .. " src=" .. tostring(source or "?"))
 	self:FireEvent("AURA_GAIN", {
 		eventType = "AURA_GAIN",
@@ -269,8 +284,12 @@ function Triggers:_CheckAuraGainFade()
 	local watch = self._auraWatchIds
 	if type(watch) ~= "table" then return end
 	self._auraPresent = self._auraPresent or {}
-
+	local sids = {}
 	for sid in pairs(watch) do
+		sids[#sids + 1] = sid
+	end
+	table.sort(sids)
+	for _, sid in ipairs(sids) do
 		if type(sid) == "number" and sid > 0 then
 			local present = self:_IsAuraPresent(sid)
 			local was = self._auraPresent[sid] == true
@@ -295,6 +314,16 @@ function Triggers:OnAuraFade(spellId, source)
 	end
 	self._auraPresent[spellId] = false
 	local name = SafeSpellName(spellId)
+	if IsBloodlustLockoutName(name) then
+		self._recentAuraLockoutFadeAt = self._recentAuraLockoutFadeAt or {}
+		local now = Now()
+		local last = self._recentAuraLockoutFadeAt[name]
+		if type(last) == "number" and (now - last) < 0.15 then
+			TrigDebug("OnAuraFade LOCKOUT DEDUP BLOCKED spellId=" .. tostring(spellId) .. " name=" .. tostring(name))
+			return
+		end
+		self._recentAuraLockoutFadeAt[name] = now
+	end
 	TrigDebug("OnAuraFade EMITTING spellId=" .. tostring(spellId) .. " name=" .. tostring(name) .. " src=" .. tostring(source or "?"))
 	self:FireEvent("AURA_FADE", {
 		eventType = "AURA_FADE",

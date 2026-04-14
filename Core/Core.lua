@@ -2289,6 +2289,8 @@ function Core:InitBuffTracking()
 		if event == "PLAYER_ENTERING_WORLD" then
 			-- On login/reload: populate tracking tables without clearing
 			-- Mark auras seen during init to suppress their notifications later
+			Core._auraInitSeq = (tonumber(Core._auraInitSeq) or 0) + 1
+			local auraInitSeq = Core._auraInitSeq
 			Core._auraInitInProgress = true
 			Core._aurasSeenDuringInit = {}
 			Core._auraGracePeriodUntil = 0
@@ -2350,7 +2352,9 @@ function Core:InitBuffTracking()
 					Core._auraInitInProgress = false
 					-- Keep suppression table for 60 seconds to prevent buff spam when removing auras
 					C_Timer.After(60.0, function()
-						Core._aurasSeenDuringInit = nil
+						if Core._auraInitSeq == auraInitSeq then
+							Core._aurasSeenDuringInit = nil
+						end
 					end)
 				end
 			end)
@@ -2366,6 +2370,8 @@ function Core:InitBuffTracking()
 			Core._auraInstanceHarmfulSpellIDs = {}
 			Core._auraInstanceIsHarmful = {}
 			Core._auraRuleLastShown = {}
+			Core._auraInitSeq = (tonumber(Core._auraInitSeq) or 0) + 1
+			local auraInitSeq = Core._auraInitSeq
 			Core._auraInitInProgress = true
 			Core._aurasSeenDuringInit = {}
 			Core._auraGracePeriodUntil = 0
@@ -2376,7 +2382,9 @@ function Core:InitBuffTracking()
 					Core._auraInitInProgress = false
 					-- Keep suppression table for 60 seconds to prevent buff spam when removing auras
 					C_Timer.After(60.0, function()
-						Core._aurasSeenDuringInit = nil
+						if Core._auraInitSeq == auraInitSeq then
+							Core._aurasSeenDuringInit = nil
+						end
 					end)
 				end
 			end)
