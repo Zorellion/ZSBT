@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.2.9
+- Profiles: added an in-game tool under DB Profiles to copy character-scoped Spell Rules, Buff Rules, and Triggers from another character (merge or replace) without requiring a /reload.
+
 ## 2.2.8
 - Auras: fixed a rare aura-scan crash in instanced content (Mythic+) caused by overlapping init/zone timers clearing init suppression state.
 - Triggers: deduped Bloodlust lockout aura triggers when multiple spell IDs resolve to the same lockout name (ex: Fatigued/Exhaustion) so only one notification fires.
