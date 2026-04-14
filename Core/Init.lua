@@ -1250,6 +1250,138 @@ function Addon:OnInitialize()
 				local profilesTable = safeGetProfilesTable(self.db)
 				if profilesTable and profilesTable.handler and profilesTable.args then
 					local addon = self
+					local function getCharKey()
+						local name = UnitName and UnitName("player")
+						local realm = (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName and GetRealmName())
+						if type(name) ~= "string" or name == "" then return nil end
+						if type(realm) ~= "string" or realm == "" then realm = "UnknownRealm" end
+						return name .. "-" .. realm
+					end
+					addon._copyFromCharKey = addon._copyFromCharKey or ""
+					addon._copyCharMode = addon._copyCharMode or "merge"
+					local function getSvCharTable()
+						local sv = mainDb and mainDb.sv
+						local ch = sv and sv.char
+						if type(ch) == "table" then return ch end
+						return nil
+					end
+					local function listCharKeys()
+						local out = {}
+						local ch = getSvCharTable()
+						local cur = getCharKey()
+						if type(ch) ~= "table" then
+							return out
+						end
+						for k in pairs(ch) do
+							if type(k) == "string" and k ~= "" and k ~= cur then
+								out[k] = k
+							end
+						end
+						return out
+					end
+					local function mergeMissing(dst, src)
+						if type(dst) ~= "table" or type(src) ~= "table" then return end
+						for k, v in pairs(src) do
+							if dst[k] == nil then
+								dst[k] = deepCopyTable(v)
+							end
+						end
+					end
+					local function replaceTable(dst, src)
+						if type(dst) ~= "table" or type(src) ~= "table" then return end
+						for k in pairs(dst) do
+							dst[k] = nil
+						end
+						for k, v in pairs(src) do
+							dst[k] = deepCopyTable(v)
+						end
+					end
+					local function copyFromSelectedChar(copySpellRules, copyAuraRules, copyTriggers)
+						local fromKey = addon._copyFromCharKey
+						if type(fromKey) ~= "string" or fromKey == "" then
+							if addon and addon.Print then addon:Print("Select a source character first.") end
+							return
+						end
+						local ch = getSvCharTable()
+						local src = ch and ch[fromKey]
+						local dst = mainDb and mainDb.char
+						if type(src) ~= "table" or type(dst) ~= "table" then
+							if addon and addon.Print then addon:Print("Source/target character data not available.") end
+							return
+						end
+						local mode = addon._copyCharMode
+						if mode ~= "merge" and mode ~= "replace" then mode = "merge" end
+						local changed = false
+						if copySpellRules then
+							dst.spamControl = dst.spamControl or {}
+							dst.spamControl.spellRules = dst.spamControl.spellRules or {}
+							local srcRules = src.spamControl and src.spamControl.spellRules
+							if type(srcRules) == "table" then
+								if mode == "replace" then
+									replaceTable(dst.spamControl.spellRules, srcRules)
+								else
+									mergeMissing(dst.spamControl.spellRules, srcRules)
+								end
+								changed = true
+							end
+						end
+						if copyAuraRules then
+							dst.spamControl = dst.spamControl or {}
+							dst.spamControl.auraRules = dst.spamControl.auraRules or {}
+							local srcRules = src.spamControl and src.spamControl.auraRules
+							if type(srcRules) == "table" then
+								if mode == "replace" then
+									replaceTable(dst.spamControl.auraRules, srcRules)
+								else
+									mergeMissing(dst.spamControl.auraRules, srcRules)
+								end
+								changed = true
+							end
+						end
+						if copyTriggers then
+							dst.triggers = dst.triggers or { enabled = true, items = {} }
+							dst.triggers.items = dst.triggers.items or {}
+							local srcTrig = src.triggers
+							local srcItems = srcTrig and srcTrig.items
+							if type(srcItems) == "table" then
+								if mode == "replace" then
+									dst.triggers.enabled = (srcTrig and srcTrig.enabled ~= false) and true or false
+									dst.triggers.items = deepCopyTable(srcItems)
+								changed = true
+								else
+									local existing = {}
+									for _, t in ipairs(dst.triggers.items) do
+										if type(t) == "table" then
+											local id = t.id or t._key
+											if id ~= nil then existing[tostring(id)] = true end
+										end
+									end
+									for _, t in ipairs(srcItems) do
+										if type(t) == "table" then
+											local id = t.id or t._key
+											if id == nil or existing[tostring(id)] ~= true then
+												dst.triggers.items[#dst.triggers.items + 1] = deepCopyTable(t)
+												changed = true
+											end
+										end
+									end
+								end
+							end
+						end
+						if changed then
+							if copyTriggers and ZSBT and type(ZSBT.RefreshTriggersTab) == "function" then
+								pcall(ZSBT.RefreshTriggersTab)
+							end
+							local ACR2 = LibStub("AceConfigRegistry-3.0", true)
+							if ACR2 then
+								pcall(function() ACR2:NotifyChange("ZSBT_SpellRules") end)
+								pcall(function() ACR2:NotifyChange("ZSBT_BuffRules") end)
+								pcall(function() ACR2:NotifyChange("ZSBT") end)
+							end
+							if addon and addon.Print then addon:Print("Copied rules/triggers from " .. tostring(fromKey) .. " (" .. tostring(mode) .. ").") end
+						end
+					end
+
 					profilesTable.args.zsbtPresetProfiles = {
 						type = "group",
 						name = "Preset Profiles",
@@ -1321,6 +1453,67 @@ function Addon:OnInitialize()
 									if addon and addon.Print then addon:Print("Reset preset: Pet Class") end
 								end
 							end,
+						},
+					},
+				}
+
+				profilesTable.args.zsbtCopyCharData = {
+					type = "group",
+					name = "Copy Rules / Triggers",
+					order = 998,
+					inline = true,
+					args = {
+						desc = {
+							type = "description",
+							name = "Copy per-character Spell Rules, Buff Rules, and Triggers into your current character. Profiles do not include these items.",
+							order = 1,
+							width = "full",
+						},
+						fromChar = {
+							type = "select",
+							name = "Copy From Character",
+							order = 2,
+							width = "full",
+							values = function() return listCharKeys() end,
+							get = function() return addon._copyFromCharKey end,
+							set = function(_, v) addon._copyFromCharKey = tostring(v or "") end,
+						},
+						mode = {
+							type = "select",
+							name = "Copy Mode",
+							order = 3,
+							width = "full",
+							values = { merge = "Merge (add missing)", replace = "Replace" },
+							get = function() return addon._copyCharMode end,
+							set = function(_, v) addon._copyCharMode = tostring(v or "merge") end,
+						},
+						copySpellRules = {
+							type = "execute",
+							name = "Copy Spell Rules",
+							order = 10,
+							width = "full",
+							func = function() copyFromSelectedChar(true, false, false) end,
+						},
+						copyAuraRules = {
+							type = "execute",
+							name = "Copy Buff Rules",
+							order = 11,
+							width = "full",
+							func = function() copyFromSelectedChar(false, true, false) end,
+						},
+						copyTriggers = {
+							type = "execute",
+							name = "Copy Triggers",
+							order = 12,
+							width = "full",
+							func = function() copyFromSelectedChar(false, false, true) end,
+						},
+						copyAll = {
+							type = "execute",
+							name = "Copy All (Rules + Triggers)",
+							order = 13,
+							width = "full",
+							func = function() copyFromSelectedChar(true, true, true) end,
 						},
 					},
 				}
