@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.8
+- Auras: fixed a rare aura-scan crash in instanced content (Mythic+) caused by overlapping init/zone timers clearing init suppression state.
+- Triggers: deduped Bloodlust lockout aura triggers when multiple spell IDs resolve to the same lockout name (ex: Fatigued/Exhaustion) so only one notification fires.
+- Media: registered additional bundled fonts with LibSharedMedia.
+
 ## 2.2.7
 - Libraries: fixed embedded Ace3 TOC load order so ZSBT works standalone (loads AceGUI before AceConfigDialog, includes AceGUI XML, and includes AceConfig wrapper).
 
