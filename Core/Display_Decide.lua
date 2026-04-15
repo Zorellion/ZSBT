@@ -242,9 +242,14 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
 	end
 
 	local spellId = meta and meta.spellId
-	local canSpellMerge = type(spellId) == "number" and spellId > 0
-	if ZSBT.IsSafeNumber then
-		canSpellMerge = canSpellMerge and ZSBT.IsSafeNumber(spellId)
+	local canSpellMerge = false
+	if type(spellId) == "number" then
+		-- In WoW 12.x, spellId can be a secret number; never compare it unless it's safe.
+		if ZSBT.IsSafeNumber and not ZSBT.IsSafeNumber(spellId) then
+			canSpellMerge = false
+		elseif spellId > 0 then
+			canSpellMerge = true
+		end
 	end
 	if not canSpellMerge then
 		-- Avoid merging unrelated events: if we can't key by spellId, do not merge.
