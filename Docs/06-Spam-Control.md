@@ -10,6 +10,8 @@ Spam Control helps reduce noise by merging rapid hits and applying thresholds.
 - Adjust the merge `Window` to control how long hits are collected.
 - Enable `Show Count` to display “(xN)” style counts.
 
+Note: Spell Merging only merges events that share the same **SpellID**. In WoW 12.x, many abilities can emit multiple SpellIDs (sub-spells/procs), so Spell Merging may not combine everything you expect from a single button press. For the most accurate control, use **Spell Rules** (per-spell throttles/aggregation).
+
 ## Throttling / thresholds
 - Use minimum thresholds to hide small damage/heals.
 - Use auto-attack suppression thresholds if available.

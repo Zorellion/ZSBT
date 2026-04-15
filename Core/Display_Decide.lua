@@ -170,11 +170,11 @@ end
 ------------------------------------------------------------------------
 local mergeBuffer = {}
 
-local function FlushMerge(areaName)
-    local tok = ZSBT.Addon and ZSBT.Addon.PerfBegin and ZSBT.Addon:PerfBegin("UI.FlushMerge")
-    local entry = mergeBuffer[areaName]
-    if not entry then return end
-    mergeBuffer[areaName] = nil
+local function FlushMergeByKey(key)
+	local tok = ZSBT.Addon and ZSBT.Addon.PerfBegin and ZSBT.Addon:PerfBegin("UI.FlushMerge")
+	local entry = mergeBuffer[key]
+	if not entry then return end
+	mergeBuffer[key] = nil
 
     -- Cancel the flush timer to prevent orphaned callback
     if entry.timer then
@@ -183,93 +183,135 @@ local function FlushMerge(areaName)
     end
 
     local text = entry.text
-    if entry.count > 1 and ZSBT.IsSafeString(text) then
-        -- Append count to clean text
-        if entry.totalAmount > 0 then
-            text = tostring(math.floor(entry.totalAmount + 0.5)) .. " (x" .. entry.count .. ")"
-        else
-            text = text .. " (x" .. entry.count .. ")"
+    local showCount = entry.showCount == true
+    if entry.count > 1 then
+        if entry.mode == "numeric" and type(entry.totalAmount) == "number" and entry.totalAmount > 0 then
+            text = tostring(math.floor(entry.totalAmount + 0.5))
+            if showCount then
+                text = text .. " (x" .. entry.count .. ")"
+            end
+        elseif showCount then
+            -- Secret/tainted or non-numeric text: count-only (no math).
+            -- Keep the base label text and append count.
+            if ZSBT.IsSafeString(text) then
+                text = text .. " (x" .. entry.count .. ")"
+            else
+                text = "Hits (x" .. entry.count .. ")"
+            end
         end
     end
 
     ZSBT.FireTestText(text, entry.area, entry.fontFace, entry.fontSize,
         entry.outlineFlag, entry.fontAlpha, entry.anchorH, entry.dirMult,
         entry.duration, entry.color, entry.meta)
-	if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
+    if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
+end
+
+local function FlushMergesForArea(areaName)
+	for k, e in pairs(mergeBuffer) do
+		if type(e) == "table" and e.areaName == areaName then
+			FlushMergeByKey(k)
+		end
+	end
 end
 
 local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
-                        fontAlpha, anchorH, dirMult, duration, color, meta)
-    local tok = ZSBT.Addon and ZSBT.Addon.PerfBegin and ZSBT.Addon:PerfBegin("UI.TryMerge")
-    -- Check if merging is enabled
-    local profile = ZSBT.db and ZSBT.db.profile
-    local mergeConf = profile and profile.spamControl and profile.spamControl.merging
-    if not mergeConf or not mergeConf.enabled then
-        ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
-            fontAlpha, anchorH, dirMult, duration, color, meta)
+						fontAlpha, anchorH, dirMult, duration, color, meta)
+	local tok = ZSBT.Addon and ZSBT.Addon.PerfBegin and ZSBT.Addon:PerfBegin("UI.TryMerge")
+	-- Check if merging is enabled
+	local profile = ZSBT.db and ZSBT.db.profile
+	local mergeConf = profile and profile.spamControl and profile.spamControl.merging
+	if not mergeConf or not mergeConf.enabled then
+		FlushMergesForArea(areaName)
+		ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
+			fontAlpha, anchorH, dirMult, duration, color, meta)
 		if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
-        return
-    end
+		return
+	end
 
-    -- Don't merge: crits, misses, notifications, or tainted raw pipe values
-    local isCrit = meta and meta.isCrit
-    local isMiss = meta and meta.kind == "miss"
-    local isNotification = meta and meta.kind == "notification"
-    if isCrit or isMiss or isNotification or not ZSBT.IsSafeString(text) then
-        FlushMerge(areaName)
-        ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
-            fontAlpha, anchorH, dirMult, duration, color, meta)
+	-- Don't merge: crits, misses, notifications, or tainted raw pipe values
+	local isCrit = meta and meta.isCrit
+	local isMiss = meta and meta.kind == "miss"
+	local isNotification = meta and meta.kind == "notification"
+	if isCrit or isMiss or isNotification then
+		FlushMergesForArea(areaName)
+		ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
+			fontAlpha, anchorH, dirMult, duration, color, meta)
 		if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
-        return
-    end
+		return
+	end
 
-    local numVal = tonumber(text:match("^[+-]?%d+"))
-    local window = tonumber(mergeConf.window) or 1.5
-    local maxMerge = 8  -- never hold more than 8 hits
+	local spellId = meta and meta.spellId
+	local canSpellMerge = type(spellId) == "number" and spellId > 0
+	if ZSBT.IsSafeNumber then
+		canSpellMerge = canSpellMerge and ZSBT.IsSafeNumber(spellId)
+	end
+	if not canSpellMerge then
+		-- Avoid merging unrelated events: if we can't key by spellId, do not merge.
+		FlushMergesForArea(areaName)
+		ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
+			fontAlpha, anchorH, dirMult, duration, color, meta)
+		if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
+		return
+	end
 
-    local existing = mergeBuffer[areaName]
-    if existing then
-        local elapsed = GetTime() - existing.lastUpdate
-        if elapsed < window and existing.count < maxMerge then
-            existing.count = existing.count + 1
-            existing.lastUpdate = GetTime()
-            if numVal and existing.totalAmount > 0 then
-                existing.totalAmount = existing.totalAmount + numVal
-            end
-            if existing.timer then
-                existing.timer:Cancel()
-            end
-            -- Short flush: 0.1s so text appears quickly
-            existing.timer = C_Timer.NewTimer(0.1, function()
-                FlushMerge(areaName)
-            end)
+	local window = tonumber(mergeConf.window) or 1.5
+	local showCount = mergeConf.showCount == true
+	local maxMerge = 8  -- never hold more than 8 hits
+
+	local numVal = tonumber(text:match("^[+-]?%d+"))
+	local mode = (numVal ~= nil and ZSBT.IsSafeString and ZSBT.IsSafeString(text)) and "numeric" or "secret"
+
+	-- Key by scroll area + spellId so we merge per spell per window.
+	local key = tostring(areaName) .. ":" .. tostring(spellId)
+	local existing = mergeBuffer[key]
+	if existing then
+		local elapsed = GetTime() - existing.lastUpdate
+		if elapsed < window and existing.count < maxMerge then
+			existing.count = existing.count + 1
+			existing.lastUpdate = GetTime()
+			if existing.mode == "numeric" and mode == "numeric" and numVal and type(existing.totalAmount) == "number" then
+				existing.totalAmount = existing.totalAmount + numVal
+			else
+				existing.mode = "secret"
+				existing.totalAmount = nil
+			end
+			if existing.timer then
+				existing.timer:Cancel()
+			end
+			existing.timer = C_Timer.NewTimer(window, function()
+				FlushMergeByKey(key)
+			end)
 			if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
-            return
-        else
-            FlushMerge(areaName)
-        end
-    end
+			return
+		else
+			FlushMergeByKey(key)
+		end
+	end
 
-    -- Start new merge entry with short flush timer
-    mergeBuffer[areaName] = {
-        text = text,
-        totalAmount = numVal or 0,
-        count = 1,
-        area = area,
-        fontFace = fontFace,
-        fontSize = fontSize,
-        outlineFlag = outlineFlag,
-        fontAlpha = fontAlpha,
-        anchorH = anchorH,
-        dirMult = dirMult,
-        duration = duration,
-        color = color,
-        meta = meta,
-        lastUpdate = GetTime(),
-        timer = C_Timer.NewTimer(0.1, function()
-            FlushMerge(areaName)
-        end),
-    }
+	-- Start new merge entry with short flush timer
+	mergeBuffer[key] = {
+		areaName = areaName,
+		showCount = showCount,
+		text = text,
+		mode = mode,
+		totalAmount = (mode == "numeric" and numVal) or nil,
+		count = 1,
+		area = area,
+		fontFace = fontFace,
+		fontSize = fontSize,
+		outlineFlag = outlineFlag,
+		fontAlpha = fontAlpha,
+		anchorH = anchorH,
+		dirMult = dirMult,
+		duration = duration,
+		color = color,
+		meta = meta,
+		lastUpdate = GetTime(),
+		timer = C_Timer.NewTimer(window, function()
+			FlushMergeByKey(key)
+		end),
+	}
 	if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
 end
 

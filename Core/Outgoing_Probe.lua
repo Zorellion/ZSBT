@@ -758,6 +758,9 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			isCrit = evt.isCrit == true,
 			school = evt.schoolMask,
 		}
+		if type(resolvedSpellID) == "number" then
+			meta.spellId = resolvedSpellID
+		end
 
 		-- Per-spell style overrides (Outgoing only).
 		local style = rule and rule.style
@@ -820,8 +823,8 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 					or evt.amountSource == "UNIT_COMBAT_PHYSICAL"
 					or evt.amountSource == "UNIT_COMBAT_AUTO_FALLBACK"
 				)) or (evt and evt.isPeriodic == true)
-		if prof.showSpellIcons and evt.isAuto ~= true and evt.spellId and trustedForSpellIcon then
-			local tex = ZSBT.CleanSpellIcon(evt.spellId)
+		if prof.showSpellIcons and evt.isAuto ~= true and type(resolvedSpellID) == "number" and trustedForSpellIcon then
+			local tex = ZSBT.CleanSpellIcon(resolvedSpellID)
 			if tex then meta.spellIcon = tex end
 		end
 
@@ -997,6 +1000,9 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
             isCrit = evt.isCrit == true,
             school = evt.schoolMask,
         }
+		if type(resolvedSpellID) == "number" then
+			meta.spellId = resolvedSpellID
+		end
 
 		maybePlayCritSound(critConf, rawPipeValue, isTainted)
 

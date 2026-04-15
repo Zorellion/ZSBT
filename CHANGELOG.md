@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.2.10
+- Spam Control: fixed global Spell Merging timing so it can accumulate rapid multi-hits within the configured merge window.
+- Spam Control: clarified Spell Merging behavior/limitations in WoW 12.x (some abilities emit multiple SpellIDs; Spell Rules are more accurate).
+
 ## 2.2.9
 - Profiles: added an in-game tool under DB Profiles to copy character-scoped Spell Rules, Buff Rules, and Triggers from another character (merge or replace) without requiring a /reload.
 
