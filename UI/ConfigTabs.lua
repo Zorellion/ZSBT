@@ -6558,15 +6558,15 @@ function ZSBT.BuildTab_SpamControl()
             },
             mergeDesc = {
                 type     = "description",
-                name     = "Combine multiple hits from the same spell into a single display " ..
-                           "(e.g., \"Fireball x3\" instead of three separate numbers).",
+                name     = "Combine rapid repeated hits into a single display when they share the same SpellID. " ..
+                           "Note: In WoW 12.x, some abilities emit multiple SpellIDs (sub-spells/procs), so Spell Rules (per-spell throttles/aggregation) may be more accurate.",
                 order    = 2,
                 fontSize = "medium",
             },
             mergeEnabled = {
                 type  = "toggle",
                 name  = "Enable Spell Merging",
-                desc  = "Merge rapid repeated hits from the same spell.",
+                desc  = "Merge rapid repeated hits when events share the same SpellID.",
                 width = "full",
                 order = 3,
                 get   = function() return ZSBT.db.profile.spamControl.merging.enabled end,
