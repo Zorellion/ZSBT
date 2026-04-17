@@ -788,8 +788,19 @@ function Core:ApplyBlizzardFCTCVars()
 		suppressCombatTextFrames()
 		suppressCombatTextAddFns()
 	else
-		restoreCombatTextFrames()
-		restoreCombatTextAddFns()
+		-- WoW 12.x can still render incoming/self damage/heals via CombatText paths
+		-- even when the floating combat text CVars are 0. If the user is allowing
+		-- Blizzard outgoing but hiding incoming/reactives, keep CombatText suppressed
+		-- to avoid "leaking" Blizzard incoming numbers.
+		local allowOutgoing = (hideOutgoing == false)
+		local hideAnyIncomingLike = (hideInDmg == true) or (hideInHeal == true) or (hideReact == true)
+		if allowOutgoing and hideAnyIncomingLike then
+			suppressCombatTextFrames()
+			suppressCombatTextAddFns()
+		else
+			restoreCombatTextFrames()
+			restoreCombatTextAddFns()
+		end
 	end
 
     -- Option C: if ZSBT previously suppressed and the CVars still look off,
