@@ -628,18 +628,26 @@ ScheduleReadyTimer = function(spellId, startTime, duration, source)
     if not startTime or startTime <= 0 then return end
     if not duration or duration <= 0 then return end
 
-    local readyAt = startTime + duration
-    local delay = readyAt - GetTime()
-    if not (delay and delay > 0) then return end
+    	local readyAt = startTime + duration
+	local delay = readyAt - GetTime()
+	if not (delay and delay > 0) then return end
 
-    -- If we already have a ready timer running, never allow updates to move READY later.
-    -- Only reschedule when the new computed readyAt is meaningfully earlier.
-    if state.readyTimer and state.readyAt then
-        -- Later or essentially the same: keep existing timer.
-        if readyAt >= (state.readyAt - 0.25) then
-            return
-        end
-    end
+	-- Detect a cooldown restart. If a new startTime is meaningfully later than what
+	-- we previously scheduled, we must reschedule even if it would move READY later.
+	-- Otherwise a stale timer from a prior cooldown cycle can fire early.
+	local isRestart = false
+	if state._schedStart and startTime and (startTime > (state._schedStart + 0.25)) then
+		isRestart = true
+	end
+
+	-- If we already have a ready timer running, never allow updates to move READY later.
+	-- Only reschedule when the new computed readyAt is meaningfully earlier.
+	if state.readyTimer and state.readyAt and not isRestart then
+		-- Later or essentially the same: keep existing timer.
+		if readyAt >= (state.readyAt - 0.25) then
+			return
+		end
+	end
 
     SafeCancelTimer(state.readyTimer)
 	SafeCancelTicker(state._dbgReadyTicker)
