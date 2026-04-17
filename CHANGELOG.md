@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.0
+- Spam Control: fixed a WoW 12.x secret/tainted SpellID edge case that could cause a Lua error in Spell Merging.
+- Combat Text: fixed Blizzard floating combat text "outgoing-only" mode leaking incoming self damage/heals.
+- Cooldowns: fixed rare early "Cooldown Ready" notifications caused by a stale timer not being cancelled when a cooldown restarts.
+
 ## 2.2.10
 - Spam Control: fixed global Spell Merging timing so it can accumulate rapid multi-hits within the configured merge window.
 - Spam Control: clarified Spell Merging behavior/limitations in WoW 12.x (some abilities emit multiple SpellIDs; Spell Rules are more accurate).
