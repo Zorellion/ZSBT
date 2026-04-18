@@ -10,6 +10,33 @@ local Addon = ZSBT.Addon
 ------------------------------------------------------------------------
 -- Debug Print (channel + severity)
 ------------------------------------------------------------------------
+function Addon:_GetDebugChatFrame()
+	local d = self.db and self.db.profile and self.db.profile.diagnostics
+	local n = d and tonumber(d.debugChatFrame)
+	if type(n) == "number" and n >= 1 and n <= 10 then
+		local f = _G and _G["ChatFrame" .. tostring(n)]
+		if f and f.AddMessage then return f end
+	end
+	if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+		return DEFAULT_CHAT_FRAME
+	end
+	if ChatFrame1 and ChatFrame1.AddMessage then
+		return ChatFrame1
+	end
+	return nil
+end
+
+function Addon:_DbgOut(msg)
+	local frame = self:_GetDebugChatFrame()
+	if frame and frame.AddMessage then
+		frame:AddMessage(msg)
+		return
+	end
+	if self.Print then
+		self:Print(msg)
+	end
+end
+
 local function SafeToString(v)
 	if v == nil then return "nil" end
 	if ZSBT and type(ZSBT.IsSecret) == "function" then
@@ -89,14 +116,14 @@ function Addon:Dbg(channel, requiredLevel, ...)
 	local prefix = ChannelPrefix(channel)
 	local n = select('#', ...)
 	if n <= 0 then
-		self:Print(prefix)
+		self:_DbgOut(prefix)
 		return
 	end
 	local parts = {}
 	for i = 1, n do
 		parts[#parts + 1] = SafeToString(select(i, ...))
 	end
-	self:Print(prefix .. " " .. table.concat(parts, " "))
+	self:_DbgOut(prefix .. " " .. table.concat(parts, " "))
 end
 
 function Addon:DbgOnce(key, channel, requiredLevel, ...)

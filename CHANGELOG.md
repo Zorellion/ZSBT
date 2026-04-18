@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.1
+- Diagnostics: added debug output routing to a selected chat window (configurable in the Debug UI and via /zsbt debug frame).
+- Diagnostics: added a one-click button to create a "ZSBT Debug" chat tab/window for debugging.
+
 ## 2.3.0
 - Spam Control: fixed a WoW 12.x secret/tainted SpellID edge case that could cause a Lua error in Spell Merging.
 - Combat Text: fixed Blizzard floating combat text "outgoing-only" mode leaking incoming self damage/heals.

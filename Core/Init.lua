@@ -1853,6 +1853,7 @@ function Addon:HandleDebugCommand(levelStr)
 	local function usage()
 		self:Print("Usage:")
 		self:Print("  /zsbt debug show")
+		self:Print("  /zsbt debug frame <1-10>          (route debug output to ChatFrameN)")
 		self:Print("  /zsbt debug <0-5>                 (set global default)")
 		self:Print("  /zsbt debug <channel> <0-5>       (set per-channel override)")
 		self:Print("Levels: 0=Off, 1=Error, 2=Warn, 3=Info, 4=Debug, 5=Trace")
@@ -1868,6 +1869,7 @@ function Addon:HandleDebugCommand(levelStr)
 		local def = tonumber(d.debugDefaultLevel)
 		if type(def) ~= "number" then def = tonumber(d.debugLevel) or 0 end
 		self:Print("Debug default level: " .. tostring(def))
+		self:Print("Debug chat frame: " .. tostring(d.debugChatFrame or 1))
 		local ch = d.debugChannels
 		if type(ch) ~= "table" then
 			self:Print("Debug channels: <none>")
@@ -1898,6 +1900,17 @@ function Addon:HandleDebugCommand(levelStr)
 
 	if a == "show" then
 		show()
+		return
+	end
+
+	if a == "frame" or a == "chatframe" then
+		local n = tonumber(b)
+		if type(n) ~= "number" or n < 1 or n > 10 then
+			usage()
+			return
+		end
+		self.db.profile.diagnostics.debugChatFrame = n
+		self:Print("Debug output routed to ChatFrame" .. tostring(n))
 		return
 	end
 

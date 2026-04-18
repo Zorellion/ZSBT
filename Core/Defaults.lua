@@ -376,6 +376,7 @@ ZSBT.DEFAULTS = {
             debugLevel     = 0,
             cooldownsDebugLevel = 0,
 			debugDefaultLevel = 0,
+			debugChatFrame = 1,
 			debugChannels = {
 				core = 0,
 				cooldowns = 0,
