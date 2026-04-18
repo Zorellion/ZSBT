@@ -3260,6 +3260,9 @@ function ZSBT.BuildDebugOptionsTable()
 		if type(d.debugDefaultLevel) ~= "number" then
 			d.debugDefaultLevel = tonumber(d.debugLevel) or 0
 		end
+		if type(d.debugChatFrame) ~= "number" then
+			d.debugChatFrame = 1
+		end
 		d.debugChannels = d.debugChannels or {}
 		return d
 	end
@@ -3364,6 +3367,69 @@ function ZSBT.BuildDebugOptionsTable()
 			type = "header",
 			name = "Quick Actions",
 			order = 3,
+		},
+		debugChatFrame = {
+			type = "select",
+			name = "Debug Chat Frame",
+			desc = "Routes debug output (Addon:Dbg) to the selected chat window.",
+			order = 3.1,
+			width = "full",
+			values = function()
+				local out = {}
+				for i = 1, 10 do
+					local f = _G and _G["ChatFrame" .. tostring(i)]
+					local label = "ChatFrame" .. tostring(i)
+					local n = f and f.GetName and f:GetName() or nil
+					if type(n) == "string" and n ~= "" then
+						label = label .. " (" .. n .. ")"
+					end
+					out[i] = label
+				end
+				return out
+			end,
+			get = function()
+				local d = ensureDiagnostics()
+				return (d and tonumber(d.debugChatFrame)) or 1
+			end,
+			set = function(_, val)
+				local d = ensureDiagnostics()
+				if not d then return end
+				d.debugChatFrame = tonumber(val) or 1
+				notify()
+			end,
+		},
+		setupDebugChat = {
+			type = "execute",
+			name = "Setup Debug Chat Tab",
+			desc = "Creates a new chat window named 'ZSBT Debug' and routes debug output there.",
+			order = 3.2,
+			width = "full",
+			func = function()
+				local d = ensureDiagnostics()
+				if not d then return end
+				if type(FCF_OpenNewWindow) ~= "function" then
+					if ZSBT and ZSBT.Addon and ZSBT.Addon.Print then
+						ZSBT.Addon:Print("Chat window API not available.")
+					end
+					return
+				end
+				local ok, frameOrErr = pcall(FCF_OpenNewWindow, "ZSBT Debug")
+				if not ok then
+					if ZSBT and ZSBT.Addon and ZSBT.Addon.Print then
+						ZSBT.Addon:Print("Failed to create debug chat window.")
+					end
+					return
+				end
+				local f = frameOrErr
+				local id = f and f.GetID and f:GetID() or nil
+				if type(id) == "number" and id >= 1 and id <= 10 then
+					d.debugChatFrame = id
+					notify()
+					if ZSBT and ZSBT.Addon and ZSBT.Addon.Dbg then
+						ZSBT.Addon:Dbg("ui", 3, "Debug chat window set to ChatFrame" .. tostring(id))
+					end
+				end
+			end,
 		},
 		allOff = {
 			type = "execute",
