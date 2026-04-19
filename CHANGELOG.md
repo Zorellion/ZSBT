@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.3.2
+- Triggers: reduced rare false-positive aura notifications caused by WoW 12.x aura enumeration flapping (sync-driven fades are suppressed shortly after Core reports the aura present).
+
 ## 2.3.1
 - Diagnostics: added debug output routing to a selected chat window (configurable in the Debug UI and via /zsbt debug frame).
 - Diagnostics: added a one-click button to create a "ZSBT Debug" chat tab/window for debugging.
