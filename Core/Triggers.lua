@@ -212,6 +212,17 @@ end
 
 function Triggers:OnAuraGain(spellId, source)
 	if type(spellId) ~= "number" or spellId <= 0 then return end
+	local now = Now()
+	if source == "core-inc" or source == "core" then
+		self._auraCoreLastSeenAt = self._auraCoreLastSeenAt or {}
+		self._auraCoreLastSeenAt[spellId] = now
+		self._auraSyncLastSeenAt = self._auraSyncLastSeenAt or {}
+		self._auraSyncLastSeenAt[spellId] = now
+		self._auraSyncMissCount = self._auraSyncMissCount or {}
+		self._auraSyncMissCount[spellId] = 0
+		self._auraSyncPresentCount = self._auraSyncPresentCount or {}
+		self._auraSyncPresentCount[spellId] = 0
+	end
 	self._auraPresent = self._auraPresent or {}
 	if self._auraPresent[spellId] == true then
 		-- Already present, skip duplicate
@@ -306,6 +317,18 @@ end
 
 function Triggers:OnAuraFade(spellId, source)
 	if type(spellId) ~= "number" or spellId <= 0 then return end
+	local now = Now()
+	if source == "core-rm" or source == "core" then
+		if self._auraCoreLastSeenAt then
+			self._auraCoreLastSeenAt[spellId] = nil
+		end
+		self._auraSyncLastSeenAt = self._auraSyncLastSeenAt or {}
+		self._auraSyncLastSeenAt[spellId] = now
+		self._auraSyncMissCount = self._auraSyncMissCount or {}
+		self._auraSyncMissCount[spellId] = 0
+		self._auraSyncPresentCount = self._auraSyncPresentCount or {}
+		self._auraSyncPresentCount[spellId] = 0
+	end
 	self._auraPresent = self._auraPresent or {}
 	if self._auraPresent[spellId] == false then
 		-- Already not present, skip duplicate
@@ -535,7 +558,9 @@ function Triggers:SyncWatchedAurasFromCore()
 	self._auraSyncLastSeenAt = self._auraSyncLastSeenAt or {}
 	self._auraSyncMissCount = self._auraSyncMissCount or {}
 	self._auraSyncPresentCount = self._auraSyncPresentCount or {}
+	self._auraCoreLastSeenAt = self._auraCoreLastSeenAt or {}
 	local coreInit = (ZSBT and ZSBT.Core and ZSBT.Core._auraInitInProgress) == true
+	local CORE_SYNC_FADE_GRACE_SEC = 30.0
 
 	for sid in pairs(watch) do
 		if type(sid) == "number" then
@@ -599,20 +624,24 @@ function Triggers:SyncWatchedAurasFromCore()
 								self._auraSyncMissCount[sid] = 0
 								self._auraSyncPresentCount[sid] = 0
 							else
-								-- Even when synthetic tracking ends, zone/load transitions can produce
-								-- transient false negatives. Apply the same conservative fade gating
-								-- used by the non-synthetic path.
-								local lastSeen = tonumber(self._auraSyncLastSeenAt[sid]) or 0
-								local miss = tonumber(self._auraSyncMissCount[sid]) or 0
-								miss = miss + 1
-								self._auraSyncMissCount[sid] = miss
-								if lastSeen > 0 and (now - lastSeen) < 2.0 then
-									-- Keep state as-present for now; a later sync will confirm real removal.
-								elseif miss < 4 then
-									-- Require multiple consecutive misses before treating as a real fade.
+								local coreSeen = tonumber(self._auraCoreLastSeenAt[sid]) or 0
+								if coreSeen > 0 and (now - coreSeen) < CORE_SYNC_FADE_GRACE_SEC then
+									self._auraPresent[sid] = true
 								else
-									self._auraSyncMissCount[sid] = 0
-									self:OnAuraFade(sid, "sync")
+									local lastSeen = tonumber(self._auraSyncLastSeenAt[sid]) or 0
+									local miss = tonumber(self._auraSyncMissCount[sid]) or 0
+									miss = miss + 1
+									self._auraSyncMissCount[sid] = miss
+									if lastSeen > 0 and (now - lastSeen) < 2.0 then
+										-- Keep state as-present for now; a later sync will confirm real removal.
+									elseif miss < 4 then
+										-- Require multiple consecutive misses before treating as a real fade.
+										-- (Sync ticker runs ~0.5s; miss>=4 is ~2s of continuous absence.)
+									else
+										self._auraSyncMissCount[sid] = 0
+										self._auraSyncPresentCount[sid] = 0
+										self:OnAuraFade(sid, "sync")
+									end
 								end
 							end
 						end
@@ -642,24 +671,29 @@ function Triggers:SyncWatchedAurasFromCore()
 							self._auraSyncMissCount[sid] = 0
 							self._auraSyncPresentCount[sid] = 0
 						else
-							-- Debounce sync-driven fades to avoid transient false negatives
-							-- during loading screens / API unavailability.
-							--
-							-- In practice, zone/load transitions can produce one or two bad aura snapshots.
-							-- Require multiple consecutive "missing" scans before emitting a FADE.
-							local lastSeen = tonumber(self._auraSyncLastSeenAt[sid]) or 0
-							local miss = tonumber(self._auraSyncMissCount[sid]) or 0
-							miss = miss + 1
-							self._auraSyncMissCount[sid] = miss
-							if lastSeen > 0 and (now - lastSeen) < 2.0 then
-								-- Keep state as-present for now; a later sync will confirm real removal.
-							elseif miss < 4 then
-								-- Require multiple consecutive misses before treating as a real fade.
-								-- (Sync ticker runs ~0.5s; miss>=4 is ~2s of continuous absence.)
+							local coreSeen = tonumber(self._auraCoreLastSeenAt[sid]) or 0
+							if coreSeen > 0 and (now - coreSeen) < CORE_SYNC_FADE_GRACE_SEC then
+								self._auraPresent[sid] = true
 							else
-								self._auraSyncMissCount[sid] = 0
-								self._auraSyncPresentCount[sid] = 0
-								self:OnAuraFade(sid, "sync")
+								-- Debounce sync-driven fades to avoid transient false negatives
+								-- during loading screens / API unavailability.
+								--
+								-- In practice, zone/load transitions can produce one or two bad aura snapshots.
+								-- Require multiple consecutive "missing" scans before emitting a FADE.
+								local lastSeen = tonumber(self._auraSyncLastSeenAt[sid]) or 0
+								local miss = tonumber(self._auraSyncMissCount[sid]) or 0
+								miss = miss + 1
+								self._auraSyncMissCount[sid] = miss
+								if lastSeen > 0 and (now - lastSeen) < 2.0 then
+									-- Keep state as-present for now; a later sync will confirm real removal.
+								elseif miss < 4 then
+									-- Require multiple consecutive misses before treating as a real fade.
+									-- (Sync ticker runs ~0.5s; miss>=4 is ~2s of continuous absence.)
+								else
+									self._auraSyncMissCount[sid] = 0
+									self._auraSyncPresentCount[sid] = 0
+									self:OnAuraFade(sid, "sync")
+								end
 							end
 						end
 					end
