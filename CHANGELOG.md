@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.3.3
+- Outgoing: fixed a rare WoW 12.x secret/tainted number crash when polling attack speed in restricted UNIT_COMBAT attribution paths.
+
 ## 2.3.2
 - Triggers: reduced rare false-positive aura notifications caused by WoW 12.x aura enumeration flapping (sync-driven fades are suppressed shortly after Core reports the aura present).
 
