@@ -2246,7 +2246,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					local speed = nil
 					if UnitAttackSpeed then
 						local okS, mh = pcall(UnitAttackSpeed, "player")
-						if okS and type(mh) == "number" and mh > 0 then speed = mh end
+						if okS and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(mh) and mh > 0 then
+							speed = mh
+						end
 					end
 					local minGap = 0.35
 					if type(speed) == "number" then
