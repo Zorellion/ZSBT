@@ -8,7 +8,7 @@ local ADDON_NAME, ZSBT = ...
 ------------------------------------------------------------------------
 -- Version & Identity
 ------------------------------------------------------------------------
-ZSBT.VERSION = "2.3.4"
+ZSBT.VERSION = "2.3.5"
 ZSBT.ADDON_TITLE = "Zore's Scrolling Battle Text"
 ZSBT.ADDON_SHORT = "ZSBT"
 ZSBT.ADDON_AUTHOR = "Zorellion"
@@ -260,6 +260,7 @@ ZSBT.NUMBER_FORMATS = {
     short1 = "Short (K/M/B, 1 decimal)",
     short2 = "Short (K/M/B, 2 decimals)",
     short0 = "Short (K/M/B, no decimals)",
+    shortK = "Thousands (K, 1 decimals)",
     sig3 = "Significant digits (3)",
 }
 
@@ -313,6 +314,11 @@ function ZSBT.FormatDisplayAmount(n)
         return short(1)
     elseif mode == "short2" then
         return short(2)
+    elseif mode == "shortK" then
+        local value = absN / 1000
+        local s = string.format("%s%.1fK", sign, value)
+        s = s:gsub("%.0K$", "K")
+        return s
     elseif mode == "sig3" then
         if absN < 1000 then
             return tostring(roundInt(n))

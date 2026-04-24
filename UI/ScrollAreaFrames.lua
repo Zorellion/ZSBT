@@ -26,11 +26,13 @@ recyclingBin:SetAlpha(0)
 local fontStringPool = {}  -- available FontStrings ready for reuse
 local iconFSPool = {}      -- available icon FontStrings ready for reuse
 local animFramePool = {}   -- available animation driver Frames ready for reuse
+ 
 
 -- Forward declarations (AnimEngine is defined before the pool helpers below).
 local RecycleFontString
 local RecycleIconFS
 local RecycleAnimFrame
+local AcquireFontString
 
 ------------------------------------------------------------------------
 -- Central Animation Engine (MSBT-style)
@@ -62,6 +64,114 @@ local MSBT_JIGGLE_RANGE_STICKY = 2
 
 local function AE_Now()
 	return (GetTime and GetTime()) or 0
+end
+
+local function AE_MSBT_InitShockwave(newDisplayEvent)
+	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
+	local scrollTime = (0.16 + (0.70 / animationSpeed) + 0.55)
+	newDisplayEvent.scrollTime = scrollTime * animationSpeed
+	newDisplayEvent.fadePercent = (0.16 + (0.70 / animationSpeed)) / scrollTime
+	newDisplayEvent.positionX = newDisplayEvent.scrollWidth / 2
+	newDisplayEvent.positionY = newDisplayEvent.scrollHeight / 2
+	local rx = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollWidth * 0.18)
+	local ry = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollHeight * 0.14)
+	newDisplayEvent.positionX = newDisplayEvent.positionX + rx
+	newDisplayEvent.positionY = newDisplayEvent.positionY + ry
+	newDisplayEvent._zsbtShockwaveTheta = math.random() * (math.pi * 2.0)
+end
+
+local function AE_MSBT_InitIgnite(newDisplayEvent)
+	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
+	local scrollTime = (0.12 + (0.90 / animationSpeed) + 0.70)
+	newDisplayEvent.scrollTime = scrollTime * animationSpeed
+	newDisplayEvent.fadePercent = (0.12 + (0.90 / animationSpeed)) / scrollTime
+	newDisplayEvent.positionX = newDisplayEvent.scrollWidth / 2
+	newDisplayEvent.positionY = newDisplayEvent.scrollHeight / 2
+	local rx = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollWidth * 0.16)
+	local ry = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollHeight * 0.12)
+	newDisplayEvent.positionX = newDisplayEvent.positionX + rx
+	newDisplayEvent.positionY = newDisplayEvent.positionY + ry
+end
+
+local function AE_MSBT_InitChromatic(newDisplayEvent)
+	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
+	local scrollTime = (0.10 + (0.95 / animationSpeed) + 0.65)
+	newDisplayEvent.scrollTime = scrollTime * animationSpeed
+	newDisplayEvent.fadePercent = (0.10 + (0.95 / animationSpeed)) / scrollTime
+	newDisplayEvent.positionX = newDisplayEvent.scrollWidth / 2
+	newDisplayEvent.positionY = newDisplayEvent.scrollHeight / 2
+	local rx = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollWidth * 0.16)
+	local ry = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollHeight * 0.12)
+	newDisplayEvent.positionX = newDisplayEvent.positionX + rx
+	newDisplayEvent.positionY = newDisplayEvent.positionY + ry
+	newDisplayEvent._zsbtChromPhase = math.random() * 10.0
+end
+
+local function AE_MSBT_InitStomp(newDisplayEvent)
+	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
+	local scrollTime = (0.14 + (0.60 / animationSpeed) + 0.55)
+	newDisplayEvent.scrollTime = scrollTime * animationSpeed
+	newDisplayEvent.fadePercent = (0.14 + (0.60 / animationSpeed)) / scrollTime
+	newDisplayEvent.positionX = newDisplayEvent.scrollWidth / 2
+	newDisplayEvent.positionY = newDisplayEvent.scrollHeight / 2
+	local rx = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollWidth * 0.18)
+	local ry = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollHeight * 0.14)
+	newDisplayEvent.positionX = newDisplayEvent.positionX + rx
+	newDisplayEvent.positionY = newDisplayEvent.positionY + ry
+end
+
+local function AE_MSBT_InitScreenPunch(newDisplayEvent)
+	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
+	local scrollTime = (0.12 + (0.52 / animationSpeed) + 0.45)
+	newDisplayEvent.scrollTime = scrollTime * animationSpeed
+	newDisplayEvent.fadePercent = (0.12 + (0.52 / animationSpeed)) / scrollTime
+	newDisplayEvent.positionX = newDisplayEvent.scrollWidth / 2
+	newDisplayEvent.positionY = newDisplayEvent.scrollHeight / 2
+	local rx = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollWidth * 0.16)
+	local ry = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollHeight * 0.12)
+	newDisplayEvent.positionX = newDisplayEvent.positionX + rx
+	newDisplayEvent.positionY = newDisplayEvent.positionY + ry
+	newDisplayEvent._zsbtPunchTheta = math.random() * (math.pi * 2.0)
+end
+
+local function AE_MSBT_InitShatter(newDisplayEvent)
+	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
+	local scrollTime = (0.10 + (0.75 / animationSpeed) + 0.60)
+	newDisplayEvent.scrollTime = scrollTime * animationSpeed
+	newDisplayEvent.fadePercent = (0.10 + (0.75 / animationSpeed)) / scrollTime
+	newDisplayEvent.positionX = newDisplayEvent.scrollWidth / 2
+	newDisplayEvent.positionY = newDisplayEvent.scrollHeight / 2
+	local rx = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollWidth * 0.16)
+	local ry = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollHeight * 0.12)
+	newDisplayEvent.positionX = newDisplayEvent.positionX + rx
+	newDisplayEvent.positionY = newDisplayEvent.positionY + ry
+end
+
+local function AE_MSBT_InitAfterimage(newDisplayEvent)
+	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
+	local scrollTime = (0.12 + (0.85 / animationSpeed) + 0.70)
+	newDisplayEvent.scrollTime = scrollTime * animationSpeed
+	newDisplayEvent.fadePercent = (0.12 + (0.85 / animationSpeed)) / scrollTime
+	newDisplayEvent.positionX = newDisplayEvent.scrollWidth / 2
+	newDisplayEvent.positionY = newDisplayEvent.scrollHeight / 2
+	local rx = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollWidth * 0.16)
+	local ry = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollHeight * 0.12)
+	newDisplayEvent.positionX = newDisplayEvent.positionX + rx
+	newDisplayEvent.positionY = newDisplayEvent.positionY + ry
+end
+
+local function AE_MSBT_InitRumble(newDisplayEvent)
+	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
+	local scrollTime = (0.14 + (0.65 / animationSpeed) + 0.55)
+	newDisplayEvent.scrollTime = scrollTime * animationSpeed
+	newDisplayEvent.fadePercent = (0.14 + (0.65 / animationSpeed)) / scrollTime
+	newDisplayEvent.positionX = newDisplayEvent.scrollWidth / 2
+	newDisplayEvent.positionY = newDisplayEvent.scrollHeight / 2
+	local rx = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollWidth * 0.18)
+	local ry = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollHeight * 0.14)
+	newDisplayEvent.positionX = newDisplayEvent.positionX + rx
+	newDisplayEvent.positionY = newDisplayEvent.positionY + ry
+	newDisplayEvent._zsbtRumbleTheta = math.random() * (math.pi * 2.0)
 end
 
 local function AE_InitWaterfallSpacing(newDisplayEvent, activeDisplayEvents, direction)
@@ -144,8 +254,24 @@ local function AE_MinSeparationSecondsBetween(newEv, oldEv)
 end
 
 local function AE_ResolveStyleId(ev)
-	-- Sticky crits always use Pow by default.
-	if ev.meta and (ev.meta.stickyCrit == true or ev.meta.sticky == true) then return "Pow" end
+	-- Crit animations: allow explicit critAnim to override sticky flags.
+	if ev.meta and ev.meta.isCrit == true then
+		local ca = ev.meta.critAnim
+		if ca == "Slam" then return "Slam" end
+		if ca == "Shockwave" then return "Shockwave" end
+		if ca == "Ignite" then return "Ignite" end
+		if ca == "Chromatic" then return "Chromatic" end
+		if ca == "Stomp" then return "Stomp" end
+		if ca == "ScreenPunch" then return "ScreenPunch" end
+		if ca == "Shatter" then return "Shatter" end
+		if ca == "Afterimage" then return "Afterimage" end
+		if ca == "Rumble" then return "Rumble" end
+		if ca == "Glow" then return "Pow" end
+		-- Default crit behavior: Pow (sticky) when critAnim is nil or Pow.
+		if ca == nil or ca == "Pow" then return "Pow" end
+	end
+	-- Sticky non-crit notifications always use Pow.
+	if ev.meta and ev.meta.isCrit ~= true and (ev.meta.sticky == true) then return "Pow" end
 	if ev.usePow then return "Pow" end
 	local style = ev.animStyle or "Straight"
 	style = tostring(style)
@@ -155,6 +281,63 @@ local function AE_ResolveStyleId(ev)
 	if style:lower() == "static" then return "Static" end
 	if style:lower():find("parabola", 1, true) then return "Parabola" end
 	return "Straight"
+end
+
+local function AE_MSBT_InitSlam(newDisplayEvent)
+	-- Slam is a centered, impact-style crit animation.
+	-- Use a short, fixed scrollTime similar to Pow but slightly punchier.
+	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
+	local scrollTime = (0.18 + (0.55 / animationSpeed) + 0.45)
+	newDisplayEvent.scrollTime = scrollTime * animationSpeed
+	newDisplayEvent.fadePercent = (0.18 + (0.55 / animationSpeed)) / scrollTime
+	newDisplayEvent.positionX = newDisplayEvent.scrollWidth / 2
+	newDisplayEvent.positionY = newDisplayEvent.scrollHeight / 2
+	-- Conservative random seed to avoid perfect stacking.
+	local rx = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollWidth * 0.20)
+	local ry = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollHeight * 0.16)
+	newDisplayEvent.positionX = newDisplayEvent.positionX + rx
+	newDisplayEvent.positionY = newDisplayEvent.positionY + ry
+end
+
+
+local function AE_ReRollCenteredPosition(newDisplayEvent, events)
+	if not newDisplayEvent or not events then return end
+	local w = newDisplayEvent.scrollWidth or newDisplayEvent.areaW or 0
+	local h = newDisplayEvent.scrollHeight or newDisplayEvent.areaH or 0
+	if w <= 0 or h <= 0 then return end
+
+	local fontSize = newDisplayEvent.effectiveFontSize or newDisplayEvent.fontSize or 18
+	local minDist = math.max(16, fontSize * 1.20)
+	local minDist2 = minDist * minDist
+
+	local function Collides(x, y)
+		for i = 1, #events do
+			local e = events[i]
+			if e and (e.styleId == "Pow" or e.styleId == "Slam" or e.styleId == "Shockwave" or e.styleId == "Ignite" or e.styleId == "Chromatic" or e.styleId == "Stomp" or e.styleId == "ScreenPunch" or e.styleId == "Shatter" or e.styleId == "Afterimage" or e.styleId == "Rumble") and e.elapsedTime ~= nil then
+				local dx = (x - (e.positionX or 0))
+				local dy = (y - (e.positionY or 0))
+				if (dx * dx + dy * dy) < minDist2 then
+					return true
+				end
+			end
+		end
+		return false
+	end
+
+	local centerX = w / 2
+	local centerY = h / 2
+	local maxX = w * 0.25
+	local maxY = h * 0.20
+	local tries = 14
+	for _ = 1, tries do
+		local x = centerX + ((math.random() * 2.0 - 1.0) * maxX)
+		local y = centerY + ((math.random() * 2.0 - 1.0) * maxY)
+		if not Collides(x, y) then
+			newDisplayEvent.positionX = x
+			newDisplayEvent.positionY = y
+			return
+		end
+	end
 end
 
 local function AE_MSBT_AnchorPoint(ev)
@@ -391,6 +574,27 @@ end
 
 local function AE_RecycleEvent(ev)
 	if not ev then return end
+	if ev._zsbtChromOrigTextColor and ev.fs and ev.fs.SetTextColor then
+		local c = ev._zsbtChromOrigTextColor
+		pcall(ev.fs.SetTextColor, ev.fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+		ev._zsbtChromOrigTextColor = nil
+	end
+	if ev._zsbtAfterimageFS1 then
+		RecycleFontString(ev._zsbtAfterimageFS1)
+		ev._zsbtAfterimageFS1 = nil
+	end
+	if ev._zsbtAfterimageFS2 then
+		RecycleFontString(ev._zsbtAfterimageFS2)
+		ev._zsbtAfterimageFS2 = nil
+	end
+	if ev._zsbtShatterFS then
+		for i = 1, #ev._zsbtShatterFS do
+			RecycleFontString(ev._zsbtShatterFS[i])
+			ev._zsbtShatterFS[i] = nil
+		end
+		ev._zsbtShatterFS = nil
+		ev._zsbtShatterDir = nil
+	end
 	RecycleFontString(ev.fs)
 	RecycleIconFS(ev.iconFS)
 	if ev.iconTex then
@@ -406,6 +610,14 @@ local function AE_UpdateEvent(ev, dt)
 		-- MSBT-like behavior: queued events should not be visible until they start.
 		-- Without this, repeated tests create a cluttered pile at the spawn anchor.
 		if ev.fs then ev.fs:SetAlpha(0) end
+		if ev._zsbtAfterimageFS1 then ev._zsbtAfterimageFS1:SetAlpha(0) end
+		if ev._zsbtAfterimageFS2 then ev._zsbtAfterimageFS2:SetAlpha(0) end
+		if ev._zsbtShatterFS then
+			for i = 1, #ev._zsbtShatterFS do
+				local sfs = ev._zsbtShatterFS[i]
+				if sfs then sfs:SetAlpha(0) end
+			end
+		end
 		if ev.iconFS then ev.iconFS:SetAlpha(0) end
 		if ev.iconTex then ev.iconTex:SetAlpha(0) end
 		return false
@@ -480,6 +692,361 @@ local function AE_UpdateEvent(ev, dt)
 			ev.alpha = 1
 		end
 		ev.fs:SetAlpha(math.max(0, (ev.masterAlpha or (ev.fontAlpha or 1)) * (ev.alpha or 1)))
+
+	elseif styleId == "Slam" then
+		-- Slam: quick overshoot + short shake + faster fade.
+		local t = progress
+		local scale = 1.0
+		local shake = 0
+		if t < 0.14 then
+			local p = t / 0.14
+			scale = 0.20 + (p * 1.70)
+			shake = (1.0 - p) * 5
+		elseif t < 0.26 then
+			local p = (t - 0.14) / 0.12
+			scale = 1.70 - (p * 0.55)
+			shake = (1.0 - p) * 3
+		elseif t < 0.62 then
+			local p = (t - 0.26) / 0.36
+			scale = 1.15 - (p * 0.10)
+		else
+			local p = (t - 0.62) / 0.38
+			scale = 1.05 - (p * 0.35)
+		end
+		local tWave = (ev.elapsedTime ~= nil) and ev.elapsedTime or (ev.elapsed or 0)
+		xOff2 = ((ev.positionX or 0) - AnchorOriginX()) + (math.sin(tWave * 55) * shake)
+		yOff2 = (ev.positionY or 0) + (math.cos(tWave * 48) * (shake * 0.65))
+		local scaledSize = math.max(8, math.floor((ev.effectiveFontSize or ev.fontSize or 18) * scale))
+		if scaledSize ~= ev._lastFontSize then
+			ev._lastFontSize = scaledSize
+			pcall(ev.fs.SetFont, ev.fs, ev.fontFace, scaledSize, ev.outlineFlag or "OUTLINE")
+		end
+		alpha = ev.fontAlpha or 1.0
+		if t > 0.55 then
+			alpha = (ev.fontAlpha or 1.0) * (1.0 - ((t - 0.55) / 0.45))
+		end
+		ev.fs:SetAlpha(math.max(0, alpha))
+
+	elseif styleId == "ScreenPunch" then
+		local t = progress
+		local inten = (ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0
+		if inten < 0 then inten = 0 end
+		if inten > 3.0 then inten = 3.0 end
+		local scale = 1.0
+		local jolt = 0
+		if t < 0.10 then
+			local p = t / 0.10
+			scale = 0.55 + (p * (1.60 + (0.25 * inten)))
+			jolt = (1.0 - p) * (3 + (3 * inten))
+		elseif t < 0.22 then
+			local p = (t - 0.10) / 0.12
+			scale = (1.60 + (0.25 * inten)) - (p * (0.55 + (0.10 * inten)))
+			jolt = (1.0 - p) * (2 + (2 * inten))
+		elseif t < 0.60 then
+			local p = (t - 0.22) / 0.38
+			scale = 1.05 - (p * 0.08)
+		else
+			local p = (t - 0.60) / 0.40
+			scale = 0.97 - (p * 0.20)
+		end
+		local tWave = (ev.elapsedTime ~= nil) and ev.elapsedTime or (ev.elapsed or 0)
+		local theta = ev._zsbtPunchTheta or 0
+		xOff2 = ((ev.positionX or 0) - AnchorOriginX()) + (math.cos(theta) * jolt) + (math.sin(tWave * 65) * (jolt * 0.35))
+		yOff2 = (ev.positionY or 0) + (math.sin(theta) * jolt) + (math.cos(tWave * 58) * (jolt * 0.25))
+		local scaledSize = math.max(8, math.floor((ev.effectiveFontSize or ev.fontSize or 18) * scale))
+		if scaledSize ~= ev._lastFontSize then
+			ev._lastFontSize = scaledSize
+			pcall(ev.fs.SetFont, ev.fs, ev.fontFace, scaledSize, ev.outlineFlag or "OUTLINE")
+		end
+		alpha = ev.fontAlpha or 1.0
+		if t > 0.55 then
+			alpha = (ev.fontAlpha or 1.0) * (1.0 - ((t - 0.55) / 0.45))
+		end
+		ev.fs:SetAlpha(math.max(0, alpha))
+
+	elseif styleId == "Afterimage" then
+		local t = progress
+		local inten = (ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0
+		if inten < 0 then inten = 0 end
+		if inten > 3.0 then inten = 3.0 end
+		xOff2 = (ev.positionX or 0) - AnchorOriginX()
+		yOff2 = ev.positionY or 0
+		local wave = math.sin(((ev.elapsedTime ~= nil) and ev.elapsedTime or (ev.elapsed or 0)) * 8.0) * (0.02 + (0.02 * inten))
+		local scale = 1.0 + wave
+		local scaledSize = math.max(8, math.floor((ev.effectiveFontSize or ev.fontSize or 18) * scale))
+		if scaledSize ~= ev._lastFontSize then
+			ev._lastFontSize = scaledSize
+			pcall(ev.fs.SetFont, ev.fs, ev.fontFace, scaledSize, ev.outlineFlag or "OUTLINE")
+		end
+		alpha = ev.fontAlpha or 1.0
+		if t > 0.55 then
+			alpha = (ev.fontAlpha or 1.0) * (1.0 - ((t - 0.55) / 0.45))
+		end
+		ev.fs:SetAlpha(math.max(0, alpha))
+
+		-- Lazy-create two afterimage echoes (reusing fontStringPool)
+		if not ev._zsbtAfterimageFS1 then
+			local tr, tg, tb, ta = 1, 1, 1, 1
+			if ev.fs and ev.fs.GetTextColor then
+				local ok, r, g, b, a = pcall(ev.fs.GetTextColor, ev.fs)
+				if ok then tr, tg, tb, ta = r or 1, g or 1, b or 1, a or 1 end
+			end
+			ev._zsbtAfterimageFS1 = AcquireFontString(ev.parent)
+			pcall(ev._zsbtAfterimageFS1.SetFont, ev._zsbtAfterimageFS1, ev.fontFace, (ev.effectiveFontSize or ev.fontSize or 18), ev.outlineFlag or "OUTLINE")
+			pcall(ev._zsbtAfterimageFS1.SetText, ev._zsbtAfterimageFS1, (ev.fs and ev.fs.GetText and ev.fs:GetText()) or "")
+			pcall(ev._zsbtAfterimageFS1.SetTextColor, ev._zsbtAfterimageFS1, tr, tg, tb, ta)
+		end
+		if not ev._zsbtAfterimageFS2 then
+			local tr, tg, tb, ta = 1, 1, 1, 1
+			if ev.fs and ev.fs.GetTextColor then
+				local ok, r, g, b, a = pcall(ev.fs.GetTextColor, ev.fs)
+				if ok then tr, tg, tb, ta = r or 1, g or 1, b or 1, a or 1 end
+			end
+			ev._zsbtAfterimageFS2 = AcquireFontString(ev.parent)
+			pcall(ev._zsbtAfterimageFS2.SetFont, ev._zsbtAfterimageFS2, ev.fontFace, (ev.effectiveFontSize or ev.fontSize or 18), ev.outlineFlag or "OUTLINE")
+			pcall(ev._zsbtAfterimageFS2.SetText, ev._zsbtAfterimageFS2, (ev.fs and ev.fs.GetText and ev.fs:GetText()) or "")
+			pcall(ev._zsbtAfterimageFS2.SetTextColor, ev._zsbtAfterimageFS2, tr, tg, tb, ta)
+		end
+		local a1 = math.max(0, alpha) * (0.35 + (0.10 * inten))
+		local a2 = math.max(0, alpha) * (0.20 + (0.08 * inten))
+		if t < 0.04 then a1 = 0 end
+		if t < 0.08 then a2 = 0 end
+		if ev._zsbtAfterimageFS1 then ev._zsbtAfterimageFS1:SetAlpha(a1) end
+		if ev._zsbtAfterimageFS2 then ev._zsbtAfterimageFS2:SetAlpha(a2) end
+
+	elseif styleId == "Shatter" then
+		local t = progress
+		local inten = (ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0
+		if inten < 0 then inten = 0 end
+		if inten > 3.0 then inten = 3.0 end
+		xOff2 = (ev.positionX or 0) - AnchorOriginX()
+		yOff2 = ev.positionY or 0
+		local scale = 1.0
+		if t < 0.10 then
+			local p = t / 0.10
+			scale = 0.40 + (p * (1.85 + (0.35 * inten)))
+		elseif t < 0.22 then
+			local p = (t - 0.10) / 0.12
+			scale = (1.85 + (0.35 * inten)) - (p * (0.70 + (0.18 * inten)))
+		elseif t < 0.62 then
+			local p = (t - 0.22) / 0.40
+			scale = 1.15 - (p * 0.12)
+		else
+			local p = (t - 0.62) / 0.38
+			scale = 1.03 - (p * 0.28)
+		end
+		local scaledSize = math.max(8, math.floor((ev.effectiveFontSize or ev.fontSize or 18) * scale))
+		if scaledSize ~= ev._lastFontSize then
+			ev._lastFontSize = scaledSize
+			pcall(ev.fs.SetFont, ev.fs, ev.fontFace, scaledSize, ev.outlineFlag or "OUTLINE")
+		end
+		alpha = ev.fontAlpha or 1.0
+		if t > 0.55 then
+			alpha = (ev.fontAlpha or 1.0) * (1.0 - ((t - 0.55) / 0.45))
+		end
+		ev.fs:SetAlpha(math.max(0, alpha))
+
+		-- Lazy-create 4 shatter copies
+		if not ev._zsbtShatterFS then
+			ev._zsbtShatterFS = {}
+			ev._zsbtShatterDir = {}
+			local tr, tg, tb, ta = 1, 1, 1, 1
+			if ev.fs and ev.fs.GetTextColor then
+				local ok, r, g, b, a = pcall(ev.fs.GetTextColor, ev.fs)
+				if ok then tr, tg, tb, ta = r or 1, g or 1, b or 1, a or 1 end
+			end
+			for i = 1, 4 do
+				local sfs = AcquireFontString(ev.parent)
+				ev._zsbtShatterFS[i] = sfs
+				local th = (math.pi * 2.0) * ((i - 1) / 4) + (math.random() * 0.7)
+				ev._zsbtShatterDir[i] = th
+				pcall(sfs.SetFont, sfs, ev.fontFace, (ev.effectiveFontSize or ev.fontSize or 18), ev.outlineFlag or "OUTLINE")
+				pcall(sfs.SetText, sfs, (ev.fs and ev.fs.GetText and ev.fs:GetText()) or "")
+				pcall(sfs.SetTextColor, sfs, tr, tg, tb, ta)
+			end
+		end
+		local burst = math.min(1.0, t / 0.18)
+		local dist = (18 + (42 * inten)) * burst
+		local ghostAlpha = math.max(0, alpha) * (0.18 + (0.06 * inten))
+		if t > 0.55 then
+			ghostAlpha = ghostAlpha * (1.0 - ((t - 0.55) / 0.45))
+		end
+		if ev._zsbtShatterFS and ev._zsbtShatterDir then
+			for i = 1, #ev._zsbtShatterFS do
+				local sfs = ev._zsbtShatterFS[i]
+				if sfs then
+					sfs._zsbtOffX = math.cos(ev._zsbtShatterDir[i] or 0) * dist
+					sfs._zsbtOffY = math.sin(ev._zsbtShatterDir[i] or 0) * dist
+					sfs:SetAlpha(ghostAlpha)
+				end
+			end
+		end
+
+	elseif styleId == "Rumble" then
+		local t = progress
+		local inten = (ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0
+		if inten < 0 then inten = 0 end
+		if inten > 3.0 then inten = 3.0 end
+		local scale = 1.0
+		local shake = 0
+		if t < 0.14 then
+			local p = t / 0.14
+			scale = 0.25 + (p * (1.65 + (0.25 * inten)))
+			shake = (1.0 - p) * (4 + (4 * inten))
+		elseif t < 0.26 then
+			local p = (t - 0.14) / 0.12
+			scale = (1.65 + (0.25 * inten)) - (p * (0.55 + (0.12 * inten)))
+			shake = (1.0 - p) * (3 + (3 * inten))
+		elseif t < 0.36 then
+			scale = 1.10
+		elseif t < 0.48 then
+			-- Second impact / thud
+			local p = (t - 0.36) / 0.12
+			scale = 1.10 + (math.sin(p * math.pi) * (0.22 + (0.10 * inten)))
+			shake = math.sin(p * math.pi) * (3 + (4 * inten))
+		elseif t < 0.70 then
+			local p = (t - 0.48) / 0.22
+			scale = 1.06 - (p * 0.08)
+		else
+			local p = (t - 0.70) / 0.30
+			scale = 0.98 - (p * 0.22)
+		end
+		local tWave = (ev.elapsedTime ~= nil) and ev.elapsedTime or (ev.elapsed or 0)
+		local theta = ev._zsbtRumbleTheta or 0
+		xOff2 = ((ev.positionX or 0) - AnchorOriginX()) + (math.sin(tWave * 48) * shake) + (math.cos(theta) * (shake * 0.25))
+		yOff2 = (ev.positionY or 0) + (math.cos(tWave * 44) * (shake * 0.55)) + (math.sin(theta) * (shake * 0.20))
+		local scaledSize = math.max(8, math.floor((ev.effectiveFontSize or ev.fontSize or 18) * scale))
+		if scaledSize ~= ev._lastFontSize then
+			ev._lastFontSize = scaledSize
+			pcall(ev.fs.SetFont, ev.fs, ev.fontFace, scaledSize, ev.outlineFlag or "OUTLINE")
+		end
+		alpha = ev.fontAlpha or 1.0
+		if t > 0.55 then
+			alpha = (ev.fontAlpha or 1.0) * (1.0 - ((t - 0.55) / 0.45))
+		end
+		ev.fs:SetAlpha(math.max(0, alpha))
+
+	elseif styleId == "Shockwave" then
+		local t = progress
+		local inten = (ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0
+		if inten < 0 then inten = 0 end
+		if inten > 3.0 then inten = 3.0 end
+		local theta = ev._zsbtShockwaveTheta or 0
+		local pop
+		if t < 0.12 then
+			pop = t / 0.12
+		elseif t < 0.30 then
+			pop = 1.0 - ((t - 0.12) / 0.18)
+		else
+			pop = 0
+		end
+		local dist = (6 + (16 * inten)) * math.max(0, math.min(1, t / 0.55))
+		xOff2 = ((ev.positionX or 0) - AnchorOriginX()) + (math.cos(theta) * dist)
+		yOff2 = (ev.positionY or 0) + (math.sin(theta) * dist)
+		local scale = 1.0 + (pop * (0.55 + (0.30 * inten)))
+		local scaledSize = math.max(8, math.floor((ev.effectiveFontSize or ev.fontSize or 18) * scale))
+		if scaledSize ~= ev._lastFontSize then
+			ev._lastFontSize = scaledSize
+			pcall(ev.fs.SetFont, ev.fs, ev.fontFace, scaledSize, ev.outlineFlag or "OUTLINE")
+		end
+		alpha = ev.fontAlpha or 1.0
+		if t > 0.60 then
+			alpha = (ev.fontAlpha or 1.0) * (1.0 - ((t - 0.60) / 0.40))
+		end
+		ev.fs:SetAlpha(math.max(0, alpha))
+
+	elseif styleId == "Ignite" then
+		local t = progress
+		local inten = (ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0
+		if inten < 0 then inten = 0 end
+		if inten > 3.0 then inten = 3.0 end
+		xOff2 = (ev.positionX or 0) - AnchorOriginX()
+		yOff2 = (ev.positionY or 0) + ((10 + (26 * inten)) * (t ^ 0.75))
+		local wave = math.sin((t * 10.0 + (ev.driftPhase or 0)) * math.pi) * (0.03 + (0.02 * inten))
+		local scale = 1.0 + wave
+		local scaledSize = math.max(8, math.floor((ev.effectiveFontSize or ev.fontSize or 18) * scale))
+		if scaledSize ~= ev._lastFontSize then
+			ev._lastFontSize = scaledSize
+			pcall(ev.fs.SetFont, ev.fs, ev.fontFace, scaledSize, ev.outlineFlag or "OUTLINE")
+		end
+		alpha = ev.fontAlpha or 1.0
+		if t > 0.45 then
+			alpha = (ev.fontAlpha or 1.0) * (1.0 - ((t - 0.45) / 0.55))
+		end
+		ev.fs:SetAlpha(math.max(0, alpha))
+
+	elseif styleId == "Chromatic" then
+		local t = progress
+		local inten = (ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0
+		if inten < 0 then inten = 0 end
+		if inten > 3.0 then inten = 3.0 end
+		xOff2 = (ev.positionX or 0) - AnchorOriginX()
+		yOff2 = ev.positionY or 0
+		local tWave = (ev.elapsedTime ~= nil) and ev.elapsedTime or (ev.elapsed or 0)
+		if not ev._zsbtChromOrigTextColor and ev.fs and ev.fs.GetTextColor then
+			local r, g, b, a = ev.fs:GetTextColor()
+			ev._zsbtChromOrigTextColor = { r or 1, g or 1, b or 1, a or 1 }
+		end
+		if ev._zsbtChromOrigTextColor and ev.fs and ev.fs.SetTextColor then
+			local c = ev._zsbtChromOrigTextColor
+			local ph = (ev._zsbtChromPhase or 0)
+			local s = 0.5 + 0.5 * math.sin((tWave * 8.0) + ph)
+			local amt = math.min(0.80, 0.20 + (0.18 * inten))
+			local r2 = (0.75 * (1 - s)) + (0.20 * s)
+			local g2 = (0.20 * (1 - s)) + (1.00 * s)
+			local b2 = (1.00 * (1 - s)) + (1.00 * s)
+			pcall(ev.fs.SetTextColor, ev.fs,
+				(c[1] * (1 - amt)) + (r2 * amt),
+				(c[2] * (1 - amt)) + (g2 * amt),
+				(c[3] * (1 - amt)) + (b2 * amt),
+				c[4] or 1)
+		end
+		local scale = 1.0 + (0.06 * inten) * math.sin((tWave * 6.0) + (ev._zsbtChromPhase or 0))
+		local scaledSize = math.max(8, math.floor((ev.effectiveFontSize or ev.fontSize or 18) * scale))
+		if scaledSize ~= ev._lastFontSize then
+			ev._lastFontSize = scaledSize
+			pcall(ev.fs.SetFont, ev.fs, ev.fontFace, scaledSize, ev.outlineFlag or "OUTLINE")
+		end
+		alpha = ev.fontAlpha or 1.0
+		if t > 0.55 then
+			alpha = (ev.fontAlpha or 1.0) * (1.0 - ((t - 0.55) / 0.45))
+		end
+		ev.fs:SetAlpha(math.max(0, alpha))
+
+	elseif styleId == "Stomp" then
+		local t = progress
+		local inten = (ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0
+		if inten < 0 then inten = 0 end
+		if inten > 3.0 then inten = 3.0 end
+		local slamY = 0
+		local scale = 1.0
+		if t < 0.16 then
+			local p = t / 0.16
+			scale = 0.55 + (p * (0.95 + (0.35 * inten)))
+			slamY = -(10 + (18 * inten)) * (1.0 - p)
+		elseif t < 0.30 then
+			local p = (t - 0.16) / 0.14
+			scale = (1.50 + (0.35 * inten)) - (p * (0.45 + (0.15 * inten)))
+			slamY = (4 + (6 * inten)) * p
+		elseif t < 0.60 then
+			local p = (t - 0.30) / 0.30
+			scale = 1.10 - (p * 0.08)
+		else
+			local p = (t - 0.60) / 0.40
+			scale = 1.02 - (p * 0.22)
+		end
+		xOff2 = (ev.positionX or 0) - AnchorOriginX()
+		yOff2 = (ev.positionY or 0) + slamY
+		local scaledSize = math.max(8, math.floor((ev.effectiveFontSize or ev.fontSize or 18) * scale))
+		if scaledSize ~= ev._lastFontSize then
+			ev._lastFontSize = scaledSize
+			pcall(ev.fs.SetFont, ev.fs, ev.fontFace, scaledSize, ev.outlineFlag or "OUTLINE")
+		end
+		alpha = ev.fontAlpha or 1.0
+		if t > 0.55 then
+			alpha = (ev.fontAlpha or 1.0) * (1.0 - ((t - 0.55) / 0.45))
+		end
+		ev.fs:SetAlpha(math.max(0, alpha))
 
 	elseif styleId == "Static" then
 		-- MSBT-like static: no movement, late fade only. Placement happens via lane.
@@ -616,13 +1183,13 @@ local function AE_UpdateEvent(ev, dt)
 
 	-- Placement (match existing semantics)
 	-- MSBT does not ClearAllPoints each tick; doing so can cause flicker.
-	if styleId ~= "Straight" and styleId ~= "Parabola" and styleId ~= "Pow" then
+	if styleId ~= "Straight" and styleId ~= "Parabola" and styleId ~= "Pow" and styleId ~= "Slam" then
 		ev.fs:ClearAllPoints()
 	end
 	local point = ev.anchorPoint or ev.startPoint
 	if styleId == "Static" and ev.staticPoint and ev.staticSlotY ~= nil then
 		ev.fs:SetPoint(ev.staticPoint, ev.parent, ev.staticPoint, 0, ev.staticSlotY)
-	elseif styleId == "Pow" then
+	elseif styleId == "Pow" or styleId == "Slam" or styleId == "Shockwave" or styleId == "Ignite" or styleId == "Chromatic" or styleId == "Stomp" or styleId == "ScreenPunch" or styleId == "Shatter" or styleId == "Afterimage" or styleId == "Rumble" then
 		-- MSBT Pow uses the scroll area's anchorPoint.
 		ev.fs:SetPoint(point, ev.parent, point, xOff2, yOff2)
 	else
@@ -635,10 +1202,9 @@ local function AE_UpdateEvent(ev, dt)
 		end
 		ev.fs:SetPoint(point, ev.parent, point, xOff2, yPlaced)
 	end
-
 	-- Edge fade (keep your existing edge behavior)
 	-- MSBT Straight/Parabola doesn't apply extra post-fade; it can cause visible jitter.
-	if styleId ~= "Straight" and styleId ~= "Parabola" and styleId ~= "Pow" then
+	if styleId ~= "Straight" and styleId ~= "Parabola" and styleId ~= "Pow" and styleId ~= "Slam" then
 		local currentAlpha = ev.fs:GetAlpha()
 		local absY = math.abs(laneOff + yOff2)
 		local fadeStart = ev.areaH * 0.75
@@ -659,6 +1225,30 @@ local function AE_UpdateEvent(ev, dt)
 		ev.iconTex:ClearAllPoints()
 		ev.iconTex:SetPoint("RIGHT", ev.fs, "LEFT", -2, 0)
 		ev.iconTex:SetAlpha(ev.fs:GetAlpha())
+	end
+
+	-- Extra crit layers for some centered animations
+	if styleId == "Afterimage" then
+		if ev._zsbtAfterimageFS1 then
+			ev._zsbtAfterimageFS1:ClearAllPoints()
+			ev._zsbtAfterimageFS1:SetPoint(point, ev.parent, point, xOff2 - (4 + (2 * ((ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0))), yOff2 + 2)
+		end
+		if ev._zsbtAfterimageFS2 then
+			ev._zsbtAfterimageFS2:ClearAllPoints()
+			ev._zsbtAfterimageFS2:SetPoint(point, ev.parent, point, xOff2 + (4 + (2 * ((ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0))), yOff2 - 2)
+		end
+	elseif styleId == "Shatter" then
+		if ev._zsbtShatterFS then
+			for i = 1, #ev._zsbtShatterFS do
+				local sfs = ev._zsbtShatterFS[i]
+				if sfs then
+					local ox = sfs._zsbtOffX or 0
+					local oy = sfs._zsbtOffY or 0
+					sfs:ClearAllPoints()
+					sfs:SetPoint(point, ev.parent, point, xOff2 + ox, yOff2 + oy)
+				end
+			end
+		end
 	end
 
 	return false
@@ -721,6 +1311,107 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.scrollTime = (ev.scrollTime or 0) / ev.animationSpeed
 	end
 
+	-- Slam centered init.
+	if ev.styleId == "Slam" then
+		ev.startAt = nil
+		ev.elapsedTime = 0
+		ev.scrollHeight = ev.areaH
+		ev.scrollWidth = ev.areaW
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		AE_MSBT_InitSlam(ev)
+		AE_ReRollCenteredPosition(ev, events)
+		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
+	end
+
+	if ev.styleId == "Shockwave" then
+		ev.startAt = nil
+		ev.elapsedTime = 0
+		ev.scrollHeight = ev.areaH
+		ev.scrollWidth = ev.areaW
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		AE_MSBT_InitShockwave(ev)
+		AE_ReRollCenteredPosition(ev, events)
+		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
+	end
+
+	if ev.styleId == "Ignite" then
+		ev.startAt = nil
+		ev.elapsedTime = 0
+		ev.scrollHeight = ev.areaH
+		ev.scrollWidth = ev.areaW
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		AE_MSBT_InitIgnite(ev)
+		AE_ReRollCenteredPosition(ev, events)
+		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
+	end
+
+	if ev.styleId == "Chromatic" then
+		ev.startAt = nil
+		ev.elapsedTime = 0
+		ev.scrollHeight = ev.areaH
+		ev.scrollWidth = ev.areaW
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		AE_MSBT_InitChromatic(ev)
+		AE_ReRollCenteredPosition(ev, events)
+		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
+	end
+
+	if ev.styleId == "Stomp" then
+		ev.startAt = nil
+		ev.elapsedTime = 0
+		ev.scrollHeight = ev.areaH
+		ev.scrollWidth = ev.areaW
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		AE_MSBT_InitStomp(ev)
+		AE_ReRollCenteredPosition(ev, events)
+		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
+	end
+
+	if ev.styleId == "ScreenPunch" then
+		ev.startAt = nil
+		ev.elapsedTime = 0
+		ev.scrollHeight = ev.areaH
+		ev.scrollWidth = ev.areaW
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		AE_MSBT_InitScreenPunch(ev)
+		AE_ReRollCenteredPosition(ev, events)
+		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
+	end
+
+	if ev.styleId == "Shatter" then
+		ev.startAt = nil
+		ev.elapsedTime = 0
+		ev.scrollHeight = ev.areaH
+		ev.scrollWidth = ev.areaW
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		AE_MSBT_InitShatter(ev)
+		AE_ReRollCenteredPosition(ev, events)
+		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
+	end
+
+	if ev.styleId == "Afterimage" then
+		ev.startAt = nil
+		ev.elapsedTime = 0
+		ev.scrollHeight = ev.areaH
+		ev.scrollWidth = ev.areaW
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		AE_MSBT_InitAfterimage(ev)
+		AE_ReRollCenteredPosition(ev, events)
+		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
+	end
+
+	if ev.styleId == "Rumble" then
+		ev.startAt = nil
+		ev.elapsedTime = 0
+		ev.scrollHeight = ev.areaH
+		ev.scrollWidth = ev.areaW
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		AE_MSBT_InitRumble(ev)
+		AE_ReRollCenteredPosition(ev, events)
+		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
+	end
+
+
 	-- Waterfall: keep unique wave motion, but use MSBT-style retiming to prevent overlap.
 	if ev.styleId == "Waterfall" then
 		ev.startAt = nil
@@ -775,6 +1466,7 @@ function AnimEngine:Enqueue(areaKey, ev)
 			end
 		end
 		AE_MSBT_InitPow(ev, active, direction)
+		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / ev.animationSpeed
 	end
 
@@ -884,12 +1576,14 @@ AnimEngine._frame:SetScript("OnUpdate", function(_, dt)
 	end
 end)
 
-local function AcquireFontString(parent)
+AcquireFontString = function(parent)
     local fs = table.remove(fontStringPool)
     if fs then
         fs:SetParent(parent)
         fs:ClearAllPoints()
         fs:SetAlpha(1)
+		pcall(fs.SetShadowColor, fs, 0, 0, 0, 0)
+		pcall(fs.SetShadowOffset, fs, 0, 0)
         local okFont, fontPath = pcall(fs.GetFont, fs)
         if okFont and not fontPath and fs.SetFont then
             pcall(fs.SetFont, fs, STANDARD_TEXT_FONT, 12, "")
@@ -933,6 +1627,8 @@ RecycleFontString = function(fs)
     if not fs then return end
     fs:Hide()
     fs:SetParent(recyclingBin)
+	pcall(fs.SetShadowColor, fs, 0, 0, 0, 0)
+	pcall(fs.SetShadowOffset, fs, 0, 0)
     local okFont, fontPath = pcall(fs.GetFont, fs)
     if okFont and not fontPath and fs.SetFont then
         pcall(fs.SetFont, fs, STANDARD_TEXT_FONT, 12, "")
@@ -1476,6 +2172,7 @@ local function BuildCritMeta(stream)
 	local masterFont = (general and general.font) or {}
 
 	local critConf = general and general.critFont or nil
+	local globalCrit = general and general.critFont or nil
 	if stream == "incoming" and profile and type(profile.incoming) == "table" then
 		local ic = profile.incoming.critFont
 		if type(ic) == "table" and ic.enabled == true then
@@ -1504,6 +2201,38 @@ local function BuildCritMeta(stream)
 		critMeta.critOutline = ZSBT.OUTLINE_STYLES and ZSBT.OUTLINE_STYLES[outKey] or "THICKOUTLINE"
 		critMeta.critScale = tonumber(critConf.scale) or 1.5
 		critMeta.critAnim = critConf.anim
+		if critMeta.critAnim == "Glow" then
+			critMeta.critAnim = "Pow"
+		end
+		local mode = critMeta.critAnim
+		local fx
+		if mode == "Shockwave" then
+			fx = tonumber(critConf.shockwaveIntensity)
+			if fx == nil then fx = globalCrit and tonumber(globalCrit.shockwaveIntensity) end
+		elseif mode == "Ignite" then
+			fx = tonumber(critConf.igniteIntensity)
+			if fx == nil then fx = globalCrit and tonumber(globalCrit.igniteIntensity) end
+		elseif mode == "Chromatic" then
+			fx = tonumber(critConf.chromaticIntensity)
+			if fx == nil then fx = globalCrit and tonumber(globalCrit.chromaticIntensity) end
+		elseif mode == "Stomp" then
+			fx = tonumber(critConf.stompIntensity)
+			if fx == nil then fx = globalCrit and tonumber(globalCrit.stompIntensity) end
+		elseif mode == "ScreenPunch" then
+			fx = tonumber(critConf.screenPunchIntensity)
+			if fx == nil then fx = globalCrit and tonumber(globalCrit.screenPunchIntensity) end
+		elseif mode == "Shatter" then
+			fx = tonumber(critConf.shatterIntensity)
+			if fx == nil then fx = globalCrit and tonumber(globalCrit.shatterIntensity) end
+		elseif mode == "Afterimage" then
+			fx = tonumber(critConf.afterimageIntensity)
+			if fx == nil then fx = globalCrit and tonumber(globalCrit.afterimageIntensity) end
+		elseif mode == "Rumble" then
+			fx = tonumber(critConf.rumbleIntensity)
+			if fx == nil then fx = globalCrit and tonumber(globalCrit.rumbleIntensity) end
+		end
+		if fx == nil then fx = 1.0 end
+		critMeta.critFxIntensity = fx
 	else
 		critMeta.critSize = 28
 		critMeta.critOutline = "THICKOUTLINE"

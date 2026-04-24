@@ -1872,6 +1872,174 @@ function ZSBT.BuildTab_CombatText()
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},
+			critShockwaveIntensity = {
+				type  = "range",
+				name  = "Shockwave Intensity",
+				order = 23.57,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				hidden = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return not (type(cf) == "table" and cf.anim == "Shockwave")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return (type(cf) == "table" and type(cf.shockwaveIntensity) == "number") and cf.shockwaveIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
+					ZSBT.db.profile.general.critFont.shockwaveIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critIgniteIntensity = {
+				type  = "range",
+				name  = "Ignite Intensity",
+				order = 23.58,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				hidden = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return not (type(cf) == "table" and cf.anim == "Ignite")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return (type(cf) == "table" and type(cf.igniteIntensity) == "number") and cf.igniteIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
+					ZSBT.db.profile.general.critFont.igniteIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critChromaticIntensity = {
+				type  = "range",
+				name  = "Chromatic Intensity",
+				order = 23.59,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				hidden = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return not (type(cf) == "table" and cf.anim == "Chromatic")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return (type(cf) == "table" and type(cf.chromaticIntensity) == "number") and cf.chromaticIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
+					ZSBT.db.profile.general.critFont.chromaticIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critStompIntensity = {
+				type  = "range",
+				name  = "Stomp Intensity",
+				order = 23.60,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				hidden = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return not (type(cf) == "table" and cf.anim == "Stomp")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return (type(cf) == "table" and type(cf.stompIntensity) == "number") and cf.stompIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
+					ZSBT.db.profile.general.critFont.stompIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critScreenPunchIntensity = {
+				type  = "range",
+				name  = "ScreenPunch Intensity",
+				order = 23.61,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				hidden = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return not (type(cf) == "table" and cf.anim == "ScreenPunch")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return (type(cf) == "table" and type(cf.screenPunchIntensity) == "number") and cf.screenPunchIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
+					ZSBT.db.profile.general.critFont.screenPunchIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critShatterIntensity = {
+				type  = "range",
+				name  = "Shatter Intensity",
+				order = 23.62,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				hidden = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return not (type(cf) == "table" and cf.anim == "Shatter")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return (type(cf) == "table" and type(cf.shatterIntensity) == "number") and cf.shatterIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
+					ZSBT.db.profile.general.critFont.shatterIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critAfterimageIntensity = {
+				type  = "range",
+				name  = "Afterimage Intensity",
+				order = 23.63,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				hidden = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return not (type(cf) == "table" and cf.anim == "Afterimage")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return (type(cf) == "table" and type(cf.afterimageIntensity) == "number") and cf.afterimageIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
+					ZSBT.db.profile.general.critFont.afterimageIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critRumbleIntensity = {
+				type  = "range",
+				name  = "Rumble Intensity",
+				order = 23.64,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				hidden = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return not (type(cf) == "table" and cf.anim == "Rumble")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return (type(cf) == "table" and type(cf.rumbleIntensity) == "number") and cf.rumbleIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
+					ZSBT.db.profile.general.critFont.rumbleIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
 			incoming = incoming or { type = "group", name = "|cFFFFD100Incoming|r", order = 1, args = {} },
 			outgoing = outgoing or { type = "group", name = "|cFFFFD100Outgoing|r", order = 2, args = {} },
 			pets = pets or { type = "group", name = "|cFFFFD100Pets|r", order = 3, args = {} },
@@ -2554,12 +2722,12 @@ function ZSBT.BuildTab_General()
 			critAnim = {
 				type   = "select",
 				name   = "Crit Animation",
-				desc   = "Choose whether crits use the sticky Pow animation or follow the scroll area's animation.",
+				desc   = "Choose how crits animate. Pow/Slam/Shockwave/Ignite/Chromatic/Stomp/ScreenPunch/Shatter/Afterimage/Rumble are centered (sticky-style). Use Scroll Area Animation makes crits follow the scroll area's normal flow.",
 				order  = 23.5,
-				values = { Pow = "Pow (Sticky)", Area = "Use Scroll Area Animation" },
+				values = { Pow = "Pow (Sticky)", Slam = "Slam (Impact)", Shockwave = "Shockwave", Ignite = "Ignite", Chromatic = "Chromatic", Stomp = "Stomp", ScreenPunch = "ScreenPunch", Shatter = "Shatter", Afterimage = "Afterimage", Rumble = "Rumble", Area = "Use Scroll Area Animation" },
 				get    = function()
 					local cf = ZSBT.db.profile.general.critFont
-					return (cf and (cf.anim == "Area" or cf.anim == "Pow")) and cf.anim or "Pow"
+					return (cf and (cf.anim == "Area" or cf.anim == "Pow" or cf.anim == "Slam" or cf.anim == "Shockwave" or cf.anim == "Ignite" or cf.anim == "Chromatic" or cf.anim == "Stomp" or cf.anim == "ScreenPunch" or cf.anim == "Shatter" or cf.anim == "Afterimage" or cf.anim == "Rumble")) and cf.anim or "Pow"
 				end,
 				set    = function(_, val)
 					if not ZSBT.db.profile.general.critFont then
@@ -4511,9 +4679,9 @@ function ZSBT.BuildTab_Incoming()
 			incomingCritDamageAnim = {
 				type   = "select",
 				name   = "Crit Animation",
-				desc   = "Choose whether crits use the sticky Pow animation or follow the scroll area's animation.",
+				desc   = "Choose how crits animate. Pow/Slam/Shockwave/Ignite/Chromatic/Stomp/ScreenPunch/Shatter/Afterimage/Rumble are centered (sticky-style). Use Scroll Area Animation makes crits follow the scroll area's normal flow.",
 				order  = 4.419,
-				values = { Pow = "Pow (Sticky)", Area = "Use Scroll Area Animation" },
+				values = { Pow = "Pow (Sticky)", Slam = "Slam (Impact)", Shockwave = "Shockwave", Ignite = "Ignite", Chromatic = "Chromatic", Stomp = "Stomp", ScreenPunch = "ScreenPunch", Shatter = "Shatter", Afterimage = "Afterimage", Rumble = "Rumble", Area = "Use Scroll Area Animation" },
 				disabled = function()
 					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
 					return not (type(cf) == "table" and cf.enabled == true)
@@ -4524,12 +4692,116 @@ function ZSBT.BuildTab_Incoming()
 				end,
 				get    = function()
 					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
-					return (cf and (cf.anim == "Area" or cf.anim == "Pow")) and cf.anim or "Pow"
+					return (cf and (cf.anim == "Area" or cf.anim == "Pow" or cf.anim == "Slam" or cf.anim == "Shockwave" or cf.anim == "Ignite" or cf.anim == "Chromatic" or cf.anim == "Stomp" or cf.anim == "ScreenPunch" or cf.anim == "Shatter" or cf.anim == "Afterimage" or cf.anim == "Rumble")) and cf.anim or "Pow"
 				end,
 				set    = function(_, val)
 					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
 					ZSBT.db.profile.incoming.critDamage.critFont = ZSBT.db.profile.incoming.critDamage.critFont or {}
 					ZSBT.db.profile.incoming.critDamage.critFont.anim = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritDamageScreenPunchIntensity = {
+				type  = "range",
+				name  = "ScreenPunch Intensity",
+				order = 4.4201,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "ScreenPunch")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return (type(cf) == "table" and type(cf.screenPunchIntensity) == "number") and cf.screenPunchIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.critFont = ZSBT.db.profile.incoming.critDamage.critFont or {}
+					ZSBT.db.profile.incoming.critDamage.critFont.screenPunchIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritDamageShatterIntensity = {
+				type  = "range",
+				name  = "Shatter Intensity",
+				order = 4.4202,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Shatter")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return (type(cf) == "table" and type(cf.shatterIntensity) == "number") and cf.shatterIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.critFont = ZSBT.db.profile.incoming.critDamage.critFont or {}
+					ZSBT.db.profile.incoming.critDamage.critFont.shatterIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritDamageAfterimageIntensity = {
+				type  = "range",
+				name  = "Afterimage Intensity",
+				order = 4.4203,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Afterimage")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return (type(cf) == "table" and type(cf.afterimageIntensity) == "number") and cf.afterimageIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.critFont = ZSBT.db.profile.incoming.critDamage.critFont or {}
+					ZSBT.db.profile.incoming.critDamage.critFont.afterimageIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritDamageRumbleIntensity = {
+				type  = "range",
+				name  = "Rumble Intensity",
+				order = 4.4204,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Rumble")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critDamage and ZSBT.db.profile.incoming.critDamage.critFont
+					return (type(cf) == "table" and type(cf.rumbleIntensity) == "number") and cf.rumbleIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.critFont = ZSBT.db.profile.incoming.critDamage.critFont or {}
+					ZSBT.db.profile.incoming.critDamage.critFont.rumbleIntensity = val
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},
@@ -4954,9 +5226,9 @@ function ZSBT.BuildTab_Incoming()
 			incomingCritHealingAnim = {
 				type   = "select",
 				name   = "Crit Animation",
-				desc   = "Choose whether crits use the sticky Pow animation or follow the scroll area's animation.",
+				desc   = "Choose how crits animate. Pow/Slam/Shockwave/Ignite/Chromatic/Stomp/ScreenPunch/Shatter/Afterimage/Rumble are centered (sticky-style). Use Scroll Area Animation makes crits follow the scroll area's normal flow.",
 				order  = 15.04,
-				values = { Pow = "Pow (Sticky)", Area = "Use Scroll Area Animation" },
+				values = { Pow = "Pow (Sticky)", Slam = "Slam (Impact)", Shockwave = "Shockwave", Ignite = "Ignite", Chromatic = "Chromatic", Stomp = "Stomp", ScreenPunch = "ScreenPunch", Shatter = "Shatter", Afterimage = "Afterimage", Rumble = "Rumble", Area = "Use Scroll Area Animation" },
 				disabled = function()
 					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
 					return not (type(cf) == "table" and cf.enabled == true)
@@ -4967,12 +5239,220 @@ function ZSBT.BuildTab_Incoming()
 				end,
 				get    = function()
 					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
-					return (cf and (cf.anim == "Area" or cf.anim == "Pow")) and cf.anim or "Pow"
+					return (cf and (cf.anim == "Area" or cf.anim == "Pow" or cf.anim == "Slam" or cf.anim == "Shockwave" or cf.anim == "Ignite" or cf.anim == "Chromatic" or cf.anim == "Stomp" or cf.anim == "ScreenPunch" or cf.anim == "Shatter" or cf.anim == "Afterimage" or cf.anim == "Rumble")) and cf.anim or "Pow"
 				end,
 				set    = function(_, val)
 					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
 					ZSBT.db.profile.incoming.critHealing.critFont = ZSBT.db.profile.incoming.critHealing.critFont or {}
 					ZSBT.db.profile.incoming.critHealing.critFont.anim = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritHealingShockwaveIntensity = {
+				type  = "range",
+				name  = "Shockwave Intensity",
+				order = 15.041,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Shockwave")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return (type(cf) == "table" and type(cf.shockwaveIntensity) == "number") and cf.shockwaveIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.critFont = ZSBT.db.profile.incoming.critHealing.critFont or {}
+					ZSBT.db.profile.incoming.critHealing.critFont.shockwaveIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritHealingIgniteIntensity = {
+				type  = "range",
+				name  = "Ignite Intensity",
+				order = 15.042,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Ignite")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return (type(cf) == "table" and type(cf.igniteIntensity) == "number") and cf.igniteIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.critFont = ZSBT.db.profile.incoming.critHealing.critFont or {}
+					ZSBT.db.profile.incoming.critHealing.critFont.igniteIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritHealingChromaticIntensity = {
+				type  = "range",
+				name  = "Chromatic Intensity",
+				order = 15.043,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Chromatic")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return (type(cf) == "table" and type(cf.chromaticIntensity) == "number") and cf.chromaticIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.critFont = ZSBT.db.profile.incoming.critHealing.critFont or {}
+					ZSBT.db.profile.incoming.critHealing.critFont.chromaticIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritHealingStompIntensity = {
+				type  = "range",
+				name  = "Stomp Intensity",
+				order = 15.044,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Stomp")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return (type(cf) == "table" and type(cf.stompIntensity) == "number") and cf.stompIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.critFont = ZSBT.db.profile.incoming.critHealing.critFont or {}
+					ZSBT.db.profile.incoming.critHealing.critFont.stompIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritHealingScreenPunchIntensity = {
+				type  = "range",
+				name  = "ScreenPunch Intensity",
+				order = 15.0441,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "ScreenPunch")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return (type(cf) == "table" and type(cf.screenPunchIntensity) == "number") and cf.screenPunchIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.critFont = ZSBT.db.profile.incoming.critHealing.critFont or {}
+					ZSBT.db.profile.incoming.critHealing.critFont.screenPunchIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritHealingShatterIntensity = {
+				type  = "range",
+				name  = "Shatter Intensity",
+				order = 15.0442,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Shatter")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return (type(cf) == "table" and type(cf.shatterIntensity) == "number") and cf.shatterIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.critFont = ZSBT.db.profile.incoming.critHealing.critFont or {}
+					ZSBT.db.profile.incoming.critHealing.critFont.shatterIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritHealingAfterimageIntensity = {
+				type  = "range",
+				name  = "Afterimage Intensity",
+				order = 15.0443,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Afterimage")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return (type(cf) == "table" and type(cf.afterimageIntensity) == "number") and cf.afterimageIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.critFont = ZSBT.db.profile.incoming.critHealing.critFont or {}
+					ZSBT.db.profile.incoming.critHealing.critFont.afterimageIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			incomingCritHealingRumbleIntensity = {
+				type  = "range",
+				name  = "Rumble Intensity",
+				order = 15.0444,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Rumble")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.incoming.critHealing and ZSBT.db.profile.incoming.critHealing.critFont
+					return (type(cf) == "table" and type(cf.rumbleIntensity) == "number") and cf.rumbleIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.critFont = ZSBT.db.profile.incoming.critHealing.critFont or {}
+					ZSBT.db.profile.incoming.critHealing.critFont.rumbleIntensity = val
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},
@@ -5565,9 +6045,9 @@ function ZSBT.BuildTab_Outgoing()
 			outgoingCritDamageAnim = {
 				type   = "select",
 				name   = "Crit Animation",
-				desc   = "Choose whether crits use the sticky Pow animation or follow the scroll area's animation.",
+				desc   = "Choose how crits animate. Pow/Slam/Shockwave/Ignite/Chromatic/Stomp/ScreenPunch/Shatter/Afterimage/Rumble are centered (sticky-style). Use Scroll Area Animation makes crits follow the scroll area's normal flow.",
 				order  = 8.419,
-				values = { Pow = "Pow (Sticky)", Area = "Use Scroll Area Animation" },
+				values = { Pow = "Pow (Sticky)", Slam = "Slam (Impact)", Shockwave = "Shockwave", Ignite = "Ignite", Chromatic = "Chromatic", Stomp = "Stomp", ScreenPunch = "ScreenPunch", Shatter = "Shatter", Afterimage = "Afterimage", Rumble = "Rumble", Area = "Use Scroll Area Animation" },
 				disabled = function()
 					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
 					return not (type(cf) == "table" and cf.enabled == true)
@@ -5578,12 +6058,220 @@ function ZSBT.BuildTab_Outgoing()
 				end,
 				get    = function()
 					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
-					return (cf and (cf.anim == "Area" or cf.anim == "Pow")) and cf.anim or "Pow"
+					return (cf and (cf.anim == "Area" or cf.anim == "Pow" or cf.anim == "Slam" or cf.anim == "Shockwave" or cf.anim == "Ignite" or cf.anim == "Chromatic" or cf.anim == "Stomp" or cf.anim == "ScreenPunch" or cf.anim == "Shatter" or cf.anim == "Afterimage" or cf.anim == "Rumble")) and cf.anim or "Pow"
 				end,
 				set    = function(_, val)
 					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
 					ZSBT.db.profile.outgoing.critDamage.critFont = ZSBT.db.profile.outgoing.critDamage.critFont or {}
 					ZSBT.db.profile.outgoing.critDamage.critFont.anim = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritDamageShockwaveIntensity = {
+				type  = "range",
+				name  = "Shockwave Intensity",
+				order = 8.4197,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Shockwave")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return (type(cf) == "table" and type(cf.shockwaveIntensity) == "number") and cf.shockwaveIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont = ZSBT.db.profile.outgoing.critDamage.critFont or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont.shockwaveIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritDamageIgniteIntensity = {
+				type  = "range",
+				name  = "Ignite Intensity",
+				order = 8.4198,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Ignite")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return (type(cf) == "table" and type(cf.igniteIntensity) == "number") and cf.igniteIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont = ZSBT.db.profile.outgoing.critDamage.critFont or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont.igniteIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritDamageChromaticIntensity = {
+				type  = "range",
+				name  = "Chromatic Intensity",
+				order = 8.4199,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Chromatic")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return (type(cf) == "table" and type(cf.chromaticIntensity) == "number") and cf.chromaticIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont = ZSBT.db.profile.outgoing.critDamage.critFont or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont.chromaticIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritDamageStompIntensity = {
+				type  = "range",
+				name  = "Stomp Intensity",
+				order = 8.4200,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Stomp")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return (type(cf) == "table" and type(cf.stompIntensity) == "number") and cf.stompIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont = ZSBT.db.profile.outgoing.critDamage.critFont or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont.stompIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritDamageScreenPunchIntensity = {
+				type  = "range",
+				name  = "ScreenPunch Intensity",
+				order = 8.4201,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "ScreenPunch")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return (type(cf) == "table" and type(cf.screenPunchIntensity) == "number") and cf.screenPunchIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont = ZSBT.db.profile.outgoing.critDamage.critFont or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont.screenPunchIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritDamageShatterIntensity = {
+				type  = "range",
+				name  = "Shatter Intensity",
+				order = 8.4202,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Shatter")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return (type(cf) == "table" and type(cf.shatterIntensity) == "number") and cf.shatterIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont = ZSBT.db.profile.outgoing.critDamage.critFont or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont.shatterIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritDamageAfterimageIntensity = {
+				type  = "range",
+				name  = "Afterimage Intensity",
+				order = 8.4203,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Afterimage")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return (type(cf) == "table" and type(cf.afterimageIntensity) == "number") and cf.afterimageIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont = ZSBT.db.profile.outgoing.critDamage.critFont or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont.afterimageIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritDamageRumbleIntensity = {
+				type  = "range",
+				name  = "Rumble Intensity",
+				order = 8.4204,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Rumble")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critDamage and ZSBT.db.profile.outgoing.critDamage.critFont
+					return (type(cf) == "table" and type(cf.rumbleIntensity) == "number") and cf.rumbleIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont = ZSBT.db.profile.outgoing.critDamage.critFont or {}
+					ZSBT.db.profile.outgoing.critDamage.critFont.rumbleIntensity = val
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},
@@ -5973,9 +6661,9 @@ function ZSBT.BuildTab_Outgoing()
 			outgoingCritHealingAnim = {
 				type   = "select",
 				name   = "Crit Animation",
-				desc   = "Choose whether crits use the sticky Pow animation or follow the scroll area's animation.",
+				desc   = "Choose how crits animate. Pow/Slam/Shockwave/Ignite/Chromatic/Stomp/ScreenPunch/Shatter/Afterimage/Rumble are centered (sticky-style). Use Scroll Area Animation makes crits follow the scroll area's normal flow.",
 				order  = 15.04,
-				values = { Pow = "Pow (Sticky)", Area = "Use Scroll Area Animation" },
+				values = { Pow = "Pow (Sticky)", Slam = "Slam (Impact)", Shockwave = "Shockwave", Ignite = "Ignite", Chromatic = "Chromatic", Stomp = "Stomp", ScreenPunch = "ScreenPunch", Shatter = "Shatter", Afterimage = "Afterimage", Rumble = "Rumble", Area = "Use Scroll Area Animation" },
 				disabled = function()
 					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
 					return not (type(cf) == "table" and cf.enabled == true)
@@ -5986,12 +6674,220 @@ function ZSBT.BuildTab_Outgoing()
 				end,
 				get    = function()
 					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
-					return (cf and (cf.anim == "Area" or cf.anim == "Pow")) and cf.anim or "Pow"
+					return (cf and (cf.anim == "Area" or cf.anim == "Pow" or cf.anim == "Slam" or cf.anim == "Shockwave" or cf.anim == "Ignite" or cf.anim == "Chromatic" or cf.anim == "Stomp" or cf.anim == "ScreenPunch" or cf.anim == "Shatter" or cf.anim == "Afterimage" or cf.anim == "Rumble")) and cf.anim or "Pow"
 				end,
 				set    = function(_, val)
 					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
 					ZSBT.db.profile.outgoing.critHealing.critFont = ZSBT.db.profile.outgoing.critHealing.critFont or {}
 					ZSBT.db.profile.outgoing.critHealing.critFont.anim = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritHealingShockwaveIntensity = {
+				type  = "range",
+				name  = "Shockwave Intensity",
+				order = 15.041,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Shockwave")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return (type(cf) == "table" and type(cf.shockwaveIntensity) == "number") and cf.shockwaveIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont = ZSBT.db.profile.outgoing.critHealing.critFont or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont.shockwaveIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritHealingIgniteIntensity = {
+				type  = "range",
+				name  = "Ignite Intensity",
+				order = 15.042,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Ignite")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return (type(cf) == "table" and type(cf.igniteIntensity) == "number") and cf.igniteIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont = ZSBT.db.profile.outgoing.critHealing.critFont or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont.igniteIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritHealingChromaticIntensity = {
+				type  = "range",
+				name  = "Chromatic Intensity",
+				order = 15.043,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Chromatic")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return (type(cf) == "table" and type(cf.chromaticIntensity) == "number") and cf.chromaticIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont = ZSBT.db.profile.outgoing.critHealing.critFont or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont.chromaticIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritHealingStompIntensity = {
+				type  = "range",
+				name  = "Stomp Intensity",
+				order = 15.044,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Stomp")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return (type(cf) == "table" and type(cf.stompIntensity) == "number") and cf.stompIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont = ZSBT.db.profile.outgoing.critHealing.critFont or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont.stompIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritHealingScreenPunchIntensity = {
+				type  = "range",
+				name  = "ScreenPunch Intensity",
+				order = 15.0441,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "ScreenPunch")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return (type(cf) == "table" and type(cf.screenPunchIntensity) == "number") and cf.screenPunchIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont = ZSBT.db.profile.outgoing.critHealing.critFont or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont.screenPunchIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritHealingShatterIntensity = {
+				type  = "range",
+				name  = "Shatter Intensity",
+				order = 15.0442,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Shatter")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return (type(cf) == "table" and type(cf.shatterIntensity) == "number") and cf.shatterIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont = ZSBT.db.profile.outgoing.critHealing.critFont or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont.shatterIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritHealingAfterimageIntensity = {
+				type  = "range",
+				name  = "Afterimage Intensity",
+				order = 15.0443,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Afterimage")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return (type(cf) == "table" and type(cf.afterimageIntensity) == "number") and cf.afterimageIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont = ZSBT.db.profile.outgoing.critHealing.critFont or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont.afterimageIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			outgoingCritHealingRumbleIntensity = {
+				type  = "range",
+				name  = "Rumble Intensity",
+				order = 15.0444,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Rumble")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.outgoing.critHealing and ZSBT.db.profile.outgoing.critHealing.critFont
+					return (type(cf) == "table" and type(cf.rumbleIntensity) == "number") and cf.rumbleIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont = ZSBT.db.profile.outgoing.critHealing.critFont or {}
+					ZSBT.db.profile.outgoing.critHealing.critFont.rumbleIntensity = val
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},
