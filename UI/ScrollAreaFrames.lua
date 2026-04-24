@@ -1720,7 +1720,8 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
 	-- Incoming crits shift left; outgoing crits shift right.
 	local critSideX = 0
 	local critCenterY = false
-	if meta and meta.isCrit == true and meta.critRouted ~= true then
+	local forceInline = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general and ZSBT.db.profile.general.forceCritsInline == true
+	if (not forceInline) and meta and meta.isCrit == true and meta.critRouted ~= true then
 		local stream = meta.stream
 		if stream == "incoming" then
 			critSideX = -1

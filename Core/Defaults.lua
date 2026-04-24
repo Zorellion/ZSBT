@@ -26,6 +26,7 @@ ZSBT.DEFAULTS = {
 			damageMeterOutgoingFallback = true,
 			damageMeterIncomingFallback = true,
 			autoAttackRestrictFallback = true,
+			forceCritsInline = false,
 			quickControlBarEnabled = false,
 			quickControlBarPos = { x = 0, y = 220 },
 
