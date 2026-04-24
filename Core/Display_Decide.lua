@@ -67,7 +67,7 @@ end
 local function ResolveCritFont(meta)
     local profile = ZSBT.db and ZSBT.db.profile
     if not profile or not profile.general then
-        return nil, 28, "THICKOUTLINE", 1.5, "Pow"
+		return nil, 28, "THICKOUTLINE", 1.5, "Pow", 1.0
     end
 
     local critConf = profile.general.critFont or {}
@@ -151,17 +151,50 @@ local function ResolveCritFont(meta)
 
     local globalCrit = profile.general.critFont
     local mode = critConf.anim
-    if mode ~= "Area" and mode ~= "Pow" then
+	if mode ~= "Area" and mode ~= "Pow" and mode ~= "Slam" and mode ~= "Shockwave" and mode ~= "Ignite" and mode ~= "Chromatic" and mode ~= "Stomp" and mode ~= "ScreenPunch" and mode ~= "Shatter" and mode ~= "Afterimage" and mode ~= "Rumble" then
         mode = globalCrit and globalCrit.anim
     end
-    if mode ~= "Area" and mode ~= "Pow" then
+	if mode ~= "Area" and mode ~= "Pow" and mode ~= "Slam" and mode ~= "Shockwave" and mode ~= "Ignite" and mode ~= "Chromatic" and mode ~= "Stomp" and mode ~= "ScreenPunch" and mode ~= "Shatter" and mode ~= "Afterimage" and mode ~= "Rumble" then
         mode = "Pow"
     end
+	-- If older profiles reference removed animations, fall back safely.
+	if mode == "Glow" then
+		mode = "Pow"
+	end
+
+	local fxIntensity
+	if mode == "Shockwave" then
+		fxIntensity = tonumber(critConf.shockwaveIntensity)
+		if fxIntensity == nil then fxIntensity = globalCrit and tonumber(globalCrit.shockwaveIntensity) end
+	elseif mode == "Ignite" then
+		fxIntensity = tonumber(critConf.igniteIntensity)
+		if fxIntensity == nil then fxIntensity = globalCrit and tonumber(globalCrit.igniteIntensity) end
+	elseif mode == "Chromatic" then
+		fxIntensity = tonumber(critConf.chromaticIntensity)
+		if fxIntensity == nil then fxIntensity = globalCrit and tonumber(globalCrit.chromaticIntensity) end
+	elseif mode == "Stomp" then
+		fxIntensity = tonumber(critConf.stompIntensity)
+		if fxIntensity == nil then fxIntensity = globalCrit and tonumber(globalCrit.stompIntensity) end
+	elseif mode == "ScreenPunch" then
+		fxIntensity = tonumber(critConf.screenPunchIntensity)
+		if fxIntensity == nil then fxIntensity = globalCrit and tonumber(globalCrit.screenPunchIntensity) end
+	elseif mode == "Shatter" then
+		fxIntensity = tonumber(critConf.shatterIntensity)
+		if fxIntensity == nil then fxIntensity = globalCrit and tonumber(globalCrit.shatterIntensity) end
+	elseif mode == "Afterimage" then
+		fxIntensity = tonumber(critConf.afterimageIntensity)
+		if fxIntensity == nil then fxIntensity = globalCrit and tonumber(globalCrit.afterimageIntensity) end
+	elseif mode == "Rumble" then
+		fxIntensity = tonumber(critConf.rumbleIntensity)
+		if fxIntensity == nil then fxIntensity = globalCrit and tonumber(globalCrit.rumbleIntensity) end
+	end
+	if fxIntensity == nil then fxIntensity = 1.0 end
+
     if profile.general.forceCritsInline == true then
         mode = "Area"
     end
 
-    return critFace, critSize, critOutline, critScale, mode
+	return critFace, critSize, critOutline, critScale, mode, fxIntensity
 end
 
 ------------------------------------------------------------------------
@@ -569,23 +602,26 @@ function Display:Emit(areaName, text, color, meta)
     -- Resolve crit font if this is a crit event
     local isCrit = meta and meta.isCrit
     if isCrit then
-        local critFace, critSize, critOutline, critScale, critMode = ResolveCritFont(meta)
+        local critFace, critSize, critOutline, critScale, critMode, fxIntensity = ResolveCritFont(meta)
         if not meta then meta = {} end
-		if meta.critFace == nil then meta.critFace = critFace end
-		if meta.critSize == nil then meta.critSize = critSize end
-		if meta.critOutline == nil then meta.critOutline = critOutline end
-		if meta.critScale == nil then meta.critScale = critScale end
-		if profile and profile.general and profile.general.forceCritsInline == true then
-			meta.critAnim = "Area"
-			meta.stickyCrit = nil
-			meta.critFace = nil
-			meta.critSize = nil
-			meta.critOutline = nil
-			meta.critScale = 1.0
-		elseif meta.critAnim == nil then
-			meta.critAnim = critMode
+        if meta.critFace == nil then meta.critFace = critFace end
+        if meta.critSize == nil then meta.critSize = critSize end
+        if meta.critOutline == nil then meta.critOutline = critOutline end
+        if meta.critScale == nil then meta.critScale = critScale end
+        if profile and profile.general and profile.general.forceCritsInline == true then
+            meta.critAnim = "Area"
+            meta.stickyCrit = nil
+            meta.critFace = nil
+            meta.critSize = nil
+            meta.critOutline = nil
+            meta.critScale = 1.0
+        elseif meta.critAnim == nil then
+            meta.critAnim = critMode
+        end
+        if meta.critFxIntensity == nil and (meta.critAnim == "Shockwave" or meta.critAnim == "Ignite" or meta.critAnim == "Chromatic" or meta.critAnim == "Stomp" or meta.critAnim == "ScreenPunch" or meta.critAnim == "Shatter" or meta.critAnim == "Afterimage" or meta.critAnim == "Rumble") and type(fxIntensity) == "number" then
+			meta.critFxIntensity = fxIntensity
 		end
-	end
+    end
 
     TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag, fontAlpha,
         anchorH, dirMult, duration, color, meta)
