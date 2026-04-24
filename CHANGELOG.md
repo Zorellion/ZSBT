@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.5
+- Crits: added new centered/sticky crit animations (Shockwave, Ignite, Chromatic, Stomp, ScreenPunch, Shatter, Afterimage, Rumble), each with its own intensity slider (Global/Incoming/Outgoing).
+- Crits: improved centered crit positioning to reduce overlap/clutter for successive crits.
+- Numbers: added a new Number Format option to always display values in thousands (K).
+
 ## 2.3.4
 - Crits: added a General toggle to force crits inline with the normal incoming/outgoing damage/healing flow (no crit scroll-area routing), matching the scroll area's animation and font.
 - Crits: crit damage/heal color settings now apply even when crit routing is disabled (incoming + outgoing).
