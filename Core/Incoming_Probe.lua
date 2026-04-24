@@ -523,6 +523,7 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
 
     local area = conf.scrollArea or "Incoming"
     local critRouted = false
+    local forceInline = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general and ZSBT.db.profile.general.forceCritsInline == true
     local incomingProf = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.incoming
     local baseCritConf = incomingProf and incomingProf.crits
     local kindOverrideCritConf = nil
@@ -536,11 +537,11 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
     local resolvedCritConf = kindOverrideCritConf or baseCritConf
 
     -- New incoming crit routing (Incoming tab)
-    if evt.isCrit == true and resolvedCritConf and resolvedCritConf.enabled == true and ZSBT.IsSafeString(resolvedCritConf.scrollArea) and resolvedCritConf.scrollArea ~= "" then
+    if (not forceInline) and evt.isCrit == true and resolvedCritConf and resolvedCritConf.enabled == true and ZSBT.IsSafeString(resolvedCritConf.scrollArea) and resolvedCritConf.scrollArea ~= "" then
         area = resolvedCritConf.scrollArea
         critRouted = true
     -- Legacy per-category crit routing (Damage/Healing)
-    elseif evt.isCrit == true and conf.critScrollArea and ZSBT.IsSafeString(conf.critScrollArea) and conf.critScrollArea ~= "" then
+    elseif (not forceInline) and evt.isCrit == true and conf.critScrollArea and ZSBT.IsSafeString(conf.critScrollArea) and conf.critScrollArea ~= "" then
         area = conf.critScrollArea
         critRouted = true
     end
@@ -653,16 +654,9 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
 
     -- Crit color override
     if evt.isCrit then
-        -- When crits are routed via Incoming Crits config, allow a custom crit color.
-        if critRouted and resolvedCritConf and resolvedCritConf.enabled == true then
-            local cc = resolvedCritConf.color
-            if type(cc) == "table" and type(cc.r) == "number" and type(cc.g) == "number" and type(cc.b) == "number" then
-                color = { r = cc.r, g = cc.g, b = cc.b }
-            elseif kind == "heal" then
-                color = {r = 0.20, g = 1.00, b = 0.40}
-            else
-                color = {r = 1.00, g = 0.25, b = 0.25}
-            end
+        local cc = resolvedCritConf and resolvedCritConf.color
+        if type(cc) == "table" and type(cc.r) == "number" and type(cc.g) == "number" and type(cc.b) == "number" then
+            color = { r = cc.r, g = cc.g, b = cc.b }
         elseif kind == "heal" then
             color = {r = 0.20, g = 1.00, b = 0.40}
         else
@@ -700,6 +694,9 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
     if kind == "heal" and meta.isCrit == true then
         meta.critAnim = "Area"
         meta.critScale = 1.2
+    end
+    if forceInline and meta.isCrit == true then
+        meta.critAnim = "Area"
     end
 
     if rawPipeValue ~= nil and not ZSBT.IsSafeNumber(rawPipeValue) then

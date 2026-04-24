@@ -729,12 +729,12 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				end
 			end
 		end
-		local critConf = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.outgoing and ZSBT.db.profile.outgoing.crits
 		local profOut = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.outgoing
+		local critConf = profOut and profOut.crits
 		if profOut and evt.isCrit == true then
-			if kind == "heal" and type(profOut.critHealing) == "table" and profOut.critHealing.enabled == true then
+			if kind == "heal" and type(profOut.critHealing) == "table" then
 				critConf = profOut.critHealing
-			elseif kind ~= "heal" and type(profOut.critDamage) == "table" and profOut.critDamage.enabled == true then
+			elseif kind ~= "heal" and type(profOut.critDamage) == "table" then
 				critConf = profOut.critDamage
 			end
 		end
@@ -758,6 +758,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			isCrit = evt.isCrit == true,
 			school = evt.schoolMask,
 		}
+		local forceInline = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general and ZSBT.db.profile.general.forceCritsInline == true
 		if type(resolvedSpellID) == "number" then
 			meta.spellId = resolvedSpellID
 		end
@@ -785,9 +786,9 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 		local critConf = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.outgoing and ZSBT.db.profile.outgoing.crits
 		local profOut = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.outgoing
 		if profOut and evt.isCrit == true then
-			if kind == "heal" and type(profOut.critHealing) == "table" and profOut.critHealing.enabled == true then
+			if kind == "heal" and type(profOut.critHealing) == "table" then
 				critConf = profOut.critHealing
-			elseif kind ~= "heal" and type(profOut.critDamage) == "table" and profOut.critDamage.enabled == true then
+			elseif kind ~= "heal" and type(profOut.critDamage) == "table" then
 				critConf = profOut.critDamage
 			end
 		end
@@ -829,7 +830,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 		end
 
         local areaToUse = ruleArea or conf.scrollArea or defaultRuleArea or "Outgoing"
-        if evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
+        if (not forceInline) and evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
             areaToUse = critConf.scrollArea
             meta.critRouted = true
             if critConf.sticky ~= false then
@@ -1000,13 +1001,15 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
             isCrit = evt.isCrit == true,
             school = evt.schoolMask,
         }
+		local forceInline = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general and ZSBT.db.profile.general.forceCritsInline == true
 		if type(resolvedSpellID) == "number" then
 			meta.spellId = resolvedSpellID
 		end
 
 		maybePlayCritSound(critConf, rawPipeValue, isTainted)
 
-        		if evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
+		local areaToUse = ruleArea or conf.scrollArea or defaultRuleArea or "Outgoing"
+		if (not forceInline) and evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
 			areaToUse = critConf.scrollArea
 			meta.critRouted = true
 			if critConf.sticky ~= false then
@@ -1021,6 +1024,9 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			meta.stickyJiggle = (critConf.stickyJiggle ~= false)
 			meta.stickyScale = 1.12
 			meta.stickyDurationMult = 1.25
+		end
+		if forceInline and evt.isCrit then
+			meta.critAnim = "Area"
 		end
 
         -- Dungeon-safe visual filtering for heals

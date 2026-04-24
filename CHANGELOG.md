@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.4
+- Crits: added a General toggle to force crits inline with the normal incoming/outgoing damage/healing flow (no crit scroll-area routing), matching the scroll area's animation and font.
+- Crits: crit damage/heal color settings now apply even when crit routing is disabled (incoming + outgoing).
+
 ## 2.3.3
 - Outgoing: fixed a rare WoW 12.x secret/tainted number crash when polling attack speed in restricted UNIT_COMBAT attribution paths.
 

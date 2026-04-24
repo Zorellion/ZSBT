@@ -157,6 +157,9 @@ local function ResolveCritFont(meta)
     if mode ~= "Area" and mode ~= "Pow" then
         mode = "Pow"
     end
+    if profile.general.forceCritsInline == true then
+        mode = "Area"
+    end
 
     return critFace, critSize, critOutline, critScale, mode
 end
@@ -572,8 +575,17 @@ function Display:Emit(areaName, text, color, meta)
 		if meta.critSize == nil then meta.critSize = critSize end
 		if meta.critOutline == nil then meta.critOutline = critOutline end
 		if meta.critScale == nil then meta.critScale = critScale end
-		if meta.critAnim == nil then meta.critAnim = critMode end
-    end
+		if profile and profile.general and profile.general.forceCritsInline == true then
+			meta.critAnim = "Area"
+			meta.stickyCrit = nil
+			meta.critFace = nil
+			meta.critSize = nil
+			meta.critOutline = nil
+			meta.critScale = 1.0
+		elseif meta.critAnim == nil then
+			meta.critAnim = critMode
+		end
+	end
 
     TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag, fontAlpha,
         anchorH, dirMult, duration, color, meta)

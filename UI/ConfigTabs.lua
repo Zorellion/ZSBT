@@ -1849,6 +1849,29 @@ function ZSBT.BuildTab_CombatText()
 		order = 0.9,
 		childGroups = "tree",
 		args = {
+			critInlineHeader = {
+				type  = "header",
+				name  = "Critical Hits",
+				order = 0.05,
+			},
+			forceCritsInlineHelp = {
+				type  = "description",
+				name  = "Force Crits Inline keeps crits in the same scroll areas and timing lanes as normal hits/heals. This bypasses crit-specific routing and makes crits follow the scroll area's animation and font.",
+				order = 0.051,
+				width = "full",
+			},
+			forceCritsInline = {
+				type  = "toggle",
+				name  = "Force Crits Inline",
+				desc  = "Keep crits inline with normal incoming/outgoing damage/healing flow (no crit scroll-area routing).",
+				order = 0.052,
+				width = "full",
+				get   = function() return ZSBT.db.profile.general.forceCritsInline == true end,
+				set   = function(_, v)
+					ZSBT.db.profile.general.forceCritsInline = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
 			incoming = incoming or { type = "group", name = "|cFFFFD100Incoming|r", order = 1, args = {} },
 			outgoing = outgoing or { type = "group", name = "|cFFFFD100Outgoing|r", order = 2, args = {} },
 			pets = pets or { type = "group", name = "|cFFFFD100Pets|r", order = 3, args = {} },
@@ -2455,9 +2478,9 @@ function ZSBT.BuildTab_General()
 				end,
 			},
 
-            -- Crit Font Settings
-            headerCritFont = {
-                type  = "header",
+			-- Crit Font Settings
+			headerCritFont = {
+				type  = "header",
                 name  = "Critical Hit Font",
                 order = 20,
             },
@@ -4596,7 +4619,7 @@ function ZSBT.BuildTab_Incoming()
 			critDamageColor = {
 				type  = "color",
 				name  = "Crit Damage Color",
-				desc  = "Color for incoming critical damage when routed to the Crit Damage Scroll Area.",
+				desc  = "Color for incoming critical damage.",
 				order = 4.44,
 				get = function()
 					local c = ZSBT.db.profile.incoming.critDamage
@@ -5039,7 +5062,7 @@ function ZSBT.BuildTab_Incoming()
 			critHealingColor = {
 				type  = "color",
 				name  = "Crit Heal Color",
-				desc  = "Color for incoming critical heals when routed to the Crit Heal Scroll Area.",
+				desc  = "Color for incoming critical heals.",
 				order = 15.3,
 				get = function()
 					local c = ZSBT.db.profile.incoming.critHealing
@@ -5616,6 +5639,22 @@ function ZSBT.BuildTab_Outgoing()
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},
+			outgoingCritDamageColor = {
+				type  = "color",
+				name  = "Crit Damage Color",
+				desc  = "Color for outgoing critical damage.",
+				order = 8.4215,
+				get = function()
+					local c = ZSBT.db.profile.outgoing.critDamage
+					local col = c and c.color
+					if type(col) ~= "table" then return 1, 1, 0 end
+					return col.r or 1, col.g or 1, col.b or 0
+				end,
+				set = function(_, r, g, b)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.color = { r = r, g = g, b = b }
+				end,
+			},
 			critDamageEnabled = {
 				type  = "toggle",
 				name  = "Route Outgoing Crit Damage to a Different Scroll Area",
@@ -5645,22 +5684,6 @@ function ZSBT.BuildTab_Outgoing()
 				set = function(_, v)
 					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
 					ZSBT.db.profile.outgoing.critDamage.scrollArea = v
-				end,
-			},
-			critDamageColor = {
-				type  = "color",
-				name  = "Crit Damage Color",
-				desc  = "Color for outgoing critical damage when routed to the Crit Damage Scroll Area.",
-				order = 8.44,
-				get = function()
-					local c = ZSBT.db.profile.outgoing.critDamage
-					local col = c and c.color
-					if type(col) ~= "table" then return 1, 1, 0 end
-					return col.r or 1, col.g or 1, col.b or 0
-				end,
-				set = function(_, r, g, b)
-					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
-					ZSBT.db.profile.outgoing.critDamage.color = { r = r, g = g, b = b }
 				end,
 			},
 			critDamageSticky = {
@@ -6024,6 +6047,22 @@ function ZSBT.BuildTab_Outgoing()
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},
+			outgoingCritHealingColor = {
+				type  = "color",
+				name  = "Crit Heal Color",
+				desc  = "Color for outgoing critical heals.",
+				order = 15.061,
+				get = function()
+					local c = ZSBT.db.profile.outgoing.critHealing
+					local col = c and c.color
+					if type(col) ~= "table" then return 0.2, 1, 0.4 end
+					return col.r or 0.2, col.g or 1, col.b or 0.4
+				end,
+				set = function(_, r, g, b)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.color = { r = r, g = g, b = b }
+				end,
+			},
 			critHealingEnabled = {
 				type  = "toggle",
 				name  = "Route Outgoing Crit Heals to a Different Scroll Area",
@@ -6053,22 +6092,6 @@ function ZSBT.BuildTab_Outgoing()
 				set = function(_, v)
 					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
 					ZSBT.db.profile.outgoing.critHealing.scrollArea = v
-				end,
-			},
-			critHealingColor = {
-				type  = "color",
-				name  = "Crit Heal Color",
-				desc  = "Color for outgoing critical heals when routed to the Crit Heal Scroll Area.",
-				order = 15.3,
-				get = function()
-					local c = ZSBT.db.profile.outgoing.critHealing
-					local col = c and c.color
-					if type(col) ~= "table" then return 0.2, 1, 0.4 end
-					return col.r or 0.2, col.g or 1, col.b or 0.4
-				end,
-				set = function(_, r, g, b)
-					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
-					ZSBT.db.profile.outgoing.critHealing.color = { r = r, g = g, b = b }
 				end,
 			},
 			critHealingSticky = {
