@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.3.7
+- Triggers: reduced Bloodlust lockout false positives and duplicate alerts by making lockout debuff notifications core-driven (sync no longer emits lockout gain/fade).
+
 ## 2.3.6
 - Crits: fixed inline Chromatic crit FX not rendering correctly when "Force Crits Inline" is enabled.
 - Triggers: further hardened Bloodlust lockout aura sync against zone/instance transition flapping to reduce false-positive notifications.
