@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.6
+- Crits: fixed inline Chromatic crit FX not rendering correctly when "Force Crits Inline" is enabled.
+- Triggers: further hardened Bloodlust lockout aura sync against zone/instance transition flapping to reduce false-positive notifications.
+
 ## 2.3.5
 - Crits: added new centered/sticky crit animations (Shockwave, Ignite, Chromatic, Stomp, ScreenPunch, Shatter, Afterimage, Rumble), each with its own intensity slider (Global/Incoming/Outgoing).
 - Crits: improved centered crit positioning to reduce overlap/clutter for successive crits.

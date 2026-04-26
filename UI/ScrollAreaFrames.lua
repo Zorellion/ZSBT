@@ -1186,6 +1186,76 @@ local function AE_UpdateEvent(ev, dt)
 	if styleId ~= "Straight" and styleId ~= "Parabola" and styleId ~= "Pow" and styleId ~= "Slam" then
 		ev.fs:ClearAllPoints()
 	end
+	-- Inline crit FX: lightweight impact effects while remaining in normal scroll flow.
+	if ev.meta and ev.meta.isCrit and ev.meta.critAnim == "Area" then
+		pcall(function()
+			local fx = ev.meta.inlineCritFx
+			if fx == "Shake" then
+				local inten = tonumber(ev.meta.inlineCritFxIntensity) or 1.0
+				if inten < 0 then inten = 0 end
+				if inten > 3.0 then inten = 3.0 end
+				local tWave = (ev.elapsedTime ~= nil) and ev.elapsedTime or (ev.elapsed or 0)
+				local mag = (0.6 + (1.2 * inten))
+				xOff2 = (xOff2 or 0) + (math.sin(tWave * 60) * mag)
+				yOff2 = (yOff2 or 0) + (math.cos(tWave * 52) * (mag * 0.55))
+			elseif fx == "Pulse" then
+				local inten = tonumber(ev.meta.inlineCritFxIntensity) or 1.0
+				if inten < 0 then inten = 0 end
+				if inten > 3.0 then inten = 3.0 end
+				local tWave = (ev.elapsedTime ~= nil) and ev.elapsedTime or (ev.elapsed or 0)
+				local wave = math.sin(tWave * 7.0) * (0.03 + (0.03 * inten))
+				local scale = 1.0 + wave
+				local scaledSize = math.max(8, math.floor((ev.effectiveFontSize or ev.fontSize or 18) * scale))
+				if scaledSize ~= ev._lastFontSize then
+					ev._lastFontSize = scaledSize
+					pcall(ev.fs.SetFont, ev.fs, ev.fontFace, scaledSize, ev.outlineFlag or "OUTLINE")
+				end
+			elseif fx == "Chromatic" then
+				local inten = tonumber(ev.meta.inlineCritFxIntensity) or 1.0
+				if inten < 0 then inten = 0 end
+				if inten > 3.0 then inten = 3.0 end
+				local tWave = (ev.elapsedTime ~= nil) and ev.elapsedTime or (ev.elapsed or 0)
+				-- Defensive: ensure the FontString isn't left invisible/blank by any external state.
+				if ev.fs and ev.fs.GetAlpha and ev.fs.SetAlpha then
+					local okA, aNow = pcall(ev.fs.GetAlpha, ev.fs)
+					if okA and (aNow == nil or aNow <= 0) then
+						pcall(ev.fs.SetAlpha, ev.fs, math.max(0.01, (ev.fontAlpha or 1.0)))
+					end
+				end
+				if ev.fs and ev.fs.GetText and ev.fs.SetText then
+					local okT, tNow = pcall(ev.fs.GetText, ev.fs)
+					if okT and (tNow == nil or tNow == "") and ev.text then
+						pcall(ev.fs.SetText, ev.fs, ev.text)
+					end
+				end
+				-- Use the event's spawn color as the base color (stable, no protected reads).
+				local c = ev._zsbtChromOrigTextColor
+				if not c then
+					local bc = ev.baseColor
+					if type(bc) == "table" then
+						c = { bc[1] or bc.r or 1, bc[2] or bc.g or 1, bc[3] or bc.b or 1, bc[4] or bc.a or 1 }
+					else
+						c = { 1, 1, 1, 1 }
+					end
+					ev._zsbtChromOrigTextColor = c
+				end
+				if c and ev.fs and ev.fs.SetTextColor then
+					local ph = (ev._zsbtChromPhase or 0)
+					local s = 0.5 + 0.5 * math.sin((tWave * 8.0) + ph)
+					local amt = math.min(0.80, 0.20 + (0.18 * inten))
+					local r2 = (0.75 * (1 - s)) + (0.20 * s)
+					local g2 = (0.20 * (1 - s)) + (1.00 * s)
+					local b2 = (1.00 * (1 - s)) + (1.00 * s)
+					local rr = ((c[1] or 1) * (1 - amt)) + (r2 * amt)
+					local gg = ((c[2] or 1) * (1 - amt)) + (g2 * amt)
+					local bb = ((c[3] or 1) * (1 - amt)) + (b2 * amt)
+					local aa = ((c[4] ~= nil) and c[4] or 1)
+					if aa <= 0 then aa = 1 end
+					pcall(ev.fs.SetTextColor, ev.fs, rr, gg, bb, aa)
+				end
+			end
+		end)
+	end
 	local point = ev.anchorPoint or ev.startPoint
 	if styleId == "Static" and ev.staticPoint and ev.staticSlotY ~= nil then
 		ev.fs:SetPoint(ev.staticPoint, ev.parent, ev.staticPoint, 0, ev.staticSlotY)
@@ -2858,6 +2928,8 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
         end
 
         local ev = {
+            text = text,
+            baseColor = color,
             fs = fs,
             iconFS = iconFS,
             iconTex = iconTex,
