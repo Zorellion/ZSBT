@@ -232,10 +232,21 @@ function Triggers:OnAuraGain(spellId, source)
 	self._auraPresent[spellId] = true
 	local name = SafeSpellName(spellId)
 	if IsBloodlustLockoutName(name) then
+		-- Bloodlust lockout debuffs are long-lived (~10 minutes) and can be refreshed.
+		-- Also, our sync pathway can emit a delayed second "gain" a second or two later.
+		-- Suppress duplicate gains within a lockout window unless we saw a core-confirmed fade.
+		self._lockoutAuraGainAt = self._lockoutAuraGainAt or {}
+		local firstGainAt = self._lockoutAuraGainAt[name]
+		if type(firstGainAt) == "number" and (now - firstGainAt) < 600.0 then
+			TrigDebug("OnAuraGain LOCKOUT WINDOW SUPPRESS spellId=" .. tostring(spellId) .. " name=" .. tostring(name) .. " age=" .. tostring(now - firstGainAt) .. " src=" .. tostring(source or "?"))
+			return
+		end
+		self._lockoutAuraGainAt[name] = now
+
 		self._recentAuraLockoutAt = self._recentAuraLockoutAt or {}
-		local now = Now()
 		local last = self._recentAuraLockoutAt[name]
-		if type(last) == "number" and (now - last) < 0.15 then
+		-- Use a wider window here because sync confirmation can be delayed by ~2s.
+		if type(last) == "number" and (now - last) < 3.0 then
 			TrigDebug("OnAuraGain LOCKOUT DEDUP BLOCKED spellId=" .. tostring(spellId) .. " name=" .. tostring(name))
 			return
 		end
@@ -338,8 +349,15 @@ function Triggers:OnAuraFade(spellId, source)
 	self._auraPresent[spellId] = false
 	local name = SafeSpellName(spellId)
 	if IsBloodlustLockoutName(name) then
+		-- Only clear the long lockout suppression window when the core reports a real removal.
+		-- Sync fades can be transient enumeration failures.
+		if source == "core" or source == "core-rm" then
+			if self._lockoutAuraGainAt then
+				self._lockoutAuraGainAt[name] = nil
+			end
+		end
+
 		self._recentAuraLockoutFadeAt = self._recentAuraLockoutFadeAt or {}
-		local now = Now()
 		local last = self._recentAuraLockoutFadeAt[name]
 		if type(last) == "number" and (now - last) < 0.15 then
 			TrigDebug("OnAuraFade LOCKOUT DEDUP BLOCKED spellId=" .. tostring(spellId) .. " name=" .. tostring(name))
@@ -622,7 +640,14 @@ function Triggers:SyncWatchedAurasFromCore()
 								local pc = tonumber(self._auraSyncPresentCount[sid]) or 0
 								if pc >= presentNeed then
 									self._auraSyncPresentCount[sid] = 0
-									self:OnAuraGain(sid, "sync")
+									if isLockout then
+										-- Lockout debuffs are long-lived and prone to zone/instance transition flapping.
+										-- To avoid false positives/doubles, sync should not emit lockout gain events.
+										self._auraPresent[sid] = true
+										self._auraSyncLastSeenAt[sid] = now
+									else
+										self:OnAuraGain(sid, "sync")
+									end
 								end
 							end
 						elseif (not present) and was then
@@ -653,7 +678,13 @@ function Triggers:SyncWatchedAurasFromCore()
 										else
 											self._auraSyncMissCount[sid] = 0
 											self._auraSyncPresentCount[sid] = 0
-											self:OnAuraFade(sid, "sync")
+											if isLockout then
+												-- Lockout fades should be driven by the core to avoid transient sync misses.
+												self._auraPresent[sid] = true
+												self._auraSyncLastSeenAt[sid] = now
+											else
+												self:OnAuraFade(sid, "sync")
+											end
 										end
 									end
 								end
@@ -674,7 +705,14 @@ function Triggers:SyncWatchedAurasFromCore()
 							local pc = tonumber(self._auraSyncPresentCount[sid]) or 0
 							if pc >= presentNeed then
 								self._auraSyncPresentCount[sid] = 0
-								self:OnAuraGain(sid, "sync")
+								if isLockout then
+									-- Lockout debuffs are long-lived and prone to zone/instance transition flapping.
+									-- To avoid false positives/doubles, sync should not emit lockout gain events.
+									self._auraPresent[sid] = true
+									self._auraSyncLastSeenAt[sid] = now
+								else
+									self:OnAuraGain(sid, "sync")
+								end
 							end
 						end
 					elseif (not present) and was then
@@ -705,7 +743,13 @@ function Triggers:SyncWatchedAurasFromCore()
 									else
 										self._auraSyncMissCount[sid] = 0
 										self._auraSyncPresentCount[sid] = 0
-										self:OnAuraFade(sid, "sync")
+										if isLockout then
+											-- Lockout fades should be driven by the core to avoid transient sync misses.
+											self._auraPresent[sid] = true
+											self._auraSyncLastSeenAt[sid] = now
+										else
+											self:OnAuraFade(sid, "sync")
+										end
 									end
 								end
 							end
