@@ -599,9 +599,22 @@ function Display:Emit(areaName, text, color, meta)
 		end
 	end
 
+	-- Inline crit styling (Force Crits Inline): keep crits in normal flow but allow impact styling.
+	if meta and meta.isCrit and profile and profile.general and profile.general.forceCritsInline == true then
+		local ic = profile.general.inlineCrit
+		if type(ic) == "table" then
+			local dm = tonumber(ic.durationMult)
+			if dm and dm > 0 then
+				duration = duration * dm
+			end
+		end
+	end
+
     -- Resolve crit font if this is a crit event
     local isCrit = meta and meta.isCrit
     if isCrit then
+        -- Normalize for strict checks in animation engine.
+        meta.isCrit = true
         local critFace, critSize, critOutline, critScale, critMode, fxIntensity = ResolveCritFont(meta)
         if not meta then meta = {} end
         if meta.critFace == nil then meta.critFace = critFace end
@@ -611,17 +624,49 @@ function Display:Emit(areaName, text, color, meta)
         if profile and profile.general and profile.general.forceCritsInline == true then
             meta.critAnim = "Area"
             meta.stickyCrit = nil
-            meta.critFace = nil
-            meta.critSize = nil
-            meta.critOutline = nil
-            meta.critScale = 1.0
+            local ic = profile.general.inlineCrit
+            -- Inline crit font overrides (optional)
+            if type(ic) == "table" then
+                local LSM = LibStub("LibSharedMedia-3.0", true)
+                local faceKey = ic.face
+                if LSM and type(faceKey) == "string" and faceKey ~= "" then
+                    local fetched = LSM:Fetch("font", faceKey)
+                    if fetched then meta.critFace = fetched end
+                else
+                    meta.critFace = nil
+                end
+                local outlineKey = ic.outline
+                if type(outlineKey) == "string" and outlineKey ~= "" then
+                    meta.critOutline = ZSBT.OUTLINE_STYLES and ZSBT.OUTLINE_STYLES[outlineKey] or nil
+                else
+                    meta.critOutline = nil
+                end
+                if ic.useScale == false then
+                    local sz = tonumber(ic.size)
+                    meta.critSize = (sz and sz > 0) and sz or nil
+                else
+                    meta.critSize = nil
+                end
+            end
+            local sc = (type(ic) == "table") and tonumber(ic.scale) or nil
+            meta.critScale = (sc and sc > 0) and sc or 1.0
+            if type(ic) == "table" then
+				local fx = ic.fx
+				if fx == "Shake" or fx == "Pulse" or fx == "Chromatic" then
+					meta.inlineCritFx = fx
+				else
+					meta.inlineCritFx = "None"
+				end
+				local fi = tonumber(ic.fxIntensity)
+                meta.inlineCritFxIntensity = (fi ~= nil) and fi or 1.0
+            end
         elseif meta.critAnim == nil then
             meta.critAnim = critMode
         end
         if meta.critFxIntensity == nil and (meta.critAnim == "Shockwave" or meta.critAnim == "Ignite" or meta.critAnim == "Chromatic" or meta.critAnim == "Stomp" or meta.critAnim == "ScreenPunch" or meta.critAnim == "Shatter" or meta.critAnim == "Afterimage" or meta.critAnim == "Rumble") and type(fxIntensity) == "number" then
 			meta.critFxIntensity = fxIntensity
 		end
-    end
+	end
 
     TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag, fontAlpha,
         anchorH, dirMult, duration, color, meta)

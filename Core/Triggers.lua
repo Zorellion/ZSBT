@@ -561,9 +561,18 @@ function Triggers:SyncWatchedAurasFromCore()
 	self._auraCoreLastSeenAt = self._auraCoreLastSeenAt or {}
 	local coreInit = (ZSBT and ZSBT.Core and ZSBT.Core._auraInitInProgress) == true
 	local CORE_SYNC_FADE_GRACE_SEC = 30.0
+	local LOCKOUT_SYNC_FADE_GRACE_SEC = 60.0
+	local LOCKOUT_SYNC_PRESENT_NEED = 4
+	local LOCKOUT_SYNC_MISS_NEED = 12
+	local LOCKOUT_SYNC_RECENT_SEEN_GRACE_SEC = 15.0
 
 	for sid in pairs(watch) do
 		if type(sid) == "number" then
+			local sidName = SafeSpellName(sid)
+			local isLockout = IsBloodlustLockoutName(sidName)
+			local presentNeed = isLockout and LOCKOUT_SYNC_PRESENT_NEED or 2
+			local missNeed = isLockout and LOCKOUT_SYNC_MISS_NEED or 4
+			local recentSeenGrace = isLockout and LOCKOUT_SYNC_RECENT_SEEN_GRACE_SEC or 2.0
 			local present = IsAuraPresent(sid)
 			if sid == 107574 then
 				TrigDebug("AuraSync: Avatar present=" .. tostring(present))
@@ -611,7 +620,7 @@ function Triggers:SyncWatchedAurasFromCore()
 								-- Zone/load transitions can produce a single "good" snapshot after a period
 								-- of flapping. Require multiple consecutive present scans before emitting.
 								local pc = tonumber(self._auraSyncPresentCount[sid]) or 0
-								if pc >= 2 then
+								if pc >= presentNeed then
 									self._auraSyncPresentCount[sid] = 0
 									self:OnAuraGain(sid, "sync")
 								end
@@ -625,22 +634,27 @@ function Triggers:SyncWatchedAurasFromCore()
 								self._auraSyncPresentCount[sid] = 0
 							else
 								local coreSeen = tonumber(self._auraCoreLastSeenAt[sid]) or 0
-								if coreSeen > 0 and (now - coreSeen) < CORE_SYNC_FADE_GRACE_SEC then
+								if coreSeen > 0 and (now - coreSeen) < (isLockout and LOCKOUT_SYNC_FADE_GRACE_SEC or CORE_SYNC_FADE_GRACE_SEC) then
 									self._auraPresent[sid] = true
 								else
 									local lastSeen = tonumber(self._auraSyncLastSeenAt[sid]) or 0
-									local miss = tonumber(self._auraSyncMissCount[sid]) or 0
-									miss = miss + 1
-									self._auraSyncMissCount[sid] = miss
-									if lastSeen > 0 and (now - lastSeen) < 2.0 then
-										-- Keep state as-present for now; a later sync will confirm real removal.
-									elseif miss < 4 then
-										-- Require multiple consecutive misses before treating as a real fade.
-										-- (Sync ticker runs ~0.5s; miss>=4 is ~2s of continuous absence.)
+									if lastSeen > 0 and (now - lastSeen) < recentSeenGrace then
+										-- Avoid false fades during transient aura enumeration failures (e.g. zone/instance transitions).
+										self._auraPresent[sid] = true
 									else
-										self._auraSyncMissCount[sid] = 0
-										self._auraSyncPresentCount[sid] = 0
-										self:OnAuraFade(sid, "sync")
+										local miss = tonumber(self._auraSyncMissCount[sid]) or 0
+										miss = miss + 1
+										self._auraSyncMissCount[sid] = miss
+										if lastSeen > 0 and (now - lastSeen) < recentSeenGrace then
+											-- Keep state as-present for now; a later sync will confirm real removal.
+										elseif miss < missNeed then
+											-- Require multiple consecutive misses before treating as a real fade.
+											-- (Sync ticker runs ~0.5s; miss>=4 is ~2s of continuous absence.)
+										else
+											self._auraSyncMissCount[sid] = 0
+											self._auraSyncPresentCount[sid] = 0
+											self:OnAuraFade(sid, "sync")
+										end
 									end
 								end
 							end
@@ -658,7 +672,7 @@ function Triggers:SyncWatchedAurasFromCore()
 							-- Zone/load transitions can produce a single "good" snapshot after a period
 							-- of flapping. Require multiple consecutive present scans before emitting.
 							local pc = tonumber(self._auraSyncPresentCount[sid]) or 0
-							if pc >= 2 then
+							if pc >= presentNeed then
 								self._auraSyncPresentCount[sid] = 0
 								self:OnAuraGain(sid, "sync")
 							end
@@ -672,27 +686,27 @@ function Triggers:SyncWatchedAurasFromCore()
 							self._auraSyncPresentCount[sid] = 0
 						else
 							local coreSeen = tonumber(self._auraCoreLastSeenAt[sid]) or 0
-							if coreSeen > 0 and (now - coreSeen) < CORE_SYNC_FADE_GRACE_SEC then
+							if coreSeen > 0 and (now - coreSeen) < (isLockout and LOCKOUT_SYNC_FADE_GRACE_SEC or CORE_SYNC_FADE_GRACE_SEC) then
 								self._auraPresent[sid] = true
 							else
-								-- Debounce sync-driven fades to avoid transient false negatives
-								-- during loading screens / API unavailability.
-								--
-								-- In practice, zone/load transitions can produce one or two bad aura snapshots.
-								-- Require multiple consecutive "missing" scans before emitting a FADE.
 								local lastSeen = tonumber(self._auraSyncLastSeenAt[sid]) or 0
-								local miss = tonumber(self._auraSyncMissCount[sid]) or 0
-								miss = miss + 1
-								self._auraSyncMissCount[sid] = miss
-								if lastSeen > 0 and (now - lastSeen) < 2.0 then
-									-- Keep state as-present for now; a later sync will confirm real removal.
-								elseif miss < 4 then
-									-- Require multiple consecutive misses before treating as a real fade.
-									-- (Sync ticker runs ~0.5s; miss>=4 is ~2s of continuous absence.)
+								if lastSeen > 0 and (now - lastSeen) < recentSeenGrace then
+									-- Avoid false fades during transient aura enumeration failures (e.g. zone/instance transitions).
+									self._auraPresent[sid] = true
 								else
-									self._auraSyncMissCount[sid] = 0
-									self._auraSyncPresentCount[sid] = 0
-									self:OnAuraFade(sid, "sync")
+									local miss = tonumber(self._auraSyncMissCount[sid]) or 0
+									miss = miss + 1
+									self._auraSyncMissCount[sid] = miss
+									if lastSeen > 0 and (now - lastSeen) < recentSeenGrace then
+										-- Keep state as-present for now; a later sync will confirm real removal.
+									elseif miss < missNeed then
+										-- Require multiple consecutive misses before treating as a real fade.
+										-- (Sync ticker runs ~0.5s; miss>=4 is ~2s of continuous absence.)
+									else
+										self._auraSyncMissCount[sid] = 0
+										self._auraSyncPresentCount[sid] = 0
+										self:OnAuraFade(sid, "sync")
+									end
 								end
 							end
 						end

@@ -1872,6 +1872,189 @@ function ZSBT.BuildTab_CombatText()
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},
+			inlineCritHeader = {
+				type  = "header",
+				name  = "Inline Crit Style",
+				order = 0.053,
+				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
+			},
+			inlineCritHelp = {
+				type  = "description",
+				name  = "These options only apply when Force Crits Inline is enabled. They let you add impact (scale/duration + lightweight FX) while keeping crits in the normal scroll flow.",
+				order = 0.054,
+				width = "full",
+				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
+			},
+			inlineCritScale = {
+				type  = "range",
+				name  = "Inline Crit Scale",
+				desc  = "Additional scale multiplier applied to crits while inline.",
+				order = 0.055,
+				min   = 0.8,
+				max   = 3.0,
+				step  = 0.05,
+				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
+				get   = function()
+					local ic = ZSBT.db.profile.general.inlineCrit
+					return (type(ic) == "table" and type(ic.scale) == "number") and ic.scale or 1.12
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
+					ZSBT.db.profile.general.inlineCrit.scale = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			inlineCritDurationMult = {
+				type  = "range",
+				name  = "Inline Crit Duration",
+				desc  = "Multiplier for how long inline crits stay on screen.",
+				order = 0.056,
+				min   = 0.5,
+				max   = 3.0,
+				step  = 0.05,
+				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
+				get   = function()
+					local ic = ZSBT.db.profile.general.inlineCrit
+					return (type(ic) == "table" and type(ic.durationMult) == "number") and ic.durationMult or 1.15
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
+					ZSBT.db.profile.general.inlineCrit.durationMult = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			inlineCritFx = {
+				type   = "select",
+				name   = "Inline Crit FX",
+				desc   = "Optional lightweight effect applied to inline crits (does not change placement).",
+				order  = 0.057,
+				values = { None = "None", Shake = "Shake", Pulse = "Pulse", Chromatic = "Chromatic" },
+				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
+				get    = function()
+					local ic = ZSBT.db.profile.general.inlineCrit
+					return (type(ic) == "table" and type(ic.fx) == "string" and ic.fx ~= "") and ic.fx or "None"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
+					ZSBT.db.profile.general.inlineCrit.fx = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			inlineCritFxIntensity = {
+				type  = "range",
+				name  = "Inline Crit FX Intensity",
+				order = 0.058,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				hidden = function()
+					if not (ZSBT.db.profile.general.forceCritsInline == true) then return true end
+					local ic = ZSBT.db.profile.general.inlineCrit
+					local fx = (type(ic) == "table" and ic.fx) or "None"
+					return fx == nil or fx == "" or fx == "None"
+				end,
+				get   = function()
+					local ic = ZSBT.db.profile.general.inlineCrit
+					return (type(ic) == "table" and type(ic.fxIntensity) == "number") and ic.fxIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
+					ZSBT.db.profile.general.inlineCrit.fxIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			inlineCritFontFace = {
+				type   = "select",
+				name   = "Inline Crit Font Face",
+				desc   = "Font used for inline crits. Leave blank to use the scroll area's normal font.",
+				order  = 0.059,
+				values = function()
+					local fonts = ZSBT.BuildFontDropdown()
+					fonts["__use_area__"] = "(Use Area Font)"
+					return fonts
+				end,
+				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
+				get    = function()
+					local ic = ZSBT.db.profile.general.inlineCrit
+					local f = (type(ic) == "table") and ic.face or nil
+					return f or "__use_area__"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
+					if val == "__use_area__" then
+						ZSBT.db.profile.general.inlineCrit.face = nil
+					else
+						ZSBT.db.profile.general.inlineCrit.face = val
+					end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			inlineCritFontOutline = {
+				type   = "select",
+				name   = "Inline Crit Outline",
+				desc   = "Outline style for inline crits. Leave blank to use the scroll area's normal outline.",
+				order  = 0.060,
+				values = function()
+					local o = ZSBT.ValuesFromKeys(ZSBT.OUTLINE_STYLES)
+					o["__use_area__"] = "(Use Area Outline)"
+					return o
+				end,
+				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
+				get    = function()
+					local ic = ZSBT.db.profile.general.inlineCrit
+					local v = (type(ic) == "table") and ic.outline or nil
+					return v or "__use_area__"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
+					if val == "__use_area__" then
+						ZSBT.db.profile.general.inlineCrit.outline = nil
+					else
+						ZSBT.db.profile.general.inlineCrit.outline = val
+					end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			inlineCritUseScale = {
+				type  = "toggle",
+				name  = "Inline Crit Uses Scale",
+				desc  = "When enabled, inline crit size is derived from the area's normal font size using Inline Crit Scale. When disabled, Inline Crit Font Size is used.",
+				order = 0.061,
+				width = "full",
+				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
+				get   = function()
+					local ic = ZSBT.db.profile.general.inlineCrit
+					return not (type(ic) == "table") or ic.useScale ~= false
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
+					ZSBT.db.profile.general.inlineCrit.useScale = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			inlineCritFontSize = {
+				type  = "range",
+				name  = "Inline Crit Font Size",
+				desc  = "Fixed font size for inline crits (only used if Inline Crit Uses Scale is disabled).",
+				order = 0.062,
+				min   = ZSBT.FONT_SIZE_MIN,
+				max   = 48,
+				step  = 1,
+				hidden = function()
+					if not (ZSBT.db.profile.general.forceCritsInline == true) then return true end
+					local ic = ZSBT.db.profile.general.inlineCrit
+					return not (type(ic) == "table") or ic.useScale ~= false
+				end,
+				get   = function()
+					local ic = ZSBT.db.profile.general.inlineCrit
+					return (type(ic) == "table" and type(ic.size) == "number") and ic.size or 28
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
+					ZSBT.db.profile.general.inlineCrit.size = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
 			critShockwaveIntensity = {
 				type  = "range",
 				name  = "Shockwave Intensity",
