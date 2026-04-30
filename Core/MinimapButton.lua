@@ -20,22 +20,28 @@ local BUTTON_NAME = "ZSBT_MinimapButton"
 local BUNDLED_ICON_TEXTURE = "Interface\\AddOns\\ZSBT\\Media\\Textures\\ZSBT_Icon.tga"
 local FALLBACK_ICON_TEXTURE = "Interface\\Buttons\\UI-OptionsButton"
 
-local function resolveBundledIconFileId()
-    if not GetFileIDFromPath then return nil end
-    local ok, fileId = pcall(GetFileIDFromPath, BUNDLED_ICON_TEXTURE)
-    if ok and type(fileId) == "number" and fileId > 0 then
-        return fileId
-    end
-    return nil
-end
-
-local function resolveFallbackIconFileId()
-    if not GetFileIDFromPath then return nil end
-    local ok, fileId = pcall(GetFileIDFromPath, FALLBACK_ICON_TEXTURE)
-    if ok and type(fileId) == "number" and fileId > 0 then
-        return fileId
-    end
-    return nil
+local function applyIconTexture(tex)
+	if not tex or not tex.SetTexture then return end
+	pcall(tex.SetTexture, tex, BUNDLED_ICON_TEXTURE)
+	local okId, fileId = pcall(function()
+		if tex.GetTextureFileID then
+			return tex:GetTextureFileID()
+		end
+		return nil
+	end)
+	if okId and type(fileId) == "number" and fileId > 0 then
+		return
+	end
+	local okGet, cur = pcall(tex.GetTexture, tex)
+	if (not okGet) or cur == nil or cur == "" then
+		pcall(tex.SetTexture, tex, FALLBACK_ICON_TEXTURE)
+		return
+	end
+	if tostring(cur) == tostring(BUNDLED_ICON_TEXTURE) then
+		-- Some clients keep the path even if the texture failed to resolve.
+		-- Use the fallback to guarantee a visible icon.
+		pcall(tex.SetTexture, tex, FALLBACK_ICON_TEXTURE)
+	end
 end
 
 -- Blizzard-style round minimap button art
@@ -44,6 +50,14 @@ local HIGHLIGHT_TEXTURE = "Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight"
 local CIRCLE_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 
 local DEFAULT_RADIUS = 80
+
+local ICON_SIZE = 18
+local ICON_OFFSET_X = 0
+local ICON_OFFSET_Y = 0
+local ICON_TEXCOORD_L = 0.07
+local ICON_TEXCOORD_R = 0.93
+local ICON_TEXCOORD_T = 0.07
+local ICON_TEXCOORD_B = 0.93
 
 local function getRadius(button)
     if Minimap and Minimap.GetWidth and Minimap.GetHeight and button and button.GetWidth then
@@ -184,8 +198,9 @@ function MM:Init()
     b:SetFrameStrata("MEDIUM")
     b:SetFrameLevel(8)
 
-    local bundledIconFileId = resolveBundledIconFileId()
-    local fallbackIconFileId = resolveFallbackIconFileId()
+    local function pickIconTexture()
+        return BUNDLED_ICON_TEXTURE
+    end
 
     local function addCircleMask(tex)
         if true then
@@ -205,19 +220,11 @@ function MM:Init()
     local icon = b:CreateTexture(nil, "ARTWORK")
     if icon.SetBlendMode then icon:SetBlendMode("BLEND") end
     if icon.SetDesaturated then icon:SetDesaturated(false) end
-    if fallbackIconFileId then
-        icon:SetTexture(fallbackIconFileId)
-    else
-        icon:SetTexture(FALLBACK_ICON_TEXTURE)
-    end
-    if bundledIconFileId then
-        icon:SetTexture(bundledIconFileId)
-    else
-        icon:SetTexture(BUNDLED_ICON_TEXTURE)
-    end
-    icon:SetSize(18, 18)
-    icon:SetPoint("CENTER", b, "CENTER", 0, 0)
-    icon:SetTexCoord(0.15, 0.85, 0.15, 0.85)
+    icon:SetTexture(pickIconTexture())
+    applyIconTexture(icon)
+    icon:SetSize(ICON_SIZE, ICON_SIZE)
+    icon:SetPoint("CENTER", b, "CENTER", ICON_OFFSET_X, ICON_OFFSET_Y)
+    icon:SetTexCoord(ICON_TEXCOORD_L, ICON_TEXCOORD_R, ICON_TEXCOORD_T, ICON_TEXCOORD_B)
     b.icon = icon
 
     addCircleMask(icon)
@@ -240,19 +247,11 @@ function MM:Init()
     local pushed = b:CreateTexture(nil, "ARTWORK")
     if pushed.SetBlendMode then pushed:SetBlendMode("BLEND") end
     if pushed.SetDesaturated then pushed:SetDesaturated(false) end
-    if fallbackIconFileId then
-        pushed:SetTexture(fallbackIconFileId)
-    else
-        pushed:SetTexture(FALLBACK_ICON_TEXTURE)
-    end
-    if bundledIconFileId then
-        pushed:SetTexture(bundledIconFileId)
-    else
-        pushed:SetTexture(BUNDLED_ICON_TEXTURE)
-    end
-    pushed:SetSize(18, 18)
-    pushed:SetPoint("CENTER", b, "CENTER", 1, -1)
-    pushed:SetTexCoord(0.15, 0.85, 0.15, 0.85)
+    pushed:SetTexture(pickIconTexture())
+    applyIconTexture(pushed)
+    pushed:SetSize(ICON_SIZE, ICON_SIZE)
+    pushed:SetPoint("CENTER", b, "CENTER", ICON_OFFSET_X + 1, ICON_OFFSET_Y - 1)
+    pushed:SetTexCoord(ICON_TEXCOORD_L, ICON_TEXCOORD_R, ICON_TEXCOORD_T, ICON_TEXCOORD_B)
 
     addCircleMask(pushed)
     b:SetPushedTexture(pushed)

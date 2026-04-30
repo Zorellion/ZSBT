@@ -1928,7 +1928,7 @@ function ZSBT.BuildTab_CombatText()
 				name   = "Inline Crit FX",
 				desc   = "Optional lightweight effect applied to inline crits (does not change placement).",
 				order  = 0.057,
-				values = { None = "None", Shake = "Shake", Pulse = "Pulse", Chromatic = "Chromatic" },
+				values = { None = "None", Shake = "Shake", Pulse = "Pulse", Chromatic = "Chromatic", Spin = "Spin" },
 				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
 				get    = function()
 					local ic = ZSBT.db.profile.general.inlineCrit

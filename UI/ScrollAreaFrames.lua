@@ -579,6 +579,9 @@ local function AE_RecycleEvent(ev)
 		pcall(ev.fs.SetTextColor, ev.fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
 		ev._zsbtChromOrigTextColor = nil
 	end
+	ev._zsbtSpinStart = nil
+	ev._zsbtSpinElapsed = nil
+	ev._zsbtSpinDoneOnce = nil
 	if ev._zsbtAfterimageFS1 then
 		RecycleFontString(ev._zsbtAfterimageFS1)
 		ev._zsbtAfterimageFS1 = nil
@@ -1190,6 +1193,9 @@ local function AE_UpdateEvent(ev, dt)
 	if ev.meta and ev.meta.isCrit and ev.meta.critAnim == "Area" then
 		pcall(function()
 			local fx = ev.meta.inlineCritFx
+			if fx ~= "Spin" and ev.fs and ev.fs.SetRotation then
+				pcall(ev.fs.SetRotation, ev.fs, 0)
+			end
 			if fx == "Shake" then
 				local inten = tonumber(ev.meta.inlineCritFxIntensity) or 1.0
 				if inten < 0 then inten = 0 end
@@ -1209,6 +1215,16 @@ local function AE_UpdateEvent(ev, dt)
 				if scaledSize ~= ev._lastFontSize then
 					ev._lastFontSize = scaledSize
 					pcall(ev.fs.SetFont, ev.fs, ev.fontFace, scaledSize, ev.outlineFlag or "OUTLINE")
+				end
+			elseif fx == "Spin" then
+				local inten = tonumber(ev.meta.inlineCritFxIntensity) or 1.0
+				if inten < 0 then inten = 0 end
+				if inten > 3.0 then inten = 3.0 end
+				local tWave = (ev.elapsedTime ~= nil) and ev.elapsedTime or (ev.elapsed or 0)
+				if ev.fs and ev.fs.SetRotation then
+					-- Continuous spin: intensity slider controls spins-per-second.
+					local spinsPerSec = 0.50 + (0.85 * inten)
+					pcall(ev.fs.SetRotation, ev.fs, (tWave * (math.pi * 2) * spinsPerSec))
 				end
 			elseif fx == "Chromatic" then
 				local inten = tonumber(ev.meta.inlineCritFxIntensity) or 1.0
@@ -1654,6 +1670,7 @@ AcquireFontString = function(parent)
         fs:SetAlpha(1)
 		pcall(fs.SetShadowColor, fs, 0, 0, 0, 0)
 		pcall(fs.SetShadowOffset, fs, 0, 0)
+		pcall(fs.SetRotation, fs, 0)
         local okFont, fontPath = pcall(fs.GetFont, fs)
         if okFont and not fontPath and fs.SetFont then
             pcall(fs.SetFont, fs, STANDARD_TEXT_FONT, 12, "")
@@ -1699,6 +1716,7 @@ RecycleFontString = function(fs)
     fs:SetParent(recyclingBin)
 	pcall(fs.SetShadowColor, fs, 0, 0, 0, 0)
 	pcall(fs.SetShadowOffset, fs, 0, 0)
+	pcall(fs.SetRotation, fs, 0)
     local okFont, fontPath = pcall(fs.GetFont, fs)
     if okFont and not fontPath and fs.SetFont then
         pcall(fs.SetFont, fs, STANDARD_TEXT_FONT, 12, "")
@@ -2972,6 +2990,8 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
     end
 
     local animFrame = AcquireAnimFrame()
+    local spinElapsed = 0
+    local spinDoneOnce = false
     animFrame:SetScript("OnUpdate", function(self, dt)
         elapsed = elapsed + dt
         local progress = elapsed / duration
@@ -2982,6 +3002,19 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             RecycleAnimFrame(self)
 			if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
             return
+        end
+
+        if meta and meta.isCrit and meta.critAnim == "Area" and fs and fs.SetRotation then
+            local fx = meta.inlineCritFx
+            if fx ~= "Spin" then
+                pcall(fs.SetRotation, fs, 0)
+            elseif fx == "Spin" then
+                local inten = tonumber(meta.inlineCritFxIntensity) or 1.0
+                if inten < 0 then inten = 0 end
+                if inten > 3.0 then inten = 3.0 end
+                local spinsPerSec = 0.50 + (0.85 * inten)
+                pcall(fs.SetRotation, fs, (elapsed * (math.pi * 2) * spinsPerSec))
+            end
         end
 
         local yOff2 = 0
