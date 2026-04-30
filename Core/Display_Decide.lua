@@ -652,7 +652,7 @@ function Display:Emit(areaName, text, color, meta)
             meta.critScale = (sc and sc > 0) and sc or 1.0
             if type(ic) == "table" then
 				local fx = ic.fx
-				if fx == "Shake" or fx == "Pulse" or fx == "Chromatic" then
+				if fx == "Shake" or fx == "Pulse" or fx == "Chromatic" or fx == "Spin" then
 					meta.inlineCritFx = fx
 				else
 					meta.inlineCritFx = "None"

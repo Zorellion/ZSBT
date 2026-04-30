@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.3.8
+- UI: simplified minimap button icon rendering and improved texture fallback/centering.
+
 ## 2.3.7
 - Triggers: reduced Bloodlust lockout false positives and duplicate alerts by making lockout debuff notifications core-driven (sync no longer emits lockout gain/fade).
 
