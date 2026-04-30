@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.3.9
+- UI: rebuilt minimap button to use embedded LibDataBroker + LibDBIcon for consistent icon rendering and tooltips.
+
 ## 2.3.8
 - UI: simplified minimap button icon rendering and improved texture fallback/centering.
 
