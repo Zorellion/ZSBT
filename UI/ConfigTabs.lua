@@ -2557,17 +2557,6 @@ function ZSBT.BuildTab_General()
 					elseif mm and mm.UpdateVisibility then
 						mm:UpdateVisibility()
 					end
-					local b = _G and _G["ZSBT_MinimapButton"]
-					if b then
-						if g.minimap.hide then
-							b:Hide()
-						else
-							b:Show()
-							if mm and mm.ApplyPosition then
-								mm:ApplyPosition()
-							end
-						end
-					end
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},

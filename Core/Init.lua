@@ -1698,17 +1698,6 @@ function Addon:HandleSlashCommand(input)
 		else
 			mm:UpdateVisibility()
 		end
-		local b = _G and _G["ZSBT_MinimapButton"]
-		if b then
-			if g.minimap.hide then
-				b:Hide()
-			else
-				b:Show()
-				if mm.ApplyPosition then
-					mm:ApplyPosition()
-				end
-			end
-		end
 		self:Print(("Minimap button %s."):format(g.minimap.hide and "hidden" or "shown"))
 		return
 	end
