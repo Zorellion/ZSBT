@@ -95,6 +95,7 @@ ZSBT.DEFAULTS = {
             power = true,
             procs = true,
             triggers = true,
+			externalAddons = true,
         },
 
 		notificationsRouting = {
@@ -110,6 +111,7 @@ ZSBT.DEFAULTS = {
 			tradeskillLearned = "Notifications",
 			interrupts = "Notifications",
 			caststops = "Notifications",
+			externalAddons = "Notifications",
 			cooldowns = "Notifications",
 			auras = "Notifications",
 			power = "Notifications",
@@ -130,6 +132,7 @@ ZSBT.DEFAULTS = {
 			tradeskillLearned = "Learned: %e",
 			interrupts = "%t Interrupted!",
 			caststops = "%t Interrupted!",
+			externalAddons = "%e",
 			cooldowns = "%e",
 			auras = "%e",
 			power = "%e",
@@ -148,6 +151,7 @@ ZSBT.DEFAULTS = {
 			lootCurrency = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			tradeskillUps = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			tradeskillLearned = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
+			externalAddons = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			cooldowns = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			auras = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			power = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },

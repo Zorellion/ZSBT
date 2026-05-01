@@ -834,15 +834,178 @@ function Core:Init()
     if self._initialized then return end
     self._initialized = true
 
-    if Addon and Addon.Dbg then
+    	if Addon and Addon.Dbg then
 		Addon:Dbg("core", 3, "Core:Init()")
 	elseif Addon and Addon.DebugPrint then
 		Addon:DebugPrint(1, "Core:Init()")
 	end
 
+	if self.InitLibSinkOutput then
+		self:InitLibSinkOutput()
+	end
+
     if self.IncomingProbe and self.IncomingProbe.Init then
         self.IncomingProbe:Init()
     end
+end
+
+function Core:InitLibSinkOutput()
+	if self._libSinkInitialized == true then return end
+	self._libSinkInitialized = true
+
+	local function getLibSink()
+		local t = type(LibStub)
+		if t ~= "function" and t ~= "table" then return nil end
+		return LibStub("LibSink-2.0", true)
+	end
+
+	local function getScrollAreasList()
+		local names = {}
+		local prof = ZSBT.db and ZSBT.db.profile
+		local areas = prof and prof.scrollAreas
+		if type(areas) ~= "table" then
+			return names
+		end
+		for areaName in pairs(areas) do
+			if type(areaName) == "string" and areaName ~= "" then
+				names[#names + 1] = areaName
+			end
+		end
+		table.sort(names)
+		return names
+	end
+
+	local function resolveAreaForExternal(addonObj, libSink)
+		local override = nil
+		if libSink and libSink.storageForAddon and addonObj then
+			local st = libSink.storageForAddon[addonObj]
+			override = st and st.sink20ScrollArea
+		end
+		if type(override) ~= "string" or override == "" then
+			if self.GetNotificationScrollArea then
+				override = self:GetNotificationScrollArea("externalAddons")
+			end
+		end
+		if type(override) ~= "string" or override == "" then
+			override = "Notifications"
+		end
+		local prof = ZSBT.db and ZSBT.db.profile
+		if prof and prof.scrollAreas and prof.scrollAreas[override] == nil then
+			override = "Notifications"
+		end
+		return override
+	end
+
+	local function applyNotificationStyle(category, baseColor)
+		local meta = { kind = "notification", category = category }
+		local finalColor = baseColor
+		local conf = (type(category) == "string" and category ~= "") and (self.GetNotificationPerTypeConfig and self:GetNotificationPerTypeConfig(category)) or nil
+		if conf then
+			local style = conf.style
+			if type(style) == "table" then
+				if type(style.color) == "table" and type(style.color.r) == "number" then
+					finalColor = style.color
+				end
+				if style.fontOverride == true then
+					meta.spellFontOverride = true
+					meta.spellFontFace = (type(style.fontFace) == "string" and style.fontFace ~= "") and style.fontFace or nil
+					meta.spellFontOutline = (type(style.fontOutline) == "string" and style.fontOutline ~= "") and style.fontOutline or nil
+					meta.spellFontSize = tonumber(style.fontSize)
+				end
+			end
+		end
+		return finalColor, meta
+	end
+
+	local function registerIfAvailable()
+		local libSink = getLibSink()
+		if not (libSink and libSink.RegisterSink) then
+			return false
+		end
+		if self._zsbtLibSinkRegistered == true then
+			return true
+		end
+
+		local function sinkHandler(addonObj, text, r, g, b, _, _, _, sticky, _, icon)
+			if type(text) ~= "string" then
+				text = tostring(text or "")
+			end
+			if type(icon) == "string" and icon ~= "" then
+				text = "|T" .. icon .. ":15:15:0:0:64:64:4:60:4:60|t " .. text
+			end
+			local area = resolveAreaForExternal(addonObj, libSink)
+			local color = { r = type(r) == "number" and r or 1, g = type(g) == "number" and g or 1, b = type(b) == "number" and b or 1 }
+			local finalColor, meta = applyNotificationStyle("externalAddons", color)
+			if sticky == true then
+				meta.sticky = true
+			end
+			if ZSBT.DisplayText then
+				ZSBT.DisplayText(area, text, finalColor, meta)
+			elseif self.Display and self.Display.Emit then
+				self.Display:Emit(area, text, finalColor, meta)
+			end
+		end
+
+		local ok = pcall(function()
+			libSink:RegisterSink(
+				"ZSBT",
+				"ZSBT",
+				"Route output to Zore's Scrolling Battle Text.",
+				sinkHandler,
+				getScrollAreasList,
+				true
+			)
+		end)
+		if ok then
+			self._zsbtLibSinkRegistered = true
+			local reg = LibStub and LibStub("AceConfigRegistry-3.0", true)
+			if reg and reg.NotifyChange then
+				pcall(reg.NotifyChange, reg, "ZSBT")
+				pcall(reg.NotifyChange, reg, "KalielsTracker")
+				pcall(reg.NotifyChange, reg, "SilverDragon")
+			end
+
+			pcall(function()
+				local aceAddon = LibStub and LibStub("AceAddon-3.0", true)
+				if not aceAddon then return end
+				local sd = aceAddon:GetAddon("SilverDragon", true)
+				if not sd then return end
+				local announce = sd:GetModule("Announce", true)
+				if not announce then return end
+				if type(announce.GetSinkAce3OptionsDataTable) ~= "function" then return end
+				local sinkConfig = announce:GetSinkAce3OptionsDataTable()
+				if type(sinkConfig) ~= "table" or type(sinkConfig.args) ~= "table" then return end
+				if sinkConfig.args.ZSBT ~= nil then return end
+				sinkConfig.args.ZSBT = {
+					type = "toggle",
+					name = "ZSBT",
+					desc = "Route output through ZSBT.",
+				}
+			end)
+
+			return true
+		end
+		return false
+	end
+
+	if registerIfAvailable() then
+		return
+	end
+
+	if self._libSinkWatchFrame then
+		return
+	end
+	self._libSinkWatchFrame = CreateFrame("Frame")
+	self._libSinkWatchFrame:RegisterEvent("ADDON_LOADED")
+	self._libSinkWatchFrame:SetScript("OnEvent", function()
+		if registerIfAvailable() then
+			if self._libSinkWatchFrame then
+				self._libSinkWatchFrame:UnregisterAllEvents()
+				self._libSinkWatchFrame:SetScript("OnEvent", nil)
+				self._libSinkWatchFrame = nil
+			end
+		end
+	end)
 end
 
 function Core:Enable()

@@ -3016,6 +3016,7 @@ function ZSBT.BuildTab_Notifications()
 		tradeskillUps = true,
 		tradeskillLearned = true,
 		power = true,
+		externalAddons = true,
 	}
 	local CATEGORY_LABELS = {
 		enterCombat = "Enter Combat",
@@ -3030,6 +3031,7 @@ function ZSBT.BuildTab_Notifications()
 		interrupts = "Interrupts (Successful)",
 		caststops = "Cast Stops (Stuns/CC)",
 		power = "Power",
+		externalAddons = "External Addons (LibSink)",
 	}
 	local TEMPLATE_DESCS = {
 		enterCombat = "Template codes: %e=event text.",
@@ -3044,6 +3046,7 @@ function ZSBT.BuildTab_Notifications()
 		interrupts = "Message template codes: %t=target, %s=your ability.",
 		caststops = "Message template codes: %t=target, %s=your ability.",
 		power = "Template codes: %e=event text.",
+		externalAddons = "Template codes: %e=event text.",
 	}
 	local DEFAULT_TEMPLATES = {
 		enterCombat = "%e",
@@ -3058,6 +3061,7 @@ function ZSBT.BuildTab_Notifications()
 		interrupts = "%t Interrupted!",
 		caststops = "%t Interrupted!",
 		power = "%e",
+		externalAddons = "%e",
 	}
 
 	local function getCat(key)
@@ -3661,6 +3665,7 @@ function ZSBT.BuildTab_Notifications()
 				set   = function(_, v) setCat("power", v) end,
 			},
 			powerRoute = routeSelect("power", 8.1),
+			externalAddons = buildLeafGroup("externalAddons", 9),
 		},
 	}
 end
