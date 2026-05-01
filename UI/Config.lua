@@ -3612,6 +3612,54 @@ function ZSBT.ApplyStrikeSilverStyling()
     local ACD = LibStub("AceConfigDialog-3.0", true)
     if not ACD then return end
 
+	local function after0(fn)
+		if C_Timer and type(C_Timer.After) == "function" then
+			pcall(C_Timer.After, 0, fn)
+		else
+			fn()
+		end
+	end
+
+    local function CaptureBackdropState(f)
+        if not f or f._zsbtPrevBackdropCaptured then return end
+        f._zsbtPrevBackdropCaptured = true
+        local okBD, bd = pcall(function()
+            if f.GetBackdrop then return f:GetBackdrop() end
+            return nil
+        end)
+        local okC, r, g, b, a = pcall(function()
+            if f.GetBackdropColor then return f:GetBackdropColor() end
+            return nil
+        end)
+        local okBC, br, bg, bb, ba = pcall(function()
+            if f.GetBackdropBorderColor then return f:GetBackdropBorderColor() end
+            return nil
+        end)
+        f._zsbtPrevBackdrop = okBD and bd or nil
+        f._zsbtPrevBackdropColor = okC and { r, g, b, a } or nil
+        f._zsbtPrevBackdropBorderColor = okBC and { br, bg, bb, ba } or nil
+    end
+
+    local function RestoreBackdropState(f)
+        if not f or not f._zsbtPrevBackdropCaptured then return end
+        if f._zsbtPrevBackdrop ~= nil and f.SetBackdrop then
+            pcall(function() f:SetBackdrop(f._zsbtPrevBackdrop) end)
+        end
+        if f._zsbtPrevBackdropColor and f.SetBackdropColor then
+            local c = f._zsbtPrevBackdropColor
+            pcall(function() f:SetBackdropColor(c[1], c[2], c[3], c[4]) end)
+        end
+        if f._zsbtPrevBackdropBorderColor and f.SetBackdropBorderColor then
+            local c = f._zsbtPrevBackdropBorderColor
+            pcall(function() f:SetBackdropBorderColor(c[1], c[2], c[3], c[4]) end)
+        end
+        f._zsbtPrevBackdropCaptured = nil
+        f._zsbtPrevBackdrop = nil
+        f._zsbtPrevBackdropColor = nil
+        f._zsbtPrevBackdropBorderColor = nil
+        f.zsbtStyled = nil
+    end
+
     local function ShouldStyleApp(appName)
         return appName == "ZSBT"
             or appName == "ZSBT_SpellRules"
@@ -3619,7 +3667,7 @@ function ZSBT.ApplyStrikeSilverStyling()
             or appName == "ZSBT_SpellRuleEditor"
             or appName == "ZSBT_BuffRuleEditor"
             or appName == "ZSBT_TriggerEditor"
-			or appName == "ZSBT_Debug"
+            or appName == "ZSBT_Debug"
     end
 
     local function ApplySavedMainConfigGeometry(f)
@@ -3640,8 +3688,8 @@ function ZSBT.ApplyStrikeSilverStyling()
         if w and h and w > 200 and h > 200 then
             pcall(function() f:SetSize(w, h) end)
         end
-        if C_Timer and C_Timer.After then
-            C_Timer.After(0, function()
+        if C_Timer and type(C_Timer.After) == "function" then
+            pcall(C_Timer.After, 0, function()
                 if f then f._zsbtApplyingGeometry = false end
             end)
         else
@@ -3661,15 +3709,17 @@ function ZSBT.ApplyStrikeSilverStyling()
         local dk = ZSBT.COLORS.DARK
         local border = ZSBT.COLORS.BORDER
 
+        -- AceConfigDialog can reuse the same underlying AceGUI Frame for multiple apps.
+        -- Capture the pre-ZSBT style so we can restore it when ZSBT closes.
+        CaptureBackdropState(f)
+
         if appName == "ZSBT" then
-            if C_Timer and C_Timer.After then
-                C_Timer.After(0, function() ApplySavedMainConfigGeometry(f) end)
-            else
-                ApplySavedMainConfigGeometry(f)
-            end
+            after0(function() ApplySavedMainConfigGeometry(f) end)
             if not f._zsbtSizeHooked and f.HookScript then
                 f._zsbtSizeHooked = true
                 f:HookScript("OnHide", function()
+                    -- Restore any shared frame styling so other addons (e.g. ElvUI) aren't affected.
+                    RestoreBackdropState(f)
                     if not (ZSBT and ZSBT.db and ZSBT.db.char) then return end
                     if f._zsbtApplyingGeometry == true then return end
                     ZSBT.db.char.ui = ZSBT.db.char.ui or {}
@@ -3745,11 +3795,7 @@ function ZSBT.ApplyStrikeSilverStyling()
         local frame = self.OpenFrames and self.OpenFrames[appName]
         if not frame or not frame.frame then return end
         if appName == "ZSBT" then
-            if C_Timer and C_Timer.After then
-                C_Timer.After(0, function() ApplySavedMainConfigGeometry(frame.frame) end)
-            else
-                ApplySavedMainConfigGeometry(frame.frame)
-            end
+            after0(function() ApplySavedMainConfigGeometry(frame.frame) end)
         end
     end)
 end

@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.3.9b
+- UI: fixed StrikeSilver config styling to restore shared AceConfigDialog backdrops (prevents ElvUI config background override) and fixed nil errors on open.
+
 ## 2.3.9
 - UI: rebuilt minimap button to use embedded LibDataBroker + LibDBIcon for consistent icon rendering and tooltips.
 
