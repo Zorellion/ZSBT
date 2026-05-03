@@ -1,9 +1,12 @@
 # Changelog
 
-## 2.4.0.beta
+## 2.4.0
 - Notifications: added LibSink-2.0 output support so other addons can route notifications into ZSBT.
 - Notifications: added a new per-type notification category "External Addons (LibSink)" with routing/template/style options.
 - Compatibility: fixed LibSink registration when LibStub is implemented as a callable table (ensures ZSBT appears in LibSink output lists).
+- Compatibility: improved live refresh of LibSink output options in AceConfig UIs so newly registered sinks appear without UI errors (including SilverDragon announce output).
+- Loot: added an option to display looted money using coin icons (no zero placeholders), configurable per notification type.
+- Media: added a new setting to choose which WoW audio channel ZSBT uses for playing sounds (Master/SFX/Music/Ambience/Dialog).
 
 ## 2.3.9b
 - UI: fixed StrikeSilver config styling to restore shared AceConfigDialog backdrops (prevents ElvUI config background override) and fixed nil errors on open.

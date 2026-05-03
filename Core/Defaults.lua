@@ -140,6 +140,10 @@ ZSBT.DEFAULTS = {
 			triggers = "%e",
 		},
 
+		notificationsMoneyFormat = {
+			lootMoney = "text",
+		},
+
 		notificationsPerType = {
 			combatState = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			enterCombat = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None", stopOnLeaveCombat = false } },
@@ -361,6 +365,7 @@ ZSBT.DEFAULTS = {
         -- Tab 8: Media
         ------------------------------------------------------------------------
         media = {
+            soundChannel = "Master",
             sounds = {
                 lowHealth     = "None",
                 cooldownReady = "None",

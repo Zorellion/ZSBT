@@ -3352,6 +3352,32 @@ function ZSBT.BuildTab_Notifications()
 					set = function(_, v) setCat(key, v) end,
 				}
 				args.route = routeSelect(key, 1.1)
+				if key == "lootMoney" then
+					args.moneyFormat = {
+						type = "select",
+						name = "Money Format",
+						desc = "Choose how looted money is displayed.",
+						order = 1.15,
+						width = "normal",
+						values = {
+							text = "Text",
+							icons = "Coin Icons",
+						},
+						get = function()
+							local p = ZSBT.db and ZSBT.db.profile
+							local t = p and p.notificationsMoneyFormat
+							local v = t and t.lootMoney
+							if type(v) ~= "string" or v == "" then return "text" end
+							return v
+						end,
+						set = function(_, v)
+							ZSBT.db.profile.notificationsMoneyFormat = ZSBT.db.profile.notificationsMoneyFormat or {}
+							if v ~= "icons" then v = "text" end
+							ZSBT.db.profile.notificationsMoneyFormat.lootMoney = v
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					}
+				end
 				args.template = {
 					type = "input",
 					name = "Template",
@@ -8921,6 +8947,33 @@ function ZSBT.BuildTab_Media()
                 name  = "Sound Events",
                 order = 1,
             },
+			soundChannel = {
+				type = "select",
+				name = "Sound Channel",
+				desc = "Choose which audio channel ZSBT uses for playing sounds.",
+				order = 1.1,
+				width = "normal",
+				values = {
+					Master = "Master",
+					SFX = "SFX",
+					Music = "Music",
+					Ambience = "Ambience",
+					Dialog = "Dialog",
+				},
+				get = function()
+					local p = ZSBT.db and ZSBT.db.profile
+					local media = p and p.media
+					local v = media and media.soundChannel
+					if type(v) ~= "string" or v == "" then return "Master" end
+					return v
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.media = ZSBT.db.profile.media or {}
+					if type(v) ~= "string" or v == "" then v = "Master" end
+					ZSBT.db.profile.media.soundChannel = v
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
             -- Low Health sound: standard select
             lowHealthSound = {
                 type   = "select",
