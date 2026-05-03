@@ -1096,6 +1096,16 @@ function Core:InitTradeSkillTracking()
 		return v
 	end
 
+	local function getMoneyFormat(key, fallback)
+		local p = ZSBT.db and ZSBT.db.profile
+		local t = p and p.notificationsMoneyFormat
+		local v = t and t[key]
+		if type(v) ~= "string" or v == "" then
+			return fallback
+		end
+		return v
+	end
+
 	local function applyTemplate(tpl, ctx)
 		if type(tpl) ~= "string" or tpl == "" then return nil end
 		ctx = ctx or {}
@@ -3337,6 +3347,16 @@ function Core:InitLootTracking()
 		return v
 	end
 
+	local function getMoneyFormat(key, fallback)
+		local p = ZSBT.db and ZSBT.db.profile
+		local t = p and p.notificationsMoneyFormat
+		local v = t and t[key]
+		if type(v) ~= "string" or v == "" then
+			return fallback
+		end
+		return v
+	end
+
 	local function applyTemplate(tpl, ctx)
 		if type(tpl) ~= "string" or tpl == "" then return nil end
 		ctx = ctx or {}
@@ -3397,6 +3417,17 @@ function Core:InitLootTracking()
 	local GOLD_PAT = GOLD and escapePattern(GOLD) or nil
 	local SILVER_PAT = SILVER and escapePattern(SILVER) or nil
 	local COPPER_PAT = COPPER and escapePattern(COPPER) or nil
+
+	local function parseMoneyStringToCopper(moneyString)
+		if type(moneyString) ~= "string" or moneyString == "" then return nil end
+		local g, s, c = 0, 0, 0
+		if GOLD_PAT then g = tonumber(moneyString:match("(%d+)%s*" .. GOLD_PAT) or "0") or 0 end
+		if SILVER_PAT then s = tonumber(moneyString:match("(%d+)%s*" .. SILVER_PAT) or "0") or 0 end
+		if COPPER_PAT then c = tonumber(moneyString:match("(%d+)%s*" .. COPPER_PAT) or "0") or 0 end
+		local total = g * 10000 + s * 100 + c
+		if total <= 0 then return nil end
+		return total
+	end
 
 	local function recolorMoneyString(moneyString)
 		if type(moneyString) ~= "string" or moneyString == "" then return moneyString end
@@ -3461,79 +3492,90 @@ function Core:InitLootTracking()
 				show = true
 			end
 		end
+
 		return show
 	end
 
-    self._lootFrame = CreateFrame("Frame")
-    self._lootFrame:RegisterEvent("CHAT_MSG_LOOT")
-    self._lootFrame:RegisterEvent("CHAT_MSG_MONEY")
-	self._lootFrame:RegisterEvent("CHAT_MSG_CURRENCY")
+	self._lootFrame = CreateFrame("Frame")
+	self._lootFrame:RegisterEvent("CHAT_MSG_LOOT")
+	self._lootFrame:RegisterEvent("CHAT_MSG_MONEY")
+    self._lootFrame:RegisterEvent("CHAT_MSG_CURRENCY")
     self._lootFrame:SetScript("OnEvent", function(_, event, msg)
         if not Core:IsMasterEnabled() then return end
         if not msg or type(msg) ~= "string" then return end
         if not ZSBT.IsSafeString(msg) then return end
 
         if event == "CHAT_MSG_MONEY" then
-	        	local d, moneyString = tryMatch(moneyDefs, msg)
-			local text = recolorMoneyString(moneyString or msg)
-			local tpl = getTemplate("lootMoney", "+%e")
-			local out = applyTemplate(tpl, { e = text })
-			if out and out ~= "" then
-				Core:EmitNotification(out, {r = 1.0, g = 0.85, b = 0.0}, "lootMoney")
-			end
+            local d, moneyString = tryMatch(moneyDefs, msg)
+            local fmt = getMoneyFormat("lootMoney", "text")
+            local text = nil
+            if fmt == "icons" and GetCoinTextureString then
+                local copper = parseMoneyStringToCopper(moneyString or msg)
+                if copper then
+                    text = GetCoinTextureString(copper)
+                end
+            end
+            if not text then
+                text = recolorMoneyString(moneyString or msg)
+            end
+            local tpl = getTemplate("lootMoney", "+%e")
+            local out = applyTemplate(tpl, { e = text })
+            if out and out ~= "" then
+                Core:EmitNotification(out, {r = 1.0, g = 0.85, b = 0.0}, "lootMoney")
+            end
         elseif event == "CHAT_MSG_LOOT" then
-			local d, itemLinkOrName, amount = tryMatch(lootDefs, msg)
-			local loot = getLootSettings()
-			if d and d.isCreate == true and loot.showCreated ~= true then
-				return
-			end
-			local itemLink = itemLinkOrName
-			if type(itemLink) ~= "string" or itemLink == "" then
-				return
-			end
-			if not shouldShowItem(itemLink) then
-				return
-			end
-			local numLooted = tonumber(amount) or 1
-			local total = nil
-			if C_Item and C_Item.GetItemCount then
-				total = C_Item.GetItemCount(itemLink)
-			elseif GetItemCount then
-				total = GetItemCount(itemLink)
-			end
-			if type(total) ~= "number" or total <= 0 then
-				total = numLooted
-			else
-				total = total + numLooted
-			end
-			local tpl = getTemplate("lootItems", "+%a %e (%t)")
-			local out = applyTemplate(tpl, { e = itemLink, a = numLooted, t = total })
-			if out and out ~= "" then
-				Core:EmitNotification(out, {r = 0.6, g = 0.4, b = 1.0}, "lootItems")
-			end
-		elseif event == "CHAT_MSG_CURRENCY" then
-			local d, currencyLinkOrName, amount = tryMatch(currencyDefs, msg)
-			local link = currencyLinkOrName
-			if type(link) ~= "string" or link == "" then
-				return
-			end
-			local numLooted = tonumber(amount) or 1
-			local text = link
-			local total = nil
-			if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfoFromLink then
-				local info = C_CurrencyInfo.GetCurrencyInfoFromLink(link)
-				if info and type(info.quantity) == "number" then
-					total = info.quantity
-				end
-			end
-			if type(total) ~= "number" or total < 0 then
-				total = 0
-			end
-			local tpl = getTemplate("lootCurrency", "+%a %e (%t)")
-			local out = applyTemplate(tpl, { e = text, a = numLooted, t = total })
-			if out and out ~= "" then
-				Core:EmitNotification(out, {r = 1.0, g = 0.82, b = 0.0}, "lootCurrency")
-			end
+            local d, itemLinkOrName, amount = tryMatch(lootDefs, msg)
+            local loot = getLootSettings()
+            if d and d.isCreate == true and loot.showCreated ~= true then
+                return
+            end
+            local itemLink = itemLinkOrName
+            if type(itemLink) ~= "string" or itemLink == "" then
+                return
+            end
+            if not shouldShowItem(itemLink) then
+                return
+            end
+            local numLooted = tonumber(amount) or 1
+            local total = nil
+            if C_Item and C_Item.GetItemCount then
+                total = C_Item.GetItemCount(itemLink)
+            elseif GetItemCount then
+                total = GetItemCount(itemLink)
+            end
+            if type(total) ~= "number" or total <= 0 then
+                total = numLooted
+            else
+                total = total + numLooted
+            end
+            local tpl = getTemplate("lootItems", "+%a %e (%t)")
+            local out = applyTemplate(tpl, { e = itemLink, a = numLooted, t = total })
+            if out and out ~= "" then
+                Core:EmitNotification(out, {r = 0.6, g = 0.4, b = 1.0}, "lootItems")
+            end
+        elseif event == "CHAT_MSG_CURRENCY" then
+            local d, currencyLinkOrName, amount = tryMatch(currencyDefs, msg)
+            local link = currencyLinkOrName
+            if type(link) ~= "string" or link == "" then
+                return
+            end
+            local numLooted = tonumber(amount) or 1
+            local text = link
+            local total = nil
+            if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfoFromLink then
+                local info = C_CurrencyInfo.GetCurrencyInfoFromLink(link)
+                if info and type(info.quantity) == "number" then
+                    total = info.quantity
+                end
+            end
+            if type(total) ~= "number" or total < 0 then
+                total = 0
+            end
+            local tpl = getTemplate("lootCurrency", "+%a %e (%t)")
+            local out = applyTemplate(tpl, { e = text, a = numLooted, t = total })
+            if out and out ~= "" then
+                Core:EmitNotification(out, {r = 1.0, g = 0.82, b = 0.0}, "lootCurrency")
+            end
         end
     end)
 end

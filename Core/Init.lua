@@ -1072,7 +1072,13 @@ function Addon:OnInitialize()
 			if not soundKey or soundKey == "None" then return end
 			local path = LSM:Fetch("sound", soundKey)
 			if path then
-				local _, handle = PlaySoundFile(path, "Master")
+				local p = ZSBT.db and ZSBT.db.profile
+				local media = p and p.media
+				local channel = media and media.soundChannel
+				if type(channel) ~= "string" or channel == "" then
+					channel = "Master"
+				end
+				local _, handle = PlaySoundFile(path, channel)
 				return handle
 			end
 		end
