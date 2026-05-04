@@ -987,60 +987,34 @@ function Engine:flushBucket()
 				end
 				if ZSBT.Core and ZSBT.Core.EmitNotification then
 					ZSBT.Core._lastHonorNotifAt = GetTime()
-					ZSBT.Core:EmitNotification(text, {r = 1.0, g = 0.5, b = 0.0}, "progress")
+					ZSBT.Core:EmitNotification(text, {r = 1.0, g = 0.5, b = 0.0}, "honor")
 				end
 			elseif et == "COMBAT_TEXT_XP" then
 				local text = "XP"
-				do
-					local n = coerceProgressAmount(sample.amount)
-					if not n then
-						n = coerceProgressAmount(sample.amountText)
+				pcall(function()
+					local xp = tostring(sample.amount or "")
+					xp = xp:gsub(",", "")
+					if xp ~= "" then
+						text = "+" .. xp .. " XP"
 					end
-					if not n and sample.rawPipeId then
-						local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
-						local val = ec and ec._rawPipe[sample.rawPipeId]
-						n = coerceProgressAmount(val)
-						if ec then ec._rawPipe[sample.rawPipeId] = nil end
-					end
-					if n then
-						text = "+" .. tostring(math.floor(n + 0.5)) .. " XP"
-					end
-				end
+				end)
 				if ZSBT.Core and ZSBT.Core.EmitNotification then
 					ZSBT.Core._lastXPNotifAt = GetTime()
-					ZSBT.Core:EmitNotification(text, {r = 0.6, g = 0.4, b = 1.0}, "progress")
+					ZSBT.Core:EmitNotification(text, {r = 0.6, g = 0.4, b = 1.0}, "playerXP")
 				end
 			elseif et == "COMBAT_TEXT_REP" then
 				local text = "Reputation"
-				local hasAmount = false
-				do
-					local n = coerceProgressAmount(sample.amount)
-					if not n then
-						n = coerceProgressAmount(sample.amountText)
+				local ok = false
+				pcall(function()
+					local rep = tostring(sample.amount or "")
+					rep = rep:gsub(",", "")
+					local faction = tostring(sample.name or "")
+					if rep ~= "" and faction ~= "" then
+						text = "+" .. rep .. " " .. faction
+						ok = true
 					end
-					if not n and sample.rawPipeId then
-						local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
-						local val = ec and ec._rawPipe[sample.rawPipeId]
-						n = coerceProgressAmount(val)
-						if ec then ec._rawPipe[sample.rawPipeId] = nil end
-					end
-					if not n and ZSBT.Core and ZSBT.Core.ComputeWatchedReputationDelta then
-						local delta = ZSBT.Core:ComputeWatchedReputationDelta()
-						if type(delta) == "number" and delta ~= 0 then
-							n = math.abs(delta)
-						end
-					end
-					if n then
-						hasAmount = true
-						local factionName = ZSBT.Core and ZSBT.Core.GetWatchedFactionName and ZSBT.Core:GetWatchedFactionName() or nil
-						if type(factionName) == "string" and factionName ~= "" then
-							text = "+" .. tostring(math.floor(n + 0.5)) .. " " .. factionName
-						else
-							text = "+" .. tostring(math.floor(n + 0.5)) .. " Rep"
-						end
-					end
-				end
-				if hasAmount and ZSBT.Core and ZSBT.Core.EmitNotification then
+				end)
+				if ok and ZSBT.Core and ZSBT.Core.EmitNotification then
 					local tNow = GetTime()
 					local dedupWindow = 1.0
 					local fallbackDelay = 0.25
@@ -1049,12 +1023,12 @@ function Engine:flushBucket()
 							if not ZSBT.Core or not ZSBT.Core.EmitNotification then return end
 							if (GetTime() - (ZSBT.Core._lastRepNotifAt or 0)) < dedupWindow then return end
 							ZSBT.Core._lastRepNotifAt = GetTime()
-							ZSBT.Core:EmitNotification(text, {r = 0.0, g = 0.8, b = 0.6}, "progress")
+							ZSBT.Core:EmitNotification(text, {r = 0.0, g = 0.8, b = 0.6}, "reputation")
 						end)
 					else
 						if (tNow - (ZSBT.Core._lastRepNotifAt or 0)) >= dedupWindow then
 							ZSBT.Core._lastRepNotifAt = tNow
-							ZSBT.Core:EmitNotification(text, {r = 0.0, g = 0.8, b = 0.6}, "progress")
+							ZSBT.Core:EmitNotification(text, {r = 0.0, g = 0.8, b = 0.6}, "reputation")
 						end
 					end
 				end

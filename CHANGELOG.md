@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.4.1
+- Notifications: split Progress notifications into separate categories for Player XP, Honor, and Reputation (individually configurable).
+- Migration: added a one-time profile migration to copy legacy Progress settings to the new categories and remove the legacy keys.
+- UI: restored Notifications category layout so Enter/Leave Combat and Loot/Trade Skill alerts appear as their own categories.
+
 ## 2.4.0
 - Notifications: added LibSink-2.0 output support so other addons can route notifications into ZSBT.
 - Notifications: added a new per-type notification category "External Addons (LibSink)" with routing/template/style options.

@@ -403,7 +403,67 @@ function Addon:OnInitialize()
 		self.db.global.migrations.diagnosticsDebugChannels_v1 = true
 	end
 
+	-- Migration: split legacy Notifications "progress" category into
+	-- playerXP / honor / reputation (and remove legacy keys afterwards).
+	local function migrateNotificationsProgressSplit_v1()
+		if not self.db then return end
+		self.db.global = self.db.global or {}
+		self.db.global.migrations = self.db.global.migrations or {}
+		if self.db.global.migrations.notificationsProgressSplit_v1 == true then return end
+
+		local function copyIfMissing(tbl, srcKey, dstKey)
+			if type(tbl) ~= "table" then return end
+			if tbl[dstKey] ~= nil then return end
+			if tbl[srcKey] == nil then return end
+			tbl[dstKey] = tbl[srcKey]
+		end
+
+		local function moveCategory(prof)
+			if type(prof) ~= "table" then return end
+			if type(prof.notifications) == "table" and prof.notifications.progress ~= nil then
+				copyIfMissing(prof.notifications, "progress", "playerXP")
+				copyIfMissing(prof.notifications, "progress", "honor")
+				copyIfMissing(prof.notifications, "progress", "reputation")
+			end
+			if type(prof.notificationsRouting) == "table" and prof.notificationsRouting.progress ~= nil then
+				copyIfMissing(prof.notificationsRouting, "progress", "playerXP")
+				copyIfMissing(prof.notificationsRouting, "progress", "honor")
+				copyIfMissing(prof.notificationsRouting, "progress", "reputation")
+			end
+			if type(prof.notificationsTemplates) == "table" and prof.notificationsTemplates.progress ~= nil then
+				copyIfMissing(prof.notificationsTemplates, "progress", "playerXP")
+				copyIfMissing(prof.notificationsTemplates, "progress", "honor")
+				copyIfMissing(prof.notificationsTemplates, "progress", "reputation")
+			end
+			if type(prof.notificationsPerType) == "table" and type(prof.notificationsPerType.progress) == "table" then
+				copyIfMissing(prof.notificationsPerType, "progress", "playerXP")
+				copyIfMissing(prof.notificationsPerType, "progress", "honor")
+				copyIfMissing(prof.notificationsPerType, "progress", "reputation")
+			end
+
+			-- Cleanup legacy keys (avoid leaving dead settings behind).
+			if type(prof.notifications) == "table" then prof.notifications.progress = nil end
+			if type(prof.notificationsRouting) == "table" then prof.notificationsRouting.progress = nil end
+			if type(prof.notificationsTemplates) == "table" then prof.notificationsTemplates.progress = nil end
+			if type(prof.notificationsPerType) == "table" then prof.notificationsPerType.progress = nil end
+		end
+
+		-- Apply to all profiles.
+		local profiles = self.db.profiles
+		if type(profiles) == "table" then
+			for _, prof in pairs(profiles) do
+				moveCategory(prof)
+			end
+		end
+
+		-- Also apply to currently active profile (safety).
+		moveCategory(self.db.profile)
+
+		self.db.global.migrations.notificationsProgressSplit_v1 = true
+	end
+
 	migrateDiagnosticsDebugChannels_v1()
+	migrateNotificationsProgressSplit_v1()
 
 	ZSBT.Presets = ZSBT.Presets or {}
 	local Presets = ZSBT.Presets

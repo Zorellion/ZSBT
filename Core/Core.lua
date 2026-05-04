@@ -877,8 +877,31 @@ function Core:InitLibSinkOutput()
 
 	local function resolveAreaForExternal(addonObj, libSink)
 		local override = nil
-		if libSink and libSink.storageForAddon and addonObj then
-			local st = libSink.storageForAddon[addonObj]
+		if addonObj then
+			local st = nil
+			if libSink and libSink.storageForAddon then
+				st = libSink.storageForAddon[addonObj]
+			end
+			if type(st) ~= "table" then
+				local candidates = {
+					addonObj.sink_opts,
+					addonObj.sinkOpts,
+					addonObj.db and addonObj.db.profile and addonObj.db.profile.sink_opts,
+					addonObj.db and addonObj.db.profile and addonObj.db.profile.sinkOpts,
+					addonObj.db and addonObj.db.sink_opts,
+					addonObj.db and addonObj.db.sinkOpts,
+					addonObj.db and addonObj.db.profile,
+					addonObj.db,
+					addonObj.profile,
+				}
+				for i = 1, #candidates do
+					local c = candidates[i]
+					if type(c) == "table" and type(c.sink20ScrollArea) ~= "nil" then
+						st = c
+						break
+					end
+				end
+			end
 			override = st and st.sink20ScrollArea
 		end
 		if type(override) ~= "string" or override == "" then
@@ -3854,7 +3877,7 @@ function Core:InitProgressTracking()
 				elseif isSafe then
 					if (t - Core._lastXPNotifAt) < PROGRESS_DEDUP_WINDOW then return end
 					Core._lastXPNotifAt = t
-					Core:EmitNotification("+" .. xp .. " XP", {r = 0.6, g = 0.4, b = 1.0}, "progress")
+					Core:EmitNotification("+" .. xp .. " XP", {r = 0.6, g = 0.4, b = 1.0}, "playerXP")
 				end
 			end
         elseif event == "CHAT_MSG_COMBAT_HONOR_GAIN" then
@@ -3863,7 +3886,7 @@ function Core:InitProgressTracking()
             if honor then
                 honor = honor:gsub(",", "")
                 Core._lastHonorNotifAt = t
-                Core:EmitNotification("+" .. honor .. " Honor", {r = 1.0, g = 0.5, b = 0.0}, "progress")
+				Core:EmitNotification("+" .. honor .. " Honor", {r = 1.0, g = 0.5, b = 0.0}, "honor")
             end
 		elseif event == "CHAT_MSG_COMBAT_FACTION_CHANGE" or event == "CHAT_MSG_COMBAT_FACTION_CHANGE_STAT" then
 			if (t - Core._lastRepNotifAt) < PROGRESS_DEDUP_WINDOW then return end
@@ -3871,9 +3894,9 @@ function Core:InitProgressTracking()
 			if delta and faction then
 				Core._lastRepNotifAt = t
 				if delta > 0 then
-					Core:EmitNotification("+" .. tostring(delta) .. " " .. faction, {r = 0.0, g = 0.8, b = 0.6}, "progress")
+					Core:EmitNotification("+" .. tostring(delta) .. " " .. faction, {r = 0.0, g = 0.8, b = 0.6}, "reputation")
 				else
-					Core:EmitNotification(tostring(delta) .. " " .. faction, {r = 0.8, g = 0.2, b = 0.2}, "progress")
+					Core:EmitNotification(tostring(delta) .. " " .. faction, {r = 0.8, g = 0.2, b = 0.2}, "reputation")
 				end
 			end
         end
