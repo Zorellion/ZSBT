@@ -612,13 +612,29 @@ FireReady = function(spellId, method)
 	end
 
     local decide = ZSBT.Core and ZSBT.Core.Cooldowns
-    if decide and decide.OnCooldownReady then
-        decide:OnCooldownReady({
-            spellId   = spellId,
-            spellName = spellName,
-            timestamp = GetTime(),
-        })
-    end
+	if decide and decide.OnCooldownReady then
+		decide:OnCooldownReady({
+			spellId   = spellId,
+			spellName = spellName,
+			timestamp = GetTime(),
+		})
+	end
+	pcall(function()
+		local LibStub = _G.LibStub
+		if not LibStub or type(LibStub.GetLibrary) ~= "function" then return end
+		local lcp = LibStub:GetLibrary("LibCombatPulse-1.0", true)
+		if not (lcp and lcp.Emit) then return end
+		lcp:Emit({
+			kind = "cooldown_ready",
+			eventType = "COOLDOWN_READY",
+			direction = "outgoing",
+			spellId = spellId,
+			spellName = spellName,
+			method = method,
+			timestamp = GetTime(),
+			confidence = "HIGH",
+		})
+	end)
 end
 
 ScheduleReadyTimer = function(spellId, startTime, duration, source)

@@ -2252,6 +2252,26 @@ function Core:EmitInterruptAlert(text, category, ctx)
 	if category and not self:IsNotificationCategoryEnabled(category) then
 		return
 	end
+	pcall(function()
+		local LibStub = _G.LibStub
+		if not LibStub or type(LibStub.GetLibrary) ~= "function" then return end
+		local lcp = LibStub:GetLibrary("LibCombatPulse-1.0", true)
+		if not (lcp and lcp.Emit) then return end
+		ctx = type(ctx) == "table" and ctx or {}
+		local kind = (category == "interrupts") and "interrupt" or ((category == "caststops") and "cast_stop" or nil)
+		if not kind then return end
+		local et = (category == "interrupts") and "INTERRUPT" or ((category == "caststops") and "CAST_STOP" or "INTERRUPT")
+		lcp:Emit({
+			kind = kind,
+			eventType = et,
+			direction = "outgoing",
+			spellId = tonumber(self._lastStopperSpellId),
+			spellName = ctx.s,
+			targetName = ctx.t,
+			timestamp = (GetTime and GetTime()) or 0,
+			confidence = "HIGH",
+		})
+	end)
 	local p = ZSBT.db and ZSBT.db.profile
 	local conf = p and p.interruptAlerts
 	local area = (conf and type(conf.scrollArea) == "string" and conf.scrollArea ~= "") and conf.scrollArea or nil
