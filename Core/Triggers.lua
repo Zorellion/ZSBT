@@ -253,6 +253,22 @@ function Triggers:OnAuraGain(spellId, source)
 		self._recentAuraLockoutAt[name] = now
 	end
 	TrigDebug("OnAuraGain EMITTING spellId=" .. tostring(spellId) .. " name=" .. tostring(name) .. " src=" .. tostring(source or "?"))
+	pcall(function()
+		local LibStub = _G.LibStub
+		if not LibStub or type(LibStub.GetLibrary) ~= "function" then return end
+		local lcp = LibStub:GetLibrary("LibCombatPulse-1.0", true)
+		if not (lcp and lcp.Emit) then return end
+		lcp:Emit({
+			kind = "aura_gain",
+			eventType = "AURA_GAIN",
+			direction = "incoming",
+			spellId = spellId,
+			spellName = name or ("Spell #" .. tostring(spellId)),
+			timestamp = (GetTime and GetTime()) or 0,
+			confidence = "HIGH",
+			source = source,
+		})
+	end)
 	self:FireEvent("AURA_GAIN", {
 		eventType = "AURA_GAIN",
 		event = "GAIN",
@@ -366,6 +382,22 @@ function Triggers:OnAuraFade(spellId, source)
 		self._recentAuraLockoutFadeAt[name] = now
 	end
 	TrigDebug("OnAuraFade EMITTING spellId=" .. tostring(spellId) .. " name=" .. tostring(name) .. " src=" .. tostring(source or "?"))
+	pcall(function()
+		local LibStub = _G.LibStub
+		if not LibStub or type(LibStub.GetLibrary) ~= "function" then return end
+		local lcp = LibStub:GetLibrary("LibCombatPulse-1.0", true)
+		if not (lcp and lcp.Emit) then return end
+		lcp:Emit({
+			kind = "aura_fade",
+			eventType = "AURA_FADE",
+			direction = "incoming",
+			spellId = spellId,
+			spellName = name or ("Spell #" .. tostring(spellId)),
+			timestamp = (GetTime and GetTime()) or 0,
+			confidence = "HIGH",
+			source = source,
+		})
+	end)
 	self:FireEvent("AURA_FADE", {
 		eventType = "AURA_FADE",
 		event = "FADE",

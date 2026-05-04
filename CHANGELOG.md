@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.4.2
+- Libraries: integrated LibCombatPulse-1.0 as a unified event bus and switched internal parsing to consume via LibCombatPulse (prevents double-processing).
+- Combat: enriched emitted events with original `eventType` for easier filtering/diagnostics; miss events now include `missType`.
+- Diagnostics: LibCombatPulse sampling output is now controlled via the `lcp` debug channel.
+
 ## 2.4.1
 - Notifications: split Progress notifications into separate categories for Player XP, Honor, and Reputation (individually configurable).
 - Migration: added a one-time profile migration to copy legacy Progress settings to the new categories and remove the legacy keys.

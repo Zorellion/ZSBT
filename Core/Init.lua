@@ -1671,6 +1671,129 @@ function Addon:OnEnable()
                               self.db.profile.general and
                               self.db.profile.general.enabled == true
 
+	pcall(function()
+		local existingHandle = ZSBT._lcpConsumerHandle
+		local LibStub = _G.LibStub
+		if not LibStub then return end
+		local LCP = LibStub("LibCombatPulse-1.0", true)
+		if not (LCP and LCP.NewConsumer) then return end
+		if existingHandle and type(LCP._consumers) == "table" and LCP._consumers["ZSBT"] then
+			return
+		end
+		-- Enable cutover: ZSBT consumes parser events via LibCombatPulse forwarder.
+		if not ZSBT._lcpForwarderHandle then
+			ZSBT._lcpForwarderHandle = LCP:NewConsumer("ZSBT_FORWARDER", {
+				OnEvent = function(ev)
+					if type(ev) ~= "table" then return end
+					local dir = ev.direction
+					if dir == "incoming" then
+						local parser = ZSBT.Parser and ZSBT.Parser.Incoming
+						if parser and parser.ProcessEvent then
+							parser:ProcessEvent(ev)
+						end
+					elseif dir == "outgoing" then
+						local parser = ZSBT.Parser and ZSBT.Parser.Outgoing
+						if parser and parser.ProcessEvent then
+							parser:ProcessEvent(ev)
+						end
+					end
+				end,
+			}, {
+				enableCombat = true,
+				enableProgress = true,
+				enableInterrupts = true,
+				enableCooldowns = true,
+				minConfidence = "LOW",
+			})
+			ZSBT._lcpCutoverEnabled = true
+		end
+		ZSBT._lcpSampleLastAt = ZSBT._lcpSampleLastAt or 0
+		local channelDbg = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("lcp")) or 0
+		local legacyDbg = (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel) or 0
+		if (tonumber(channelDbg) or 0) >= 5 or (tonumber(legacyDbg) or 0) >= 5 then
+			if Addon and Addon.Print and not ZSBT._lcpDbgRegisteredPrintDone then
+				ZSBT._lcpDbgRegisteredPrintDone = true
+				Addon:Print("LibCombatPulse consumers active (cutover enabled).")
+			end
+		end
+		ZSBT._lcpConsumerHandle = LCP:NewConsumer("ZSBT", {
+			OnEvent = function(ev)
+				local channelDbg = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("lcp")) or 0
+				local legacyDbg = (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel) or 0
+				if (tonumber(channelDbg) or 0) < 5 and (tonumber(legacyDbg) or 0) < 5 then return end
+				local tNow = (GetTime and GetTime()) or 0
+				if (tNow - (ZSBT._lcpSampleLastAt or 0)) < 0.75 then return end
+				ZSBT._lcpSampleLastAt = tNow
+				if Addon and Addon.Print then
+					local function safeStr(v)
+						if v == nil then return "nil" end
+						if type(v) ~= "string" then return tostring(v) end
+						if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
+						return "<secret>"
+					end
+					local function safeNum(v)
+						if v == nil then return "nil" end
+						if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
+						local n = tonumber(v)
+						if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(n) then return tostring(n) end
+						return safeStr(v)
+					end
+					local kind = ev and ev.kind
+					local et = ev and ev.eventType
+					local dir = ev and ev.direction
+					local parts = {}
+					parts[#parts + 1] = "LCP"
+					parts[#parts + 1] = "kind=" .. safeStr(kind)
+					parts[#parts + 1] = "type=" .. safeStr(et)
+					parts[#parts + 1] = "dir=" .. safeStr(dir)
+					if kind == "damage" or kind == "heal" then
+						parts[#parts + 1] = "amt=" .. safeNum(ev.amount)
+						parts[#parts + 1] = "amtText=" .. safeStr(ev.amountText)
+						parts[#parts + 1] = "spellId=" .. safeNum(ev.spellId)
+						parts[#parts + 1] = "tgt=" .. safeStr(ev.targetName)
+						parts[#parts + 1] = "crit=" .. safeStr(ev.isCrit)
+						parts[#parts + 1] = "per=" .. safeStr(ev.isPeriodic)
+						parts[#parts + 1] = "src=" .. safeStr(ev.amountSource)
+						parts[#parts + 1] = "conf=" .. safeStr(ev.confidence)
+					elseif kind == "miss" then
+						parts[#parts + 1] = "spellId=" .. safeNum(ev.spellId)
+						parts[#parts + 1] = "tgt=" .. safeStr(ev.targetName)
+						parts[#parts + 1] = "missType=" .. safeStr(ev.missType)
+						parts[#parts + 1] = "miss=" .. safeStr(ev.amountText)
+						parts[#parts + 1] = "src=" .. safeStr(ev.amountSource)
+						parts[#parts + 1] = "conf=" .. safeStr(ev.confidence)
+					elseif kind == "cooldown_ready" then
+						parts[#parts + 1] = "spellId=" .. safeNum(ev.spellId)
+						parts[#parts + 1] = "spell=" .. safeStr(ev.spellName)
+						parts[#parts + 1] = "method=" .. safeStr(ev.method)
+						parts[#parts + 1] = "conf=" .. safeStr(ev.confidence)
+					elseif kind == "aura_gain" or kind == "aura_fade" then
+						parts[#parts + 1] = "spellId=" .. safeNum(ev.spellId)
+						parts[#parts + 1] = "spell=" .. safeStr(ev.spellName)
+						parts[#parts + 1] = "src=" .. safeStr(ev.source)
+						parts[#parts + 1] = "conf=" .. safeStr(ev.confidence)
+					elseif kind == "interrupt" or kind == "cast_stop" then
+						parts[#parts + 1] = "spellId=" .. safeNum(ev.spellId)
+						parts[#parts + 1] = "spell=" .. safeStr(ev.spellName)
+						parts[#parts + 1] = "tgt=" .. safeStr(ev.targetName)
+						parts[#parts + 1] = "conf=" .. safeStr(ev.confidence)
+					else
+						parts[#parts + 1] = "spellId=" .. safeNum(ev and ev.spellId)
+						parts[#parts + 1] = "tgt=" .. safeStr(ev and ev.targetName)
+						parts[#parts + 1] = "conf=" .. safeStr(ev and ev.confidence)
+					end
+					Addon:Print(table.concat(parts, " "))
+				end
+			end,
+		}, {
+			enableCombat = true,
+			enableProgress = true,
+			enableInterrupts = true,
+			enableCooldowns = true,
+			minConfidence = "LOW",
+		})
+	end)
+
     -- Always init core once (safe, no-op skeleton)
     if ZSBT.Core and ZSBT.Core.Init then ZSBT.Core:Init() end
 
@@ -1912,7 +2035,7 @@ function Addon:HandleDebugCommand(levelStr)
 		self:Print("  /zsbt debug <0-5>                 (set global default)")
 		self:Print("  /zsbt debug <channel> <0-5>       (set per-channel override)")
 		self:Print("Levels: 0=Off, 1=Error, 2=Warn, 3=Info, 4=Debug, 5=Trace")
-		self:Print("Channels: core, cooldowns, incoming, outgoing, triggers, notifications, ui, diagnostics, safety, perf")
+		self:Print("Channels: core, cooldowns, incoming, outgoing, triggers, notifications, ui, diagnostics, lcp, safety, perf")
 	end
 
 	local function show()

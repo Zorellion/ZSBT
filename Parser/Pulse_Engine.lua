@@ -9,6 +9,19 @@ local CorrelationLogic = ZSBT.Parser.CorrelationLogic
 
 local Addon = ZSBT.Addon
 
+local LibStub = _G.LibStub
+local _LCP = nil
+local function getLCP()
+	if _LCP and _LCP.Emit then return _LCP end
+	if not LibStub or type(LibStub.GetLibrary) ~= "function" then return nil end
+	local lib = LibStub:GetLibrary("LibCombatPulse-1.0", true)
+	if lib and lib.Emit then
+		_LCP = lib
+		return lib
+	end
+	return nil
+end
+
 Engine._enabled = Engine._enabled or false
 Engine._pulseInterval = 0.020 -- 20ms target pulse (phase 1 requirement)
 Engine._accumulator = Engine._accumulator or 0
@@ -554,16 +567,38 @@ function Engine:collect(eventType, payload)
 end
 
 function Engine:_emitOutgoing(ev)
-	local parser = ZSBT.Parser and ZSBT.Parser.Outgoing
-	if parser and parser.ProcessEvent then
-		parser:ProcessEvent(ev)
+	if type(ev) == "table" and ev.direction == nil then
+		ev.direction = "outgoing"
+	end
+	local lcp = getLCP()
+	if lcp then
+		pcall(function() lcp:Emit(ev) end)
+	end
+	-- During LibCombatPulse cutover, ZSBT consumes via an internal LCP forwarder.
+	-- Keep the legacy direct-call path as a fallback until cutover is enabled.
+	if not (ZSBT and ZSBT._lcpCutoverEnabled == true) then
+		local parser = ZSBT.Parser and ZSBT.Parser.Outgoing
+		if parser and parser.ProcessEvent then
+			parser:ProcessEvent(ev)
+		end
 	end
 end
 
 function Engine:_emitIncoming(ev)
-	local parser = ZSBT.Parser and ZSBT.Parser.Incoming
-	if parser and parser.ProcessEvent then
-		parser:ProcessEvent(ev)
+	if type(ev) == "table" and ev.direction == nil then
+		ev.direction = "incoming"
+	end
+	local lcp = getLCP()
+	if lcp then
+		pcall(function() lcp:Emit(ev) end)
+	end
+	-- During LibCombatPulse cutover, ZSBT consumes via an internal LCP forwarder.
+	-- Keep the legacy direct-call path as a fallback until cutover is enabled.
+	if not (ZSBT and ZSBT._lcpCutoverEnabled == true) then
+		local parser = ZSBT.Parser and ZSBT.Parser.Incoming
+		if parser and parser.ProcessEvent then
+			parser:ProcessEvent(ev)
+		end
 	end
 end
 
@@ -614,6 +649,7 @@ function Engine:_processHealthDamage(sample)
 	end
 
 	local normalized = {
+		eventType = sample.eventType,
 		kind = "damage",
 		amount = sample.amount,
 		amountText = sample.amountText,
@@ -667,6 +703,7 @@ function Engine:_processHealthHeal(sample)
 	end
 
 	local normalized = {
+		eventType = sample.eventType,
 		kind = "heal",
 		amount = sample.amount,
 		amountText = sample.amountText,
@@ -706,6 +743,7 @@ function Engine:_processHealthChangeSecret(sample)
 	local bestCast, confidence = CorrelationLogic:findBestCast(activeCasts, sample)
 
 	local normalized = {
+		eventType = sample.eventType,
 		kind = "damage",
 		amount = nil,
 		spellName = bestCast and bestCast.spellName or nil,
@@ -855,6 +893,7 @@ function Engine:flushBucket()
 					if not self:_shouldDedupIncoming(kind, sample.amount, sample.amountText, sample.timestamp) then
 						self:_noteIncomingDedup(kind, sample.amount, sample.amountText, sample.timestamp)
 						self:_emitIncoming({
+						eventType = et,
 						kind = "damage",
 						amount = sample.amount,
 						amountText = sample.amountText,
@@ -875,6 +914,7 @@ function Engine:flushBucket()
 				if not self:_shouldDedupIncoming(kind, sample.amount, sample.amountText, sample.timestamp) then
 					self:_noteIncomingDedup(kind, sample.amount, sample.amountText, sample.timestamp)
 					self:_emitIncoming({
+					eventType = et,
 					kind = "heal",
 					amount = sample.amount,
 					amountText = sample.amountText,
@@ -907,43 +947,47 @@ function Engine:flushBucket()
 						return
 					end
 					self:_emitIncoming({
-					kind = "damage",
-					amount = nil,
-					amountText = tostring(math.floor(amtNum + 0.5)),
-					rawPipeId = sample.rawPipeId,
-					spellName = nil,
-					spellId = sample.spellId,
-					targetName = sample.targetName,
-					isCrit = sample.isCrit,
-					timestamp = sample.timestamp,
-					confidence = "HIGH",
-					isPeriodic = false,
-				})
+						eventType = et,
+						kind = "damage",
+						amount = nil,
+						amountText = tostring(math.floor(amtNum + 0.5)),
+						rawPipeId = sample.rawPipeId,
+						spellName = nil,
+						spellId = sample.spellId,
+						targetName = sample.targetName,
+						isCrit = sample.isCrit,
+						timestamp = sample.timestamp,
+						confidence = "HIGH",
+						isPeriodic = false,
+					})
 				end
 			elseif et == "COMBAT_TEXT_HEAL" then
 				local kind = "heal"
 				if not self:_shouldDedupIncoming(kind, sample.amount, sample.amountText, sample.timestamp) then
 					self:_noteIncomingDedup(kind, sample.amount, sample.amountText, sample.timestamp)
 					self:_emitIncoming({
-					kind = "heal",
-					amount = nil,
-					amountText = sample.amountText,
-					rawPipeId = sample.rawPipeId,
-					spellName = nil,
-					spellId = sample.spellId,
-					targetName = sample.targetName,
-					isCrit = sample.isCrit,
-					overheal = sample.overheal,
-					timestamp = sample.timestamp,
-					confidence = "HIGH",
-					isPeriodic = sample.isPeriodic == true,
-				})
+						eventType = et,
+						kind = "heal",
+						amount = nil,
+						amountText = sample.amountText,
+						rawPipeId = sample.rawPipeId,
+						spellName = nil,
+						spellId = sample.spellId,
+						targetName = sample.targetName,
+						isCrit = sample.isCrit,
+						overheal = sample.overheal,
+						timestamp = sample.timestamp,
+						confidence = "HIGH",
+						isPeriodic = sample.isPeriodic == true,
+					})
 				end
 			elseif et == "COMBAT_TEXT_MISS" then
 				-- Dodge/Parry/Miss/Block etc.
 				self:_emitIncoming({
+					eventType = et,
 					kind = "miss",
 					amount = nil,
+					missType = sample.missType,
 					amountText = sample.missType or "Miss",
 					spellName = nil,
 					spellId = nil,
@@ -1102,6 +1146,7 @@ function Engine:flushBucket()
 					return
 				end
 				self:_emitOutgoing({
+					eventType = et,
 					kind = "damage",
 					amount = sample.amount,
 					amountText = sample.amountText,
@@ -1122,6 +1167,7 @@ function Engine:flushBucket()
 				})
 			elseif et == "OUTGOING_HEAL_COMBAT" then
 				self:_emitOutgoing({
+					eventType = et,
 					kind = "heal",
 					amount = nil,
 					amountText = nil,
@@ -1138,8 +1184,10 @@ function Engine:flushBucket()
 				})
 			elseif et == "OUTGOING_MISS_COMBAT" then
 				self:_emitOutgoing({
+					eventType = et,
 					kind = "miss",
 					amount = nil,
+					missType = sample.amountText,
 					amountText = sample.amountText,
 					rawPipeId = sample.rawPipeId,
 					spellName = nil,
