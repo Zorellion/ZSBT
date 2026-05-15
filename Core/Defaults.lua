@@ -17,6 +17,7 @@ ZSBT.DEFAULTS = {
             perCharacterProfile = false,
 			numberFormat = "none",
             notificationsEnabled = true,
+            autoRelaxOutgoingWhenSolo = false,
             instanceAwareOutgoing = true,
             strictOutgoingCombatLogOnly = false,
             quietOutgoingWhenIdle = true,

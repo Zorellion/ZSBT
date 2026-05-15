@@ -279,6 +279,7 @@ function Addon:OnInitialize()
 		if self.db.global.migrations.generalDefaults_v1 == true then return end
 
 		local keys = {
+			"autoRelaxOutgoingWhenSolo",
 			"instanceAwareOutgoing",
 			"damageMeterOutgoingFallback",
 			"damageMeterIncomingFallback",
