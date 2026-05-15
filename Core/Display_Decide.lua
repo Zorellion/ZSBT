@@ -362,9 +362,19 @@ function Display:Emit(areaName, text, color, meta)
     if Addon and Addon.DebugPrint then
     end
 
+	-- Record last combat activity before combat-only gating.
+	-- One-shot kills can produce a combat event before UnitAffectingCombat() flips.
+	local isNotification = meta and meta.kind == "notification"
+	if not isNotification then
+		if ZSBT and ZSBT.Core then
+			local tNow = (GetTime and GetTime()) or 0
+			ZSBT.Core._lastCombatActivityAt = tNow
+		end
+	end
+
     -- Global gating (Enable ZSBT + Combat Only Mode)
     -- Notifications (cooldowns, warnings, combat enter/leave) always display.
-    local isNotification = meta and meta.kind == "notification"
+
     if not isNotification then
         if ZSBT.Core and ZSBT.Core.ShouldEmitNow and not ZSBT.Core:ShouldEmitNow() then
             if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end

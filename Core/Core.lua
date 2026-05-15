@@ -187,9 +187,29 @@ function Core:IsInstanceAwareOutgoingEnabled()
 		and ZSBT.db.profile.general.instanceAwareOutgoing == true
 end
 
+function Core:ShouldAutoRelaxOutgoingWhenSoloInstance()
+	local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+	if not (g and g.autoRelaxOutgoingWhenSolo == true) then
+		return false
+	end
+	if type(IsInInstance) ~= "function" then return false end
+	local ok, inInstance, instanceType = pcall(IsInInstance)
+	if not ok or inInstance ~= true then return false end
+	if instanceType ~= "party" and instanceType ~= "raid" then return false end
+	local members = 0
+	if type(GetNumGroupMembers) == "function" then
+		local okM, m = pcall(GetNumGroupMembers)
+		if okM and type(m) == "number" then members = m end
+	end
+	return members <= 1
+end
+
 function Core:IsStrictOutgoingCombatLogOnlyEnabled()
 	if not (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general) then return false end
 	local g = ZSBT.db.profile.general
+	if self.ShouldAutoRelaxOutgoingWhenSoloInstance and self:ShouldAutoRelaxOutgoingWhenSoloInstance() then
+		return false
+	end
 	return g.strictOutgoingCombatLogOnly == true
 end
 
@@ -218,6 +238,9 @@ function Core:IsPvPStrictActive()
 end
 
 function Core:IsQuietOutgoingWhenIdleEnabled()
+	if self.ShouldAutoRelaxOutgoingWhenSoloInstance and self:ShouldAutoRelaxOutgoingWhenSoloInstance() then
+		return false
+	end
 	return ZSBT.db
 		and ZSBT.db.profile
 		and ZSBT.db.profile.general
@@ -280,6 +303,14 @@ function Core:ShouldEmitNow()
 				if ok and type(res) == "boolean" then inPetCombat = res end
 			end
 			if not inPetCombat then
+				-- Combat-only grace: very fast kills can produce a combat event before
+				-- UnitAffectingCombat() flips true. If we have evidence of very recent
+				-- combat activity, allow emission.
+				local tNow = (GetTime and GetTime()) or 0
+				local lastAt = tonumber(self._lastCombatActivityAt) or 0
+				if lastAt > 0 and (tNow - lastAt) <= 0.75 then
+					return true
+				end
 				return false
 			end
 		end

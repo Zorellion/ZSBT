@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.4.3
+- Outgoing: added an option to auto-relax strict/quiet outgoing attribution while solo inside party/raid instances (legacy content) to prevent one-shot hits from being suppressed.
+
 ## 2.4.2
 - Libraries: integrated LibCombatPulse-1.0 as a unified event bus and switched internal parsing to consume via LibCombatPulse (prevents double-processing).
 - Combat: enriched emitted events with original `eventType` for easier filtering/diagnostics; miss events now include `missType`.

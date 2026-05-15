@@ -2572,6 +2572,18 @@ function ZSBT.BuildTab_General()
 				order = 3.62,
 				width = "full",
 			},
+			autoRelaxOutgoingWhenSolo = {
+				type  = "toggle",
+				name  = "Auto-Relax Outgoing When Solo (Legacy Instances)",
+				desc  = "When enabled, ZSBT will temporarily relax strict/quiet outgoing attribution modes while you are alone inside a party/raid instance (e.g., soloing old raids). This helps one-shot kills still show outgoing numbers without changing your normal open-world and group behavior.",
+				order = 3.63,
+				width = "full",
+				get   = function() return ZSBT.db.profile.general.autoRelaxOutgoingWhenSolo == true end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.autoRelaxOutgoingWhenSolo = val and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
 
 			instanceAwareOutgoing = {
 				type  = "toggle",
