@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.4.4
+- Outgoing: fixed Quiet Outgoing When Idle suppressing your own casts in some cases (improved cast correlation window for longer travel-time spells).
+- Outgoing: restored spell icons for modern outgoing fallback sources.
+- Pets: improved pet/guardian damage attribution for WoW 12.x-safe signals, including Death Knight ghoul damage when no `pet` unit exists.
+
 ## 2.4.3
 - Outgoing: added an option to auto-relax strict/quiet outgoing attribution while solo inside party/raid instances (legacy content) to prevent one-shot hits from being suppressed.
 

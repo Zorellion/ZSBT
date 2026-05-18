@@ -483,7 +483,12 @@ function Engine:_flushPetMerge(t)
 
 	local amountText = tostring(rounded)
 	local prefix = pm.prefix or "Pet"
-	local text = prefix .. " " .. amountText
+	local text
+	if prefix == "" then
+		text = amountText
+	else
+		text = prefix .. " " .. amountText
+	end
 	if (petConf.showCount ~= false) and (pm.count or 0) > 1 then
 		text = text .. " (x" .. tostring(pm.count) .. ")"
 	end
@@ -1261,7 +1266,10 @@ function Engine:flushBucket()
 			elseif et == "PET_DAMAGE_COMBAT" then
 				local rawPipeId = sample.rawPipeId
 				local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
-				local val = (rawPipeId and ec and ec._rawPipe and ec._rawPipe[rawPipeId]) or nil
+				local val = sample.amount
+				if val == nil then
+					val = (rawPipeId and ec and ec._rawPipe and ec._rawPipe[rawPipeId]) or nil
+				end
 				if rawPipeId and ec and ec._rawPipe then
 					ec._rawPipe[rawPipeId] = nil
 				end
@@ -1271,22 +1279,37 @@ function Engine:flushBucket()
 					Dbg4("|cFF66CCFF[PETDBG]|r", ("DRAIN pet rawPipeId=%s val=%s (pets disabled)")
 						:format(tostring(rawPipeId), tostring(val)))
 				else
+					local outDl = 0
+					if ZSBT and ZSBT.GetDebugLevel then
+						outDl = ZSBT:GetDebugLevel("outgoing") or 0
+					elseif ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugChannels then
+						outDl = tonumber(ZSBT.db.profile.diagnostics.debugChannels.outgoing) or 0
+					end
+					if outDl >= 4 then
+						Dbg4("|cFF66CCFF[PETDBG]|r", ("RECV pet rawPipeId=%s val=%s crit=%s")
+							:format(tostring(rawPipeId), tostring(val), tostring(sample.isCrit == true)))
+					end
 					local text = nil
 					local aggMode = petConf.aggregation or "Generic"
 					local petName = nil
+					local prefix
+					if sample.petBucket == "summons" then
+						prefix = ""
+					end
 					if aggMode:find("Attempt") then
 						local ok, name = pcall(UnitName, "pet")
 						if ok and ZSBT.IsSafeString(name) and name ~= "" then
 							petName = name
 						end
 					end
-					local prefix
-					if aggMode:find("Generic") then
-						prefix = "Pet"
-					elseif petName then
-						prefix = petName
-					else
-						prefix = "Pet"
+					if not prefix then
+						if aggMode:find("Generic") then
+							prefix = "Pet"
+						elseif petName then
+							prefix = petName
+						else
+							prefix = "Pet"
+						end
 					end
 
 					if val ~= nil then
@@ -1295,6 +1318,10 @@ function Engine:flushBucket()
 							if rounded > 0 then
 								local minT = tonumber(petConf.minThreshold) or 0
 								if minT <= 0 or val >= minT then
+									if outDl >= 4 then
+										Dbg4("|cFF66CCFF[PETDBG]|r", ("SHOW pet val=%s rounded=%s minT=%s mergeWin=%s area=%s")
+											:format(tostring(val), tostring(rounded), tostring(minT), tostring(petConf.mergeWindowSec), tostring(petConf.scrollArea)))
+									end
 									local mergeWin = tonumber(petConf.mergeWindowSec) or 0
 									if mergeWin > 0 then
 										local pm = self._petMerge
@@ -1316,29 +1343,32 @@ function Engine:flushBucket()
 											end
 										end
 										pm.area = areaName
-										pm.isCrit = (pm.isCrit == true) or (sample.isCrit == true)
-										pm.school = sample.schoolMask
-										self:_flushPetMerge(now())
 									else
-										text = prefix .. " " .. tostring(rounded)
+										if prefix == "" then
+											text = tostring(rounded)
+										else
+											text = prefix .. " " .. tostring(rounded)
+										end
 									end
-								end
-							end
-						else
-							-- Secret/tainted amount: never pass raw userdata through the UI.
-							local okS, s = pcall(tostring, val)
-							if okS and type(s) == "string" and s ~= "" then
-								if aggMode:find("Generic") then
-									text = "Pet " .. s
-								elseif petName then
-									text = petName .. " " .. s
-								else
-									text = "Pet " .. s
 								end
 							end
 						end
 					end
-
+					if outDl >= 4 then
+						Dbg4("|cFF66CCFF[PETDBG]|r", ("PET event rawPipeId=%s val=%s out=%s")
+							:format(tostring(rawPipeId), tostring(val), tostring(text)))
+					end
+					if text == nil and outDl >= 4 then
+						-- Secret/tainted amount: never pass raw userdata through the UI.
+						local okS, s = pcall(tostring, val)
+						if okS and type(s) == "string" and s ~= "" then
+							if prefix == "" then
+								text = s
+							else
+								text = prefix .. " " .. s
+							end
+						end
+					end
 					Dbg4("|cFF66CCFF[PETDBG]|r", ("PET event rawPipeId=%s val=%s out=%s")
 						:format(tostring(rawPipeId), tostring(val), tostring(text)))
 
