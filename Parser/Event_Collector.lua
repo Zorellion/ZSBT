@@ -209,6 +209,30 @@ local function isPlayerMeleeEngaged()
 	return false
 end
 
+local function isWarlockPlayer()
+	if isPlayerClassTag and isPlayerClassTag("WARLOCK") then
+		return true
+	end
+	if UnitClass then
+		local okC, _, tag = pcall(UnitClass, "player")
+		if okC and tag == "WARLOCK" then
+			return true
+		end
+	end
+	return false
+end
+
+local function isImpPet()
+	-- Best-effort: creature family is localized but should contain "Imp" on enUS.
+	-- When unavailable, return false and fall back to broader heuristics.
+	if not UnitCreatureFamily then return false end
+	local okF, fam = pcall(UnitCreatureFamily, "pet")
+	if okF and type(fam) == "string" and fam ~= "" then
+		return fam:find("Imp", 1, true) ~= nil
+	end
+	return false
+end
+
 local function flushBestOutgoing(self, token)
 	if not self or not token then return end
 	local bucket = self._bestOutgoingByToken and self._bestOutgoingByToken[token]
@@ -293,6 +317,13 @@ local PENDING_CAST_MAX = 12
 Collector._recentPeriodicSpellAt = Collector._recentPeriodicSpellAt or {}
 local PERIODIC_OUTGOING_WINDOW_SEC = 30.0
 
+local function isKnownPeriodicSpellId(spellId)
+	if type(spellId) ~= "number" then return false end
+	return spellId == 172
+		or spellId == 980
+		or spellId == 30108
+end
+
 local isPlayerClassTag
 local isWhirlwindSpellId
 
@@ -338,9 +369,148 @@ local function arePetsEnabled()
 	return petConf and petConf.enabled == true
 end
 
+local function getPetFamilyLower()
+	if not UnitCreatureFamily then return nil end
+	local okF, fam = pcall(UnitCreatureFamily, "pet")
+	if okF and type(fam) == "string" and fam ~= "" then
+		return string.lower(fam)
+	end
+	return nil
+end
+
+local function getUnitNpcId(unit)
+	if not UnitGUID then return nil end
+	local okG, guid = pcall(UnitGUID, unit)
+	if not okG or type(guid) ~= "string" or guid == "" then return nil end
+	-- GUID format: Type-0-ServerID-InstanceID-ZoneUID-ID-SpawnUID
+	local _, _, _, _, _, id = strsplit("-", guid)
+	local n = tonumber(id)
+	if type(n) == "number" and n > 0 then
+		return n
+	end
+	return nil
+end
+
+local PET_SIGNATURE_SCHOOLS_BY_CLASS = {
+	MAGE = {
+		-- Water Elemental
+		-- npcId entries can be added based on logs; kept empty by default.
+	},
+	SHAMAN = {
+		-- Fire/Storm/Earth Elementals
+	},
+	WARLOCK = {
+		-- Imp and other minions
+	},
+	DEATHKNIGHT = {
+		-- Risen Ghoul / Army ghouls: physical hits (school=1)
+	},
+}
+
+local function isLikelyPetSchoolHitGivenRecentPlayerSpell(self, school, lastPlayerSpellId)
+	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) then return false end
+	if type(lastPlayerSpellId) ~= "number" then return false end
+	-- Warlock: Imp damage is typically fire; avoid stealing it for recent shadow casts.
+	if isWarlockPlayer() then
+		if school == 4 then
+			if lastPlayerSpellId == 172 or lastPlayerSpellId == 980 or lastPlayerSpellId == 30108 or lastPlayerSpellId == 686 then
+				return true
+			end
+		end
+	end
+
+	-- Death Knight: ghouls are physical. When a ghoul pet is active, do not let the
+	-- player's recent-cast window hijack school=1 melee swings.
+	if school == 1 then
+		local isDK = false
+		if isPlayerClassTag and isPlayerClassTag("DEATHKNIGHT") then
+			isDK = true
+		elseif UnitClass then
+			local okC, _, tag = pcall(UnitClass, "player")
+			if okC and tag == "DEATHKNIGHT" then
+				isDK = true
+			end
+		end
+		if isDK then
+			local fam = getPetFamilyLower()
+			if fam and fam:find("ghoul", 1, true) then
+				return true
+			end
+		end
+	end
+
+	-- Generalized signatures for other pet classes.
+	local fam = getPetFamilyLower()
+	local petNpcId = getUnitNpcId("pet")
+	if petNpcId and UnitClass then
+		local okC, _, tag = pcall(UnitClass, "player")
+		if okC and type(tag) == "string" then
+			local byClass = PET_SIGNATURE_SCHOOLS_BY_CLASS[tag]
+			local byNpc = byClass and byClass[petNpcId]
+			local allow = byNpc and byNpc[school]
+			if allow == true then
+				return true
+			end
+		end
+	end
+	if fam then
+		-- Mage: Water Elemental -> frost school.
+		if school == 16 then
+			if (isPlayerClassTag and isPlayerClassTag("MAGE")) or (UnitClass and select(3, pcall(UnitClass, "player")) == "MAGE") then
+				if fam:find("water", 1, true) and fam:find("elemental", 1, true) then
+					return true
+				end
+			end
+		end
+		-- Shaman: elementals -> fire/nature schools.
+		if (school == 4 or school == 8) then
+			local isShaman = false
+			if isPlayerClassTag and isPlayerClassTag("SHAMAN") then
+				isShaman = true
+			elseif UnitClass then
+				local okC, _, tag = pcall(UnitClass, "player")
+				if okC and tag == "SHAMAN" then
+					isShaman = true
+				end
+			end
+			if isShaman then
+				if school == 4 and fam:find("fire", 1, true) and fam:find("elemental", 1, true) then
+					return true
+				end
+				if school == 8 and ((fam:find("storm", 1, true) and fam:find("elemental", 1, true)) or (fam:find("earth", 1, true) and fam:find("elemental", 1, true))) then
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
 local function hasTargetDebuffSpellId(spellId)
 	if type(spellId) ~= "number" then return false end
+	local wantName = nil
+	if ZSBT and ZSBT.CleanSpellName then
+		wantName = ZSBT.CleanSpellName(spellId)
+	end
+	-- Corruption can present as a different aura spellId in some starter/tutorial contexts.
+	-- Treat those variants as present for safe DoT attribution.
+	if spellId == 172 then
+		if AuraUtil and AuraUtil.FindAuraBySpellId then
+			local okV, auraV = pcall(AuraUtil.FindAuraBySpellId, 146739, "target", "HARMFUL|PLAYER")
+			if okV and auraV then
+				return true
+			end
+			local okV2, auraV2 = pcall(AuraUtil.FindAuraBySpellId, 146739, "target", "HARMFUL")
+			if okV2 and auraV2 then
+				return true
+			end
+		end
+	end
 	if AuraUtil and AuraUtil.FindAuraBySpellId then
+		local okP, auraP = pcall(AuraUtil.FindAuraBySpellId, spellId, "target", "HARMFUL|PLAYER")
+		if okP and auraP then
+			return true
+		end
 		local ok, aura = pcall(AuraUtil.FindAuraBySpellId, spellId, "target", "HARMFUL")
 		if ok and aura then
 			return true
@@ -355,11 +525,28 @@ local function hasTargetDebuffSpellId(spellId)
 	end
 	if AuraUtil and AuraUtil.ForEachAura then
 		local found = false
+		local scanned = 0
+		local firstSid = nil
+		local firstName = nil
 		pcall(function()
 			AuraUtil.ForEachAura("target", "HARMFUL", 255, function(auraData)
+				scanned = scanned + 1
 				local sid = SafeAuraSpellId(auraData)
+				if firstSid == nil and sid ~= nil then
+					firstSid = sid
+					local nm = auraData and auraData.name
+					if type(nm) == "string" then firstName = nm end
+				end
 				local okEq, eq = pcall(function() return sid == spellId end)
 				if okEq and eq then
+					found = true
+					return false
+				end
+				if spellId == 172 and type(sid) == "number" and sid == 146739 then
+					found = true
+					return false
+				end
+				if wantName and type(auraData) == "table" and type(auraData.name) == "string" and auraData.name == wantName then
 					found = true
 					return false
 				end
@@ -367,6 +554,28 @@ local function hasTargetDebuffSpellId(spellId)
 			end, true)
 		end)
 		if found then return true end
+		-- WoW 12.x (and some tutorial/instanced contexts) can return "secret" aura fields.
+		-- When Corruption is active, the aura can be present but its spellId/name may be
+		-- unsafe to compare. If exactly one harmful aura is visible and its spellId is a
+		-- numeric value that fails IsSafeNumber, treat Corruption as present.
+		if spellId == 172 and scanned == 1 and type(firstSid) == "number" then
+			if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(firstSid)) then
+				return true
+			end
+		end
+		if OutDbgLevel and OutDbgLevel() >= 4 and spellId == 172 then
+			local tNow = now()
+			if (tNow - (Collector._dbgLastDebuffMissAt or 0)) > 0.75 then
+				Collector._dbgLastDebuffMissAt = tNow
+				local ex = nil
+				if UnitExists then
+					local okE, e = pcall(UnitExists, "target")
+					if okE then ex = e end
+				end
+				ECPrint(("DEBUFF_MISS spellId=%s unit=target exists=%s scanned=%s firstSid=%s firstName=%s")
+					:format(dbgSafe(spellId), dbgSafe(ex), dbgSafe(scanned), dbgSafe(firstSid), dbgSafe(firstName)))
+			end
+		end
 	end
 	if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
 		local seen = 0
@@ -506,6 +715,13 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 		self._lastPlayerSpellId = spellId
 		self._lastPlayerSpellName = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or nil
 		self._lastPlayerSpellAt = now()
+		-- Death Knight: some ghoul damage sources are guardians and do not appear as UnitExists("pet").
+		-- Track recent ghoul summon casts so UNIT_COMBAT(target) physical hits can still be shown as pet damage.
+		if isPlayerClassTag and isPlayerClassTag("DEATHKNIGHT") then
+			if spellId == 46584 or spellId == 46585 or spellId == 42650 then
+				self._dkGhoulSummonAt = self._lastPlayerSpellAt
+			end
+		end
 		if spellId == 234153 then
 			-- Drain Life is a channeled spell with periodic damage/heal ticks. The
 			-- UNIT_COMBAT(target) stream can deliver multiple non-physical WOUND events
@@ -531,7 +747,9 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 		end
 		local spellName = self._lastPlayerSpellName
 		enqueuePendingCast(self, spellId, spellName, self._lastPlayerSpellAt)
-		self._recentPeriodicSpellAt[spellId] = self._lastPlayerSpellAt
+		if isKnownPeriodicSpellId(spellId) then
+			self._recentPeriodicSpellAt[spellId] = self._lastPlayerSpellAt
+		end
 
 		-- Prime target health baseline to improve first-hit correlation.
 		-- If we acquire a new target and immediately open with a cast, the
@@ -1727,7 +1945,34 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		-- If combat text / chat already produced an outgoing number for the current cast
 		-- token, suppress UNIT_COMBAT(target) for that token to avoid double numbers.
 		if self._castToken and self._lastCombatTextOutgoingToken == self._castToken then
-			return
+			-- Exception: pet outgoing fallback can also use UNIT_COMBAT(target) on some
+			-- clients. Do not suppress the entire UNIT_COMBAT(target) handler when pets
+			-- are enabled and the pet is currently fighting and the player isn't actively
+			-- casting (i.e., this cannot be a duplicate of the player's cast).
+			local allowPetFallback = false
+			if arePetsEnabled() == true and UnitAffectingCombat and UnitExists then
+				local okEx, hasPet = pcall(UnitExists, "pet")
+				if okEx and hasPet == true then
+					local okPet, inPetCombat = pcall(UnitAffectingCombat, "pet")
+					if okPet and inPetCombat == true then
+						local tNow = now()
+						local lastAt = self._lastPlayerSpellAt
+						local recentPlayerCast = false
+						if type(lastAt) == "number" then
+							local age = tNow - lastAt
+							if age >= 0 and age <= 1.0 then
+								recentPlayerCast = true
+							end
+						end
+						if not recentPlayerCast then
+							allowPetFallback = true
+						end
+					end
+				end
+			end
+			if not allowPetFallback then
+				return
+			end
 		end
 		local inInst = false
 		if IsInInstance then
@@ -1858,9 +2103,15 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		-- for pet hits. Also, UnitAffectingCombat("player") may be true during pet combat.
 		-- Heuristic: if pet is in combat and we have no recent player cast to attribute,
 		-- treat WOUND events on target as pet damage.
-		if arePetsEnabled() == true and actionStr == "WOUND" and UnitAffectingCombat and UnitExists then
+		if actionStr == "WOUND" and UnitAffectingCombat and UnitExists then
+			local petsEnabled = (arePetsEnabled() == true)
 			local okEx, hasPet = pcall(UnitExists, "pet")
-			if okEx and hasPet == true then
+			if petsEnabled ~= true then
+				if dl >= 4 and ZSBT.IsSafeNumber(amount) and amount > 0 and (not isPhysicalEarly) and (ZSBT.IsSafeNumber(school) and school == 4) then
+					ECPrint(("PET_FALLBACK_SKIP petsEnabled=0 token=%s amt=%s school=%s")
+						:format(dbgSafe(self._castToken), dbgSafe(amount), dbgSafe(school)))
+				end
+			elseif okEx and hasPet == true then
 				local okPet, inPetCombat = pcall(UnitAffectingCombat, "pet")
 				if okPet and inPetCombat == true then
 					local recentPlayerCast = false
@@ -1876,12 +2127,38 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							recentPlayerCast = true
 						end
 					end
+					-- General safety: if the hit's school strongly suggests it's pet damage for this
+					-- class, don't let the player's recent-cast window hijack it.
+					if isLikelyPetSchoolHitGivenRecentPlayerSpell(self, school, self._lastPlayerSpellId) then
+						recentPlayerCast = false
+					end
 					-- DoT ticks can arrive long after the cast and look like small magic WOUND
 					-- events. If we have a recent periodic spell in our window, prefer treating
 					-- this as player periodic damage instead of pet damage.
 					local dotSpellId = nil
 					if not isPhysicalEarly then
 						dotSpellId = getMostRecentPeriodicSpellId(self, t)
+					end
+					-- Hard separation for low-level Warlock: Imp hits are fire. If an Imp is active
+					-- and we see a fire-school WOUND, never attribute it to player spells/DoTs.
+					if isWarlockPlayer() and isImpPet() and (ZSBT.IsSafeNumber(school) and school == 4) then
+						recentPlayerCast = false
+						dotSpellId = nil
+					end
+					-- School safety: Corruption/Agony/UA ticks are shadow; never attribute fire hits
+					-- to these DoTs.
+					if dotSpellId and (dotSpellId == 172 or dotSpellId == 980 or dotSpellId == 30108) then
+						if not (ZSBT.IsSafeNumber(school) and school == 32) then
+							dotSpellId = nil
+						end
+					end
+					if dl >= 4 and ZSBT.IsSafeNumber(amount) and amount > 0 and (not isPhysicalEarly) and (ZSBT.IsSafeNumber(school) and school == 4) then
+						local petFam = getPetFamilyLower()
+						local petNpcId = getUnitNpcId("pet")
+						ECPrint(("PET_FALLBACK_EVAL token=%s restrict=%s recentPlayerCast=%s dotSpellId=%s amt=%s school=%s")
+							:format(dbgSafe(self._castToken), dbgSafe(restrict), dbgSafe(recentPlayerCast), dbgSafe(dotSpellId), dbgSafe(amount), dbgSafe(school))
+							.. (petNpcId and (" petNpcId=" .. tostring(petNpcId)) or "")
+							.. (petFam and (" petFam=" .. tostring(petFam)) or ""))
 					end
 					-- Safety: only treat it as a DoT tick if the target actually has the debuff.
 					-- Without this, any recent non-periodic cast (e.g. Shadow Bolt) can "stick"
@@ -1923,16 +2200,78 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							return
 						end
 						local pipeId = self._rawPipeCount + 1
+						-- Safety: ensure unique rawPipeId. Some clients / reload edges can cause
+						-- _rawPipeCount to rewind, which would make Pulse_Engine read a nil value
+						-- (and the pet hit would never display).
+						if self._rawPipe and self._rawPipe[pipeId] ~= nil then
+							local i = pipeId
+							while self._rawPipe[i] ~= nil do
+								i = i + 1
+							end
+							pipeId = i
+						end
 						self._rawPipeCount = pipeId
 						self._rawPipe[pipeId] = amount
+						if dl >= 4 then
+							ECPrint(("PET_FALLBACK_EMIT token=%s rawPipeId=%s amt=%s school=%s")
+								:format(dbgSafe(self._castToken), dbgSafe(pipeId), dbgSafe(amount), dbgSafe(school)))
+						end
 						emit("PET_DAMAGE_COMBAT", {
 							timestamp = t,
 							rawPipeId = pipeId,
+							amount = amount,
+							amountText = tostring(amount),
 							isCrit = isCrit,
+							petBucket = (ZSBT.IsSafeNumber(school) and school ~= 1) and "summons" or nil,
 							schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
 							targetName = safeUnitName("target"),
 						})
 						return
+					end
+				end
+			elseif okEx and hasPet ~= true then
+				-- Guardian-style DK ghouls: if we recently summoned a ghoul and are receiving
+				-- physical WOUND events on target, treat small physical hits as pet damage.
+				if (ZSBT.IsSafeNumber(school) and school == 1) and isPlayerClassTag and isPlayerClassTag("DEATHKNIGHT") then
+					local summonedAt = self._dkGhoulSummonAt
+					if type(summonedAt) == "number" then
+						local ageSummon = t - summonedAt
+						if ageSummon >= 0 and ageSummon <= 45.0 then
+							if ZSBT.IsSafeNumber(amount) and amount > 0 and amount <= 3000 then
+								local ageCast = nil
+								if type(self._lastPlayerSpellAt) == "number" then
+									ageCast = t - self._lastPlayerSpellAt
+								end
+								-- Avoid grabbing the immediate landing of a just-cast physical ability.
+								if not (type(ageCast) == "number" and ageCast >= 0 and ageCast <= 0.15) then
+									local pipeId = self._rawPipeCount + 1
+									if self._rawPipe and self._rawPipe[pipeId] ~= nil then
+										local i = pipeId
+										while self._rawPipe[i] ~= nil do
+											i = i + 1
+										end
+										pipeId = i
+									end
+									self._rawPipeCount = pipeId
+									self._rawPipe[pipeId] = amount
+									if dl >= 4 then
+										ECPrint(("PET_GUARDIAN_EMIT class=DK token=%s rawPipeId=%s amt=%s school=%s")
+											:format(dbgSafe(self._castToken), dbgSafe(pipeId), dbgSafe(amount), dbgSafe(school)))
+									end
+									emit("PET_DAMAGE_COMBAT", {
+										timestamp = t,
+										rawPipeId = pipeId,
+										amount = amount,
+										amountText = tostring(amount),
+										isCrit = isCrit,
+										petBucket = nil,
+										schoolMask = 1,
+										targetName = safeUnitName("target"),
+									})
+									return
+								end
+							end
+						end
 					end
 				end
 			end
@@ -2396,15 +2735,26 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		-- If no existing bucket, only start one when we can attribute this hit.
 		local matchedCast = nil
 		if not existing then
-			-- Prevent tiny procs/secondary effects from starting a bucket.
+			-- Small non-physical hits can be either real spell damage (low level / old content)
+			-- or tiny procs/secondary effects. Prefer attribution first; only suppress when
+			-- we cannot correlate it to a recent cast/periodic effect.
+			local suppressIfUnattributed = false
 			if not isPhysical and ZSBT.IsSafeNumber(amount) and amount > 0 and amount < 500 then
 				-- DoT ticks often show up as small UNIT_COMBAT(target) magic WOUND events.
 				-- If we recently cast a periodic-capable spell, treat this as outgoing
-				-- periodic damage instead of dropping it as a proc.
+				-- periodic damage.
 				local dotSpellId = getMostRecentPeriodicSpellId(self, t)
 				-- Safety: only treat it as a DoT tick if the target actually has the debuff.
-				if dotSpellId and (not hasTargetDebuffSpellId(dotSpellId)) then
-					dotSpellId = nil
+				local debuffOk = nil
+				if dotSpellId then
+					debuffOk = hasTargetDebuffSpellId(dotSpellId)
+					if debuffOk ~= true then
+						if dl >= 4 then
+							ECPrint(("DOT_ATTRIB_FAIL src=UNIT_COMBAT_SMALL token=%s dotSpellId=%s debuffOk=%s amt=%s school=%s")
+								:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(debuffOk), dbgSafe(amount), dbgSafe(school)))
+						end
+						dotSpellId = nil
+					end
 				end
 				if dotSpellId then
 					if dl >= 4 and ZSBT.IsSafeNumber(amount) and amount >= BIG_HIT_THRESHOLD then
@@ -2428,7 +2778,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					self._lastOutgoingCombatTargetName = tName
 					return
 				end
-				return
+				suppressIfUnattributed = true
 			end
 			-- Physical with a pet is too ambiguous.
 			if isPhysical and hasPet then
@@ -2441,19 +2791,66 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 			matchedCast = consumeBestPendingCast(self, t, wantSpellId, castWindow)
 			if not matchedCast then
+				if suppressIfUnattributed == true then
+					return
+				end
 				-- "Make it work" mode: if we cannot confidently attribute to a specific spell,
 				-- still show the outgoing number when it occurs shortly after the player's own cast.
 				-- This sacrifices icons/attribution but prevents outgoing going silent.
 				-- IMPORTANT: do NOT bypass strict/restricted/quiet modes (PvP strict, instance-aware,
 				-- or user-enabled strict outgoing). In those modes we require a real pending-cast match.
 				if restrict == true or quietMode == true then
-					return
+					-- Quiet/strict modes: still allow *your own* outgoing when it can be correlated
+					-- to a very recent cast timestamp, even if the pending-cast queue missed it.
+					-- For travel-time spells (e.g., Shadow Bolt), allow a longer window.
+					local lastAt = self._lastPlayerSpellAt
+					local lastId = self._lastPlayerSpellId
+					if type(lastAt) == "number" and type(lastId) == "number" then
+						local age = t - lastAt
+						local maxAge = castWindow
+						if lastId == 686 then
+							maxAge = math.max(maxAge, 2.50)
+						elseif not isPhysical then
+							maxAge = math.max(maxAge, 1.25)
+						end
+						if age >= 0 and age <= maxAge then
+							matchedCast = { spellId = lastId, eligibleIcon = true }
+						else
+							return
+						end
+					else
+						return
+					end
 				end
 				local lastAt = self._lastPlayerSpellAt
 				if type(lastAt) == "number" then
 					local age = t - lastAt
 					if age >= 0 and age <= 1.25 then
-						matchedCast = { spellId = nil, eligibleIcon = false }
+						-- If we have a last spell id, prefer attributing to it over emitting spellId=nil.
+						-- Shadow Bolt landings frequently arrive via UNIT_COMBAT(target) with no clean
+						-- pending-cast match; treat them as the last cast within a longer window.
+						local lastId = self._lastPlayerSpellId
+						if type(lastId) == "number" then
+							local maxAge = 1.25
+							if lastId == 686 then
+								maxAge = 2.50
+							end
+							if age >= 0 and age <= maxAge then
+								matchedCast = { spellId = lastId, eligibleIcon = true }
+							else
+								-- Quiet/strict: suppress unattributed numbers when we cannot even loosely
+								-- correlate to a recent player cast.
+								if quietMode == true or restrict == true then
+									return
+								end
+								matchedCast = { spellId = nil, eligibleIcon = false }
+							end
+						else
+							if quietMode == true or restrict == true then
+								return
+							end
+							matchedCast = { spellId = nil, eligibleIcon = false }
+						end
 					else
 						return
 					end

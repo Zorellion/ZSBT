@@ -816,13 +816,12 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
         -- Attach spell icon if enabled. Never show an ability icon for auto-attacks
         -- (auto-attack correlation can be ambiguous and would cause "stuck" icons).
         				local trustedForSpellIcon = (evt and (
-					evt.amountSource == "COMBAT_TEXT"
-					or evt.amountSource == "DAMAGE_METER"
-					or evt.amountSource == "COMBAT_LOG"
-					or evt.amountSource == "UNIT_COMBAT_DOT"
-					or evt.amountSource == "UNIT_COMBAT_BEST"
-					or evt.amountSource == "UNIT_COMBAT_PHYSICAL"
-					or evt.amountSource == "UNIT_COMBAT_AUTO_FALLBACK"
+						evt.amountSource == "COMBAT_TEXT"
+						or evt.amountSource == "DAMAGE_METER"
+						or evt.amountSource == "COMBAT_LOG"
+						or evt.amountSource == "UNIT_COMBAT_DOT"
+						or evt.amountSource == "UNIT_COMBAT_BEST"
+						or evt.amountSource == "UNIT_COMBAT_PHYSICAL"
 				)) or (evt and evt.isPeriodic == true)
 		if prof.showSpellIcons and evt.isAuto ~= true and type(resolvedSpellID) == "number" and trustedForSpellIcon then
 			local tex = ZSBT.CleanSpellIcon(resolvedSpellID)
