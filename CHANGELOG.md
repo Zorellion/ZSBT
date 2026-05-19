@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.4.5
+- Pets: fixed pet damage text only displaying when outgoing debug was set to 4+ (secret-value display fallback was incorrectly debug-gated).
+
 ## 2.4.4
 - Outgoing: fixed Quiet Outgoing When Idle suppressing your own casts in some cases (improved cast correlation window for longer travel-time spells).
 - Outgoing: restored spell icons for modern outgoing fallback sources.
