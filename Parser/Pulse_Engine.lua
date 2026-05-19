@@ -1358,7 +1358,7 @@ function Engine:flushBucket()
 						Dbg4("|cFF66CCFF[PETDBG]|r", ("PET event rawPipeId=%s val=%s out=%s")
 							:format(tostring(rawPipeId), tostring(val), tostring(text)))
 					end
-					if text == nil and outDl >= 4 then
+					if text == nil then
 						-- Secret/tainted amount: never pass raw userdata through the UI.
 						local okS, s = pcall(tostring, val)
 						if okS and type(s) == "string" and s ~= "" then
