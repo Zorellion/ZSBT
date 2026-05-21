@@ -1254,11 +1254,20 @@ function Core:InitInterruptTracking()
 		-- Mage / Warlock / Priest / Hunter / Evoker
 		[2139] = true,  -- Counterspell
 		[19647] = true, -- Spell Lock
+		[89766] = true, -- Axe Toss
+		[347008] = true, -- Axe Toss (alt)
 		[15487] = true, -- Silence
 		[147362] = true, -- Counter Shot
 		[351338] = true, -- Quell
 		-- Blood Elf racial
 		[28730] = true, -- Arcane Torrent
+	}
+	-- Warlock: Command Demon is a player-cast wrapper that triggers a pet ability.
+	-- Resolve it to the actual pet spellId so interrupt/caststop detection works.
+	-- Some clients report a different wrapper spellId (e.g. 119914).
+	local COMMAND_DEMON_SPELL_IDS = {
+		[119898] = true,
+		[119914] = true,
 	}
 	local CASTSTOP_SPELL_IDS = {
 		-- Warrior
@@ -1318,6 +1327,58 @@ function Core:InitInterruptTracking()
 		[374348] = true, -- Land Slide
 		[370565] = true, -- Terrorize (talent)
 	}
+	local function resolvePetStopperSpellId()
+		if not (UnitExists and UnitExists("pet")) then return nil end
+		if type(GetPetActionInfo) ~= "function" then return nil end
+		if type(GetSpellInfo) ~= "function" then return nil end
+		local maxSlots = _G.NUM_PET_ACTION_SLOTS
+		if type(maxSlots) ~= "number" or maxSlots <= 0 then
+			maxSlots = 12
+		end
+		local bestInterrupt = nil
+		local bestCastStop = nil
+		for i = 1, maxSlots do
+			local ok, name, _, _, isToken = pcall(GetPetActionInfo, i)
+			if ok and type(name) == "string" and name ~= "" then
+				local actionName = name
+				if isToken == true and type(_G[actionName]) == "string" then
+					actionName = _G[actionName]
+				end
+				local sid = nil
+				pcall(function()
+					-- GetSpellInfo(spellName) returns (name, rank, icon, castTime, minRange, maxRange, spellId)
+					sid = select(7, GetSpellInfo(actionName))
+				end)
+				if type(sid) == "number" then
+					if (not bestInterrupt) and INTERRUPT_SPELL_IDS[sid] then
+						bestInterrupt = sid
+					elseif (not bestCastStop) and CASTSTOP_SPELL_IDS[sid] then
+						bestCastStop = sid
+					end
+				end
+			end
+		end
+		return bestInterrupt or bestCastStop
+	end
+	local function resolveWarlockCommandDemonFallbackSpellId()
+		if not UnitCreatureFamily then return nil end
+		local okF, fam = pcall(UnitCreatureFamily, "pet")
+		if not okF or type(fam) ~= "string" or fam == "" then return nil end
+		local f = fam:lower()
+		-- Felguard / Wrathguard -> Axe Toss
+		if f:find("felguard", 1, true) or f:find("wrathguard", 1, true) then
+			return 89766
+		end
+		-- Felhunter / Observer -> Spell Lock
+		if f:find("felhunter", 1, true) or f:find("observer", 1, true) then
+			return 19647
+		end
+		-- Succubus / Incubus -> Seduction (cast-stop)
+		if f:find("succubus", 1, true) or f:find("incubus", 1, true) then
+			return 6358
+		end
+		return nil
+	end
 
 	local function getTemplate(key, fallback)
 		local p = ZSBT.db and ZSBT.db.profile
@@ -1371,6 +1432,8 @@ function Core:InitInterruptTracking()
 		[106839] = "Skull Bash",
 		[2139] = "Counterspell",
 		[19647] = "Spell Lock",
+		[89766] = "Axe Toss",
+		[347008] = "Axe Toss",
 		[15487] = "Silence",
 		[147362] = "Counter Shot",
 		[351338] = "Quell",
@@ -1548,10 +1611,54 @@ function Core:InitInterruptTracking()
 		-- immediately fires UNIT_SPELLCAST_INTERRUPTED, treat it as a successful interrupt.
 		if event == "UNIT_SPELLCAST_SUCCEEDED" then
 			local unit, _, spellId = msg, ...
-			if unit == "player" and type(spellId) == "number" then
+			if (unit == "player" or unit == "pet") and type(spellId) == "number" then
 				local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("notifications"))
 					or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
+				if dl >= 5 and unit == "player" then
+					SafeDbgPrint("[Stopper Player SUCCEEDED] spellId=" .. tostring(spellId) .. " label=" .. safeStr(safeSpellLabel(spellId)))
+				end
+				-- If the player cast Command Demon, resolve to the actual pet ability.
+				if unit == "player" and COMMAND_DEMON_SPELL_IDS[spellId] then
+					local resolved = resolvePetStopperSpellId()
+					if dl >= 5 then
+						SafeDbgPrint("[Stopper Command Demon] resolveStart")
+						local maxSlots = _G.NUM_PET_ACTION_SLOTS
+						if type(maxSlots) ~= "number" or maxSlots <= 0 then maxSlots = 12 end
+						if UnitExists and UnitExists("pet") and type(GetPetActionInfo) == "function" then
+							for i = 1, maxSlots do
+								local okA, name, _, _, isToken = pcall(GetPetActionInfo, i)
+								if okA and type(name) == "string" and name ~= "" then
+									local actionName = name
+									if isToken == true and type(_G[actionName]) == "string" then
+										actionName = _G[actionName]
+									end
+									local sid = nil
+									pcall(function() sid = select(7, GetSpellInfo(actionName)) end)
+									SafeDbgPrint("[Stopper PetAction] slot=" .. tostring(i)
+										.. " name=" .. safeStr(name)
+										.. " actionName=" .. safeStr(actionName)
+										.. " sid=" .. tostring(sid))
+								end
+							end
+						end
+					end
+					if not resolved then
+						resolved = resolveWarlockCommandDemonFallbackSpellId()
+						if type(resolved) == "number" then
+							SafeDbgPrint("[Stopper Command Demon] fallbackResolvedSpellId=" .. tostring(resolved))
+						end
+					end
+					if type(resolved) == "number" then
+						spellId = resolved
+						if dl >= 5 then
+							SafeDbgPrint("[Stopper Command Demon] resolvedSpellId=" .. tostring(spellId) .. " label=" .. safeStr(safeSpellLabel(spellId)))
+						end
+					end
+				end
 				Core._lastStopperSpellId = spellId
+				if dl >= 5 and unit == "pet" then
+					SafeDbgPrint("[Stopper Pet SUCCEEDED] spellId=" .. tostring(spellId) .. " label=" .. safeStr(safeSpellLabel(spellId)))
+				end
 
 				if INTERRUPT_SPELL_IDS[spellId] then
 					Core._lastInterruptAttemptAt = GetTime and GetTime() or 0
@@ -1658,6 +1765,25 @@ function Core:InitInterruptTracking()
 					Core._lastCastStopTargetGUID = targetGUID
 					Core._lastCastStopTargetName = targetName
 					Core._lastCastStopTargetUnit = targetUnit
+					-- Some clients do not reliably fire UNIT_SPELLCAST_START for nameplate units
+					-- or under certain UI setups. If the target is currently casting at the moment
+					-- we attempt a cast-stop, backfill the cast-start timestamp so later validation
+					-- can succeed.
+					pcall(function()
+						if targetUnit and (UnitCastingInfo or UnitChannelInfo) then
+							local castSpellId = nil
+							if UnitCastingInfo then
+								castSpellId = select(9, UnitCastingInfo(targetUnit))
+							end
+							if not castSpellId and UnitChannelInfo then
+								castSpellId = select(8, UnitChannelInfo(targetUnit))
+							end
+							if type(castSpellId) == "number" then
+								Core._unitLastCastAt = Core._unitLastCastAt or {}
+								Core._unitLastCastAt[targetUnit] = Core._lastCastStopAttemptAt
+							end
+						end
+					end)
 
 					-- Snapshot target cast info so we can report which spell was stopped.
 					Core._lastCastStopSpellId = nil

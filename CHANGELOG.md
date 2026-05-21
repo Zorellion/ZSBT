@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.4.6
+- Outgoing: improved Warlock DoT tracking (including Seed of Corruption) and Warrior Rend periodic tick detection under WoW 12.x.
+- Outgoing: tightened instance-aware outgoing attribution to reduce non-player damage leakage in group instances.
+- Notifications: improved interrupt and cast-stop tracking, including Warlock pet interrupts via Command Demon (Axe Toss) and improved cast-stop announcements (e.g. Mortal Coil) when cast-start events are missing.
+
 ## 2.4.5
 - Pets: fixed pet damage text only displaying when outgoing debug was set to 4+ (secret-value display fallback was incorrectly debug-gated).
 
