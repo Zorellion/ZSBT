@@ -317,8 +317,25 @@ local PENDING_CAST_MAX = 12
 Collector._recentPeriodicSpellAt = Collector._recentPeriodicSpellAt or {}
 local PERIODIC_OUTGOING_WINDOW_SEC = 30.0
 
+local function isWarlockDotSpellId(spellId)
+	if type(spellId) ~= "number" then return false end
+	-- Canonical IDs (legacy / common)
+	if spellId == 172 or spellId == 980 or spellId == 30108 or spellId == 27243 then
+		return true
+	end
+	-- Some clients/expansions can use different spellIds for the same DoT.
+	-- Fall back to spell name matching when safe.
+	local sn = (ZSBT and ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId)) or nil
+	if type(sn) ~= "string" or sn == "" then return false end
+	return sn == "Corruption" or sn == "Agony" or sn == "Unstable Affliction" or sn == "Seed of Corruption"
+end
+
 local function isKnownPeriodicSpellId(spellId)
 	if type(spellId) ~= "number" then return false end
+	-- Warlock DoTs (name-based fallback handles spellId variants)
+	if isPlayerClassTag and isPlayerClassTag("WARLOCK") then
+		return isWarlockDotSpellId(spellId)
+	end
 	return spellId == 172
 		or spellId == 980
 		or spellId == 30108
@@ -729,6 +746,12 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 			-- Track a short active window so we can emit each tick.
 			self._drainLifeUntil = now() + 6.0
 			self._drainLifeLastTickAt = 0
+		end
+		if spellId == 772 then
+			self._rendLastCastAt = self._lastPlayerSpellAt
+			self._rendNextTickAt = (self._lastPlayerSpellAt or now()) + 3.0
+			self._rendInitialHitAmt = nil
+			self._rendTickState = nil
 		end
 		local dl = OutDbgLevel()
 		if dl >= 5 and isWhirlwindSpellId(spellId) then
@@ -1975,18 +1998,18 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 		end
 		local inInst = false
+		local members = 0
+		if type(GetNumGroupMembers) == "function" then
+			local okM, m = pcall(GetNumGroupMembers)
+			if okM and type(m) == "number" then members = m end
+		end
 		if IsInInstance then
-			local okI, inInst = pcall(IsInInstance)
-			if okI and inInst == true then
+			local okI, inst = pcall(IsInInstance)
+			if okI and inst == true then
 				inInst = true
 				-- Inside instances, UNIT_COMBAT("target") has no source attribution and can
 				-- easily pick up follower/party damage.
 				if instanceAware == true then
-					local members = 0
-					if type(GetNumGroupMembers) == "function" then
-						local okM, m = pcall(GetNumGroupMembers)
-						if okM and type(m) == "number" then members = m end
-					end
 					-- If there are multiple members (including follower/party NPCs), do not
 					-- disable this pipeline entirely (would go silent). Instead, force strict
 					-- cast-correlation below so we only emit hits we can attribute.
@@ -1997,8 +2020,22 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						-- your target from being misattributed as your outgoing when you're idle.
 						local tNow = now()
 						local lastAt = self._lastPlayerSpellAt
-						if not (type(lastAt) == "number" and (tNow - lastAt) >= 0 and (tNow - lastAt) <= 0.90) then
-							return
+						local recentlyCast = (type(lastAt) == "number" and (tNow - lastAt) >= 0 and (tNow - lastAt) <= 0.90)
+						if not recentlyCast then
+							-- Exception: periodic damage can tick well after the cast and we'd still like
+							-- to show *player* DoTs without opening the door to follower/party damage.
+							-- Allow the pipeline only when we can correlate to a very recent periodic spell.
+							local dotSpellId = getMostRecentPeriodicSpellId and getMostRecentPeriodicSpellId(self, tNow) or nil
+							local okDot = false
+							if dotSpellId and self._recentPeriodicSpellAt and type(self._recentPeriodicSpellAt[dotSpellId]) == "number" then
+								local age = tNow - (self._recentPeriodicSpellAt[dotSpellId] or 0)
+								if age >= 0 and age <= (PERIODIC_OUTGOING_WINDOW_SEC or 8.0) then
+									okDot = true
+								end
+							end
+							if not okDot then
+								return
+							end
 						end
 					end
 				end
@@ -2145,9 +2182,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						recentPlayerCast = false
 						dotSpellId = nil
 					end
-					-- School safety: Corruption/Agony/UA ticks are shadow; never attribute fire hits
-					-- to these DoTs.
-					if dotSpellId and (dotSpellId == 172 or dotSpellId == 980 or dotSpellId == 30108) then
+					-- School safety: Warlock core DoT ticks are shadow; never attribute non-shadow hits
+					-- to these DoTs (spellId variants included).
+					if dotSpellId and isWarlockDotSpellId and isWarlockDotSpellId(dotSpellId) then
 						if not (ZSBT.IsSafeNumber(school) and school == 32) then
 							dotSpellId = nil
 						end
@@ -2164,7 +2201,15 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- Without this, any recent non-periodic cast (e.g. Shadow Bolt) can "stick"
 					-- as the spellId for unrelated magic WOUND ticks.
 					if dotSpellId and (not hasTargetDebuffSpellId(dotSpellId)) then
-						dotSpellId = nil
+						local allowWarlockDot = false
+						if isWarlockPlayer and isWarlockPlayer() then
+							if isWarlockDotSpellId(dotSpellId) and (ZSBT.IsSafeNumber(school) and school == 32) then
+								allowWarlockDot = true
+							end
+						end
+						if not allowWarlockDot then
+							dotSpellId = nil
+						end
 					end
 					if dotSpellId then
 						if not isCorroboratedHugeHit(t, amount, dotSpellId) then
@@ -2346,18 +2391,27 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				end
 			-- Quiet mode behavior: separate opt-in for showing auto-attacks while quiet.
 			elseif isQuietOutgoingAutoAttacks() == true then
-				local inPlayerCombat = false
-				if UnitAffectingCombat then
-					local okC, res = pcall(UnitAffectingCombat, "player")
-					if okC and type(res) == "boolean" then inPlayerCombat = res end
-				end
-				if inPlayerCombat then
-					if isPlayerAutoAttackActive() or isPlayerMeleeEngaged() then
-						allowAutoFallback = true
+				if members and members > 1 then
+					allowAutoFallback = false
+				else
+					local inPlayerCombat = false
+					if UnitAffectingCombat then
+						local okC, res = pcall(UnitAffectingCombat, "player")
+						if okC and type(res) == "boolean" then inPlayerCombat = res end
+					end
+					if inPlayerCombat then
+						if isPlayerAutoAttackActive() or isPlayerMeleeEngaged() then
+							allowAutoFallback = true
+						end
 					end
 				end
 			end
 			end
+		end
+		-- Safety: never allow auto-attack fallback inside group instances when instance-aware
+		-- outgoing is enabled; UNIT_COMBAT(target) has no source attribution and will leak.
+		if allowAutoFallback == true and instanceAware == true and inInst == true and members and members > 1 then
+			allowAutoFallback = false
 		end
 
 		-- PHYSICAL: do not merge. Multiple swings / cleaves / multistrikes would be
@@ -2369,7 +2423,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 			-- Rend (772) periodic ticks are physical WOUND events in 12.x and contain no spellId.
 			-- Warrior-only heuristic: after a recent Rend cast, emit tick-like wounds as periodic.
-			if false and isPlayerClassTag("WARRIOR") then
+			if isPlayerClassTag("WARRIOR") then
 				local rAt = self._rendLastCastAt
 				if type(rAt) == "number" then
 					local ageCast = t - rAt
@@ -2422,7 +2476,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							-- If we don't have a baseline tick candidate yet, seed it on the first
 							-- near-expected event. This prevents the tickLike window (based on dt)
 							-- from never starting due to lastAt=0.
-							local canSeed = (debuffOk ~= true and isNearExpected == true and (not dtNext or dtNext >= -0.20) and not (type(st.lastAt) == "number" and st.lastAt > 0))
+							local seededAlready = (type(st.lastAt) == "number" and st.lastAt > 0)
+							local inFirstTickWindow = false
+							if debuffOk == true then
+								inFirstTickWindow = (ageCast >= 1.6 and ageCast <= 7.0)
+							end
+							local canSeed = (not seededAlready) and ((isNearExpected == true and (not dtNext or dtNext >= -0.20)) or inFirstTickWindow == true)
 							if canSeed and ZSBT.IsSafeNumber(self._rendInitialHitAmt) and self._rendInitialHitAmt > 0 then
 								-- Require tick candidates to be much smaller than the application hit.
 								-- This is ratio-based and scales across level/gear.
@@ -2443,13 +2502,14 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								if diff <= tol then isSame = true end
 							end
 							local tickLike = (dt >= 1.4 and dt <= 5.8)
+							local clusteredRepeat = (isSame == true and dt >= 0.08 and dt <= 0.40)
 							-- Only update streak state on tick-like intervals; intervening non-tick-like
 							-- WOUND events are likely melee/other abilities and should not reset the
 							-- current tick candidate.
 							-- When the Rend debuff isn't confirmed, further require the hit to be near
 							-- the expected tick time; otherwise other abilities can constantly reset
 							-- the candidate amount.
-							local allowTickStateUpdate = tickLike
+							local allowTickStateUpdate = tickLike or clusteredRepeat
 							if dl >= 5 then
 								ECPrint(("REND_CLASS2 dt=%.3f tickLike=%s isSame=%s allowState=%s cand=%s streak=%s")
 									:format(dt, dbgSafe(tickLike), dbgSafe(isSame), dbgSafe(allowTickStateUpdate), dbgSafe(st.amt), dbgSafe(st.streak)))
@@ -2628,6 +2688,35 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			if matchedCast then
 				spellId = (matchedCast.eligibleIcon == true) and matchedCast.spellId or nil
 			end
+			-- Hybrid (open-world) gating: physical WOUND events on the target have no source
+			-- attribution. When we're not in strict/restricted correlation mode, only show
+			-- "white hits" (spellId nil) if we have strong evidence the player is actually
+			-- swinging. This reduces leakage when other players are also attacking your target.
+			if (restrict ~= true) and (quietMode ~= true) and (spellId == nil) then
+				local okSwing = true
+				local inPlayerCombat = false
+				if UnitAffectingCombat then
+					local okC, res = pcall(UnitAffectingCombat, "player")
+					if okC and type(res) == "boolean" then inPlayerCombat = res end
+				end
+				if not inPlayerCombat then
+					okSwing = false
+				end
+				if okSwing and UnitCanAttack then
+					local okA, canAtk = pcall(UnitCanAttack, "player", "target")
+					if okA and canAtk == false then
+						okSwing = false
+					end
+				end
+				if okSwing then
+					if not (isPlayerAutoAttackActive() or isPlayerMeleeEngaged()) then
+						okSwing = false
+					end
+				end
+				if not okSwing then
+					return
+				end
+			end
 			-- Prevent Whirlwind multi-hit attribution from absorbing unrelated huge physical
 			-- spikes in restricted instances (follower/party melee has no source attribution).
 			if restrict == true and isWhirlwindSpellId(spellId) and ZSBT.IsSafeNumber(amount) then
@@ -2660,6 +2749,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				end
 				wwAggPush(self, t, spellId, amount, isCrit, true)
 				return
+			end
+			if spellId == 772 then
+				self._rendLastCastAt = t
+				self._rendNextTickAt = t + 3.0
+				self._rendInitialHitAmt = amount
+				self._rendTickState = nil
 			end
 			local pipeId = self._rawPipeCount + 1
 			self._rawPipeCount = pipeId
@@ -2749,11 +2844,19 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				if dotSpellId then
 					debuffOk = hasTargetDebuffSpellId(dotSpellId)
 					if debuffOk ~= true then
-						if dl >= 4 then
-							ECPrint(("DOT_ATTRIB_FAIL src=UNIT_COMBAT_SMALL token=%s dotSpellId=%s debuffOk=%s amt=%s school=%s")
-								:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(debuffOk), dbgSafe(amount), dbgSafe(school)))
+						local allowWarlockDot = false
+						if isWarlockPlayer and isWarlockPlayer() then
+							if isWarlockDotSpellId(dotSpellId) and (ZSBT.IsSafeNumber(school) and school == 32) then
+								allowWarlockDot = true
+							end
 						end
-						dotSpellId = nil
+						if not allowWarlockDot then
+							if dl >= 4 then
+								ECPrint(("DOT_ATTRIB_FAIL src=UNIT_COMBAT_SMALL token=%s dotSpellId=%s debuffOk=%s amt=%s school=%s")
+									:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(debuffOk), dbgSafe(amount), dbgSafe(school)))
+							end
+							dotSpellId = nil
+						end
 					end
 				end
 				if dotSpellId then
@@ -2803,6 +2906,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- Quiet/strict modes: still allow *your own* outgoing when it can be correlated
 					-- to a very recent cast timestamp, even if the pending-cast queue missed it.
 					-- For travel-time spells (e.g., Shadow Bolt), allow a longer window.
+					-- In group instances with instance-aware outgoing enabled, do NOT use timestamp-only
+					-- attribution because UNIT_COMBAT(target) has no ownership and will leak other damage.
+					if instanceAware == true and inInst == true and members and members > 1 then
+						return
+					end
 					local lastAt = self._lastPlayerSpellAt
 					local lastId = self._lastPlayerSpellId
 					if type(lastAt) == "number" and type(lastId) == "number" then
