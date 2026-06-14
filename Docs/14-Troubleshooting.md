@@ -4,7 +4,7 @@ If something feels “off”, start here.
 
 ## Quick checklist (30 seconds)
 - Confirm the addon is enabled: `/zsbt` -> `General` -> `Enabled`
-- Confirm you have at least one visible scroll area enabled: `/zsbt` -> `Scroll Areas`
+- Confirm you have at least one visible scroll area enabled: `/zsbt` -> `Display` -> `Scroll Areas`
 - If `Combat Only` is enabled, you will see very little out of combat
 - Lower thresholds temporarily to confirm output is working
 - Type `/reload`
@@ -13,7 +13,7 @@ If something feels “off”, start here.
 - **Enable ZSBT**
   - `/zsbt` -> `General` -> `Enabled`
 - **Enable a scroll area**
-  - `/zsbt` -> `Scroll Areas`
+  - `/zsbt` -> `Display` -> `Scroll Areas`
   - Ensure `Incoming`, `Outgoing`, and/or `Notifications` are enabled
 - **Combat-only settings**
   - If `Combat Only` is enabled, test by hitting a target dummy or mob
@@ -36,7 +36,7 @@ ZSBT tries to show spell icons/names only when it can do so reliably.
 
 ## Too much spam
 - **Spam Control**
-  - `/zsbt` -> `Spam Control`
+  - `/zsbt` -> `Combat Text` -> `Spam Control`
   - Enable merging to condense rapid hits
   - Raise thresholds gradually until only meaningful events show
 - **Scroll Area tuning**
@@ -61,7 +61,7 @@ If a trigger or cooldown alert doesn’t fire, the issue is usually one of these
   - `/zsbt` -> `Alerts` -> `Notifications` -> `Interrupt Alerts`
   - Enable `Interrupts (Successful)` and/or `Cast Stops (Stuns/CC)`
 - Ensure the Notifications (or chosen) scroll area is enabled and visible:
-  - `/zsbt` -> `Scroll Areas`
+  - `/zsbt` -> `Display` -> `Scroll Areas`
 
 ## Interrupt chat announcements causing blocked action errors
 If you see an error like:

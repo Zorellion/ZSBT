@@ -3,8 +3,7 @@
 Diagnostics controls debug logging.
 
 ## Where to configure
-- `/zsbt` -> `Diagnostics`
-- Or open the dedicated Debug UI from `/zsbt` -> `Help and Support` -> `Troubleshooting` -> `Open Debug UI`.
+- `/zsbt` -> `Help and Support` -> `Troubleshooting` -> `Open Debug UI`
 
 ## Debug levels (0-5)
 - Use higher levels only when troubleshooting.

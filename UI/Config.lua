@@ -1574,17 +1574,17 @@ local HELP_MD = {
 
 ## Recommended first run
 - **Optional: choose a preset profile**
-  - Go to `DB Profiles`.
+  - Go to `Profiles`.
   - Select one of the shipped preset profiles (Melee / Ranged / Tank / Healer / Pet Class).
-  - If you ever want to restore a preset back to its shipped layout, use the reset buttons at the bottom of `DB Profiles`.
+  - If you ever want to restore a preset back to its shipped layout, use the reset buttons at the bottom of `Profiles`.
 - **Enable the addon**
   - Go to `General`.
   - Make sure `Enabled` is on.
 - **Confirm scroll areas are enabled**
-  - Go to `Scroll Areas`.
-  - Ensure the `Incoming`, `Outgoing`, and `Notifications` areas are enabled.
+  - Go to `Display` -> `Scroll Areas`.
+  - Ensure the `Combat Text` -> `Incoming`, `Combat Text` -> `Outgoing`, and `Notifications` areas are enabled.
 - **Unlock and place scroll areas**
-  - Go to `Scroll Areas`.
+  - Go to `Display` -> `Scroll Areas`.
   - Use the unlock/move controls (if present) to position each area where you want it.
   - Adjust `Width` / `Height` so text doesn’t clip.
 - **Pick your number formatting**
@@ -1592,17 +1592,17 @@ local HELP_MD = {
   - Choose the Number Format you prefer (full numbers, abbreviated, etc.).
 - **Pick fonts**
   - Go to `General` for the master font.
-  - Optionally override fonts per scroll area in `Scroll Areas`.
+  - Optionally override fonts per scroll area in `Display` -> `Scroll Areas`.
 - **Test**
   - Hit a target dummy or fight a mob.
   - You should see:
-    - Incoming damage/heals in `Incoming`
-    - Your damage/heals in `Outgoing`
+    - Incoming damage/heals in `Combat Text` -> `Incoming`
+    - Your damage/heals in `Combat Text` -> `Outgoing`
     - Alerts (if enabled) in `Notifications`
 
 ## Quick setup checklist
 - **Optional: pick a preset profile**
-  - Go to `DB Profiles`.
+  - Go to `Profiles`.
   - Select a shipped preset profile.
 - **Enable ZSBT**
   - Go to `General`.
@@ -1611,11 +1611,11 @@ local HELP_MD = {
   - Go to `General`.
   - Adjust the master font (face/size/outline).
 - **Place your scroll areas**
-  - Go to `Scroll Areas`.
-  - Move/size the `Incoming`, `Outgoing`, and `Notifications` areas.
+  - Go to `Display` -> `Scroll Areas`.
+  - Move/size the `Combat Text` -> `Incoming`, `Combat Text` -> `Outgoing`, and `Notifications` areas.
 - **Confirm you see messages**
   - Hit a target dummy or fight a mob.
-  - You should see numbers in `Incoming` / `Outgoing` and alerts in `Notifications`.
+  - You should see numbers in `Combat Text` -> `Incoming` / `Combat Text` -> `Outgoing` and alerts in `Notifications`.
 
 ## Common commands
 - `/zsbt` Open configuration
@@ -1756,8 +1756,8 @@ And within those, ensure these categories are enabled:
 
 If you still see missing outgoing events after enabling these, check:
 - `General` -> master enable
-- `Outgoing` -> enable outgoing damage
-- `Spam Control` -> thresholds (min threshold not too high)
+- `Combat Text` -> `Outgoing` -> enable outgoing damage
+- `Combat Text` -> `Spam Control` -> thresholds (min threshold not too high)
 ]],
 
 	scrollAreas = [[# Scroll Areas
@@ -1765,7 +1765,7 @@ If you still see missing outgoing events after enabling these, check:
 Scroll areas control where text appears on your screen and how it animates.
 
 ## Where to configure
-- `/zsbt` -> `Scroll Areas`
+- `/zsbt` -> `Display` -> `Scroll Areas`
 
 ## The default areas
 - **Notifications**
@@ -1814,7 +1814,7 @@ Each area can use the global font or a per-area font.
 
 ## Testing
 - Use `Test Selected` to fire regular test events into the selected scroll area.
-- Use `Test Crit` to fire crit-style test events. This also fires incoming heal/damage crit tests using your `Incoming` crit routing overrides.
+- Use `Test Crit` to fire crit-style test events. This also fires incoming heal/damage crit tests using your `Combat Text` -> `Incoming` crit routing overrides.
 ]],
 
 	incoming = [[# Incoming
@@ -1822,11 +1822,11 @@ Each area can use the global font or a per-area font.
 Incoming controls what you see when you take damage or receive healing.
 
 ## Where to configure
-- `/zsbt` -> `Incoming`
+- `/zsbt` -> `Combat Text` -> `Incoming`
 
 ## Incoming damage
 - **Enable/disable** incoming damage.
-- Choose the `Scroll Area` (usually `Incoming`).
+- Choose the `Scroll Area` (usually `Combat Text` -> `Incoming`).
 - Set a `Min Threshold` to hide small hits.
 - Toggle whether to show `Misses`.
 
@@ -1837,11 +1837,11 @@ Incoming controls what you see when you take damage or receive healing.
 - Set a `Min Threshold`.
 
 ## Crit routing
-- Incoming damage crits: `Incoming` -> `Incoming Damage` -> `Incoming Crit Damage`.
-- Incoming healing crits: `Incoming` -> `Incoming Healing` -> `Incoming Crit Heals`.
+- Incoming damage crits: `Combat Text` -> `Incoming` -> `Incoming Damage` -> `Incoming Crit Damage`.
+- Incoming healing crits: `Combat Text` -> `Incoming` -> `Incoming Healing` -> `Incoming Crit Heals`.
 
 ## Tips
-- If you’re in a raid and see too much spam, increase `Min Threshold` and enable merging in `Spam Control`.
+- If you’re in a raid and see too much spam, increase `Min Threshold` and enable merging in `Combat Text` -> `Spam Control`.
 - If you only want to see big hits, set `Min Threshold` higher.
 ]],
 
@@ -1850,12 +1850,12 @@ Incoming controls what you see when you take damage or receive healing.
 Outgoing controls what you see when you deal damage or healing.
 
 ## Where to configure
-- `/zsbt` -> `Outgoing`
+- `/zsbt` -> `Combat Text` -> `Outgoing`
 
 ## Step-by-step setup
 - **Pick a scroll area**
-  - Set `Outgoing Damage` -> `Scroll Area` to your `Outgoing` scroll area.
-  - Set `Outgoing Healing` -> `Scroll Area` to where you want heals (often also `Outgoing`).
+  - Set `Outgoing Damage` -> `Scroll Area` to your `Combat Text` -> `Outgoing` scroll area.
+  - Set `Outgoing Healing` -> `Scroll Area` to where you want heals (often also `Combat Text` -> `Outgoing`).
 - **Set thresholds**
   - Start with a low `Min Threshold` so you can confirm everything works.
   - Raise it later if you want to hide small hits/ticks.
@@ -1867,7 +1867,7 @@ Outgoing controls what you see when you deal damage or healing.
 
 ## Outgoing damage
 - **Enable/disable** outgoing damage.
-- Choose the `Scroll Area` (usually `Outgoing`).
+- Choose the `Scroll Area` (usually `Combat Text` -> `Outgoing`).
 - Set `Min Threshold` to hide small hits.
 - Configure `Auto Attack` display behavior.
 - Toggle whether to show `Misses`.
@@ -1894,7 +1894,7 @@ Outgoing controls what you see when you deal damage or healing.
 - For a cleaner look:
   - Disable spell names.
   - Keep icons on.
-  - Enable merging in `Spam Control`.
+  - Enable merging in `Combat Text` -> `Spam Control`.
 
 ## Group/instance note
 - If you have a “dungeon/raid aware outgoing” restriction enabled, outgoing fallback signals can be limited in instanced content to avoid mis-attributing group activity to you.
@@ -1905,7 +1905,7 @@ Outgoing controls what you see when you deal damage or healing.
 Pets controls how pet/guardian damage is displayed.
 
 ## Where to configure
-- `/zsbt` -> `Pets`
+- `/zsbt` -> `Combat Text` -> `Pets`
 
 ## Options
 - **Outgoing Pet Damage**: damage dealt by your pet/guardian (routing, threshold, colors).
@@ -1923,7 +1923,7 @@ Pets controls how pet/guardian damage is displayed.
 Spam Control helps reduce noise by merging rapid hits and applying thresholds.
 
 ## Where to configure
-- `/zsbt` -> `Spam Control`
+- `/zsbt` -> `Combat Text` -> `Spam Control`
 
 ## Merging (AoE condensing)
 - Enable merging to combine multiple rapid hits into one line.
@@ -1945,7 +1945,7 @@ Spell Rules let you add **per-spell throttles** for outgoing combat text.
 - **What Spell Rules do**
   - Apply an additional, per-spell throttle window so that repeated events from the same spell don’t spam the scroll area.
 - **Where to configure**
-  - `/zsbt` -> `Spam Control` -> `Open Spell Rules Manager`
+  - `/zsbt` -> `Combat Text` -> `Spam Control` -> `Open Spell Rules Manager`
 
 ### How to add a spell rule
 - Enter a **SpellID** (or exact spell name) and click `Add`.
@@ -1976,7 +1976,7 @@ Buff Rules let you control which **buff gain/fade notifications** you see.
     - suppress Gain and/or Fade independently
     - add a per-buff throttle (spam control)
 - **Where to configure**
-  - `/zsbt` -> `Spam Control` -> `Open Buff Rules Manager`
+  - `/zsbt` -> `Combat Text` -> `Spam Control` -> `Open Buff Rules Manager`
 
 ### “Whitelist mode” (only show configured buffs)
 The Spam Control tab has toggles that control whether **unconfigured** buffs are allowed:
@@ -2017,7 +2017,7 @@ The Buff Rules Manager includes merge-only class templates:
 Triggers let you create your own notifications when specific events happen.
 
 ## Where to configure
-- `/zsbt` -> `Triggers`
+- `/zsbt` -> `Alerts` -> `Triggers`
 
 ## Enable triggers
 - Turn on `Enable Triggers`.
@@ -2116,7 +2116,7 @@ Triggers let you create your own notifications when specific events happen.
 Cooldowns shows alerts when tracked cooldowns become ready.
 
 ## Where to configure
-- `/zsbt` -> `Cooldowns`
+- `/zsbt` -> `Alerts` -> `Cooldowns`
 
 ## Enable cooldown tracking
 - Turn `Enabled` on.
@@ -2139,7 +2139,7 @@ Cooldowns shows alerts when tracked cooldowns become ready.
 Media controls sound events and custom media registration.
 
 ## Where to configure
-- `/zsbt` -> `Media`
+- `/zsbt` -> `Display` -> `Media`
 
 ## Sound events
 - Choose sounds for built-in events like:
@@ -2159,7 +2159,7 @@ If you have your own font or sound file, you can register it in the `Custom Medi
      - `...\ZSBT\Media\Fonts\MyFont.ttf`
 3. **Open the Media tab**
    - Type `/zsbt`
-   - Click `Media`
+   - Click `Display` -> `Media`
 4. **Register the font in ZSBT**
    - Find the `Custom Media` section.
    - Fill in:
@@ -2167,7 +2167,7 @@ If you have your own font or sound file, you can register it in the `Custom Medi
      - `Font Filename` (no extension)
    - Click `Add Font`.
 5. **Use the font**
-   - Go to `General` or `Scroll Areas`.
+   - Go to `General` or `Display` -> `Scroll Areas`.
 
 ### Step-by-step: add a custom sound
 1. **Get a sound file**
@@ -2186,7 +2186,7 @@ If you have your own font or sound file, you can register it in the `Custom Medi
 
 ## Customize the announcements
 
-- `/zsbt` -> `Triggers`
+- `/zsbt` -> `Alerts` -> `Triggers`
 	]],
 
 	diagnostics = [[# Diagnostics
@@ -2194,7 +2194,7 @@ If you have your own font or sound file, you can register it in the `Custom Medi
 Diagnostics controls debug logging.
 
 ## Where to configure
-- `/zsbt` -> `Diagnostics`
+- `/zsbt` -> `Help and Support` -> `Troubleshooting` -> `Open Debug UI`
 
 ## Debug levels (0-5)
 - Use higher levels only when troubleshooting.
@@ -2354,7 +2354,7 @@ If something feels “off”, start here.
 
 ## Quick checklist (30 seconds)
 - Confirm the addon is enabled: `/zsbt` -> `General` -> `Enabled`
-- Confirm you have at least one visible scroll area enabled: `/zsbt` -> `Scroll Areas`
+- Confirm you have at least one visible scroll area enabled: `/zsbt` -> `Display` -> `Scroll Areas`
 - If `Combat Only` is enabled, you will see very little out of combat
 - Lower thresholds temporarily to confirm output is working
 - Type `/reload`
@@ -2370,10 +2370,10 @@ If ZSBT is enabled but you see nothing:
 - `/zsbt` -> `General` -> `Enabled`
 
 ## 2) Enable a scroll area
-- `/zsbt` -> `Scroll Areas`
+- `/zsbt` -> `Display` -> `Scroll Areas`
 - Ensure at least one visible area is enabled:
-  - `Incoming`
-  - `Outgoing`
+  - `Combat Text` -> `Incoming`
+  - `Combat Text` -> `Outgoing`
   - `Notifications`
 
 ## 3) Combat-only settings
@@ -2407,7 +2407,7 @@ ZSBT tries to show spell icons and spell names only when it can do so reliably.
 If ZSBT is working but it’s too noisy:
 
 ## Spam Control
-- `/zsbt` -> `Spam Control`
+- `/zsbt` -> `Combat Text` -> `Spam Control`
 - Enable merging to condense rapid hits.
 - Raise thresholds gradually until only meaningful events show.
 
@@ -2439,7 +2439,7 @@ If a trigger or cooldown alert doesn’t fire, it’s usually one of these:
 ## Interrupt alerts not showing
 - `/zsbt` -> `Alerts` -> `Notifications` -> `Interrupt Alerts`
 - Enable `Interrupts (Successful)` and/or `Cast Stops (Stuns/CC)`
-- Make sure the target scroll area is enabled and visible in `Scroll Areas`.
+- Make sure the target scroll area is enabled and visible in `Display` -> `Scroll Areas`.
 
 ## Interrupt chat output
 WoW protects server chat APIs.
@@ -2563,7 +2563,7 @@ local HELP_TOPICS = {
 	quickControlBar = { name = "Quick Control Bar", docKey = "quickControlBar" },
 	combatLogSettings = { name = "Combat Log Settings", docKey = "combatLogSettings" },
 	dbProfiles = {
-		name = "DB Profiles (Presets)",
+		name = "Profiles (Presets)",
 		text =
 			"Profiles are saved configurations.\n\n" ..
 			"Shipped preset profiles\n" ..
@@ -2572,7 +2572,7 @@ local HELP_TOPICS = {
 			"- ZSBT - Preset: Tank\n" ..
 			"- ZSBT - Preset: Healer\n" ..
 			"- ZSBT - Preset: Pet Class\n\n" ..
-			"Reset preset buttons (bottom of DB Profiles)\n" ..
+			"Reset preset buttons (bottom of Profiles)\n" ..
 			"- Resets the preset profile back to the shipped layout.\n" ..
 			"- Does NOT switch your currently selected profile.",
 	},
@@ -3229,7 +3229,7 @@ function ZSBT.BuildOptionsTable()
             },
 
             ----------------------------------------------------------------
-            -- AceDB Profiles tab (injected by Init.lua after DB init)
+            -- AceProfiles tab (injected by Init.lua after DB init)
             ----------------------------------------------------------------
         },
     }

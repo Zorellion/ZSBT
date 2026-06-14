@@ -6,17 +6,17 @@
 
 ## Recommended first run
 - **Optional: choose a preset profile**
-  - Go to `DB Profiles`.
+  - Go to `Profiles`.
   - Select one of the shipped preset profiles (Melee / Ranged / Tank / Healer / Pet Class).
-  - If you ever want to restore a preset back to its shipped layout, use the reset buttons at the bottom of `DB Profiles`.
+  - If you ever want to restore a preset back to its shipped layout, use the reset buttons at the bottom of `Profiles`.
 - **Enable the addon**
   - Go to `General`.
   - Make sure `Enabled` is on.
 - **Confirm scroll areas are enabled**
-  - Go to `Scroll Areas`.
+  - Go to `Display` -> `Scroll Areas`.
   - Ensure the `Incoming`, `Outgoing`, and `Notifications` areas are enabled.
 - **Unlock and place scroll areas**
-  - Go to `Scroll Areas`.
+  - Go to `Display` -> `Scroll Areas`.
   - Use the unlock/move controls (if present) to position each area where you want it.
   - Adjust `Width` / `Height` so text doesn’t clip.
 - **Pick your number formatting**
@@ -24,7 +24,7 @@
   - Choose the Number Format you prefer (full numbers, abbreviated, etc.).
 - **Pick fonts**
   - Go to `General` for the master font.
-  - Optionally override fonts per scroll area in `Scroll Areas`.
+  - Optionally override fonts per scroll area in `Display` -> `Scroll Areas`.
 - **Test**
   - Hit a target dummy or fight a mob.
   - You should see:
@@ -34,7 +34,7 @@
 
 ## Quick setup checklist
 - **Optional: pick a preset profile**
-  - Go to `DB Profiles`.
+  - Go to `Profiles`.
   - Select a shipped preset profile.
 - **Enable ZSBT**
   - Go to `General`.
@@ -43,7 +43,7 @@
   - Go to `General`.
   - Adjust the master font (face/size/outline).
 - **Place your scroll areas**
-  - Go to `Scroll Areas`.
+  - Go to `Display` -> `Scroll Areas`.
   - Move/size the `Incoming`, `Outgoing`, and `Notifications` areas.
 - **Confirm you see messages**
   - Hit a target dummy or fight a mob.
@@ -51,13 +51,13 @@
 
 ## Common first tweaks
 - **Too much spam**
-  - Go to `Spam Control`.
+  - Go to `Combat Text` -> `Spam Control`.
   - Enable merging and set reasonable minimum thresholds.
 - **Don’t want auto-attack clutter**
-  - Go to `Outgoing`.
+  - Go to `Combat Text` -> `Outgoing`.
   - Adjust `Auto Attack` display and/or raise the outgoing damage min threshold.
 - **Want cooldown / proc / warning style alerts**
-  - Go to `Notifications`.
+  - Go to `Alerts` -> `Notifications`.
   - Enable the categories you care about and route them to the `Notifications` scroll area.
 
 ## Common commands
@@ -69,7 +69,7 @@
 ## Troubleshooting
 - **Nothing shows**
   - `/zsbt` -> `General` -> `Enabled`
-  - `/zsbt` -> `Scroll Areas` -> enable at least one visible scroll area
+  - `/zsbt` -> `Display` -> `Scroll Areas` -> enable at least one visible scroll area
   - If `Combat Only` is enabled, test while in combat
   - Temporarily lower thresholds to confirm output is working
   - `/reload`

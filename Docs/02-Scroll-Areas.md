@@ -3,7 +3,7 @@
 Scroll areas control where text appears on your screen and how it animates.
 
 ## Where to configure
-- `/zsbt` -> `Scroll Areas`
+- `/zsbt` -> `Display` -> `Scroll Areas`
 
 ## The default areas
 - **Notifications**

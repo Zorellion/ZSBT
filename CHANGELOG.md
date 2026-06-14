@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.7
+- Documentation: updated configuration paths to match the current Display, Combat Text, Alerts, and Help and Support UI layout.
+- Documentation: clarified Blizzard combat text suppression options and Retail 12.x outgoing attribution limitations.
+- Documentation: expanded incoming spell icon notes to explain resolved vs fallback icon controls.
+- Help UI: updated in-game Help and Troubleshooting text to match current UI navigation paths.
+
 ## 2.4.6
 - Outgoing: improved Warlock DoT tracking (including Seed of Corruption) and Warrior Rend periodic tick detection under WoW 12.x.
 - Outgoing: tightened instance-aware outgoing attribution to reduce non-player damage leakage in group instances.

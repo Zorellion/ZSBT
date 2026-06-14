@@ -715,11 +715,13 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
     end
 
     if prof.showSpellIcons then
-        if sid then
+        local allowResolved = (prof.showSpellIconsResolved ~= false)
+        local allowFallback = (prof.showSpellIconsFallback ~= false)
+        if allowResolved and sid then
             local tex = ZSBT.CleanSpellIcon(sid)
             if tex then meta.spellIcon = tex end
         end
-        if not meta.spellIcon then
+        if allowFallback and not meta.spellIcon then
             if kind == "damage" then
                 meta.spellIcon = 132223
             elseif kind == "heal" then

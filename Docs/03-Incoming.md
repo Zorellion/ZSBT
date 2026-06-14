@@ -26,5 +26,5 @@ Incoming controls what you see when you take damage or receive healing.
 If enabled, ZSBT can show spell names and icons when safe.
 
 ## Tips
-- If you’re in a raid and see too much spam, increase `Min Threshold` and enable merging in `Spam Control`.
+- If you’re in a raid and see too much spam, increase `Min Threshold` and enable merging in `Combat Text` -> `Spam Control`.
 - If you only want to see big hits, set `Min Threshold` higher.
