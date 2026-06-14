@@ -67,5 +67,5 @@ And within those, ensure these categories are enabled:
 
 If you still see missing outgoing events after enabling these, check:
 - `General` -> master enable
-- `Outgoing` -> enable outgoing damage
-- `Spam Control` -> thresholds (min threshold not too high)
+- `Combat Text` -> `Outgoing` -> enable outgoing damage
+- `Combat Text` -> `Spam Control` -> thresholds (min threshold not too high)

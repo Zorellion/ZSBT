@@ -3,17 +3,25 @@
 Outgoing controls what you see when you deal damage or healing.
 
 ## Where to configure
-- `/zsbt` -> `Outgoing`
+- `/zsbt` -> `Combat Text` -> `Outgoing`
 
-## Blizzard Floating Combat Text (Outgoing Only)
-If you prefer Blizzard's outgoing damage numbers above enemy heads, you can disable ZSBT outgoing output and let Blizzard handle outgoing damage.
+## Blizzard Floating Combat Text
+Blizzard combat text visibility is controlled from the General tab with granular hide toggles.
 
-- Toggle: `Turn off ZSBT outgoing and use Blizzard FCT`
-- Location: `Outgoing` tab
+- Location: `/zsbt` -> `General`
+- Master toggle: `Hide Blizzard Combat Text`
+- Granular toggles include:
+  - `Hide Blizzard Outgoing Damage`
+  - `Hide Blizzard Incoming Damage`
+  - `Hide Blizzard Incoming Healing`
+  - `Hide Blizzard Reactives / Procs`
+  - `Hide Blizzard XP / Rep / Honor`
+  - `Hide Blizzard Resource Gains`
+  - `Hide Blizzard Pet Combat Text`
 
 Notes:
-- This is designed to work with `General` -> `Blizzard Combat Text Suppression` set to `Suppress Incoming Only` (or `Suppress All`), so Blizzard incoming combat text stays suppressed.
-- This toggle only affects outgoing output. ZSBT can still provide incoming text and notifications.
+- These settings modify Blizzard CVars, which can persist outside the addon.
+- Use `Restore Blizzard Combat Text Now` as a manual restore/panic button if needed.
 
 ## Step-by-step setup
 - **Pick a scroll area**
@@ -57,7 +65,7 @@ Notes:
 - For a cleaner look:
   - Disable spell names.
   - Keep icons on.
-  - Enable merging in `Spam Control`.
+  - Enable merging in `Combat Text` -> `Spam Control`.
 
 ## Group/instance note
 - If you have a “dungeon/raid aware outgoing” restriction enabled, outgoing fallback signals can be limited in instanced content to avoid mis-attributing group activity to you.

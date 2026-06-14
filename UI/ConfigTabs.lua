@@ -4480,6 +4480,32 @@ function ZSBT.BuildTab_ScrollAreas()
                     area.parabolaSide = val
                 end,
             },
+            parabolaIntensity = {
+                type   = "range",
+                name   = "Parabola Intensity",
+                desc   = "How wide the parabola arc is (1.0 = default).",
+                order  = 24.55,
+                width  = "full",
+                min    = 0.25,
+                max    = 2.5,
+                step   = 0.05,
+                hidden = function()
+                    if not selectedScrollArea then return true end
+                    local area = ZSBT.db.profile.scrollAreas[selectedScrollArea]
+                    return not area or area.animation ~= "Parabola"
+                end,
+                get    = function()
+                    local area = ZSBT.db.profile.scrollAreas[selectedScrollArea]
+                    local v = area and area.parabolaIntensity
+                    if type(v) ~= "number" or v <= 0 then return 1.0 end
+                    return v
+                end,
+                set    = function(_, val)
+                    local area = ZSBT.db.profile.scrollAreas[selectedScrollArea]
+                    if not area then return end
+                    area.parabolaIntensity = val
+                end,
+            },
             animSpeed = {
                 type   = "range",
                 name   = "Animation Speed",
@@ -4777,6 +4803,28 @@ function ZSBT.BuildTab_Incoming()
                 get   = function() return ZSBT.db.profile.incoming.showSpellIcons end,
                 set   = function(_, val) ZSBT.db.profile.incoming.showSpellIcons = val end,
             },
+			showSpellIconsResolved = {
+				type  = "toggle",
+				name  = "Show Resolved Spell Icons",
+				desc  = "Show spell icons only when ZSBT can resolve a specific spell icon from a SpellID.",
+				width = "full",
+				order = 4.291,
+				disabled = function() return ZSBT.db.profile.incoming.showSpellIcons ~= true end,
+				hidden = function() return ZSBT.db.profile.incoming.showSpellIcons ~= true end,
+				get   = function() return ZSBT.db.profile.incoming.showSpellIconsResolved ~= false end,
+				set   = function(_, val) ZSBT.db.profile.incoming.showSpellIconsResolved = val and true or false end,
+			},
+			showSpellIconsFallback = {
+				type  = "toggle",
+				name  = "Show Fallback Icons",
+				desc  = "Show generic fallback icons for incoming damage/heals when a specific spell icon cannot be resolved.",
+				width = "full",
+				order = 4.292,
+				disabled = function() return ZSBT.db.profile.incoming.showSpellIcons ~= true end,
+				hidden = function() return ZSBT.db.profile.incoming.showSpellIcons ~= true end,
+				get   = function() return ZSBT.db.profile.incoming.showSpellIconsFallback ~= false end,
+				set   = function(_, val) ZSBT.db.profile.incoming.showSpellIconsFallback = val and true or false end,
+			},
 			headerCritsSplitDamage = {
 				type  = "header",
 				name  = "Incoming Crit Damage",

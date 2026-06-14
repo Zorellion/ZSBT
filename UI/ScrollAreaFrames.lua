@@ -472,7 +472,10 @@ local function AE_MSBT_InitParabola(newDisplayEvent, activeDisplayEvents, direct
 	end
 	local midPoint = newDisplayEvent.scrollHeight / 2
 	newDisplayEvent.midPoint = midPoint
-	newDisplayEvent.fourA = (midPoint * midPoint) / newDisplayEvent.scrollWidth
+	local inten = tonumber(newDisplayEvent.parabolaIntensity) or 1.0
+	if inten <= 0 then inten = 1.0 end
+	-- Smaller fourA => larger lateral movement for a given y => wider/more aggressive curve.
+	newDisplayEvent.fourA = ((midPoint * midPoint) / newDisplayEvent.scrollWidth) / inten
 end
 
 local function AE_MSBT_AnimatePowNormal(displayEvent, animationProgress)
@@ -2945,6 +2948,11 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             startPointEngine = (dirMult > 0) and "BOTTOMLEFT" or "TOPLEFT"
         end
 
+		-- Prevent first-frame anchor flash before the animation engine positions the event.
+		if fs then fs:SetAlpha(0) end
+		if iconFS then iconFS:SetAlpha(0) end
+		if iconTex then iconTex:SetAlpha(0) end
+
         local ev = {
             text = text,
             baseColor = color,
@@ -2967,6 +2975,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             fontAlpha = fontAlpha or 1.0,
             startPoint = startPointEngine,
             paraDir = paraDir,
+			parabolaIntensity = (area and area.parabolaIntensity) or 1.0,
             waterfallStyle = (area and area.waterfallStyle) or "Smooth",
             wfPhase1 = wfPhase1,
             wfPhase2 = wfPhase2,
@@ -3101,7 +3110,9 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
 
             local midPoint = totalDistance / 2
             local y = positionY - midPoint
-            local fourA = (midPoint * midPoint) / math.max(1, areaW)
+            local inten = (area and tonumber(area.parabolaIntensity)) or 1.0
+            if inten <= 0 then inten = 1.0 end
+            local fourA = ((midPoint * midPoint) / math.max(1, areaW)) / inten
             local x = (y * y) / fourA
 
             local positionX

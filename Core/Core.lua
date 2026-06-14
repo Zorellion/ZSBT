@@ -2036,6 +2036,28 @@ function Core:InitInterruptTracking()
 				Core._pendingCasts[unit] = nil
 			end
 			local t = GetTime and GetTime() or 0
+			Core._notifDedup = Core._notifDedup or {}
+			local attemptAt = nil
+			local guid = nil
+			if emitCategory == "caststops" then
+				attemptAt = Core._lastCastStopAttemptAt
+				guid = Core._lastCastStopTargetGUID
+			else
+				attemptAt = Core._lastInterruptAttemptAt
+				guid = Core._lastInterruptTargetGUID
+			end
+			if not guid and UnitGUID and type(unit) == "string" then
+				local okG, g = pcall(function() return UnitGUID(unit) end)
+				if okG and type(g) == "string" and (not ZSBT.IsSafeString or ZSBT.IsSafeString(g)) then
+					guid = g
+				end
+			end
+			local key = tostring(emitCategory) .. ":" .. tostring(attemptAt or 0) .. ":" .. tostring(guid or "")
+			local lastKeyAt = Core._notifDedup[key]
+			if type(lastKeyAt) == "number" and (t - lastKeyAt) >= 0 and (t - lastKeyAt) < 0.80 then
+				return
+			end
+			Core._notifDedup[key] = t
 			if Core._lastNotifCat == emitCategory and (t - (Core._lastNotifAt or 0)) < 0.35 then
 				return
 			end
@@ -2052,6 +2074,9 @@ function Core:InitInterruptTracking()
 			local tpl = getTemplate(templateKey or emitCategory, "%t Interrupted!")
 			local out = applyTemplate(tpl, { e = "", p = playerName, s = stopperLabel, t = targetName })
 			if out and out ~= "" then
+				if emitCategory == "caststops" then
+					Core._lastCastStopEmittedAt = t
+				end
 				Core:EmitInterruptAlert(out, emitCategory, { p = playerName, s = stopperLabel, t = targetName })
 			end
 			return

@@ -207,6 +207,7 @@ ZSBT.DEFAULTS = {
                 direction = "Up",
                 animation = "Parabola",
                 parabolaSide = "Right",
+                parabolaIntensity = 1.0,
                 animSpeed = 1.0,
             },
             ["Incoming"] = {
@@ -218,6 +219,7 @@ ZSBT.DEFAULTS = {
                 direction = "Up",
                 animation = "Parabola",
                 parabolaSide = "Left",
+                parabolaIntensity = 1.0,
                 animSpeed = 1.0,
             },
             ["Notifications"] = {
@@ -253,6 +255,8 @@ ZSBT.DEFAULTS = {
                 minThreshold  = 0,
             },
             showSpellIcons  = false,
+            showSpellIconsResolved = true,
+            showSpellIconsFallback = true,
             useSchoolColors = true,
             customDamageColor  = { r = 1, g = 1, b = 1 },
             customHealingColor = { r = 1, g = 1, b = 1 },

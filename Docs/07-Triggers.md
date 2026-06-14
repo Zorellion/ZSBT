@@ -3,7 +3,7 @@
 Triggers let you create your own notifications when specific events happen.
 
 ## Where to configure
-- `/zsbt` -> `Triggers`
+- `/zsbt` -> `Alerts` -> `Triggers`
 
 ## Enable triggers
 - Turn on `Enable Triggers`.

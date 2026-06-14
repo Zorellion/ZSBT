@@ -113,7 +113,7 @@ Notifications is intended for short, high-signal messages like:
 
 ## Step-by-step setup
 - **Ensure you have a Notifications scroll area**
-  - Go to `Scroll Areas`.
+  - Go to `Display` -> `Scroll Areas`.
   - Enable the `Notifications` area.
   - Place it somewhere central or near your UI alerts.
 - **Enable the categories you care about**
@@ -125,7 +125,7 @@ Notifications is intended for short, high-signal messages like:
 ## Tips
 - If notifications are too noisy:
   - Disable the categories you don’t care about.
-  - Use `Spam Control` to merge/throttle if you’re seeing too many repeated alerts.
+  - Use `Combat Text` -> `Spam Control` to merge/throttle if you’re seeing too many repeated alerts.
 - If notifications are hard to read:
   - Increase the `Notifications` area font size.
   - Increase its `Height` and reduce `Max Messages`.

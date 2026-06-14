@@ -3,7 +3,7 @@
 Spam Control helps reduce noise by merging rapid hits and applying thresholds.
 
 ## Where to configure
-- `/zsbt` -> `Spam Control`
+- `/zsbt` -> `Combat Text` -> `Spam Control`
 
 ## Merging (AoE condensing)
 - Enable merging to combine multiple rapid hits into one line.
@@ -30,7 +30,7 @@ Spell Rules let you add **per-spell throttles** for outgoing combat text.
   - Optionally override font and color (Style Override).
   - Some spells may support additional per-spell behaviors (like aggregation) that only apply when a rule exists.
 - **Where to configure**
-  - `/zsbt` -> `Spam Control` -> `Open Spell Rules Manager`
+  - `/zsbt` -> `Combat Text` -> `Spam Control` -> `Open Spell Rules Manager`
 
 ### Character-specific
 Spell Rules are stored **per character**.
@@ -64,14 +64,14 @@ Buff Rules let you control which **buff gain/fade notifications** you see.
     - suppress Gain and/or Fade independently
     - add a per-buff throttle (spam control)
 - **Where to configure**
-  - `/zsbt` -> `Spam Control` -> `Open Buff Rules Manager`
+  - `/zsbt` -> `Combat Text` -> `Spam Control` -> `Open Buff Rules Manager`
 
 ### “Whitelist mode” (only show configured buffs)
 The Spam Control tab has toggles that control whether **unconfigured** buffs are allowed:
 - If you disable showing gains/fades without rules, only buffs with a Buff Rule will display.
 
 There are separate toggles for **harmful debuffs**:
-- If you disable showing debuff gains/fades without rules, only debuffs with a Debuff Rule will display.
+- If you disable showing debuff gains/fades without rules, only debuffs with a configured aura rule will display.
 
 ### Recently Seen Buffs
 The Buff Rules Manager includes **Recently Seen Buffs**:

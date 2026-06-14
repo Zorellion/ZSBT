@@ -56,8 +56,15 @@ ZSBT is built to behave safely under modern Retail restrictions ("secret values"
 
 ## Quick start
 - `/zsbt` -> `General`: enable addon + choose master font
-- `/zsbt` -> `Scroll Areas`: place/size Incoming, Outgoing, Notifications
+- `/zsbt` -> `Display` -> `Scroll Areas`: place/size Incoming, Outgoing, Notifications
 - `/zsbt` -> `Alerts` -> `Notifications`: enable categories you want
+
+## Configuration layout
+- `General`: master options, Blizzard combat text controls, tuning, fonts, and number formatting
+- `Display`: scroll areas and media
+- `Alerts`: notifications, triggers, and cooldown alerts
+- `Combat Text`: incoming, outgoing, pets, and spam control
+- `Help and Support`: built-in help, troubleshooting, and debug tools
 
 ## Commands
 - `/zsbt` — Open configuration

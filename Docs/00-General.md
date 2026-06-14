@@ -26,6 +26,12 @@ This setting prioritizes **correct attribution** over **completeness**.
 ## Experimental fallbacks (instances)
 These options are only shown when `Dungeon/Raid Aware Outgoing` is enabled.
 
+### Auto-Relax Outgoing When Solo (Legacy Instances)
+Relaxes strict/quiet outgoing attribution while you are solo inside party/raid instances, which is useful for legacy content where one-shot hits can otherwise be suppressed.
+
+- Pros: restores more outgoing detail while soloing old instances.
+- Cons: should stay off if you are trying to diagnose strict attribution behavior.
+
 ### Use Damage Meter Outgoing Fallback (Experimental)
 Uses Blizzard’s damage meter totals as a last-resort outgoing source when normal outgoing detection is too quiet in instances.
 

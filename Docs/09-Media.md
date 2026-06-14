@@ -3,7 +3,7 @@
 Media controls sound events and custom media registration.
 
 ## Where to configure
-- `/zsbt` -> `Media`
+- `/zsbt` -> `Display` -> `Media`
 
 ## Sound events
 - Choose sounds for built-in events like:
@@ -23,7 +23,7 @@ If you have your own font or sound file, you can register it in the `Custom Medi
      - `...\ZSBT\Media\Fonts\MyFont.ttf`
 3. **Open the Media tab**
    - Type `/zsbt`
-   - Click `Media`
+   - Click `Display` -> `Media`
 4. **Register the font in ZSBT**
    - Find the `Custom Media` section.
    - Fill in:
@@ -35,7 +35,7 @@ If you have your own font or sound file, you can register it in the `Custom Medi
        - Example: if the file is `MyFont.ttf`, type `MyFont`
    - Click `Add Font`.
 5. **Use the font**
-   - Go to `General` (master font) or `Scroll Areas` (per-area font override).
+   - Go to `General` (master font) or `Display` -> `Scroll Areas` (per-area font override).
    - Your custom font should appear in the font dropdown.
 
 ### Step-by-step: add a custom sound
@@ -48,7 +48,7 @@ If you have your own font or sound file, you can register it in the `Custom Medi
      - `...\ZSBT\Media\Sounds\MySound.ogg`
 3. **Open the Media tab**
    - Type `/zsbt`
-   - Click `Media`
+   - Click `Display` -> `Media`
 4. **Register the sound in ZSBT**
    - Find the `Custom Media` section.
    - Fill in:
