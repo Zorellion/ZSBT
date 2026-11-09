@@ -5,3 +5,7 @@ ignore:
   - .git/**
   - .github
   - .github/**
+  - .devin
+  - .devin/**
+  - .pkgmeta
+  - CLAUDE.md

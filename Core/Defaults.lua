@@ -20,8 +20,8 @@ ZSBT.DEFAULTS = {
             autoRelaxOutgoingWhenSolo = false,
             instanceAwareOutgoing = true,
             strictOutgoingCombatLogOnly = false,
-            quietOutgoingWhenIdle = true,
-            quietOutgoingAutoAttacks = true,
+            quietOutgoingWhenIdle = false,
+            quietOutgoingAutoAttacks = false,
 			pvpStrictEnabled = true,
 			pvpStrictDisableAutoAttackFallback = true,
 			damageMeterOutgoingFallback = true,
@@ -252,6 +252,7 @@ ZSBT.DEFAULTS = {
 				critScrollArea = nil,
                 showHoTTicks  = true,
                 showOverheal  = false,
+                showHealerNames = true,
                 minThreshold  = 0,
             },
             showSpellIcons  = false,
@@ -327,12 +328,12 @@ ZSBT.DEFAULTS = {
         ------------------------------------------------------------------------
         spamControl = {
             merging = {
-                enabled     = true,
+                enabled     = false,
                 window      = 1.5,
                 showCount   = true,
             },
             whirlwindAggregate = {
-                enabled = true,
+                enabled = false,
                 window = 0.60,
                 showCount = true,
             },

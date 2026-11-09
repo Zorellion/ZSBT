@@ -424,6 +424,80 @@ local PET_SIGNATURE_SCHOOLS_BY_CLASS = {
 	},
 }
 
+-- Standalone pet school signature check that does not require lastPlayerSpellId.
+-- Used by the group-aware pet gate to decide if a WOUND event's school is consistent
+-- with the active pet's damage type for the current class.
+local function isLikelyPetSchoolHit(school)
+	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) then return false end
+
+	-- Warlock: Imp damage is fire (school 4).
+	if isWarlockPlayer() and school == 4 then
+		return true
+	end
+
+	-- Death Knight: ghoul melee is physical (school 1).
+	if school == 1 and isPlayerClassTag and isPlayerClassTag("DEATHKNIGHT") then
+		local fam = getPetFamilyLower()
+		if fam and fam:find("ghoul", 1, true) then
+			return true
+		end
+	end
+
+	-- Hunter: pet melee is physical (school 1). Hunter pets are permanent (UnitExists("pet")=true).
+	if school == 1 and isPlayerClassTag and isPlayerClassTag("HUNTER") then
+		return true
+	end
+
+	-- Generalized signatures via npcId lookup.
+	local petNpcId = getUnitNpcId("pet")
+	if petNpcId and UnitClass then
+		local okC, _, tag = pcall(UnitClass, "player")
+		if okC and type(tag) == "string" then
+			local byClass = PET_SIGNATURE_SCHOOLS_BY_CLASS[tag]
+			local byNpc = byClass and byClass[petNpcId]
+			local allow = byNpc and byNpc[school]
+			if allow == true then
+				return true
+			end
+		end
+	end
+
+	-- Family-based fallback for common pet types.
+	local fam = getPetFamilyLower()
+	if fam then
+		-- Mage: Water Elemental -> frost school (16).
+		if school == 16 then
+			if (isPlayerClassTag and isPlayerClassTag("MAGE")) or (UnitClass and select(3, pcall(UnitClass, "player")) == "MAGE") then
+				if fam:find("water", 1, true) and fam:find("elemental", 1, true) then
+					return true
+				end
+			end
+		end
+		-- Shaman: elementals -> fire (4) / nature (8).
+		if (school == 4 or school == 8) then
+			local isShaman = false
+			if isPlayerClassTag and isPlayerClassTag("SHAMAN") then
+				isShaman = true
+			elseif UnitClass then
+				local okC, _, tag = pcall(UnitClass, "player")
+				if okC and tag == "SHAMAN" then
+					isShaman = true
+				end
+			end
+			if isShaman then
+				if school == 4 and fam:find("fire", 1, true) and fam:find("elemental", 1, true) then
+					return true
+				end
+				if school == 8 and ((fam:find("storm", 1, true) and fam:find("elemental", 1, true)) or (fam:find("earth", 1, true) and fam:find("elemental", 1, true))) then
+					return true
+				end
+			end
+		end
+	end
+
+	return false
+end
+
 local function isLikelyPetSchoolHitGivenRecentPlayerSpell(self, school, lastPlayerSpellId)
 	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) then return false end
 	if type(lastPlayerSpellId) ~= "number" then return false end
@@ -503,7 +577,55 @@ local function isLikelyPetSchoolHitGivenRecentPlayerSpell(self, school, lastPlay
 	return false
 end
 
-local function hasTargetDebuffSpellId(spellId)
+-- Forward declaration needed so the cache wrapper defined below can reference it.
+local hasTargetDebuffSpellId
+
+-- Per-spellId TTL cache: avoids re-enumerating auras (and allocating the ForEachAura
+-- closure) on every UNIT_COMBAT tick. Entries: [spellId] = { guid, result, expiry }
+local _debuffCache = {}
+local _debuffCacheGuid = nil
+local _debuffCacheGuidAt = 0
+
+local function cachedHasTargetDebuffSpellId(spellId)
+	if type(spellId) ~= "number" then return false end
+	local t = now()
+	-- Refresh target GUID at most once per Lua frame to avoid repeated pcall overhead.
+	if t - _debuffCacheGuidAt > 0.01 then
+		local safeGuid = nil
+		if UnitGUID then
+			local ok, g = pcall(UnitGUID, "target")
+			-- Only store the GUID when it is a safe (non-tainted) string; tainted GUIDs
+			-- cannot be used as table keys or compared without crashing in 12.x instances.
+			if ok and type(g) == "string" and ZSBT.IsSafeString and ZSBT.IsSafeString(g) then
+				safeGuid = g
+			end
+		end
+		_debuffCacheGuid = safeGuid
+		_debuffCacheGuidAt = t
+	end
+	local guid = _debuffCacheGuid
+	-- No safe GUID available (tainted instance context) — bypass cache entirely.
+	if guid == nil then
+		return hasTargetDebuffSpellId(spellId)
+	end
+	local entry = _debuffCache[spellId]
+	if entry then
+		-- pcall guards against stale tainted entries that may have been stored before
+		-- this fix; once entries are refreshed with a safe guid the pcall always succeeds.
+		local ok, matches = pcall(function() return entry.guid == guid and t < entry.expiry end)
+		if ok and matches then
+			return entry.result
+		end
+	end
+	local result = hasTargetDebuffSpellId(spellId)
+	if not entry then entry = {}; _debuffCache[spellId] = entry end
+	entry.guid = guid
+	entry.result = result
+	entry.expiry = t + 1.5
+	return result
+end
+
+hasTargetDebuffSpellId = function(spellId)
 	if type(spellId) ~= "number" then return false end
 	local wantName = nil
 	if ZSBT and ZSBT.CleanSpellName then
@@ -918,6 +1040,13 @@ local function wwAggFlush(self)
 	end
 end
 
+-- Named callback avoids allocating a new closure on every Whirlwind hit.
+local function _wwFlushCallback()
+	if Collector and Collector._wwAgg then
+		wwAggFlush(Collector)
+	end
+end
+
 local function wwAggPush(self, t, spellId, amount, isCrit, allowInfer)
 	if not (self and ZSBT.IsSafeNumber(amount) and amount > 0) then return end
 	self._wwAgg = self._wwAgg or {}
@@ -957,18 +1086,10 @@ local function wwAggPush(self, t, spellId, amount, isCrit, allowInfer)
 	end
 	local win = wwAggWindowSec(spellId)
 	if C_Timer and C_Timer.NewTimer then
-		st.timer = C_Timer.NewTimer(win, function()
-			if Collector and Collector._wwAgg then
-				wwAggFlush(Collector)
-			end
-		end)
+		st.timer = C_Timer.NewTimer(win, _wwFlushCallback)
 	elseif C_Timer and C_Timer.After then
 		st.timer = nil
-		C_Timer.After(win, function()
-			if Collector and Collector._wwAgg then
-				wwAggFlush(Collector)
-			end
-		end)
+		C_Timer.After(win, _wwFlushCallback)
 	end
 end
 
@@ -1657,20 +1778,46 @@ function Collector:handleCombatTextUpdate(arg1)
 	if isHeal then
 		local isCrit = CRIT_TYPES[arg1] or false
 		local isPeriodic = PERIODIC_TYPES[arg1] or false
+
+		-- Optional: suppress healer names on incoming heals. Some clients
+		-- return a formatted combat-text string containing the healer's
+		-- name instead of a bare amount. Clean strings can be reduced to
+		-- their numeric portion; secret strings cannot be inspected, so we
+		-- skip this event BEFORE stamping _lastCombatTextHealAt — otherwise
+		-- the UNIT_COMBAT heal dedup window would suppress the nameless
+		-- UNIT_COMBAT heal fallback and the heal would not display at all.
+		local pipeAmount = rawAmount
+		local healCfg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.incoming
+			and ZSBT.db.profile.incoming.healing
+		if healCfg and healCfg.showHealerNames == false and type(rawAmount) == "string" then
+			if ZSBT.IsSafeString(rawAmount) then
+				local numStr
+				for tok in rawAmount:gmatch("[%d%,%.]+") do numStr = tok end
+				local n = numStr and tonumber((numStr:gsub(",", "")))
+				if ZSBT.IsSafeNumber(n) then
+					pipeAmount = n
+				else
+					return
+				end
+			else
+				return
+			end
+		end
+
 		self._lastCombatTextHealAt = now()
 
 		local pipeId = self._rawPipeCount + 1
 		self._rawPipeCount = pipeId
-		self._rawPipe[pipeId] = rawAmount
+		self._rawPipe[pipeId] = pipeAmount
 		local numAmount, amountText, secret = nil, nil, false
 		if type(launderAmount) == "function" then
-			numAmount, amountText, secret = launderAmount(rawAmount)
+			numAmount, amountText, secret = launderAmount(pipeAmount)
 		else
-			if ZSBT.IsSafeNumber(rawAmount) then
-				numAmount = rawAmount
-				amountText = tostring(math.floor(rawAmount + 0.5))
+			if ZSBT.IsSafeNumber(pipeAmount) then
+				numAmount = pipeAmount
+				amountText = tostring(math.floor(pipeAmount + 0.5))
 			else
-				local okS, s = pcall(tostring, rawAmount)
+				local okS, s = pcall(tostring, pipeAmount)
 				if okS and type(s) == "string" then
 					amountText = s
 				else
@@ -1690,28 +1837,28 @@ function Collector:handleCombatTextUpdate(arg1)
 		-- After a heal, if player is at max health, overheal = healAmount - deficit.
 		-- If not at max, no overheal occurred.
 		local overheal = nil
-		if ZSBT.IsSafeNumber(rawAmount) then
+		if ZSBT.IsSafeNumber(pipeAmount) then
 			local curHealth = UnitHealth and UnitHealth("player")
 			local maxHealth = UnitHealthMax and UnitHealthMax("player")
 			if ZSBT.IsSafeNumber(curHealth) and ZSBT.IsSafeNumber(maxHealth) and maxHealth > 0 then
 				-- Post-heal: if at max, some healing was wasted
 				if curHealth >= maxHealth then
 					-- Pre-heal health was: current - effective_heal
-					-- effective_heal = rawAmount - overheal
+					-- effective_heal = pipeAmount - overheal
 					-- But at max: effective_heal = maxHealth - preHealth
 					-- And preHealth = curHealth - effective_heal = maxHealth - effective_heal
-					-- So: rawAmount = effective + overheal
+					-- So: pipeAmount = effective + overheal
 					--     effective = maxHealth - preHealth
 					-- We know preHealth from snapshot OR estimate:
 					local preHealth = self._lastHealth and self._lastHealth["player"]
 					if ZSBT.IsSafeNumber(preHealth) and preHealth < maxHealth then
 						local deficit = maxHealth - preHealth
-						overheal = rawAmount - deficit
+						overheal = pipeAmount - deficit
 						if overheal < 0 then overheal = nil end
 					else
 						-- No pre-health snapshot: assume full overheal if at max
 						-- This is conservative — may overcount slightly
-						overheal = rawAmount
+						overheal = pipeAmount
 					end
 				end
 				-- Update health snapshot for next calculation
@@ -1866,7 +2013,14 @@ local DEDUP_WINDOW = 0.10 -- 100ms window
 -- health delta to avoid duplicate lines.
 Collector._lastOutgoingCombatAt = Collector._lastOutgoingCombatAt or 0
 Collector._lastOutgoingCombatTargetName = Collector._lastOutgoingCombatTargetName or nil
+Collector._lastAutoOutgoingAt = Collector._lastAutoOutgoingAt or 0
 local OUTGOING_HEALTH_DEDUP_WINDOW = 0.12
+-- White swings (isAuto / spellId == nil) can be reported through both the
+-- physical and non-physical UNIT_COMBAT branches in the same tick because the
+-- school field is unreliable on Midnight. Auto-attack swing timers cannot go
+-- below ~0.5s even with haste and autos cannot cleave, so a short window only
+-- collapses duplicate reports of the same swing.
+local AUTO_OUTGOING_DEDUP_WINDOW = 0.35
 
 -- Detect incoming player damage/healing from UNIT_COMBAT.
 -- In 12.0, the `action` string arg may be tainted. Rather than checking
@@ -1875,7 +2029,37 @@ local OUTGOING_HEALTH_DEDUP_WINDOW = 0.12
 -- UNIT_COMBAT only fires for: WOUND, HEAL, BLOCK, DODGE, PARRY, RESIST, etc.
 -- Only WOUND and HEAL carry meaningful amounts.
 function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
-	if unit ~= "player" and unit ~= "target" and unit ~= "pet" then return end
+	-- Midnight (12.0+): UNIT_COMBAT does not fire for the "target" unit token on some
+	-- clients (confirmed via debug: only UNIT_COMBAT_PLAYER lines appear). It DOES fire
+	-- for nameplate tokens (nameplate1..nameplateN) when a nameplated unit takes damage.
+	-- The addon already receives these (RegisterEvent("UNIT_COMBAT") is unit-wide) but
+	-- previously dropped them here. If a nameplate token refers to the player's current
+	-- target, remap it to "target" so the existing outgoing pipeline handles the hit.
+	if unit ~= "player" and unit ~= "target" and unit ~= "pet" then
+		if type(unit) == "string" and unit:match("^nameplate%d+$") then
+			local isTarget = false
+			if UnitIsUnit then
+				local okU, res = pcall(UnitIsUnit, unit, "target")
+				if okU and res == true then isTarget = true end
+			end
+			if isTarget then
+				local dl = OutDbgLevel()
+				if dl >= 4 then
+					local tNow = now()
+					if (tNow - (Collector._dbgLastNameplateRemapAt or 0)) > 0.25 then
+						Collector._dbgLastNameplateRemapAt = tNow
+						ECPrint(("NAMEPLATE_REMAP unit=%s action=%s amt=%s school=%s -> target")
+							:format(dbgSafe(unit), dbgSafe(action), dbgSafe(amount), dbgSafe(school)))
+					end
+				end
+				unit = "target"
+			else
+				return
+			end
+		else
+			return
+		end
+	end
 	if amount == nil then return end
 	-- UNIT_COMBAT may emit ABSORB/blocked-style entries with amount==0.
 	-- These are not actual damage/heal events and must be ignored to prevent
@@ -2154,7 +2338,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					local recentPlayerCast = false
 					if self._lastPlayerSpellAt then
 						local age = t - (self._lastPlayerSpellAt or 0)
-						local maxAge = (restrict == true) and 0.70 or 1.25
+						local maxAge = (restrict == true) and 0.90 or 1.25
 						-- Non-physical spells (e.g. Shadow Bolt) can have longer travel times,
 						-- so allow a longer window before treating target WOUND events as pet damage.
 						if not (ZSBT.IsSafeNumber(school) and school == 1) then
@@ -2200,7 +2384,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- Safety: only treat it as a DoT tick if the target actually has the debuff.
 					-- Without this, any recent non-periodic cast (e.g. Shadow Bolt) can "stick"
 					-- as the spellId for unrelated magic WOUND ticks.
-					if dotSpellId and (not hasTargetDebuffSpellId(dotSpellId)) then
+					if dotSpellId and (not cachedHasTargetDebuffSpellId(dotSpellId)) then
 						local allowWarlockDot = false
 						if isWarlockPlayer and isWarlockPlayer() then
 							if isWarlockDotSpellId(dotSpellId) and (ZSBT.IsSafeNumber(school) and school == 32) then
@@ -2224,7 +2408,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						emit("OUTGOING_DAMAGE_COMBAT", {
 							timestamp = t,
 							amount = amount,
-							amountText = tostring(amount),
+							amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
 							spellId = dotSpellId,
 							amountSource = "UNIT_COMBAT_DOT",
 							targetName = tName,
@@ -2243,6 +2427,19 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 									:format(dbgSafe(self._castToken), dbgSafe(amount)))
 							end
 							return
+						end
+						-- Group-aware pet gate: when restrict is active (Quiet/Strict/PvP/Instance-Aware)
+						-- and we're in a group, only emit if the hit's school matches a known pet
+						-- signature. This prevents other players' damage on shared targets from
+						-- being misattributed as pet damage.
+						if restrict == true and members and members > 1 then
+							if not isLikelyPetSchoolHit(school) then
+								if dl >= 4 then
+									ECPrint(("PET_FALLBACK_GROUP_SUPPRESS restrict=%s members=%s school=%s amt=%s")
+										:format(dbgSafe(restrict), dbgSafe(members), dbgSafe(school), dbgSafe(amount)))
+								end
+								return
+							end
 						end
 						local pipeId = self._rawPipeCount + 1
 						-- Safety: ensure unique rawPipeId. Some clients / reload edges can cause
@@ -2265,7 +2462,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							timestamp = t,
 							rawPipeId = pipeId,
 							amount = amount,
-							amountText = tostring(amount),
+							amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
 							isCrit = isCrit,
 							petBucket = (ZSBT.IsSafeNumber(school) and school ~= 1) and "summons" or nil,
 							schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
@@ -2289,6 +2486,16 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								end
 								-- Avoid grabbing the immediate landing of a just-cast physical ability.
 								if not (type(ageCast) == "number" and ageCast >= 0 and ageCast <= 0.15) then
+									-- Group-aware gate for guardian pets: same logic as main pet fallback.
+									if restrict == true and members and members > 1 then
+										if not isLikelyPetSchoolHit(school) then
+											if dl >= 4 then
+												ECPrint(("PET_GUARDIAN_GROUP_SUPPRESS restrict=%s members=%s amt=%s")
+													:format(dbgSafe(restrict), dbgSafe(members), dbgSafe(amount)))
+											end
+											return
+										end
+									end
 									local pipeId = self._rawPipeCount + 1
 									if self._rawPipe and self._rawPipe[pipeId] ~= nil then
 										local i = pipeId
@@ -2400,7 +2607,16 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						if okC and type(res) == "boolean" then inPlayerCombat = res end
 					end
 					if inPlayerCombat then
-						if isPlayerAutoAttackActive() or isPlayerMeleeEngaged() then
+						-- Midnight: IsCurrentSpell(6603)/IsSpellInRange are unreliable or return
+						-- secret values, so isPlayerAutoAttackActive()/isPlayerMeleeEngaged()
+						-- frequently return false even while actively swinging. When solo (the
+						-- members>1 case is already handled above), treat "in combat with a
+						-- hostile target" as sufficient evidence of an auto-attack.
+						local autoOk = isPlayerAutoAttackActive() or isPlayerMeleeEngaged()
+						if (not autoOk) then
+							autoOk = true
+						end
+						if autoOk then
 							allowAutoFallback = true
 						end
 					end
@@ -2418,7 +2634,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		-- incorrectly collapsed. We only accept physical UNIT_COMBAT(target) when it is
 		-- unambiguous (no pet) or when we can match it to a recent player cast.
 		if isPhysical then
-			if ZSBT.IsSafeNumber(amount) and amount > 0 and amount < 50 then
+			-- Midnight: lower the physical noise floor from 50 to 2 so low-level
+			-- characters (whose white swings can be 5-15 damage) still see outgoing.
+			-- On max-level characters, sub-2 physical hits are effectively noise.
+			if ZSBT.IsSafeNumber(amount) and amount > 0 and amount < 2 then
 				return
 			end
 			-- Rend (772) periodic ticks are physical WOUND events in 12.x and contain no spellId.
@@ -2429,7 +2648,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					local ageCast = t - rAt
 					if ageCast >= 0 and ageCast <= 24.0 and actionStr == "WOUND" and ZSBT.IsSafeNumber(amount) and amount > 0 then
 						local dl = OutDbgLevel()
-						local debuffOk = hasTargetDebuffSpellId(772)
+						local debuffOk = cachedHasTargetDebuffSpellId(772)
 						local nextTickAt = self._rendNextTickAt
 						local isNearExpected = false
 						local dtNext = nil
@@ -2568,7 +2787,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 									emit("OUTGOING_DAMAGE_COMBAT", {
 										timestamp = t,
 										amount = amount,
-										amountText = tostring(amount),
+										amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
 										spellId = 772,
 										amountSource = "UNIT_COMBAT_DOT",
 										targetName = tName,
@@ -2709,7 +2928,15 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					end
 				end
 				if okSwing then
-					if not (isPlayerAutoAttackActive() or isPlayerMeleeEngaged()) then
+					-- Midnight: IsCurrentSpell(6603)/IsSpellInRange/CheckInteractDistance are
+					-- unreliable or return secret values, so isPlayerAutoAttackActive() and
+					-- isPlayerMeleeEngaged() frequently return false even while actively
+					-- swinging. In solo open-world (restrict off, quiet off) there is no one
+					-- else to attribute the hit to, so treat "player in combat with a hostile
+					-- target" as sufficient evidence of a white swing. Group/instance leakage
+					-- is still handled by the restrict/instance-aware gates above.
+					local autoOk = isPlayerAutoAttackActive() or isPlayerMeleeEngaged()
+					if (not autoOk) and (not inPlayerCombat) then
 						okSwing = false
 					end
 				end
@@ -2755,6 +2982,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				self._rendNextTickAt = t + 3.0
 				self._rendInitialHitAmt = amount
 				self._rendTickState = nil
+			end
+			-- Dedup unattributed white swings across the physical and
+			-- auto-fallback branches (same swing can be reported twice with
+			-- different school values). Spell-attributed hits are exempt so
+			-- Cleave/Whirlwind multi-hits are never collapsed.
+			if spellId == nil then
+				local lastAuto = self._lastAutoOutgoingAt or 0
+				if (t - lastAuto) >= 0 and (t - lastAuto) < AUTO_OUTGOING_DEDUP_WINDOW then
+					return
+				end
+				self._lastAutoOutgoingAt = t
 			end
 			local pipeId = self._rawPipeCount + 1
 			self._rawPipeCount = pipeId
@@ -2842,7 +3080,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- Safety: only treat it as a DoT tick if the target actually has the debuff.
 				local debuffOk = nil
 				if dotSpellId then
-					debuffOk = hasTargetDebuffSpellId(dotSpellId)
+					debuffOk = cachedHasTargetDebuffSpellId(dotSpellId)
 					if debuffOk ~= true then
 						local allowWarlockDot = false
 						if isWarlockPlayer and isWarlockPlayer() then
@@ -2869,7 +3107,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					emit("OUTGOING_DAMAGE_COMBAT", {
 						timestamp = t,
 						amount = amount,
-						amountText = tostring(amount),
+						amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
 						spellId = dotSpellId,
 						amountSource = "UNIT_COMBAT_DOT",
 						targetName = tName,
@@ -2895,6 +3133,57 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			matchedCast = consumeBestPendingCast(self, t, wantSpellId, castWindow)
 			if not matchedCast then
 				if suppressIfUnattributed == true then
+					-- Midnight: the school field is unreliable (physical abilities like
+					-- Sinister Strike report school=32), so auto-attacks land in this
+					-- non-physical branch with no cast to correlate and would be silently
+					-- dropped. In solo open-world (restrict off, quiet off), emit them as
+					-- auto-attacks directly (no bucket merge, like the physical path) so
+					-- white swings display. Group/instance leakage is still handled by
+					-- the restrict/instance-aware gates above.
+					-- Allow auto-attack fallback in two cases:
+					--  (a) open-world non-quiet (restrict off, quiet off)
+					--  (b) quiet mode with "show auto attacks while quiet" enabled
+					-- In both cases require solo (no group) to avoid leaking other players'
+					-- damage on shared targets, since UNIT_COMBAT(target) has no source on Midnight.
+					local allowAutoHere = (restrict ~= true and quietMode ~= true)
+						or (quietMode == true and isQuietOutgoingAutoAttacks() == true)
+					if allowAutoHere then
+						local inPlayerCombat = false
+						if UnitAffectingCombat then
+							local okC, res = pcall(UnitAffectingCombat, "player")
+							if okC and type(res) == "boolean" then inPlayerCombat = res end
+						end
+						local canAtk = true
+						if UnitCanAttack then
+							local okA, a = pcall(UnitCanAttack, "player", "target")
+							if okA and a == false then canAtk = false end
+						end
+						if inPlayerCombat and canAtk and (not (members and members > 1)) then
+							-- Same dedup as the physical branch: the fallback and
+							-- physical paths can both fire for one white swing.
+							local lastAuto = self._lastAutoOutgoingAt or 0
+							if (t - lastAuto) >= 0 and (t - lastAuto) < AUTO_OUTGOING_DEDUP_WINDOW then
+								return
+							end
+							self._lastAutoOutgoingAt = t
+							local pipeId = self._rawPipeCount + 1
+							self._rawPipeCount = pipeId
+							self._rawPipe[pipeId] = amount
+							self._lastOutgoingCombatAt = t
+							self._lastOutgoingCombatTargetName = safeUnitName("target")
+								emit("OUTGOING_DAMAGE_COMBAT", {
+								timestamp = t,
+								rawPipeId = pipeId,
+								spellId = nil,
+								isAuto = true,
+								amountSource = "UNIT_COMBAT_AUTO_FALLBACK",
+								targetName = safeUnitName("target"),
+								isCrit = isCrit,
+								schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
+							})
+							return
+						end
+					end
 					return
 				end
 				-- "Make it work" mode: if we cannot confidently attribute to a specific spell,
@@ -2906,9 +3195,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- Quiet/strict modes: still allow *your own* outgoing when it can be correlated
 					-- to a very recent cast timestamp, even if the pending-cast queue missed it.
 					-- For travel-time spells (e.g., Shadow Bolt), allow a longer window.
-					-- In group instances with instance-aware outgoing enabled, do NOT use timestamp-only
-					-- attribution because UNIT_COMBAT(target) has no ownership and will leak other damage.
-					if instanceAware == true and inInst == true and members and members > 1 then
+					-- When grouped (open world OR instance), do NOT use timestamp-only
+					-- attribution because UNIT_COMBAT(target) has no ownership and will leak
+					-- other players' damage on shared targets.
+					if members and members > 1 then
 						return
 					end
 					local lastAt = self._lastPlayerSpellAt
@@ -3100,8 +3390,15 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				return
 			end
 		end
+		-- Forever/secret-value clients: UNIT_COMBAT amounts arrive as secret
+		-- values. Route the raw amount through the pipe so the display layer
+		-- can SetText() it directly (same pattern as COMBAT_TEXT_HEAL).
+		local healPipeId = self._rawPipeCount + 1
+		self._rawPipeCount = healPipeId
+		self._rawPipe[healPipeId] = amount
 		emit("INCOMING_HEAL_COMBAT", {
 			timestamp = now(),
+			rawPipeId = healPipeId,
 			amount = numAmount,
 			amountText = amountText,
 			isCrit = isCrit,
@@ -3111,9 +3408,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 	elseif actionStr == "WOUND" then
 		-- Confirmed WOUND (damage taken).
 		if isPhysical and isFalling then
+			local fallPipeId = self._rawPipeCount + 1
+			self._rawPipeCount = fallPipeId
+			self._rawPipe[fallPipeId] = amount
 			emit("FALL_DAMAGE", {
 				timestamp = now(),
 				unit = unit,
+				rawPipeId = fallPipeId,
 				amount = numAmount,
 				amountText = amountText,
 				isCrit = false,
@@ -3125,9 +3426,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				return
 			end
 			self._lastUnitCombatPlayerDamageAt = now()
+			local dmgPipeId = self._rawPipeCount + 1
+			self._rawPipeCount = dmgPipeId
+			self._rawPipe[dmgPipeId] = amount
 			emit("INCOMING_DAMAGE", {
 				timestamp = now(),
 				unit = unit,
+				rawPipeId = dmgPipeId,
 				amount = numAmount,
 				amountText = amountText,
 				isCrit = isCrit,

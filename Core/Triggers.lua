@@ -406,6 +406,116 @@ function Triggers:OnAuraFade(spellId, source)
 	})
 end
 
+function Triggers:IsAuraPresentSpellId(sid)
+	if type(sid) ~= "number" or sid <= 0 then return false end
+	-- Synthetic presence fallback for auras that cannot be enumerated reliably in WoW 12.x during combat.
+	if self._syntheticAuraExpireAt and type(self._syntheticAuraExpireAt[sid]) == "number" then
+		local now = GetTime and GetTime() or 0
+		if now < (self._syntheticAuraExpireAt[sid] or 0) then
+			return true
+		end
+	end
+	local wantName = SafeSpellName(sid)
+	-- Fast path if available
+	if AuraUtil and AuraUtil.FindAuraBySpellId then
+		local ok, aura = pcall(AuraUtil.FindAuraBySpellId, sid, "player", "HELPFUL")
+		if ok and aura then return true end
+		ok, aura = pcall(AuraUtil.FindAuraBySpellId, sid, "player", "HARMFUL")
+		if ok and aura then return true end
+		-- Do NOT early-return false here. During loading screens / API transitional states,
+		-- FindAuraBySpellId can transiently fail to report an aura. Fall through to
+		-- enumeration and name matching below to reduce false negatives.
+	end
+
+	local function SafeAuraSpellId(auraData)
+		if type(auraData) ~= "table" then return nil end
+		local asid = auraData.spellId or auraData.spellID
+		return (type(asid) == "number") and asid or nil
+	end
+
+	-- Fallback: enumerate auras and compare spellId when provided
+	if AuraUtil and AuraUtil.ForEachAura then
+		local found = false
+		pcall(function()
+			AuraUtil.ForEachAura("player", "HELPFUL", 255, function(auraData)
+				local asid = SafeAuraSpellId(auraData)
+				local okEq, eq = pcall(function() return asid == sid end)
+				if okEq and eq then found = true; return false end
+				if wantName and type(auraData) == "table" and type(auraData.name) == "string" then
+					local okNameEq, nameEq = pcall(function() return auraData.name == wantName end)
+					if okNameEq and nameEq then found = true; return false end
+				end
+				return true
+			end, true)
+		end)
+		if found then return true end
+		pcall(function()
+			AuraUtil.ForEachAura("player", "HARMFUL", 255, function(auraData)
+				local asid = SafeAuraSpellId(auraData)
+				local okEq, eq = pcall(function() return asid == sid end)
+				if okEq and eq then found = true; return false end
+				if wantName and type(auraData) == "table" and type(auraData.name) == "string" then
+					local okNameEq, nameEq = pcall(function() return auraData.name == wantName end)
+					if okNameEq and nameEq then found = true; return false end
+				end
+				return true
+			end, true)
+		end)
+		return found
+	end
+
+	if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
+		for i = 1, 255 do
+			local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
+			if not ok or not auraData then break end
+			local asid = SafeAuraSpellId(auraData)
+			local okEq, eq = pcall(function() return asid == sid end)
+			if okEq and eq then return true end
+			if wantName and type(auraData.name) == "string" then
+				local okNameEq, nameEq = pcall(function() return auraData.name == wantName end)
+				if okNameEq and nameEq then return true end
+			end
+		end
+		for i = 1, 255 do
+			local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HARMFUL")
+			if not ok or not auraData then break end
+			local asid = SafeAuraSpellId(auraData)
+			local okEq, eq = pcall(function() return asid == sid end)
+			if okEq and eq then return true end
+			if wantName and type(auraData.name) == "string" then
+				local okNameEq, nameEq = pcall(function() return auraData.name == wantName end)
+				if okNameEq and nameEq then return true end
+			end
+		end
+	end
+
+	-- Last-resort fallback: UnitAura iteration.
+	if UnitAura then
+		for i = 1, 40 do
+			local ok, name, _, _, _, _, _, _, _, sid2 = pcall(UnitAura, "player", i, "HELPFUL")
+			if not ok or not name then break end
+			local okEq, eq = pcall(function() return sid2 == sid end)
+			if okEq and eq then return true end
+			if wantName and type(name) == "string" then
+				local okNameEq, nameEq = pcall(function() return name == wantName end)
+				if okNameEq and nameEq then return true end
+			end
+		end
+		for i = 1, 40 do
+			local ok, name, _, _, _, _, _, _, _, sid2 = pcall(UnitAura, "player", i, "HARMFUL")
+			if not ok or not name then break end
+			local okEq, eq = pcall(function() return sid2 == sid end)
+			if okEq and eq then return true end
+			if wantName and type(name) == "string" then
+				local okNameEq, nameEq = pcall(function() return name == wantName end)
+				if okNameEq and nameEq then return true end
+			end
+		end
+	end
+
+	return false
+end
+
 function Triggers:SyncWatchedAurasFromCore()
 	if not self:IsEnabled() then
 		TrigDebug("AuraSync: skip (triggers disabled)")
@@ -419,183 +529,8 @@ function Triggers:SyncWatchedAurasFromCore()
 	end
 	self._auraPresent = self._auraPresent or {}
 
-	local function SafeAuraSpellId(auraData)
-		if type(auraData) ~= "table" then return nil end
-		local sid = auraData.spellId or auraData.spellID
-		-- WoW 12.x can surface "secret" numeric values that are unsafe to order-compare.
-		return (type(sid) == "number") and sid or nil
-	end
-
 	local function IsAuraPresent(sid)
-		if type(sid) ~= "number" or sid <= 0 then return false end
-		-- Synthetic presence fallback for auras that cannot be enumerated reliably in WoW 12.x during combat.
-		if self._syntheticAuraExpireAt and type(self._syntheticAuraExpireAt[sid]) == "number" then
-			local now = GetTime and GetTime() or 0
-			if now < (self._syntheticAuraExpireAt[sid] or 0) then
-				return true
-			end
-		end
-		local wantName = SafeSpellName(sid)
-		-- Fast path if available
-		if AuraUtil and AuraUtil.FindAuraBySpellId then
-			local ok, aura = pcall(AuraUtil.FindAuraBySpellId, sid, "player", "HELPFUL")
-			if ok and aura then return true end
-			ok, aura = pcall(AuraUtil.FindAuraBySpellId, sid, "player", "HARMFUL")
-			if ok and aura then return true end
-			-- Do NOT early-return false here. During loading screens / API transitional states,
-			-- FindAuraBySpellId can transiently fail to report an aura. Fall through to
-			-- enumeration and name matching below to reduce false negatives.
-		end
-
-		-- Fallback: enumerate auras and compare spellId when provided
-		if AuraUtil and AuraUtil.ForEachAura then
-			local found = false
-			pcall(function()
-				AuraUtil.ForEachAura("player", "HELPFUL", 255, function(auraData)
-					local asid = SafeAuraSpellId(auraData)
-					local okEq, eq = pcall(function() return asid == sid end)
-					if okEq and eq then found = true; return false end
-					if wantName and type(auraData) == "table" and type(auraData.name) == "string" then
-						local okNameEq, nameEq = pcall(function() return auraData.name == wantName end)
-						if okNameEq and nameEq then found = true; return false end
-					end
-					return true
-				end, true)
-			end)
-			if found then return true end
-			pcall(function()
-				AuraUtil.ForEachAura("player", "HARMFUL", 255, function(auraData)
-					local asid = SafeAuraSpellId(auraData)
-					local okEq, eq = pcall(function() return asid == sid end)
-					if okEq and eq then found = true; return false end
-					if wantName and type(auraData) == "table" and type(auraData.name) == "string" then
-						local okNameEq, nameEq = pcall(function() return auraData.name == wantName end)
-						if okNameEq and nameEq then found = true; return false end
-					end
-					return true
-				end, true)
-			end)
-			if (not found) and sid == 107574 then
-				local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("triggers"))
-					or ((ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0)) or 0)
-				if dl >= 4 then
-					local tNow = GetTime and GetTime() or 0
-					if (tNow - (self._avatarAuraDebugAt or 0)) > 1.0 then
-						self._avatarAuraDebugAt = tNow
-						local okWN, sWN = pcall(tostring, wantName)
-						if not okWN or type(sWN) ~= "string" then sWN = "<nil>" end
-						local parts = {}
-						pcall(function()
-							local seen = 0
-							AuraUtil.ForEachAura("player", "HELPFUL", 40, function(auraData)
-								seen = seen + 1
-								local an = type(auraData) == "table" and auraData.name or nil
-								local asid = SafeAuraSpellId(auraData)
-								local okN, sN = pcall(tostring, an)
-								if not okN or type(sN) ~= "string" then sN = "<noname>" end
-								local okSid, sSid = pcall(tostring, asid)
-								if not okSid or type(sSid) ~= "string" then sSid = "<nosid>" end
-								parts[#parts + 1] = sN .. "#" .. sSid
-								if seen >= 12 then return false end
-								return true
-							end, true)
-						end)
-						pcall(function()
-							TrigDebug("AuraSync: Avatar not found; wantName=" .. sWN .. " helpful[1..12]=" .. table.concat(parts, ","))
-						end)
-					end
-				end
-			end
-			return found
-		end
-
-		if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-			for i = 1, 255 do
-				local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
-				if not ok or not auraData then break end
-				local asid = SafeAuraSpellId(auraData)
-				local okEq, eq = pcall(function() return asid == sid end)
-				if okEq and eq then return true end
-				if wantName and type(auraData.name) == "string" then
-					local okNameEq, nameEq = pcall(function() return auraData.name == wantName end)
-					if okNameEq and nameEq then return true end
-				end
-			end
-			for i = 1, 255 do
-				local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HARMFUL")
-				if not ok or not auraData then break end
-				local asid = SafeAuraSpellId(auraData)
-				local okEq, eq = pcall(function() return asid == sid end)
-				if okEq and eq then return true end
-				if wantName and type(auraData.name) == "string" then
-					local okNameEq, nameEq = pcall(function() return auraData.name == wantName end)
-					if okNameEq and nameEq then return true end
-				end
-			end
-			-- fall through to UnitAura fallback
-		end
-
-		-- Last-resort fallback: UnitAura iteration.
-		-- In some 12.x builds, spellId on auraData can be secret/unreliable; UnitAura can still provide usable spellId/name.
-		if UnitAura then
-			for i = 1, 40 do
-				local ok, name, _, _, _, _, _, _, _, sid2 = pcall(UnitAura, "player", i, "HELPFUL")
-				if not ok then break end
-				if not name then break end
-				local okEq, eq = pcall(function() return sid2 == sid end)
-				if okEq and eq then return true end
-				if wantName and type(name) == "string" then
-					local okNameEq, nameEq = pcall(function() return name == wantName end)
-					if okNameEq and nameEq then return true end
-				end
-			end
-			for i = 1, 40 do
-				local ok, name, _, _, _, _, _, _, _, sid2 = pcall(UnitAura, "player", i, "HARMFUL")
-				if not ok then break end
-				if not name then break end
-				local okEq, eq = pcall(function() return sid2 == sid end)
-				if okEq and eq then return true end
-				if wantName and type(name) == "string" then
-					local okNameEq, nameEq = pcall(function() return name == wantName end)
-					if okNameEq and nameEq then return true end
-				end
-			end
-		end
-
-		-- Debug helper: when Avatar can't be found, dump what we *do* see.
-		if sid == 107574 then
-			local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("triggers"))
-				or ((ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0)) or 0)
-			if dl >= 4 and UnitAffectingCombat and UnitAffectingCombat("player") then
-				local tNow = GetTime and GetTime() or 0
-				if (tNow - (self._avatarAuraDebugAt or 0)) > 1.0 then
-					self._avatarAuraDebugAt = tNow
-					local okWN, sWN = pcall(tostring, wantName)
-					if not okWN or type(sWN) ~= "string" then sWN = "<nil>" end
-					local parts = {}
-					if AuraUtil and AuraUtil.ForEachAura then
-						pcall(function()
-							local seen = 0
-							AuraUtil.ForEachAura("player", "HELPFUL", 40, function(auraData)
-								seen = seen + 1
-								local an = type(auraData) == "table" and auraData.name or nil
-								local asid = SafeAuraSpellId(auraData)
-								local okN, sN = pcall(tostring, an)
-								if not okN or type(sN) ~= "string" then sN = "<noname>" end
-								local okSid, sSid = pcall(tostring, asid)
-								if not okSid or type(sSid) ~= "string" then sSid = "<nosid>" end
-								parts[#parts + 1] = sN .. "#" .. sSid
-								if seen >= 12 then return false end
-								return true
-							end, true)
-						end)
-					end
-					TrigDebug("AuraSync: Avatar not found; wantName=" .. sWN .. " helpful[1..12]=" .. table.concat(parts, ","))
-				end
-			end
-		end
-
-		return false
+		return self:IsAuraPresentSpellId(sid)
 	end
 	local watchCount = 0
 	for _ in pairs(watch) do watchCount = watchCount + 1 end

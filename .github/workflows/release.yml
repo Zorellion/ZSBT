@@ -1,0 +1,27 @@
+name: Release
+
+# Triggered by version tags (v3.2, v3.3, ...). Builds the addon zip with the
+# BigWigs packager — .pkgmeta controls excludes, the git tag provides the
+# version — and attaches it to a GitHub Release. CurseForge picks up the
+# release asset from there.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # required to create the GitHub Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so the packager can diff tags for the changelog
+
+      - name: Package and release
+        uses: BigWigsMods/packager@v2
+        env:
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}

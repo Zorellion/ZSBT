@@ -1306,13 +1306,9 @@ local function AE_UpdateEvent(ev, dt)
 	end
 
 	if ev.iconFS then
-		ev.iconFS:ClearAllPoints()
-		ev.iconFS:SetPoint("RIGHT", ev.fs, "LEFT", -2, 0)
 		ev.iconFS:SetAlpha(ev.fs:GetAlpha())
 	end
 	if ev.iconTex then
-		ev.iconTex:ClearAllPoints()
-		ev.iconTex:SetPoint("RIGHT", ev.fs, "LEFT", -2, 0)
 		ev.iconTex:SetAlpha(ev.fs:GetAlpha())
 	end
 
@@ -1624,6 +1620,10 @@ end
 
 AnimEngine._frame:SetScript("OnUpdate", function(_, dt)
 	if not AnimEngine._enabled then return end
+	if next(AnimEngine._areas) == nil then
+		AnimEngine._frame:Hide()
+		return
+	end
 	local tok = ZSBT.Addon and ZSBT.Addon.PerfBegin and ZSBT.Addon:PerfBegin("UI.Anim")
 	local budgetMs = nil
 	local tStart = nil
@@ -1739,6 +1739,7 @@ RecycleIconFS = function(fs)
         pcall(fs.SetFont, fs, STANDARD_TEXT_FONT, 12, "")
     end
     pcall(fs.SetText, fs, "")
+    pcall(fs.SetRotation, fs, 0)
     if #iconFSPool < MAX_POOL_SIZE then
         iconFSPool[#iconFSPool + 1] = fs
     end
@@ -2622,11 +2623,11 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
     end
 
 	local parentKey = string.format("test_%d_%d", xOff, yOff)
-    
+
     if not ZSBT._testParentFrames then
         ZSBT._testParentFrames = {}
     end
-    
+
     local parent = ZSBT._testParentFrames[parentKey]
     if not parent then
         parent = CreateFrame("Frame", "ZSBT_TestParent_" .. parentKey, UIParent)
@@ -2634,10 +2635,17 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
         -- No clipping — text fades at edges instead
         ZSBT._testParentFrames[parentKey] = parent
     end
-    
-    parent:ClearAllPoints()
-    parent:SetSize(areaW, areaH)
-    parent:SetPoint("CENTER", UIParent, "CENTER", xOff, yOff)
+
+    -- Only re-anchor when geometry actually changed.  Re-anchoring every event (10-30+/sec
+    -- during AoE) is wasteful because parentKey already encodes the position.
+    if parent._lastW ~= areaW or parent._lastH ~= areaH
+       or parent._lastXOff ~= xOff or parent._lastYOff ~= yOff then
+        parent:ClearAllPoints()
+        parent:SetSize(areaW, areaH)
+        parent:SetPoint("CENTER", UIParent, "CENTER", xOff, yOff)
+        parent._lastW = areaW; parent._lastH = areaH
+        parent._lastXOff = xOff; parent._lastYOff = yOff
+    end
     parent:Show()
 
     -- Slot tracking: stagger new texts so they don't stack on each other.

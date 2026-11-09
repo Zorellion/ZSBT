@@ -289,13 +289,31 @@ function QuickBar:Init()
 	f:SetMovable(true)
 	f:EnableMouse(true)
 	f:RegisterForDrag("LeftButton")
+
+	local _pendingSavePos = false
 	f:SetScript("OnDragStart", function(self)
+		if InCombatLockdown() then return end
 		self:StartMoving()
 	end)
 	f:SetScript("OnDragStop", function(self)
 		self:StopMovingOrSizing()
+		if InCombatLockdown() then
+			-- Defer position save until combat ends so ClearAllPoints is not
+			-- called during lockdown on a child of a potentially protected ancestor.
+			_pendingSavePos = true
+			return
+		end
 		savePosition(self)
 		notifyConfig()
+	end)
+	-- Flush any deferred position save once combat unlocks.
+	f:RegisterEvent("PLAYER_REGEN_ENABLED")
+	f:SetScript("OnEvent", function(self, event)
+		if event == "PLAYER_REGEN_ENABLED" and _pendingSavePos then
+			_pendingSavePos = false
+			savePosition(self)
+			notifyConfig()
+		end
 	end)
 
 	local label = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")

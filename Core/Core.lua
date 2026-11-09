@@ -11,6 +11,34 @@ Core._initialized = Core._initialized or false
 Core._enabled     = Core._enabled or false
 Core._inGroupInstance = Core._inGroupInstance or false
 
+function Core:IsAurasSecretContext(updateInfo)
+	-- Prefer a direct probe of the UNIT_AURA update payload when available.
+	if updateInfo ~= nil and HasSecretValues then
+		local ok, res = pcall(HasSecretValues, updateInfo)
+		if ok and res == true then
+			return true
+		end
+	end
+
+	-- Arena/BG contexts should be treated as restricted even outside combat.
+	if type(IsInInstance) == "function" then
+		local ok, inInst, instType = pcall(IsInInstance)
+		if ok and inInst == true and (instType == "arena" or instType == "pvp") then
+			return true
+		end
+	end
+
+	-- Combat is the primary secret-aura context for player aura tracking.
+	if UnitAffectingCombat then
+		local ok, inCombat = pcall(UnitAffectingCombat, "player")
+		if ok and inCombat == true then
+			return true
+		end
+	end
+
+	return false
+end
+
 function Core:IsMasterEnabled()
     return ZSBT.db
        and ZSBT.db.profile
@@ -69,6 +97,10 @@ function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride)
 	local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("core"))
 		or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 	if not rule then
+		-- 12.1+ combat/secret context: do not emit unconfigured aura gains/fades.
+		if self.IsAurasSecretContext and self:IsAurasSecretContext() == true then
+			return false
+		end
 		local sc = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
 		local g = sc and sc.auraGlobal
 		if isHarmful and isGain and g and g.showUnconfiguredDebuffGains == false then
@@ -1686,11 +1718,14 @@ function Core:InitInterruptTracking()
 						-- Fallback to nameplates if available
 						for i = 1, 40 do
 							local unit = ("nameplate%d"):format(i)
-							if UnitGUID and UnitGUID(unit) then
-								targetUnit = unit
-								targetGUID = UnitGUID(unit)
-								targetName = UnitName and UnitName(unit)
-								break
+							if UnitGUID then
+								local okG, g = pcall(UnitGUID, unit)
+								if okG and type(g) == "string" and ZSBT.IsSafeString and ZSBT.IsSafeString(g) then
+									targetUnit = unit
+									targetGUID = g
+									targetName = UnitName and UnitName(unit)
+									break
+								end
 							end
 						end
 					end
@@ -1753,11 +1788,14 @@ function Core:InitInterruptTracking()
 						-- Fallback to nameplates if available
 						for i = 1, 40 do
 							local unit = ("nameplate%d"):format(i)
-							if UnitGUID and UnitGUID(unit) then
-								targetUnit = unit
-								targetGUID = UnitGUID(unit)
-								targetName = UnitName and UnitName(unit)
-								break
+							if UnitGUID then
+								local okG, g = pcall(UnitGUID, unit)
+								if okG and type(g) == "string" and ZSBT.IsSafeString and ZSBT.IsSafeString(g) then
+									targetUnit = unit
+									targetGUID = g
+									targetName = UnitName and UnitName(unit)
+									break
+								end
 							end
 						end
 					end
@@ -2052,7 +2090,8 @@ function Core:InitInterruptTracking()
 					guid = g
 				end
 			end
-			local key = tostring(emitCategory) .. ":" .. tostring(attemptAt or 0) .. ":" .. tostring(guid or "")
+			local safeGuid = (guid and ZSBT.IsSafeString and ZSBT.IsSafeString(guid)) and guid or ""
+			local key = tostring(emitCategory) .. ":" .. tostring(attemptAt or 0) .. ":" .. safeGuid
 			local lastKeyAt = Core._notifDedup[key]
 			if type(lastKeyAt) == "number" and (t - lastKeyAt) >= 0 and (t - lastKeyAt) < 0.80 then
 				return
@@ -2802,6 +2841,9 @@ function Core:InitBuffTracking()
 
         if event == "PLAYER_REGEN_DISABLED" then
             if not Core:IsMasterEnabled() then return end
+            -- Combat-enter: suppress aura notifications briefly to avoid false fade/gain bursts
+            -- when aura enumeration becomes incomplete/secret.
+            Core._suppressAurasUntil = (GetTime and GetTime() or 0) + 1.0
             Core:ScanPlayerAuras(nil, true)
             if C_Timer and C_Timer.NewTicker then
                 if Core._auraCombatTicker then
@@ -2829,7 +2871,16 @@ function Core:InitBuffTracking()
                 if trg and trg.SyncWatchedAurasFromCore then
                     pcall(function() trg:SyncWatchedAurasFromCore() end)
                 end
-                Core:ScanPlayerAuras(nil)
+                -- Leaving combat after restricted/secret aura updates can make the next UNIT_AURA
+                -- snapshot look like a burst of "new" auras. Suppress aura notifications briefly
+                -- and resync silently.
+                Core._suppressAurasUntil = (GetTime and GetTime() or 0) + 1.0
+                Core:ScanPlayerAuras(nil, true)
+                C_Timer.After(0.25, function()
+                    if Core.IsMasterEnabled and Core:IsMasterEnabled() then
+                        Core:ScanPlayerAuras(nil, true)
+                    end
+                end)
             end
             return
         end
@@ -2855,7 +2906,42 @@ function Core:InitBuffTracking()
                 -- and then emit a burst of "new" auras after combat ends.
                 if not UnitAffectingCombat("player") then
                     -- Outside combat, only skip when the update does not report actual additions/removals.
-                    if not (info and (info.isFullUpdate or info.addedAuras or info.removedAuraInstanceIDs)) then
+                    local hasSignal = false
+                    if info then
+                        local function isSecret(v)
+                            if v == nil then return false end
+                            if HasSecretValues then
+                                local okS, resS = pcall(HasSecretValues, v)
+                                if okS and resS then return true end
+                            end
+                            if ZSBT and ZSBT.IsSecret then
+                                local okZ, resZ = pcall(ZSBT.IsSecret, v)
+                                if okZ and resZ then return true end
+                            end
+                            return false
+                        end
+
+                        local okFull, vFull = pcall(function() return info.isFullUpdate end)
+                        if okFull and not isSecret(vFull) then
+                            local okCmp, isTrue = pcall(function() return vFull == true end)
+                            if okCmp and isTrue == true then
+                                hasSignal = true
+                            end
+                        end
+                        if not hasSignal then
+                            local okAdd, vAdd = pcall(function() return info.addedAuras end)
+                            if okAdd and type(vAdd) == "table" and not isSecret(vAdd) then
+                                hasSignal = true
+                            end
+                        end
+                        if not hasSignal then
+                            local okRem, vRem = pcall(function() return info.removedAuraInstanceIDs end)
+                            if okRem and type(vRem) == "table" and not isSecret(vRem) then
+                                hasSignal = true
+                            end
+                        end
+                    end
+                    if not hasSignal then
                         return
                     end
                 end
@@ -2978,23 +3064,138 @@ end
 
 local function GetPlayerAuraByIndex(index, filter)
     if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-        return C_UnitAuras.GetAuraDataByIndex("player", index, filter)
+        local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, "player", index, filter)
+        if ok then return aura end
+        return nil
     end
     if type(filter) == "string" and filter:find("HELPFUL", 1, true) then
         if C_UnitAuras and C_UnitAuras.GetBuffDataByIndex then
-            return C_UnitAuras.GetBuffDataByIndex("player", index)
+            local ok, aura = pcall(C_UnitAuras.GetBuffDataByIndex, "player", index)
+            if ok then return aura end
+            return nil
         end
     elseif type(filter) == "string" and filter:find("HARMFUL", 1, true) then
         if C_UnitAuras and C_UnitAuras.GetDebuffDataByIndex then
-            return C_UnitAuras.GetDebuffDataByIndex("player", index)
+            local ok, aura = pcall(C_UnitAuras.GetDebuffDataByIndex, "player", index)
+            if ok then return aura end
+            return nil
         end
     end
     return nil
 end
 
+function Core:ScanAuraRulesWatchedPresence(silent)
+	local sc = ZSBT and ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+	local rules = sc and sc.auraRules
+	if type(rules) ~= "table" then return end
+	self._auraRulesPresent = self._auraRulesPresent or {}
+	local cache = self._auraRulesPresent
+
+	local trg = ZSBT.Core and ZSBT.Core.Triggers
+	local hasPresenceFn = trg and trg.IsAuraPresentSpellId
+
+	local function isHarmfulSpellId(sid)
+		if not (AuraUtil and AuraUtil.FindAuraBySpellId) then return false end
+		local ok, aura = pcall(AuraUtil.FindAuraBySpellId, sid, "player", "HARMFUL")
+		return ok and aura ~= nil
+	end
+
+	for sid, rule in pairs(rules) do
+		if type(sid) == "number" and type(rule) == "table" and rule.enabled ~= false then
+			local present = false
+			if hasPresenceFn then
+				local okP, resP = pcall(trg.IsAuraPresentSpellId, trg, sid)
+				present = okP and resP == true
+			else
+				if AuraUtil and AuraUtil.FindAuraBySpellId then
+					local ok, aura = pcall(AuraUtil.FindAuraBySpellId, sid, "player", "HELPFUL")
+					present = ok and aura ~= nil
+					if not present then
+						ok, aura = pcall(AuraUtil.FindAuraBySpellId, sid, "player", "HARMFUL")
+						present = ok and aura ~= nil
+					end
+				end
+			end
+
+			local was = cache[sid]
+			local wasPresent = type(was) == "table" and was.present == true
+			if present and not wasPresent then
+				local harmful = isHarmfulSpellId(sid)
+				cache[sid] = { present = true, harmful = harmful }
+				if not silent then
+					local name = (ZSBT and ZSBT.CleanSpellName and ZSBT.CleanSpellName(sid)) or (GetSpellInfo and GetSpellInfo(sid)) or ("Spell #" .. tostring(sid))
+					local okToShow = self:ShouldEmitBuffNotif(sid, true, harmful)
+					if okToShow then
+						local color = harmful and { r = 1.0, g = 0.4, b = 0.4 } or { r = 0.5, g = 0.8, b = 1.0 }
+						if harmful then
+							self:EmitNotification(BuildAuraNotifText("+", name), color, "auras")
+						else
+							self:EmitBuffNotification(sid, BuildAuraNotifText("+", name), color, "auras")
+						end
+					end
+				end
+			elseif (not present) and wasPresent then
+				local harmful = type(was) == "table" and was.harmful == true
+				cache[sid] = { present = false, harmful = harmful }
+				if not silent then
+					local name = (ZSBT and ZSBT.CleanSpellName and ZSBT.CleanSpellName(sid)) or (GetSpellInfo and GetSpellInfo(sid)) or ("Spell #" .. tostring(sid))
+					local okToShow = self:ShouldEmitBuffNotif(sid, false, harmful)
+					if okToShow then
+						local color = { r = 0.6, g = 0.6, b = 0.6 }
+						if harmful then
+							self:EmitNotification(BuildAuraNotifText("-", name), color, "auras")
+						else
+							self:EmitBuffNotification(sid, BuildAuraNotifText("-", name), color, "auras")
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
 function Core:ScanPlayerAuras(updateInfo, silent)
     if not self._auraInstanceMap then self._auraInstanceMap = {} end
     if not self._trackedAuraNames then self._trackedAuraNames = {} end
+
+	-- 12.1+ secret aura contexts: do not parse UNIT_AURA delta payloads.
+	-- Maintain configured auraRules via watched spellID presence checks only.
+	if self.IsAurasSecretContext and self:IsAurasSecretContext(updateInfo) == true then
+		self:ScanAuraRulesWatchedPresence(silent)
+		return
+	end
+
+	local function isSecret(v)
+		if v == nil then return false end
+		if HasSecretValues then
+			local ok, res = pcall(HasSecretValues, v)
+			if ok and res then return true end
+		end
+		if ZSBT and ZSBT.IsSecret then
+			local ok, res = pcall(ZSBT.IsSecret, v)
+			if ok and res then return true end
+		end
+		return false
+	end
+
+	local function safeNonSecretTable(v)
+		if type(v) ~= "table" then return nil end
+		if isSecret(v) then return nil end
+		return v
+	end
+
+	local function safeIpairs(v)
+		local ok, iter, tbl, idx = pcall(ipairs, v)
+		if not ok then
+			return function() end, nil, nil
+		end
+		return iter, tbl, idx
+	end
+
+	local function safeHasAny(v)
+		local ok, k = pcall(function() return next(v) end)
+		return ok and k ~= nil
+	end
     
     -- Check loading/transition suppression (zone changes only)
     if not silent and self._suppressAurasUntil then
@@ -3028,7 +3229,19 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 	end
 
     -- Full scan: rebuild everything from scratch
-    if not updateInfo or updateInfo.isFullUpdate then
+    local isFullUpdate = false
+    if not updateInfo then
+        isFullUpdate = true
+    else
+        local ok, v = pcall(function() return updateInfo.isFullUpdate end)
+        if ok then
+            local okCmp, isTrue = pcall(function() return v == true end)
+            if okCmp and isTrue == true and not isSecret(v) then
+                isFullUpdate = true
+            end
+        end
+    end
+    if isFullUpdate then
 		local trg = ZSBT.Core and ZSBT.Core.Triggers
 		if trg and trg.SyncWatchedAurasFromCore then
 			pcall(function() trg:SyncWatchedAurasFromCore() end)
@@ -3162,6 +3375,17 @@ function Core:ScanPlayerAuras(updateInfo, silent)
             tryAddAura(auraData, "Debuff", {r = 1.0, g = 0.4, b = 0.4}, false)
         end
 
+		-- 12.1+ safety: in some combat contexts the aura APIs can return incomplete/empty
+		-- results due to secret value restrictions. If a combat scan yields *no* auras but
+		-- we previously had some, treat it as unreliable and do not emit fades/gains.
+		local newCount = 0
+		for _ in pairs(newInstances) do newCount = newCount + 1 end
+		local oldCount = 0
+		for _ in pairs(oldInstances) do oldCount = oldCount + 1 end
+		if UnitAffectingCombat and UnitAffectingCombat("player") and newCount == 0 and oldCount > 0 then
+			return
+		end
+
         -- Detect fades by instance ID
         for oldInstanceId, oldName in pairs(oldInstances) do
             if not newInstances[oldInstanceId] then
@@ -3205,13 +3429,20 @@ function Core:ScanPlayerAuras(updateInfo, silent)
     end
 
     -- Incremental: handle added auras
-    if updateInfo.addedAuras then
+    local addedAuras = nil
+    if updateInfo then
+        local ok, v = pcall(function() return updateInfo.addedAuras end)
+        if ok and type(v) == "table" and not isSecret(v) then
+            addedAuras = v
+        end
+    end
+    if addedAuras then
 		local trg = ZSBT.Core and ZSBT.Core.Triggers
 		if trg and trg.SyncWatchedAurasFromCore then
 			pcall(function() trg:SyncWatchedAurasFromCore() end)
 		end
         local needsRescan = false
-        for _, aura in ipairs(updateInfo.addedAuras) do
+        for _, aura in safeIpairs(addedAuras) do
             local name, isHarmful = extractAuraInfo(aura)
             local instanceId = aura.auraInstanceID
             local sid = ResolveSafeAuraSpellID(aura)
@@ -3285,9 +3516,16 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 
     -- Incremental: handle refreshed/updated auras (same instance ID)
 	-- This catches recasts like Battle Shout that refresh an existing buff.
-	if updateInfo.updatedAuraInstanceIDs then
+	local updatedAuraInstanceIDs = nil
+	if updateInfo then
+		local ok, v = pcall(function() return updateInfo.updatedAuraInstanceIDs end)
+		if ok and type(v) == "table" and not isSecret(v) then
+			updatedAuraInstanceIDs = v
+		end
+	end
+	if updatedAuraInstanceIDs then
 		local needsRescan = false
-		for _, instanceId in ipairs(updateInfo.updatedAuraInstanceIDs) do
+		for _, instanceId in safeIpairs(updatedAuraInstanceIDs) do
 			if instanceId then
 				local auraData = nil
 				if C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
@@ -3330,7 +3568,14 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 	end
 
     -- Incremental: handle removed auras
-	if updateInfo.removedAuraInstanceIDs then
+	local removedAuraInstanceIDs = nil
+	if updateInfo then
+		local ok, v = pcall(function() return updateInfo.removedAuraInstanceIDs end)
+		if ok then
+			removedAuraInstanceIDs = safeNonSecretTable(v)
+		end
+	end
+	if removedAuraInstanceIDs then
 		local trg = ZSBT.Core and ZSBT.Core.Triggers
 		if trg and trg.SyncWatchedAurasFromCore then
 			pcall(function() trg:SyncWatchedAurasFromCore() end)
@@ -3338,7 +3583,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
         local needsRescan = false
         local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("core"))
 			or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
-		for _, instanceId in ipairs(updateInfo.removedAuraInstanceIDs) do
+		for _, instanceId in safeIpairs(removedAuraInstanceIDs) do
 			local name = self._auraInstanceMap[instanceId]
 			local sid = self._auraInstanceSpellIDs and self._auraInstanceSpellIDs[instanceId]
 			local isHarmful = self._auraInstanceIsHarmful and self._auraInstanceIsHarmful[instanceId] == true
@@ -3546,9 +3791,25 @@ function Core:ScanPlayerAuras(updateInfo, silent)
     end
 
     -- Fallback: if neither added nor removed, do full rescan
-    if updateInfo and not updateInfo.isFullUpdate
-       and not updateInfo.addedAuras and not updateInfo.removedAuraInstanceIDs then
-        self:ScanPlayerAuras(nil)
+    if updateInfo then
+        local okFull, vFull = pcall(function() return updateInfo.isFullUpdate end)
+        local isFull = false
+        if okFull and not isSecret(vFull) then
+            local okCmp, isTrue = pcall(function() return vFull == true end)
+            if okCmp and isTrue == true then
+                isFull = true
+            end
+        end
+
+        local okAdd, vAdd = pcall(function() return updateInfo.addedAuras end)
+        local hasAdded = okAdd and type(vAdd) == "table" and not isSecret(vAdd) and safeHasAny(vAdd)
+
+        local okRem, vRem = pcall(function() return updateInfo.removedAuraInstanceIDs end)
+        local hasRemoved = okRem and type(vRem) == "table" and not isSecret(vRem) and safeHasAny(vRem)
+
+        if not isFull and not hasAdded and not hasRemoved then
+            self:ScanPlayerAuras(nil)
+        end
     end
 end
 
@@ -4006,14 +4267,14 @@ function Core:InitProgressTracking()
 					Core:EmitNotification("+" .. xp .. " XP (" .. whoLabel .. ")", {r = 0.6, g = 0.4, b = 1.0}, "companionXP")
 					if dl >= 4 and Addon and Addon.Dbg then
 						local okS, sText = pcall(tostring, text)
-						if not okS or type(sText) ~= "string" then sText = "<secret>" end
+						if not okS or type(sText) ~= "string" or not (ZSBT.IsSafeString and ZSBT.IsSafeString(sText)) then sText = "<secret>" end
 						Addon:Dbg("diagnostics", 4, "[XPDBG] ev=CHATFRAME safe=" .. tostring(isSafeText)
 							.. " who=" .. tostring(whoLabel)
 							.. " xp=" .. tostring(xp)
 							.. " msg=" .. sText)
 					elseif dl >= 4 and ZSBT.Addon and ZSBT.Addon.Print then
 						local okS, sText = pcall(tostring, text)
-						if not okS or type(sText) ~= "string" then sText = "<secret>" end
+						if not okS or type(sText) ~= "string" or not (ZSBT.IsSafeString and ZSBT.IsSafeString(sText)) then sText = "<secret>" end
 						ZSBT.Addon:Print("[XPDBG] ev=CHATFRAME safe=" .. tostring(isSafeText) .. " who=" .. tostring(whoLabel) .. " xp=" .. tostring(xp) .. " msg=" .. sText)
 					end
 				end)
@@ -4055,7 +4316,7 @@ function Core:InitProgressTracking()
 			end)
 			if dl >= 4 and Addon and Addon.Dbg then
 				local okS, sMsg = pcall(tostring, msg)
-				if not okS or type(sMsg) ~= "string" then sMsg = "<secret>" end
+				if not okS or type(sMsg) ~= "string" or not (ZSBT.IsSafeString and ZSBT.IsSafeString(sMsg)) then sMsg = "<secret>" end
 				Addon:Dbg("diagnostics", 4, "[XPDBG] ev=" .. tostring(event)
 					.. " safe=" .. tostring(isSafe)
 					.. " who=" .. tostring(whoXP)
@@ -4063,7 +4324,7 @@ function Core:InitProgressTracking()
 					.. " msg=" .. sMsg)
 			elseif dl >= 4 and ZSBT.Addon and ZSBT.Addon.Print then
 				local okS, sMsg = pcall(tostring, msg)
-				if not okS or type(sMsg) ~= "string" then sMsg = "<secret>" end
+				if not okS or type(sMsg) ~= "string" or not (ZSBT.IsSafeString and ZSBT.IsSafeString(sMsg)) then sMsg = "<secret>" end
 				ZSBT.Addon:Print("[XPDBG] ev=" .. tostring(event) .. " safe=" .. tostring(isSafe) .. " who=" .. tostring(whoXP) .. " xp=" .. tostring(xp) .. " msg=" .. sMsg)
 			end
 			if xp then

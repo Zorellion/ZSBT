@@ -5360,6 +5360,15 @@ function ZSBT.BuildTab_Incoming()
                 get   = function() return ZSBT.db.profile.incoming.healing.showOverheal end,
                 set   = function(_, val) ZSBT.db.profile.incoming.healing.showOverheal = val end,
             },
+            healingShowHealerNames = {
+                type  = "toggle",
+                name  = "Show Healer Names",
+                desc  = "Display the healer's name on incoming healing numbers. Some clients include the name in the combat text payload; when disabled, ZSBT uses the numeric heal event instead so only the amount shows.",
+                width = "full",
+                order = 13.6,
+                get   = function() return ZSBT.db.profile.incoming.healing.showHealerNames ~= false end,
+                set   = function(_, val) ZSBT.db.profile.incoming.healing.showHealerNames = val and true or false end,
+            },
             healingMinThreshold = {
                 type    = "range",
                 name    = "Minimum Healing Threshold",
