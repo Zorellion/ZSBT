@@ -479,7 +479,10 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
     -- Instance/readability policy: if the value is a secret (tainted) raw pipe
     -- and we have no safe numeric amount to filter against AND no threshold to
     -- run secret-threshold evaluation, hide it to avoid unfilterable spam.
-    if rawPipeValue ~= nil and not ZSBT.IsSafeNumber(rawPipeValue) and thresholdAmt == nil then
+    -- Heals are exempt: on secret-value clients (e.g. WoW Forever) EVERY heal
+    -- amount is tainted, so this policy would suppress all incoming healing.
+    -- The raw value still renders via SetText and merges collapse to "Heals xN".
+    if rawPipeValue ~= nil and not ZSBT.IsSafeNumber(rawPipeValue) and thresholdAmt == nil and kind ~= "heal" then
         local catMin = tonumber(conf.minThreshold) or 0
         local spam = ZSBT.db.profile.spamControl and ZSBT.db.profile.spamControl.throttling
         local globalMin = 0
@@ -563,12 +566,14 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
             mergeMode = "numeric"
             mergeAmount = rawPipeValue
         else
-            -- Secret/tainted raw pipe values: suppress for UX.
-            -- (User preference: do not show placeholder words like 'Heals'.)
-            if kind == "heal" then
-                return
-            end
+            -- Secret/tainted raw pipe values: pass the raw value through for
+            -- SetText() so the client renders the real number (same pattern as
+            -- the outgoing heal path). Merged bursts still collapse to
+            -- "Heals xN" / "Hits xN" in the merge buffer.
             mergeMode = "secret"
+            if kind == "heal" then
+                text = rawPipeValue
+            end
         end
     else
         text = displayText

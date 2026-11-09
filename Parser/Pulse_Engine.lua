@@ -47,6 +47,17 @@ Engine._petMerge = Engine._petMerge or {
 	school = nil,
 }
 
+-- Module-level color constants for pet events.  Passing these by reference avoids
+-- allocating a new {r,g,b} table on every pet event for the non-customized paths.
+-- IMPORTANT: never mutate these; they are shared across all calls.
+local _PET_DMG_COLOR_BASE   = {r = 1.00, g = 1.00, b = 1.00}
+local _PET_DMG_COLOR_CRIT   = {r = 1.00, g = 1.00, b = 0.00}
+local _PET_DMG2_COLOR_BASE  = {r = 0.60, g = 0.80, b = 0.60}
+local _PET_DMG2_COLOR_CRIT  = {r = 0.80, g = 1.00, b = 0.00}
+local _PET_HEAL_COLOR_BASE  = {r = 0.60, g = 0.80, b = 0.60}
+local _PET_HEAL_COLOR_CRIT  = {r = 0.80, g = 1.00, b = 0.00}
+local _PET_IN_DMG_COLOR_BASE = {r = 1.00, g = 0.30, b = 0.30}
+
 local function safeUnitName(unit)
 	if not unit then return nil end
 
@@ -328,8 +339,13 @@ function Engine:_pollDamageMeterOutgoing()
 						if not totalNum or totalNum <= 0 then
 							return
 						end
-						local key = tostring(srcGUID) .. ":" .. tostring(spellId)
-						local lastTotal = self._dmgMeterLastTotals[key] or 0
+						-- Two-level table avoids string concatenation ("srcGUID:spellId") per spell per tick.
+						local srcSub = self._dmgMeterLastTotals[srcGUID]
+						if not srcSub then
+							srcSub = {}
+							self._dmgMeterLastTotals[srcGUID] = srcSub
+						end
+						local lastTotal = srcSub[spellId] or 0
 						local delta = totalNum - lastTotal
 						if delta < 0 then
 							delta = totalNum
@@ -352,7 +368,7 @@ function Engine:_pollDamageMeterOutgoing()
 								amountSource = "DAMAGE_METER",
 							})
 						end
-						self._dmgMeterLastTotals[key] = totalNum
+						srcSub[spellId] = totalNum
 					end)
 				end
 			end
@@ -494,7 +510,7 @@ function Engine:_flushPetMerge(t)
 	end
 
 	local area = pm.area or petConf.scrollArea or "Outgoing"
-	local color = {r = 1.00, g = 1.00, b = 1.00}
+	local color
 	local baseCol = petConf and petConf.outgoingDamageColor
 	local critCol = petConf and petConf.outgoingCritColor
 	if pm.isCrit and type(critCol) == "table" then
@@ -502,7 +518,9 @@ function Engine:_flushPetMerge(t)
 	elseif (not pm.isCrit) and type(baseCol) == "table" then
 		color = { r = baseCol.r or 1, g = baseCol.g or 1, b = baseCol.b or 1 }
 	elseif pm.isCrit then
-		color = {r = 1.00, g = 1.00, b = 0.00}
+		color = _PET_DMG_COLOR_CRIT
+	else
+		color = _PET_DMG_COLOR_BASE
 	end
 	local meta = {
 		kind = "pet",
@@ -902,6 +920,7 @@ function Engine:flushBucket()
 						kind = "damage",
 						amount = sample.amount,
 						amountText = sample.amountText,
+						rawPipeId = sample.rawPipeId,
 						spellName = (et == "FALL_DAMAGE") and "Fall" or nil,
 						spellId = nil,
 						targetName = safeUnitName and safeUnitName("player") or nil,
@@ -923,6 +942,7 @@ function Engine:flushBucket()
 					kind = "heal",
 					amount = sample.amount,
 					amountText = sample.amountText,
+					rawPipeId = sample.rawPipeId,
 					spellName = nil,
 					spellId = nil,
 					targetName = safeUnitName and safeUnitName("player") or nil,
@@ -1228,7 +1248,7 @@ function Engine:flushBucket()
 										area = "Outgoing"
 									end
 								end
-								local color = {r = 0.60, g = 0.80, b = 0.60}
+								local color
 								local baseCol = petConf and petConf.incomingHealColor
 								local critCol = petConf and petConf.incomingHealCritColor
 								if sample.isCrit == true and type(critCol) == "table" then
@@ -1236,7 +1256,9 @@ function Engine:flushBucket()
 								elseif type(baseCol) == "table" then
 									color = { r = baseCol.r or 0.60, g = baseCol.g or 0.80, b = baseCol.b or 0.60 }
 								elseif sample.isCrit == true then
-									color = {r = 0.80, g = 1.00, b = 0.00}
+									color = _PET_HEAL_COLOR_CRIT
+								else
+									color = _PET_HEAL_COLOR_BASE
 								end
 								local meta = { kind = "pet_heal", isCrit = sample.isCrit == true }
 								if ZSBT.Core and ZSBT.Core.Display and ZSBT.Core.Display.Emit then
@@ -1359,13 +1381,20 @@ function Engine:flushBucket()
 							:format(tostring(rawPipeId), tostring(val), tostring(text)))
 					end
 					if text == nil then
-						-- Secret/tainted amount: never pass raw userdata through the UI.
-						local okS, s = pcall(tostring, val)
-						if okS and type(s) == "string" and s ~= "" then
-							if prefix == "" then
-								text = s
-							else
-								text = prefix .. " " .. s
+						-- Secret/tainted amount: pass the raw value through for
+						-- SetText() — secret values render but cannot be compared
+						-- or concatenated, so the prefix path is skipped for them.
+						if val ~= nil and not ZSBT.IsSafeNumber(val)
+							and not (ZSBT.IsSafeString and ZSBT.IsSafeString(val)) then
+							text = val
+						else
+							local okS, s = pcall(tostring, val)
+							if okS and type(s) == "string" and s ~= "" then
+								if prefix == "" then
+									text = s
+								else
+									text = prefix .. " " .. s
+								end
 							end
 						end
 					end
@@ -1380,7 +1409,7 @@ function Engine:flushBucket()
 								area = "Outgoing"
 							end
 						end
-						local color = {r = 0.60, g = 0.80, b = 0.60}
+						local color
 						local baseCol = petConf and petConf.outgoingDamageColor
 						local critCol = petConf and petConf.outgoingCritColor
 						if sample.isCrit and type(critCol) == "table" then
@@ -1388,7 +1417,9 @@ function Engine:flushBucket()
 						elseif type(baseCol) == "table" then
 							color = { r = baseCol.r or 1, g = baseCol.g or 1, b = baseCol.b or 1 }
 						elseif sample.isCrit then
-							color = {r = 0.80, g = 1.00, b = 0.00}
+							color = _PET_DMG2_COLOR_CRIT
+						else
+							color = _PET_DMG2_COLOR_BASE
 						end
 						local meta = { kind = "pet", isCrit = sample.isCrit == true, school = sample.schoolMask }
 						if ZSBT.Core and ZSBT.Core.Display and ZSBT.Core.Display.Emit then
@@ -1414,9 +1445,12 @@ function Engine:flushBucket()
 						if rounded and rounded > 0 then
 							text = "-" .. tostring(rounded)
 						elseif not ZSBT.IsSafeNumber(val) then
-							local okS, s = pcall(tostring, val)
-							if okS and type(s) == "string" and s ~= "" then
-								text = "-" .. s
+							-- Secret value: cannot concatenate "-" onto it, so pass
+							-- the raw value through for SetText() to render.
+							if ZSBT.IsSafeString and ZSBT.IsSafeString(val) then
+								text = "-" .. val
+							else
+								text = val
 							end
 						end
 						if text then
@@ -1427,13 +1461,15 @@ function Engine:flushBucket()
 									area = "Incoming"
 								end
 							end
-							local color = { r = 1.00, g = 0.30, b = 0.30 }
+							local color
 							local baseCol = petConf and petConf.incomingDamageColor
 							local critCol = petConf and petConf.incomingDamageCritColor
 							if sample.isCrit == true and type(critCol) == "table" then
 								color = { r = critCol.r or 1.00, g = critCol.g or 0.80, b = critCol.b or 0.20 }
 							elseif type(baseCol) == "table" then
 								color = { r = baseCol.r or 1.00, g = baseCol.g or 0.30, b = baseCol.b or 0.30 }
+							else
+								color = _PET_IN_DMG_COLOR_BASE
 							end
 							local meta = { kind = "pet_in_damage", isCrit = sample.isCrit == true, school = sample.schoolMask }
 							if ZSBT.Core and ZSBT.Core.Display and ZSBT.Core.Display.Emit then

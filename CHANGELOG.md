@@ -1,5 +1,73 @@
 # Changelog
 
+## 3.2
+
+### Fixed
+- Duplicate auto-attack numbers in open world: unattributed white swings could be emitted by both the `UNIT_COMBAT_PHYSICAL` and `UNIT_COMBAT_AUTO_FALLBACK` paths for the same swing (school is unreliable on Midnight, so one swing can satisfy both branches), and neither path deduplicated against the other. Auto emits (`spellId == nil`) now share a 0.35s dedup window; spell-attributed hits (Cleave/Whirlwind) are exempt.
+
+## 3.1
+
+### Added
+- Incoming → Healing: new **Show Healer Names** option (default on). Some clients (e.g. WoW Forever) deliver incoming heal combat text as a formatted string containing the healer's name, which is rendered verbatim. When disabled, clean strings are reduced to the numeric amount and secret strings are skipped so the nameless `UNIT_COMBAT` heal path supplies the display instead.
+
+### Fixed
+- Spell merging stopped working on secret-value clients: the tainted-text guard added in 3.0a also bypassed the merge buffer for every outgoing hit (amounts arrive as secret values on Retail 12.x), so nothing ever merged. Tainted text now enters the merge buffer as count-only `"Hits (xN)"` merges — `text:match` is skipped for values that can't be inspected.
+- Version string: `ZSBT.VERSION` in `Core/Constants.lua` still read `2.5.3a`, so `/zsbt version`, the minimap tooltip, and the config header showed the old version even though the TOC was updated. Now reports `3.1`.
+
+## 3.0a
+
+### Fixed
+- Incoming healing on WoW Forever (1.60.x / secret-value client): `UNIT_COMBAT` heal amounts arrive as secret values, and `INCOMING_HEAL_COMBAT` never routed the raw amount through the combat-text pipe — so the secret value was stripped before display and every incoming heal was dropped. The raw amount now flows through `_rawPipe` for `INCOMING_HEAL_COMBAT`, `INCOMING_DAMAGE`, and `FALL_DAMAGE`, and the incoming probe passes tainted heal values through to `SetText()` (same pattern as outgoing heals) instead of suppressing them.
+- Pet damage crash on secret-value clients: `Pulse_Engine` pet damage/incoming-damage fallbacks ran `pcall(tostring, val)` on secret amounts and then compared (`s ~= ""`) and concatenated (`"-" .. s`, `prefix .. " " .. s`) the resulting secret string, throwing `attempt to compare local 's' (a secret string value)` on every pet hit. Secret amounts are now passed raw to `SetText()` (which renders them); safe strings keep the prefix/`-` formatting. Also hardened the `[XPDBG]` debug paths in `Core.lua` against concatenating secret `tostring` results.
+
+## 2.5.3a
+
+### Fixed
+- Config UI: fixed a crash (`attempt to call a nil value`) in the bundled AceGUI-3.0 CheckBox widget that blanked out every config page and prevented changing any options. Blizzard removed the global `SetDesaturation()` function in 12.1; replaced all 6 calls with the modern `texture:SetDesaturated()` method. This was not an addon conflict — ZSBT's own bundled library was calling a deleted Blizzard API.
+
+## 2.5.3
+
+### Fixed
+- WoW Retail 12.1 aura safety: hardened player aura tracking against Blizzard 12.1 "secret value" restrictions (secret booleans/tables in `UNIT_AURA` update payloads).
+  - Combat: unconfigured buff/debuff gain/fade notifications are suppressed (rules-only) to avoid secret-payload churn.
+  - Combat: configured Buff/Debuff Rules continue to work via watched spellID presence checks rather than delta parsing.
+  - Prevented Lua errors from comparing/iterating secret `UNIT_AURA` fields and reduced false fade/gain bursts on combat transitions.
+
+## 2.5.2
+
+### Changed
+- TOC: updated `## Interface` to `120100` for Retail 12.1.
+- Outgoing / Pets (`Parser/Event_Collector.lua`): added a group-aware pet/guardian suppression gate when `restrict` modes are active (Quiet/Strict/PvP/Instance-Aware) so pet fallback attribution is only allowed when the damage school matches a known pet signature. This reduces misattribution of other players' damage on shared targets.
+- Outgoing correlation (`Parser/Event_Collector.lua`): relaxed the `restrict` cast-to-WOUND correlation window from `0.70s` to `0.90s` to better accommodate travel-time / delayed-hit spells.
+- Outgoing correlation (`Parser/Event_Collector.lua`): tightened timestamp-only attribution suppression so it refuses timestamp-only matching whenever you are grouped (previously only blocked in group instances with instance-aware outgoing enabled).
+
+## 2.5.1
+
+### Fixed
+- Interrupts/Cast-stops: fixed a crash (`attempted to index a table that cannot be indexed with secret keys`) when an interrupt or cast-stop notification fired against a nameplate unit in a dungeon, raid, or Mythic+. Nameplate GUIDs returned by `UnitGUID` are tainted in instanced content; the code was using them as table keys without an `IsSafeString` guard. Notifications still fire — they are just not GUID-qualified for dedup when the target GUID is instance-restricted.
+- Debuff cache: fixed a crash (`attempt to compare field 'guid' (a secret string value)`) in the DoT attribution debuff TTL cache when the target's GUID was tainted. The GUID is now validated with `IsSafeString` before storage; the cache is bypassed entirely in tainted contexts; and a `pcall` guard safely drains any pre-existing tainted entries without requiring a `/reload`.
+
+Both bugs only reproduce in group instanced content where Blizzard's secret value restrictions apply to nameplate and target GUIDs.
+
+## 2.5.0
+
+### Performance
+- Combat pipeline: extracted the Whirlwind aggregation flush callback into a named module-level function; previously an anonymous closure was heap-allocated on every Whirlwind hit.
+- Combat pipeline: added a 1.5s TTL cache for target debuff lookups (`hasTargetDebuffSpellId`) with per-GUID invalidation, reducing redundant aura scans during rapid multi-hit sequences.
+- Combat pipeline: replaced per-event pet color table construction with module-level constants for all four pet damage/healing color pairs.
+- Combat pipeline: replaced string concatenation keys in the damage meter last-totals map with a two-level nested table, eliminating string allocations on every outgoing damage event.
+- Animation engine: removed redundant `ClearAllPoints`/`SetPoint` calls for icon FontStrings and icon textures from the per-frame `AE_UpdateEvent` path (ran ~66 times/sec per active event); anchor is now set once at event creation time.
+- Animation engine: added early-out at the top of the `OnUpdate` handler when no scroll areas have active events, skipping all processing overhead for that tick.
+- UI: `FireTestText` scroll area parent frames no longer call `ClearAllPoints`/`SetPoint` on every combat event; geometry is cached and only re-applied when the configured position or size actually changes.
+
+### Fixed
+- Combat pipeline (Midnight): guarded four `tostring(amount)` call sites in UNIT_COMBAT DOT and pet fallback paths with `IsSafeNumber` checks to prevent Lua errors when `amount` is a WoW 12.x secret/tainted value.
+- Object pool: `RecycleIconFS` now resets `SetRotation` to 0 (matching `RecycleFontString`) so a rotated icon FontString cannot carry stale rotation into its next consumer.
+- Display: `TryMerge` now stores a shallow copy of the incoming `meta` table in the merge buffer rather than a direct reference, preventing stale crit annotations if the caller's table is mutated before the flush timer fires.
+
+### Changed
+- Quick Control Bar: dragging is now blocked during combat (`InCombatLockdown`). If a drag is released while in combat, the position save is deferred and applied when combat ends (`PLAYER_REGEN_ENABLED`).
+
 ## 2.4.7
 - Documentation: updated configuration paths to match the current Display, Combat Text, Alerts, and Help and Support UI layout.
 - Documentation: clarified Blizzard combat text suppression options and Retail 12.x outgoing attribution limitations.

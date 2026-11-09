@@ -206,6 +206,13 @@ end
 ------------------------------------------------------------------------
 local mergeBuffer = {}
 
+local function shallowCopyMeta(m)
+	if type(m) ~= "table" then return m end
+	local c = {}
+	for k, v in pairs(m) do c[k] = v end
+	return c
+end
+
 local function FlushMergeByKey(key)
 	local tok = ZSBT.Addon and ZSBT.Addon.PerfBegin and ZSBT.Addon:PerfBegin("UI.FlushMerge")
 	local entry = mergeBuffer[key]
@@ -265,7 +272,7 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
 		return
 	end
 
-	-- Don't merge: crits, misses, notifications, or tainted raw pipe values
+	-- Don't merge: crits, misses, notifications
 	local isCrit = meta and meta.isCrit
 	local isMiss = meta and meta.kind == "miss"
 	local isNotification = meta and meta.kind == "notification"
@@ -300,8 +307,17 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
 	local showCount = mergeConf.showCount == true
 	local maxMerge = 8  -- never hold more than 8 hits
 
-	local numVal = tonumber(text:match("^[+-]?%d+"))
-	local mode = (numVal ~= nil and ZSBT.IsSafeString and ZSBT.IsSafeString(text)) and "numeric" or "secret"
+	-- Tainted/secret text cannot be inspected (text:match would error); it
+	-- merges count-only via mode "secret" and FlushMergeByKey renders
+	-- "Hits (xN)" without touching the raw value.
+	local numVal = nil
+	local mode = "secret"
+	if ZSBT.IsSafeString and ZSBT.IsSafeString(text) then
+		numVal = tonumber(text:match("^[+-]?%d+"))
+		if numVal ~= nil then
+			mode = "numeric"
+		end
+	end
 
 	-- Key by scroll area + spellId so we merge per spell per window.
 	local key = tostring(areaName) .. ":" .. tostring(spellId)
@@ -347,7 +363,7 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
 		dirMult = dirMult,
 		duration = duration,
 		color = color,
-		meta = meta,
+		meta = shallowCopyMeta(meta),
 		lastUpdate = GetTime(),
 		timer = C_Timer.NewTimer(window, function()
 			FlushMergeByKey(key)
