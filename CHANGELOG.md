@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.4.2
+
+### Fixed
+- Strict outgoing now blocks ALL unattributed emits: the auto-attack fallback, physical-swing `spellId=nil` path, and the bucket-path last-resort auto emit were all gated by mode flags that ignored user strict mode, so other players' damage leaked through on shared targets.
+- Quiet + "allow auto attacks while quiet" no longer shows other players' melee: auto-attacks now require swing-cadence alignment (predicted from `UnitAttackSpeed`, ±0.45s window) plus melee range via `CheckInteractDistance`.
+- Foreign ability damage reduced: cast-correlation windows tightened (0.90→0.60s timestamp path, 0.55→0.45s bucket path).
+- Pet melee no longer appears as player auto-attacks when a pet is active.
+
 ## 3.4.1
 
 ### Fixed
