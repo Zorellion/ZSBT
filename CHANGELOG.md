@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.4.3
+
+### Fixed
+- Incoming damage and self-inflicted absorbs no longer vanish on secret-value clients: `Pulse_Engine` dropped `COMBAT_TEXT_DAMAGE` events whose secret amount failed `tonumber`, and `Incoming_Probe` only exempted heals (not damage) from the secret no-threshold suppression and secret raw-pipe text assignment.
+- Outgoing direct spells (Shadow Bolt, Hand of Gul'dan, Demonbolt, etc.) suppressed in group content: grouped gates returned before the pending-cast queue was consulted, and the non-physical correlation window was shorter than travel time. Grouped hits now consume a pending-cast match; non-physical hits use the full 2.5s window.
+- Follower/foreign damage stealing casts: pending casts now record their spell's school and hits must overlap it (combined schools like Shadowflame share bits). Physical hits can only match casts with a known physical school — a follower Holy crit can no longer wear a Shadow Bolt.
+- DoT icon fallback: DoT emits now carry `spellName`, and `ZSBT.CleanSpellIcon` accepts spell names, so ticks whose spellId is unresolvable (e.g. Shadow Word: Pain on WoW Forever) can still resolve an icon.
+
 ## 3.4.2
 
 ### Fixed

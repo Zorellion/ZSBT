@@ -794,6 +794,16 @@ local function enqueuePendingCast(self, spellId, spellName, tNow)
 	-- Icon eligibility: prefer concrete signals. Hostile target at cast time is
 	-- a strong indicator of a damage cast.
 	local eligibleIcon = (helpful == false) or (harmful == true) or (targetHostile == true)
+	-- Record the cast's school (when safely available) so grouped hit attribution
+	-- can reject pending casts whose school cannot produce the incoming hit's
+	-- school — e.g. a follower's Holy crit must not consume a Shadow Bolt cast.
+	local castSchool = nil
+	if C_Spell and C_Spell.GetSpellInfo then
+		local okS, info = pcall(C_Spell.GetSpellInfo, spellId)
+		if okS and type(info) == "table" and ZSBT.IsSafeNumber(info.school) then
+			castSchool = info.school
+		end
+	end
 	table.insert(self._pendingCasts, {
 		token = self._pendingCastNextToken,
 		spellId = spellId,
@@ -803,13 +813,14 @@ local function enqueuePendingCast(self, spellId, spellName, tNow)
 		harmful = harmful,
 		eligibleIcon = eligibleIcon,
 		targetHostile = targetHostile,
+		school = castSchool,
 	})
 	if #self._pendingCasts > PENDING_CAST_MAX then
 		table.remove(self._pendingCasts, 1)
 	end
 end
 
-local function consumeBestPendingCast(self, tNow, wantSpellId, maxWindowSec, doConsume)
+local function consumeBestPendingCast(self, tNow, wantSpellId, maxWindowSec, doConsume, hitSchool)
 	expirePendingCasts(self, tNow)
 	local window = maxWindowSec or PENDING_CAST_WINDOW_SEC
 	local bestI, best, bestDt
@@ -819,7 +830,27 @@ local function consumeBestPendingCast(self, tNow, wantSpellId, maxWindowSec, doC
 			if (not wantSpellId) or c.spellId == wantSpellId then
 				local dt = tNow - c.at
 				if dt >= 0 and dt <= window then
-					if not bestDt or dt < bestDt then
+					-- School sanity: when both the hit's school and the cast's
+					-- school are known, require compatibility. A cast can produce
+					-- a hit of its own school, a combined school containing it
+					-- (e.g. Shadowflame = Shadow|Fire), or physical; it cannot
+					-- produce a hit of a different base school (Holy crit from a
+					-- Shadow Bolt). This keeps grouped hits from stealing casts.
+					local schoolOk = true
+					if ZSBT.IsSafeNumber(hitSchool) then
+						if ZSBT.IsSafeNumber(c.school) then
+							-- Cast school known: a hit must overlap the cast's
+							-- school (combined schools like Shadowflame share bits).
+							schoolOk = (bit.band(c.school, hitSchool) ~= 0)
+						else
+							-- Cast school unknown: only allow non-physical hits
+							-- through (spells are overwhelmingly non-physical).
+							-- Physical hits stay in the auto-attack/pet paths where
+							-- they belong instead of stealing a spell cast.
+							schoolOk = (hitSchool ~= 1)
+						end
+					end
+					if schoolOk and (not bestDt or dt < bestDt) then
 						bestDt = dt
 						bestI = i
 						best = c
@@ -2043,12 +2074,15 @@ local PET_OUTGOING_DEDUP_WINDOW = 0.35
 -- Emit a periodic-tick outgoing hit. Secret amounts go through the raw pipe.
 local function emitDotOutgoingDamage(self, t, dotSpellId, amount, isCrit, school)
 	local tName = safeUnitName("target")
+	local dotName = (ZSBT.PeriodicTracker and ZSBT.PeriodicTracker.NameFor
+		and ZSBT.PeriodicTracker:NameFor(dotSpellId)) or nil
 	if ZSBT.IsSafeNumber(amount) then
 		emit("OUTGOING_DAMAGE_COMBAT", {
 			timestamp = t,
 			amount = amount,
 			amountText = tostring(math.floor(amount + 0.5)),
 			spellId = dotSpellId,
+			spellName = dotName,
 			amountSource = "UNIT_COMBAT_DOT",
 			targetName = tName,
 			isCrit = isCrit,
@@ -2063,6 +2097,7 @@ local function emitDotOutgoingDamage(self, t, dotSpellId, amount, isCrit, school
 			timestamp = t,
 			rawPipeId = pipeId,
 			spellId = dotSpellId,
+			spellName = dotName,
 			amountSource = "UNIT_COMBAT_DOT",
 			targetName = tName,
 			isCrit = isCrit,
@@ -2329,12 +2364,26 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							-- Allow the pipeline only when we can correlate to a very recent periodic spell.
 							local okDot = false
 							if ZSBT.PeriodicTracker then
-								local dotSpellId = ZSBT.PeriodicTracker:MatchHit(tNow)
-								if dotSpellId then
-									local age = tNow - (ZSBT.PeriodicTracker:RecentAt(dotSpellId) or 0)
-									if age >= 0 and age <= ZSBT.PeriodicTracker:CastWindowSec() then
-										okDot = true
-									end
+								local dotSpellId, auraBacked, _, dotScore = ZSBT.PeriodicTracker:MatchHit(tNow, school)
+								-- Require real evidence, not just "cast within 30s":
+								-- aura-backed (score >=5) or cast + school/tick
+								-- corroboration (score >= 3). Bare cast-recency
+								-- (score 1) lets all party damage through.
+								if dotSpellId and (auraBacked == true or (type(dotScore) == "number" and dotScore >= 3)) then
+									okDot = true
+								end
+							end
+							-- Direct spells with travel time (Shadow Bolt, Incinerate,
+							-- Fireball, etc.) land well after the 0.90s recentlyCast
+							-- window. The pending-cast queue holds 2.5s of history —
+							-- if there's a pending cast that could match this hit, let
+							-- it through; the attribution code downstream will consume
+							-- it and assign the correct spell. This is the same
+							-- mechanism used in non-restrict mode, just with a peek.
+							if not okDot then
+								local peek = consumeBestPendingCast(self, tNow, nil, nil, false)
+								if peek then
+									okDot = true
 								end
 							end
 							if not okDot then
@@ -3336,7 +3385,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						confident = true
 						expectedSchool = 32
 					end
-					if confident and amountIsSafe and expectedSchool then
+					-- School is a safe value even when the amount is secret —
+					-- verify it for class-DoT candidates regardless of amount.
+					if confident and expectedSchool then
 						confident = ZSBT.IsSafeNumber(school) and school == expectedSchool
 					end
 					if confident and not amountIsSafe then
@@ -3358,6 +3409,15 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					if not confident and signalLive
 						and not (ZSBT.IsSafeNumber(school) and school == 1) then
 						confident = consumeBestPendingCast(self, t, nil, nil, false) == nil
+					end
+					-- Canonical school table (KNOWN_DOT_SCHOOLS): a tracked DoT
+					-- can never produce a hit of the wrong school — runs LAST so
+					-- the signalLive peek above can't bypass it.
+					if confident and ZSBT.PeriodicTracker then
+						local ks = ZSBT.PeriodicTracker:SchoolFor(dotSpellId)
+						if ks and ZSBT.IsSafeNumber(school) and school ~= ks then
+							confident = false
+						end
 					end
 					if dl >= 4 then
 						ECPrint(("DOT_EVAL token=%s sid=%s aura=%s conf=%s age=%s")
@@ -3413,12 +3473,22 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			if isPhysical and hasPet then
 				return
 			end
-			local castWindow = (restrict == true) and 0.45 or 0.85
+			-- Restrict mode uses a tighter window for physical/auto-attack
+			-- correlation, but non-physical spells (Shadow Bolt, Incinerate,
+			-- Fireball, etc.) have travel time and need the full pending-cast
+			-- window to land. Physical hits in restrict mode keep the narrow
+			-- window since they're usually auto-attacks with no travel time.
+			local castWindow
+			if restrict == true then
+				castWindow = isPhysical and 0.45 or PENDING_CAST_WINDOW_SEC
+			else
+				castWindow = 0.85
+			end
 			local wantSpellId = nil
 			if restrict == true then
 				wantSpellId = self._lastPlayerSpellId
 			end
-			matchedCast = consumeBestPendingCast(self, t, wantSpellId, castWindow)
+			matchedCast = consumeBestPendingCast(self, t, wantSpellId, castWindow, nil, school)
 			if not matchedCast then
 				if suppressIfUnattributed == true then
 					-- Midnight: the school field is unreliable (physical abilities like
@@ -3489,12 +3559,22 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- Quiet/strict modes: still allow *your own* outgoing when it can be correlated
 					-- to a very recent cast timestamp, even if the pending-cast queue missed it.
 					-- For travel-time spells (e.g., Shadow Bolt), allow a longer window.
-					-- When grouped (open world OR instance), do NOT use timestamp-only
-					-- attribution because UNIT_COMBAT(target) has no ownership and will leak
-					-- other players' damage on shared targets.
+					-- When grouped (open world OR instance), require a pending-cast match
+					-- (not just timestamp) because UNIT_COMBAT(target) has no ownership and
+					-- timestamp-only attribution would leak other players' damage on shared
+					-- targets. The pending-cast queue IS the attribution — if we have a
+					-- match, the hit is ours.
 					if members and members > 1 then
-						return
-					end
+						if matchedCast then
+							-- Already matched above; let it through.
+						else
+							-- Try a wider window for travel-time spells before giving up.
+							matchedCast = consumeBestPendingCast(self, t, nil, PENDING_CAST_WINDOW_SEC, nil, school)
+							if not matchedCast then
+								return
+							end
+						end
+					else
 					local lastAt = self._lastPlayerSpellAt
 					local lastId = self._lastPlayerSpellId
 					if type(lastAt) == "number" and type(lastId) == "number" then
@@ -3514,6 +3594,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						return
 					end
 				end
+			else
 				local lastAt = self._lastPlayerSpellAt
 				if type(lastAt) == "number" then
 					local age = t - lastAt
@@ -3550,6 +3631,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					return
 				end
 			end
+		end
 		end
 
 		local spellId = nil
@@ -3637,8 +3719,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 		end
 	end
-	if (t - self._lastCombatTextHealAt) < DEDUP_WINDOW then return end
-
 	local numAmount, amountText, secret = launderAmount(amount)
 
 	-- Classify by amount sign and school when action is tainted.
@@ -3658,21 +3738,45 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 	local function playerHealthDropped()
 		if unit ~= "player" then return true end
 		local cur = UnitHealth and UnitHealth("player") or nil
-		if not ZSBT.IsSafeNumber(cur) then
-			return true -- fail open: cannot validate in secret-health contexts
+		-- Fully absorbed damage (e.g. Burning Rush into Soul Leech) never drops
+		-- health — track total absorbs too; either metric decreasing is real.
+		local curAbs = nil
+		if UnitGetTotalAbsorbs then
+			local okA, a = pcall(UnitGetTotalAbsorbs, "player")
+			if okA then curAbs = a end
 		end
-		self._lastHealth = self._lastHealth or {}
-		local prev = self._lastHealth["player"]
-		-- Update baseline immediately so repeated UNIT_COMBAT misfires cannot
-		-- spam incoming damage when health is unchanged.
-		self._lastHealth["player"] = cur
-		if not ZSBT.IsSafeNumber(prev) then
-			return false -- require baseline before emitting
+		local healthSafe = ZSBT.IsSafeNumber(cur)
+		local absSafe = ZSBT.IsSafeNumber(curAbs)
+		if not healthSafe and not absSafe then
+			return true -- fail open: cannot validate in secret-value contexts
 		end
-		return cur < prev
+		-- A real health drop observed by handleUnitHealth corroborates the hit.
+		-- Window is wide because UNIT_HEALTH can fire after the WOUND for the
+		-- same tick, leaving the stamp one tick behind.
+		if (t - (self._lastPlayerHealthDropAt or 0)) <= 1.2 then
+			return true
+		end
+		-- Wound-only baselines: handleUnitHealth owns _lastHealth and refreshes
+		-- it continuously, so deltas must be tracked here instead. Burns that
+		-- drain health every tick (e.g. Burning Rush) show up reliably.
+		self._lastAbsorbs = self._lastAbsorbs or {}
+		local prevH = self._woundPrevHealth
+		local prevAbs = self._lastAbsorbs["player"]
+		if healthSafe then self._woundPrevHealth = cur end
+		if absSafe then self._lastAbsorbs["player"] = curAbs end
+		if healthSafe and ZSBT.IsSafeNumber(prevH) and cur < prevH then
+			return true
+		end
+		if absSafe and ZSBT.IsSafeNumber(prevAbs) and curAbs < prevAbs then
+			return true
+		end
+		return false
 	end
 
 	if actionStr == "HEAL" then
+		-- Dedup heal spam only — a blanket dedup here killed WOUND events
+		-- whenever constant heals (e.g. Soul Leech) kept the stamp fresh.
+		if (t - self._lastCombatTextHealAt) < DEDUP_WINDOW then return end
 		-- Player received healing.
 		-- WoW 12.0 quirk: UNIT_COMBAT(player) can misfire and report healing-like
 		-- events even when the player did not actually gain health. Only trust it
@@ -3716,7 +3820,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				school = isPhysical and school or 1,
 			})
 		else
-			if not playerHealthDropped() then
+			-- Absorbed damage never drops health — self-inflicted drains
+			-- (e.g. Burning Rush into Soul Leech) would be filtered forever.
+			-- An ABSORB-descriptor WOUND is real damage; show it.
+			local descSafe = ZSBT.IsSafeString(descriptor) and descriptor or nil
+			if descSafe ~= "ABSORB" and not playerHealthDropped() then
 				return
 			end
 			self._lastUnitCombatPlayerDamageAt = now()
@@ -3797,6 +3905,12 @@ function Collector:handleUnitHealth(unit)
 
 	-- Calculate health change (positive = damage, negative = healing)
 	local delta = oldHealth - health
+	-- Stamp real health drops for the UNIT_COMBAT(player) WOUND gate: the
+	-- shared _lastHealth baseline is refreshed by every UNIT_HEALTH event, so
+	-- the gate cannot observe drops itself under continuous health spam.
+	if unit == "player" and delta > 0 then
+		self._lastPlayerHealthDropAt = now()
+	end
 
 	-- Some units (notably training/healing dummies) can have scripted health
 	-- resets/regen that produce enormous deltas unrelated to actual spells.
