@@ -481,8 +481,11 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
     -- run secret-threshold evaluation, hide it to avoid unfilterable spam.
     -- Heals are exempt: on secret-value clients (e.g. WoW Forever) EVERY heal
     -- amount is tainted, so this policy would suppress all incoming healing.
-    -- The raw value still renders via SetText and merges collapse to "Heals xN".
-    if rawPipeValue ~= nil and not ZSBT.IsSafeNumber(rawPipeValue) and thresholdAmt == nil and kind ~= "heal" then
+    -- Damage is also exempt: self-inflicted drains (Burning Rush) and absorbed
+    -- hits arrive as secret raw-pipe values with no safe numeric amount, and
+    -- the Blizzard-approved raw display path is the only way to show them.
+    -- The raw value still renders via SetText and merges collapse to "xN".
+    if rawPipeValue ~= nil and not ZSBT.IsSafeNumber(rawPipeValue) and thresholdAmt == nil and kind ~= "heal" and kind ~= "damage" then
         local catMin = tonumber(conf.minThreshold) or 0
         local spam = ZSBT.db.profile.spamControl and ZSBT.db.profile.spamControl.throttling
         local globalMin = 0
@@ -571,9 +574,7 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
             -- the outgoing heal path). Merged bursts still collapse to
             -- "Heals xN" / "Hits xN" in the merge buffer.
             mergeMode = "secret"
-            if kind == "heal" then
-                text = rawPipeValue
-            end
+            text = rawPipeValue
         end
     else
         text = displayText

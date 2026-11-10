@@ -86,6 +86,34 @@ local PERIODIC_AURA_NAMES = {
 -- Canonical spellIds kept as a fallback for casts whose name doesn't resolve
 -- (secret strings / CleanSpellName unavailable). Name matching is preferred;
 -- this list exists only where the id check used to be stricter.
+-- Canonical schools for known DoTs — authoritative, cannot be poisoned by
+-- foreign emits. schoolMask values: 1 physical, 2 holy, 4 fire, 8 nature,
+-- 16 frost, 32 shadow, 64 arcane.
+local KNOWN_DOT_SCHOOLS = {
+	-- Warlock (shadow)
+	[172] = 32, [980] = 32, [30108] = 32, [27243] = 32, [146739] = 32,
+	-- Warlock (fire)
+	[157736] = 4, [348] = 4,
+	-- Shaman
+	[188389] = 4,
+	-- Druid
+	[164812] = 64, [164815] = 8, [1822] = 1, [1079] = 1,
+	-- Priest
+	[589] = 32, [34914] = 32, [2944] = 32, [204197] = 2, [14914] = 2,
+	-- Mage
+	[114923] = 64, [44457] = 4,
+	-- Evoker
+	[357208] = 4,
+	-- Death Knight
+	[55095] = 16, [55078] = 32,
+	-- Rogue
+	[703] = 1, [1943] = 1,
+	-- Hunter
+	[217200] = 1, [118459] = 1,
+	-- Warrior
+	[772] = 1, [115767] = 1,
+}
+
 local KNOWN_PERIODIC_IDS = {
 	-- Warlock
 	[172] = true,     -- Corruption
@@ -170,7 +198,7 @@ PT._scanAt = 0
 local function dotRecord(self, sid, seed)
 	local d = self._dots[sid]
 	if d == nil then
-		d = { seedSource = seed }
+		d = { seedSource = seed, knownSchool = KNOWN_DOT_SCHOOLS[sid] }
 		self._dots[sid] = d
 	end
 	return d
@@ -184,6 +212,7 @@ function PT:NotePlayerCast(spellId, spellName, t)
 		return
 	end
 	local d = dotRecord(self, spellId, "cast")
+	d.playerSeeded = true
 	d.recencyAt = t
 	if type(d.applyAt) ~= "number" then
 		d.applyAt = t
@@ -254,8 +283,15 @@ function PT:ScanTargetAuras(t)
 	-- Expire records that are neither aura-fresh nor cast-fresh.
 	for sid, d in pairs(dots) do
 		local auraFresh = type(d.seenAt) == "number" and (t - d.seenAt) <= AURA_STALE_SEC
-		local castFresh = type(d.recencyAt) == "number"
-			and (t - d.recencyAt) >= 0 and (t - d.recencyAt) <= CAST_WINDOW_SEC
+		-- Alive while within cast memory OR still ticking on schedule
+		-- (lastTickAt within ~1.6x the learned interval, min 2s).
+		local tickLive = false
+		if type(d.lastTickAt) == "number" then
+			local tw = math.max(2.0, (type(d.interval) == "number" and d.interval or 2) * 1.6)
+			tickLive = (t - d.lastTickAt) <= tw
+		end
+		local castFresh = (type(d.recencyAt) == "number"
+			and (t - d.recencyAt) >= 0 and (t - d.recencyAt) <= CAST_WINDOW_SEC) or tickLive
 		if not (auraFresh or castFresh) then
 			dots[sid] = nil
 		end
@@ -285,13 +321,27 @@ function PT:MatchHit(t, school)
 	local bestId, bestAura, bestScore, bestApply
 	local candN = 0
 	for sid, d in pairs(self._dots) do
+		-- Aura-only records can be OTHER players' DoTs on this target —
+		-- UNIT_COMBAT has no source on secret-value clients, so only
+		-- player-cast-seeded records are trustworthy emit candidates.
+		if d.playerSeeded ~= true then
+			-- skip
+		else
 		local auraFresh = type(d.seenAt) == "number" and (t - d.seenAt) <= AURA_STALE_SEC
-		local castFresh = type(d.recencyAt) == "number"
-			and (t - d.recencyAt) >= 0 and (t - d.recencyAt) <= CAST_WINDOW_SEC
+		-- Alive while within cast memory OR still ticking on schedule
+		-- (lastTickAt within ~1.6x the learned interval, min 2s).
+		local tickLive = false
+		if type(d.lastTickAt) == "number" then
+			local tw = math.max(2.0, (type(d.interval) == "number" and d.interval or 2) * 1.6)
+			tickLive = (t - d.lastTickAt) <= tw
+		end
+		local castFresh = (type(d.recencyAt) == "number"
+			and (t - d.recencyAt) >= 0 and (t - d.recencyAt) <= CAST_WINDOW_SEC) or tickLive
 		if auraFresh or castFresh then
 			candN = candN + 1
 			local score = auraFresh and 4 or 1
-			if schoolSafe and d.school ~= nil and school == d.school then
+			local dotSchool = d.knownSchool or d.school
+			if schoolSafe and dotSchool ~= nil and school == dotSchool then
 				score = score + 2
 			end
 			if type(d.nextTickAt) == "number" and math.abs(t - d.nextTickAt) <= TICK_WINDOW_SEC then
@@ -302,6 +352,7 @@ function PT:MatchHit(t, school)
 				bestId, bestAura, bestScore, bestApply = sid, auraFresh, score, ap
 			end
 		end
+		end
 	end
 	if bestId == nil then return nil, false, nil end
 	local d = self._dots[bestId]
@@ -311,7 +362,7 @@ function PT:MatchHit(t, school)
 			:format(dbgSafe(bestId), dbgSafe(bestScore), dbgSafe(bestAura), candN,
 				dbgSafe(d.school), dbgSafe(d.nextTickAt and (d.nextTickAt - t) or nil)))
 	end
-	return bestId, bestAura, dotAge
+	return bestId, bestAura, dotAge, bestScore
 end
 
 -- Aura-backed ground truth for callers that still gate on it.
@@ -339,13 +390,32 @@ function PT:NoteEmit(spellId, t, school)
 		end
 	end
 	d.lastTickAt = t
-	d.recencyAt = t
+	-- Do NOT refresh recencyAt here — emits refreshing cast-memory is what let
+	-- foreign hits keep a DoT record alive forever. Liveness comes from the
+	-- tick schedule (lastTickAt) instead.
 	if type(d.interval) == "number" then
 		d.nextTickAt = t + d.interval
 	end
-	if IsSafeNumber(school) then
+	-- First-write wins and only for unknown dots — foreign hits must not be
+	-- able to overwrite the school of a canonical (or already-learned) DoT.
+	if IsSafeNumber(school) and d.knownSchool == nil and d.school == nil then
 		d.school = school
 	end
+end
+
+-- Canonical or learned school for a spellId (nil if unknown).
+function PT:SchoolFor(spellId)
+	if KNOWN_DOT_SCHOOLS[spellId] then return KNOWN_DOT_SCHOOLS[spellId] end
+	local d = type(spellId) == "number" and self._dots[spellId] or nil
+	return type(d) == "table" and (d.knownSchool or d.school) or nil
+end
+
+-- Normalized aura name for a tracked DoT, when known. Used by the display
+-- layer to resolve an icon via name lookup on clients where spellIds are
+-- secret (e.g. WoW Forever).
+function PT:NameFor(spellId)
+	local d = type(spellId) == "number" and self._dots[spellId] or nil
+	return type(d) == "table" and d.name or nil
 end
 
 -- Recency timestamp for a specific spell (cast-memory reads, e.g. the

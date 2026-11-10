@@ -8,7 +8,7 @@ local ADDON_NAME, ZSBT = ...
 ------------------------------------------------------------------------
 -- Version & Identity
 ------------------------------------------------------------------------
-ZSBT.VERSION = "3.4.2"
+ZSBT.VERSION = "3.4.3"
 ZSBT.ADDON_TITLE = "Zore's Scrolling Battle Text"
 ZSBT.ADDON_SHORT = "ZSBT"
 ZSBT.ADDON_AUTHOR = "Zorellion"
@@ -366,7 +366,13 @@ end
 -- Fetch the spell icon texture path for a given spell ID.
 -- Tries multiple APIs for Midnight compatibility.
 function ZSBT.CleanSpellIcon(spellId)
-    if not ZSBT.IsSafeNumber(spellId) then return nil end
+    -- Accepts a spell ID or a spell name (icon APIs take either). Needed on
+    -- secret-value clients where aura-derived spellIds can be tainted but the
+    -- spell's name is still a safe string.
+    local isId = ZSBT.IsSafeNumber(spellId)
+    local isName = (not isId) and type(spellId) == "string"
+        and (not ZSBT.IsSafeString or ZSBT.IsSafeString(spellId))
+    if not (isId or isName) then return nil end
 
     -- Try C_Spell.GetSpellTexture (Midnight primary)
     if C_Spell and C_Spell.GetSpellTexture then

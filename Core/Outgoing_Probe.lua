@@ -824,8 +824,16 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 						or evt.amountSource == "UNIT_COMBAT_BEST"
 						or evt.amountSource == "UNIT_COMBAT_PHYSICAL"
 				)) or (evt and evt.isPeriodic == true)
-		if prof.showSpellIcons and evt.isAuto ~= true and type(resolvedSpellID) == "number" and trustedForSpellIcon then
-			local tex = ZSBT.CleanSpellIcon(resolvedSpellID)
+		if prof.showSpellIcons and evt.isAuto ~= true and trustedForSpellIcon then
+			local tex = nil
+			if type(resolvedSpellID) == "number" then
+				tex = ZSBT.CleanSpellIcon(resolvedSpellID)
+			end
+			-- Secret-value clients (e.g. WoW Forever) can leave the spellId
+			-- unresolvable; the aura/cast name still resolves an icon by name.
+			if not tex and evt and ZSBT.IsSafeString and ZSBT.IsSafeString(evt.spellName) then
+				tex = ZSBT.CleanSpellIcon(evt.spellName)
+			end
 			if tex then meta.spellIcon = tex end
 		end
 
