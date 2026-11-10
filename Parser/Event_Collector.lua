@@ -2262,6 +2262,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			restrict = true
 			instanceAware = true
 		end
+		-- Strict means *user-chosen* strict (strict outgoing or PvP strict) — NOT the
+		-- restrict flag quiet mode sets as a side effect. Unattributed hits can't be
+		-- told apart from other players' damage, so strict must hard-block every
+		-- no-attribution emit below (auto fallback, unattributed swings).
+		local strictOutgoing = (isPvPStrictActive() == true) or (isStrictOutgoingCombatLogOnly() == true)
 		-- If combat text / chat already produced an outgoing number for the current cast
 		-- token, suppress UNIT_COMBAT(target) for that token to avoid double numbers.
 		if self._castToken and self._lastCombatTextOutgoingToken == self._castToken then
@@ -2453,7 +2458,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					local recentPlayerCast = false
 					if self._lastPlayerSpellAt then
 						local age = t - (self._lastPlayerSpellAt or 0)
-						local maxAge = (restrict == true) and 0.90 or 1.25
+						local maxAge = (restrict == true) and 0.60 or 1.25
 						-- Non-physical spells (e.g. Shadow Bolt) can have longer travel times,
 						-- so allow a longer window before treating target WOUND events as pet damage.
 						if not (ZSBT.IsSafeNumber(school) and school == 1) then
@@ -3028,7 +3033,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			if (not matchedCast) and isWhirlwindSpellId(wantSpellId) and wwRecent then
 				matchedCast = { spellId = wantSpellId, eligibleIcon = true }
 			end
-			if restrict and (not matchedCast) and allowAutoFallback == true then
+			-- strictOutgoing: never emit unattributed hits — they could be
+			-- anyone's damage on this target, not just the player's.
+			if restrict and (not matchedCast) and allowAutoFallback == true
+				and strictOutgoing ~= true then
 				-- Last-resort: show an auto-attack-like hit even though UNIT_COMBAT(target)
 				-- has no source attribution in 12.0. Gate aggressively to minimize
 				-- follower/party melee misattribution.
@@ -3054,6 +3062,34 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					local lastAt = self._lastAutoRestrictAt or 0
 					if (t - lastAt) < minGap then
 						canShow = false
+					end
+					-- Cadence gate: your swings land on a schedule other players'
+					-- won't match. Once the clock is established, only accept
+					-- hits within ~0.45s of the predicted swing; on accept,
+					-- advance the prediction by one swing period.
+					if canShow and type(speed) == "number" then
+						local nextAt = self._swingNextAt
+						if type(nextAt) == "number" and math.abs(t - nextAt) > 0.45 then
+							canShow = false
+						end
+					end
+					if canShow and CheckInteractDistance then
+						local okR, inRange = pcall(CheckInteractDistance, "target", 3)
+						if okR and inRange == false then
+							canShow = false
+						end
+					end
+				end
+				if canShow then
+					local speed2 = nil
+					if UnitAttackSpeed then
+						local okS2, mh2 = pcall(UnitAttackSpeed, "player")
+						if okS2 and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(mh2) and mh2 > 0 then
+							speed2 = mh2
+						end
+					end
+					if type(speed2) == "number" then
+						self._swingNextAt = t + speed2
 					end
 				end
 				if canShow then
@@ -3173,6 +3209,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- different school values). Spell-attributed hits are exempt so
 			-- Cleave/Whirlwind multi-hits are never collapsed.
 			if spellId == nil then
+				-- Strict outgoing: unattributed physical hits can't be told apart
+				-- from other players' melee on the same target — drop them.
+				if strictOutgoing == true then return end
 				local lastAuto = self._lastAutoOutgoingAt or 0
 				if (t - lastAuto) >= 0 and (t - lastAuto) < AUTO_OUTGOING_DEDUP_WINDOW then
 					return
@@ -3374,7 +3413,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			if isPhysical and hasPet then
 				return
 			end
-			local castWindow = (restrict == true) and 0.55 or 0.85
+			local castWindow = (restrict == true) and 0.45 or 0.85
 			local wantSpellId = nil
 			if restrict == true then
 				wantSpellId = self._lastPlayerSpellId
@@ -3412,6 +3451,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						-- the auto-attack fallback so pet white hits don't wear the
 						-- player's auto-attack stream.
 						if inPlayerCombat and canAtk and (not (members and members > 1))
+							and strictOutgoing ~= true
 							and not (hasPet and arePetsEnabled()) then
 							-- Same dedup as the physical branch: the fallback and
 							-- physical paths can both fire for one white swing.
