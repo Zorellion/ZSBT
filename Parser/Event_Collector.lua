@@ -330,6 +330,24 @@ local function isWarlockDotSpellId(spellId)
 	return sn == "Corruption" or sn == "Agony" or sn == "Unstable Affliction" or sn == "Seed of Corruption"
 end
 
+-- Direct-damage warlock spells whose landings should keep player attribution
+-- even when a shadow-school pet hit arrives inside the recent-cast window.
+-- Warlock pets (felhunter/felguard/voidwalker/succubus) deal steady shadow
+-- damage; without this list every pet bite near a cast would be claimed as
+-- the player's spell. DoTs are included for non-periodic tick edge cases.
+local WARLOCK_NUKE_SPELL_IDS = {
+	[686] = true,     -- Shadow Bolt
+	[29722] = true,   -- Incinerate
+	[116858] = true,  -- Chaos Bolt
+	[17877] = true,   -- Shadowburn
+	[48181] = true,   -- Haunt
+	[205180] = true,  -- Darkglare
+	[172] = true,     -- Corruption
+	[980] = true,     -- Agony
+	[30108] = true,   -- Unstable Affliction
+	[27243] = true,   -- Seed of Corruption
+}
+
 local function isKnownPeriodicSpellId(spellId)
 	if type(spellId) ~= "number" then return false end
 	-- Warlock DoTs (name-based fallback handles spellId variants)
@@ -430,8 +448,10 @@ local PET_SIGNATURE_SCHOOLS_BY_CLASS = {
 local function isLikelyPetSchoolHit(school)
 	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) then return false end
 
-	-- Warlock: Imp damage is fire (school 4).
-	if isWarlockPlayer() and school == 4 then
+	-- Warlock: Imp/Infernal fire (4); felhunter/felguard/voidwalker/succubus
+	-- shadow damage (32). Physical pet melee stays excluded — it is
+	-- indistinguishable from the player's own auto-attacks.
+	if isWarlockPlayer() and (school == 4 or school == 32) then
 		return true
 	end
 
@@ -1142,7 +1162,10 @@ function Collector:handleChatSelfDamage(event, msg)
 	-- must avoid comparing/printing secret strings. For unsafe messages, use a
 	-- minimal parser: extract the amount and attribute it to the most recent cast.
 	if not isSafeMsg then
-		if msg:find("Your ", 1, true) ~= 1 then
+		-- Secret payloads: string APIs may reject secret strings on some
+		-- clients/builds. Probe once; bail cleanly rather than error per-event.
+		local okFind, findRes = pcall(function() return msg:find("Your ", 1, true) == 1 end)
+		if not okFind or findRes ~= true then
 			return
 		end
 		local tNow = now()
@@ -1158,9 +1181,14 @@ function Collector:handleChatSelfDamage(event, msg)
 		if dt < 0 or dt > maxDt then
 			return
 		end
-		local amountText = msg:match("(%d[%d,]*)")
-		local amount = amountText and parseAmountFromChat(amountText) or nil
-		if not amount or amount <= 0 then
+		local okMatch, amountText = pcall(function() return msg:match("(%d[%d,]*)") end)
+		local amount = nil
+		if okMatch and amountText then
+			local okAmt, resAmt = pcall(parseAmountFromChat, amountText)
+			amount = okAmt and resAmt or nil
+		end
+		-- If the parse yielded a secret value we cannot compare it — bail.
+		if not amount or (ZSBT.IsSafeNumber and not ZSBT.IsSafeNumber(amount)) or amount <= 0 then
 			return
 		end
 		local sig = tostring(token) .. ":" .. tostring(self._lastPlayerSpellId) .. ":" .. tostring(amount)
@@ -1181,7 +1209,8 @@ function Collector:handleChatSelfDamage(event, msg)
 		end
 		self._lastOutgoingFromTargetToken = token
 		self._lastCombatTextOutgoingToken = token
-		local isCrit = isCritChatMessage(msg)
+		local okCrit, isCrit = pcall(isCritChatMessage, msg)
+		isCrit = okCrit and isCrit == true
 		if isWhirlwindSpellId(self._lastPlayerSpellId) and wwAggEnabled(self._lastPlayerSpellId) then
 			self._wwAggChatToken = token
 			self._wwAggChatAt = tNow
@@ -1312,17 +1341,24 @@ function Collector:handleChatSelfDamage(event, msg)
 			if pTarget and pAmountText then
 				local amt = parseAmountFromChat(pAmountText)
 				if amt and amt > 0 then
-					local isCrit2 = (msg:find("crits", 1, true) ~= nil) or (msg:find("critically", 1, true) ~= nil)
-					local pipeId = self._rawPipeCount + 1
-					self._rawPipeCount = pipeId
-					self._rawPipe[pipeId] = amt
-					emit("PET_DAMAGE_COMBAT", {
-						timestamp = now(),
-						rawPipeId = pipeId,
-						isCrit = isCrit2,
-						schoolMask = nil,
-						targetName = pTarget,
-					})
+					local tNowPet = now()
+					local lastFb = self._lastPetFallbackAt or 0
+					local isDup = (tNowPet - lastFb) >= 0 and (tNowPet - lastFb) < PET_OUTGOING_DEDUP_WINDOW
+					if not isDup then
+						self._lastPetChatAt = tNowPet
+						self._lastPetChatAmount = amt
+						local isCrit2 = (msg:find("crits", 1, true) ~= nil) or (msg:find("critically", 1, true) ~= nil)
+						local pipeId = self._rawPipeCount + 1
+						self._rawPipeCount = pipeId
+						self._rawPipe[pipeId] = amt
+						emit("PET_DAMAGE_COMBAT", {
+							timestamp = tNowPet,
+							rawPipeId = pipeId,
+							isCrit = isCrit2,
+							schoolMask = nil,
+							targetName = pTarget,
+						})
+					end
 					didPet = true
 				end
 			end
@@ -1336,19 +1372,24 @@ function Collector:handleChatSelfDamage(event, msg)
 					if petPrefix:sub(1, #petName + 1) == (petName .. " ") then
 						local amt2 = parseAmountFromChat(petAmount2)
 						if amt2 and amt2 > 0 then
-							local isCrit3 = (msg:find("Critical", 1, true) ~= nil) or (msg:find("CRITICAL", 1, true) ~= nil)
-							local pipeId = self._rawPipeCount + 1
-							self._rawPipeCount = pipeId
-							self._rawPipe[pipeId] = amt2
-							self._lastPetChatAt = now()
-							self._lastPetChatAmount = amt2
-							emit("PET_DAMAGE_COMBAT", {
-								timestamp = now(),
-								rawPipeId = pipeId,
-								isCrit = isCrit3,
-								schoolMask = nil,
-								targetName = petTarget2,
-							})
+							local tNowPet = now()
+							local lastFb = self._lastPetFallbackAt or 0
+							local isDup = (tNowPet - lastFb) >= 0 and (tNowPet - lastFb) < PET_OUTGOING_DEDUP_WINDOW
+							if not isDup then
+								local isCrit3 = (msg:find("Critical", 1, true) ~= nil) or (msg:find("CRITICAL", 1, true) ~= nil)
+								local pipeId = self._rawPipeCount + 1
+								self._rawPipeCount = pipeId
+								self._rawPipe[pipeId] = amt2
+								self._lastPetChatAt = tNowPet
+								self._lastPetChatAmount = amt2
+								emit("PET_DAMAGE_COMBAT", {
+									timestamp = tNowPet,
+									rawPipeId = pipeId,
+									isCrit = isCrit3,
+									schoolMask = nil,
+									targetName = petTarget2,
+								})
+							end
 							didPet = true
 						end
 					end
@@ -2021,6 +2062,11 @@ local OUTGOING_HEALTH_DEDUP_WINDOW = 0.12
 -- below ~0.5s even with haste and autos cannot cleave, so a short window only
 -- collapses duplicate reports of the same swing.
 local AUTO_OUTGOING_DEDUP_WINDOW = 0.35
+-- Pet outgoing can be reported by multiple sources for the same swing:
+-- UNIT_COMBAT("target") fallback (sometimes delivered twice), chat
+-- "Your pet hits" lines, and the DK guardian path. Pet attack speed cannot
+-- go below ~0.5s, so a short window only collapses duplicate reports.
+local PET_OUTGOING_DEDUP_WINDOW = 0.35
 
 -- Detect incoming player damage/healing from UNIT_COMBAT.
 -- In 12.0, the `action` string arg may be tainted. Rather than checking
@@ -2353,6 +2399,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					if isLikelyPetSchoolHitGivenRecentPlayerSpell(self, school, self._lastPlayerSpellId) then
 						recentPlayerCast = false
 					end
+					-- Warlock shadow pets deal steady shadow damage that would
+					-- otherwise be swallowed by the recent-cast window (felhunter
+					-- bites land ~1s apart, almost always near a player cast).
+					-- Let the pet claim shadow-school hits UNLESS the recent cast
+					-- was a known warlock nuke — those landings are the player's.
+					if recentPlayerCast and isWarlockPlayer() and (ZSBT.IsSafeNumber(school) and school == 32) then
+						local sid = self._lastPlayerSpellId
+						if not (type(sid) == "number" and WARLOCK_NUKE_SPELL_IDS[sid]) then
+							recentPlayerCast = false
+						end
+					end
 					-- DoT ticks can arrive long after the cast and look like small magic WOUND
 					-- events. If we have a recent periodic spell in our window, prefer treating
 					-- this as player periodic damage instead of pet damage.
@@ -2420,7 +2477,31 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						self._lastOutgoingCombatTargetName = tName
 						return
 					end
-					if not recentPlayerCast then
+					-- UNIT_COMBAT has no source attribution on Midnight, so the pet
+					-- fallback must not claim hits it can't identify. Only schools
+					-- matching a known pet signature are pet-eligible — this keeps
+					-- procs and the player's own non-physical abilities out of the
+					-- pet scroll. Unknown/nil schools stay permissive.
+					local petEligibleHit = true
+					if ZSBT.IsSafeNumber(school) and not isLikelyPetSchoolHit(school) then
+						petEligibleHit = false
+						-- Warlock exception: when the player is definitively NOT
+						-- auto-attacking, physical WOUNDs are almost certainly the
+						-- pet's melee (succubus/voidwalker/felhunter white hits —
+						-- warlocks typically cast at range while the pet melees).
+						-- If the player IS swinging, the two are indistinguishable
+						-- and the hit stays outgoing.
+						if petEligibleHit == false and isPhysicalEarly and isWarlockPlayer() then
+							local okAR, notAuto = pcall(function()
+								if not IsAutoRepeatAction then return nil end
+								return IsAutoRepeatAction(1) == false
+							end)
+							if okAR and notAuto == true then
+								petEligibleHit = true
+							end
+						end
+					end
+					if not recentPlayerCast and petEligibleHit then
 						if not isCorroboratedHugePetHit(t, amount) then
 							if dl >= 4 then
 								ECPrint(("BIG_HIT_SUPPRESS src=PET_FALLBACK token=%s amt=%s")
@@ -2441,6 +2522,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								return
 							end
 						end
+						-- Dedup: the same pet swing can arrive twice via UNIT_COMBAT
+						-- or once here and once via the "Your pet hits" chat line.
+						local lastPetFb = self._lastPetFallbackAt or 0
+						local lastPetChat = self._lastPetChatAt or 0
+						if (t - lastPetFb) >= 0 and (t - lastPetFb) < PET_OUTGOING_DEDUP_WINDOW then
+							return
+						end
+						if (t - lastPetChat) >= 0 and (t - lastPetChat) < PET_OUTGOING_DEDUP_WINDOW then
+							return
+						end
+						self._lastPetFallbackAt = t
 						local pipeId = self._rawPipeCount + 1
 						-- Safety: ensure unique rawPipeId. Some clients / reload edges can cause
 						-- _rawPipeCount to rewind, which would make Pulse_Engine read a nil value
@@ -2496,6 +2588,16 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 											return
 										end
 									end
+									-- Dedup against the main pet fallback and chat pet lines.
+									local lastPetFb = self._lastPetFallbackAt or 0
+									local lastPetChat = self._lastPetChatAt or 0
+									if (t - lastPetFb) >= 0 and (t - lastPetFb) < PET_OUTGOING_DEDUP_WINDOW then
+										return
+									end
+									if (t - lastPetChat) >= 0 and (t - lastPetChat) < PET_OUTGOING_DEDUP_WINDOW then
+										return
+									end
+									self._lastPetFallbackAt = t
 									local pipeId = self._rawPipeCount + 1
 									if self._rawPipe and self._rawPipe[pipeId] ~= nil then
 										local i = pipeId
@@ -2586,8 +2688,19 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			local ok, res = pcall(UnitExists, "pet")
 			if ok and res == true then hasPet = true end
 		end
+		-- With a pet out, only block the auto-attack fallback when the pet is
+		-- actually fighting AND this hit matches a known pet damage school.
+		-- Pet-eligible hits are claimed by the pet fallback earlier; anything
+		-- else is the player's own swing and should be allowed through.
+		local petMayOwnHit = false
+		if hasPet and UnitAffectingCombat then
+			local okPC, inPetCombat = pcall(UnitAffectingCombat, "pet")
+			if okPC and inPetCombat == true and isLikelyPetSchoolHit(school) then
+				petMayOwnHit = true
+			end
+		end
 		local allowAutoFallback = false
-		if restrict == true and (not hasPet) then
+		if restrict == true and (not petMayOwnHit) then
 			if isPvPStrictActive() and getPvPStrictFlag("pvpStrictDisableAutoAttackFallback") ~= false then
 				allowAutoFallback = false
 			else
@@ -2901,7 +3014,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				return
 			end
 			if hasPet and not matchedCast then
-				return
+				-- With a pet out, unattributed physical hits were assumed to be the
+				-- pet's. Only drop them here when the pet fallback could actually
+				-- claim this hit (school signature match); otherwise it's the
+				-- player's own swing and should continue to the white-hit path.
+				if isLikelyPetSchoolHit(school) then
+					return
+				end
 			end
 			local spellId = nil
 			if matchedCast then
@@ -3621,15 +3740,15 @@ function Collector:Enable()
 			elseif CHAT_OUTGOING_EVENTS[event] then
 				local dl = OutDbgLevel()
 				local msg = select(1, ...)
+				local msgSafe = type(msg) == "string" and (not ZSBT.IsSafeString or ZSBT.IsSafeString(msg))
 				if dl >= 5 then
-					if type(msg) == "string" and (msg:find("Whirlwind", 1, true) or msg:find("whirlwind", 1, true)) then
+					if msgSafe and (msg:find("Whirlwind", 1, true) or msg:find("whirlwind", 1, true)) then
 						Collector._dbgWWChatRecvAt = now()
 						Collector._dbgWWChatRecvCount = (Collector._dbgWWChatRecvCount or 0) + 1
 						ECPrint(("CHAT_OUT WW recv evt=%s msg=%s"):format(dbgSafe(event), dbgSafe(msg:sub(1, 160))))
 					end
 				elseif dl >= 4 then
-					local msg = select(1, ...)
-					if type(msg) == "string" then
+					if msgSafe then
 						ECPrint(("CHAT_OUT recv evt=%s msg=%s"):format(dbgSafe(event), dbgSafe(msg:sub(1, 160))))
 					else
 						ECPrint(("CHAT_OUT recv evt=%s msg=%s"):format(dbgSafe(event), dbgSafe(msg)))

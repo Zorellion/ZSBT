@@ -8,7 +8,7 @@ local ADDON_NAME, ZSBT = ...
 ------------------------------------------------------------------------
 -- Version & Identity
 ------------------------------------------------------------------------
-ZSBT.VERSION = "3.2"
+ZSBT.VERSION = "3.3"
 ZSBT.ADDON_TITLE = "Zore's Scrolling Battle Text"
 ZSBT.ADDON_SHORT = "ZSBT"
 ZSBT.ADDON_AUTHOR = "Zorellion"
@@ -169,14 +169,19 @@ ZSBT.PET_AGGREGATION = {
 ------------------------------------------------------------------------
 -- WoW 12.0 Secret Value Safety
 ------------------------------------------------------------------------
--- Blizzard's HasSecretValues() is the official API for detecting
--- tainted/protected values. We wrap it to handle cases where the
--- function doesn't exist (older clients or PTR builds).
+-- Blizzard's secret-value test APIs (12.0+): issecretvalue() checks a single
+-- value, issecrettable()/canaccesstable() cover secret Lua tables, and
+-- canaccessvalue() reports whether THIS execution context may operate on the
+-- value (restrictions are context-dependent: open world vs. dungeon/raid/PvP).
+-- HasSecretValues() additionally detects secrets nested inside tables.
+-- The pcall probes remain as a last resort for clients without these APIs.
 
 local function hasSecret(v)
     if v == nil then return false end
+    if issecretvalue and issecretvalue(v) then return true end
+    if issecrettable and type(v) == "table" and issecrettable(v) then return true end
     if HasSecretValues and HasSecretValues(v) then return true end
-    -- Fallback for clients without HasSecretValues: pcall probe.
+    -- Fallback for clients without the secret APIs: pcall probe.
     if type(v) == "number" then
         local ok = pcall(function() return v + 0 end)
         return not ok
@@ -186,6 +191,18 @@ local function hasSecret(v)
         return not ok
     end
     return false
+end
+
+-- True when the current (possibly tainted) execution context is allowed to
+-- perform operations on v. False on old clients that lack the API — callers
+-- should treat "unknown" conservatively.
+function ZSBT.CanAccessValue(v)
+    if v == nil then return true end
+    if canaccessvalue then
+        local ok, res = pcall(canaccessvalue, v)
+        if ok and type(res) == "boolean" then return res end
+    end
+    return not hasSecret(v)
 end
 
 function ZSBT.IsSecret(v)

@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.3
+
+### Changed
+- Secret-value detection now uses Blizzard's official APIs: `issecretvalue()` / `issecrettable()` are checked first, `HasSecretValues()` retained for nested-secret detection, and the pcall arithmetic probe is now only a fallback for older clients. Added `ZSBT.CanAccessValue()` wrapping `canaccessvalue()` for context-aware checks. All ~500 existing `IsSafeNumber`/`IsSafeString`/`IsSecret` call sites benefit without signature changes.
+
+### Fixed
+- Outgoing damage chat fallback (`Parser/Event_Collector.lua`): the secret-message path called `msg:find`/`msg:match`/`tonumber`/`msg:lower()` directly on combat chat payloads, which can hard-error when `SecretInChatMessagingLockdown` makes those strings secret in dungeons/raids/PvP. Probes and parses are now `pcall`-guarded and results must pass `IsSafeNumber`/`IsSafeString` before comparison. Debug receive paths are also gated on string safety.
+- Pet damage duplicates: all pet outgoing emit sources (UNIT_COMBAT target fallback, "Your pet hits" chat, pet-name chat, DK guardian) now share a 0.35s dedup window, and the chat paths stamp the same state — previously the same swing could display twice via fallback+chat or double `UNIT_COMBAT` reports.
+- Auto-attacks stolen by pet fallback: unattributed physical hits were claimed as pet damage whenever a pet was in combat. Pet fallback now requires the hit's school to match a known pet signature (`isLikelyPetSchoolHit`) for all schools, not just in restricted modes.
+- Auto-attacks dropped with a pet summoned: a pre-existing `hasPet and not matchedCast` gate discarded all unattributed hits while any pet existed. It now only drops hits the pet could actually own (signature-school match), so player white swings reach the outgoing path again.
+- Quiet outgoing + "allow auto attacks while quiet" no longer suppresses auto-attacks when a pet is out: the auto-attack fallback only yields to the pet when the hit matches a pet signature.
+- Warlock pet attribution: `isLikelyPetSchoolHit` now recognizes shadow (32) for Warlock (felhunter/felhunter/voidwalker/succubus abilities, Lash of Pain, Torment) alongside fire (4) for Imp/Infernal. Pet-signature hits win over the recent-player-cast window unless the last cast was a known Warlock nuke/DoT (Shadow Bolt, Incinerate, Chaos Bolt, Shadowburn, Haunt, Darkglare, DoTs).
+- Warlock pet melee: physical hits are attributed to the pet when the player's auto-attack (`IsAutoRepeatAction`) is definitively off — covers succubus/voidwalker/felhunter melee while the warlock casts at range. When the player is auto-attacking, physical hits stay in outgoing since pet melee and player swings are indistinguishable in `UNIT_COMBAT`.
+
+### Known limitations
+- `UNIT_COMBAT` on Midnight provides no source GUID or spell ID, so player auto-attacks, pet melee, and unattributed procs remain ambiguous in some windows (e.g. pet melee within ~1.25s of a player cast, same-school pet abilities vs. player spells). Attribution is heuristic; perfect separation is not possible without a source-bearing combat event.
+
 ## 3.2
 
 ### Fixed
