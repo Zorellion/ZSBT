@@ -272,11 +272,17 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
 		return
 	end
 
-	-- Don't merge: crits, misses, notifications
+	-- Don't merge: crits, misses, notifications, periodic ticks. Ticks arrive
+	-- already spaced by the dot's interval; holding them for the merge window
+	-- just adds visible latency and collapses distinct ticks.
 	local isCrit = meta and meta.isCrit
 	local isMiss = meta and meta.kind == "miss"
 	local isNotification = meta and meta.kind == "notification"
-	if isCrit or isMiss or isNotification then
+	local isPeriodic = meta and meta.isPeriodic == true
+	if isPeriodic and ZSBT.Addon and ZSBT.Addon.Dbg then
+		ZSBT.Addon:Dbg("outgoing", 4, "MERGE_BYPASS_PERIODIC", tostring(meta and meta.spellId))
+	end
+	if isCrit or isMiss or isNotification or isPeriodic then
 		FlushMergesForArea(areaName)
 		ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
 			fontAlpha, anchorH, dirMult, duration, color, meta)

@@ -1187,6 +1187,25 @@ local function AE_UpdateEvent(ev, dt)
 		ev.fs:SetAlpha(math.max(0, (ev.fontAlpha or 1) * (ev.alpha or 1)))
 	end
 
+	-- One-shot latency probe: first frame a periodic tick becomes visible.
+	if ev.meta and ev.meta.isPeriodic == true and not ev._dbgPerShown then
+		local a = 0
+		if ev.fs and ev.fs.GetAlpha then
+			local okA, va = pcall(ev.fs.GetAlpha, ev.fs)
+			if okA and type(va) == "number" then a = va end
+		end
+		if a > 0.3 then
+			ev._dbgPerShown = true
+			local Addon = ZSBT and ZSBT.Addon
+			if Addon and Addon.Dbg then
+				Addon:Dbg("outgoing", 4,
+					("PER_VISIBLE t=%.2f elapsed=%.2f style=%s scrollTime=%.2f")
+						:format(AE_Now(), ev.elapsedTime or ev.elapsed or 0,
+							tostring(ev.styleId), tonumber(ev.scrollTime) or -1))
+			end
+		end
+	end
+
 	-- Placement (match existing semantics)
 	-- MSBT does not ClearAllPoints each tick; doing so can cause flicker.
 	if styleId ~= "Straight" and styleId ~= "Parabola" and styleId ~= "Pow" and styleId ~= "Slam" then
@@ -2530,6 +2549,9 @@ end
 function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
                            fontAlpha, anchorH, dirMult, duration, color, meta)
 	local tok = ZSBT.Addon and ZSBT.Addon.PerfBegin and ZSBT.Addon:PerfBegin("UI.FireText")
+	if meta and meta.isPeriodic == true and ZSBT.Addon and ZSBT.Addon.Dbg then
+		ZSBT.Addon:Dbg("outgoing", 4, ("PER_FIRE t=%.2f"):format(GetTime()))
+	end
     -- Validate area data with safe defaults
     local xOff = (type(area.xOffset) == "number") and area.xOffset or 0
     local yOff = (type(area.yOffset) == "number") and area.yOffset or 0

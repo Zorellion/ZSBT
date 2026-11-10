@@ -1,9 +1,9 @@
-## Interface: 120107, 120105, 120100, 120007, 16001, 50504, 38001, 20506, 11509
+## Interface: 120107, 120105, 16001
 
 ## Title: Zore's Scrolling Battle Text
 ## Notes: Zore's Scrolling Battle Text (ZSBT) for WoW Retail 12.x
 ## Author: Zorellion
-## Version: 3.3
+## Version: 3.4
 ## SavedVariables: ZSBTDB
 ## OptionalDeps: Ace3, LibSharedMedia-3.0
 
@@ -50,6 +50,8 @@ Parser\Incoming_Detect.lua
 Parser\Outgoing_Detect.lua
 Parser\State_Manager.lua
 Parser\Correlation_Logic.lua
+Parser\CombatLog_Lines.lua
+Parser\Periodic_Tracker.lua
 Parser\Event_Collector.lua
 Parser\Pulse_Engine.lua
 

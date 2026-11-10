@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.4
+
+### Added
+- Periodic damage tracking extracted into `Parser/Periodic_Tracker.lua` — unified per-DoT records (true application time, learned tick interval, learned school, predicted next tick) shared by the target, pet-fallback, and combat-text paths instead of three divergent inline copies.
+- Combat-log line-color classification (`COMBAT_LOG_MESSAGE`, RGB only — no text reads): the saved `ZSBT` combat-log filter colors `SPELL_DAMAGE`/`LEECH`/`DRAIN`/`BUILDING_DAMAGE`, `SPELL_PERIODIC_DAMAGE`/`LEECH`, `SWING`/`RANGE`/`DAMAGE_SHIELD`/`DAMAGE_SPLIT`/`ENVIRONMENTAL_DAMAGE`, and `SPELL_HEAL`/`SPELL_PERIODIC_HEAL` so tick-vs-direct-vs-melee attribution is confirmed by the line color itself.
+- Multi-DoT disambiguation: `MatchHit` scores candidates by aura freshness, learned school match, and predicted tick schedule; new debug tags `PT_SEED`/`PT_LEARN`/`PT_MATCH` report each stage.
+- DoT coverage expanded: `Immolate`, `Living Bomb`, `Fire Breath`, `Purge the Wicked`, `Holy Fire` added to the name table; `KNOWN_PERIODIC_IDS` fallback grew to ~30 canonical spellIds across all DoT classes.
+
+### Fixed
+- First ticks of every fresh DoT dropped: `dotAge` was seeded from when the throttled aura scan first noticed the debuff (up to several seconds after application on secret-value clients). Application time is now computed from `expirationTime - duration`, and when the color signal is live the deferred line-color check vets hits instead of the age gate.
+- `AuraUtil.ForEachAura` sees zero auras for seconds after application on Midnight — cast-seeded periodic candidates now carry that window for every class (previously warlock/druid only via `isKnownPeriodicSpellId`).
+- Duplicate ticks: a hit on a nameplated current target arrives as both the nameplate unit token and `target`; the second copy is now dropped only when its signature matches the remapped event within 0.12s (multi-hits still count).
+- Lightning Bolts/nukes swallowed during active DoTs: signal-live candidates are only intercepted when no pending cast could own the hit (non-consuming `consumeBestPendingCast` peek).
+- Pet melee displayed as player auto-attacks: the auto-attack fallback now yields to the pet path when a pet is active and pet display is enabled.
+
+### Known limitations
+- `UNIT_COMBAT` still carries no source/spellId for periodic hits on secret-value clients; tick attribution is inference (cast memory + color confirmation + learned schedule), so icons can misattribute between same-school DoTs.
+
 ## 3.3
 
 ### Changed
