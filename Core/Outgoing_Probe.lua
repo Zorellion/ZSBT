@@ -756,6 +756,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			kind = kind,
 			isAuto = evt.isAuto == true,
 			isCrit = evt.isCrit == true,
+			isPeriodic = evt.isPeriodic == true,
 			school = evt.schoolMask,
 		}
 		local forceInline = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general and ZSBT.db.profile.general.forceCritsInline == true
@@ -855,7 +856,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
 				return "<secret>"
 			end
-			Addon:Dbg("outgoing", 3, safeDbg(areaToUse), safeDbg(evt.spellId), safeDbg(text))
+			Addon:Dbg("outgoing", 3, ("t=%.2f"):format(GetTime()), safeDbg(areaToUse), safeDbg(evt.spellId), safeDbg(text))
 		elseif dbg >= 3 and Addon and Addon.Print then
 			local function safeDbg(v)
 				if v == nil then return "nil" end
@@ -863,7 +864,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
 				return "<secret>"
 			end
-			Addon:Print("|cFF00CC66[OUT]|r " .. safeDbg(areaToUse) .. " " .. safeDbg(evt.spellId) .. " " .. safeDbg(text))
+			Addon:Print(("|cFF00CC66[OUT]|r t=%.2f "):format(GetTime()) .. safeDbg(areaToUse) .. " " .. safeDbg(evt.spellId) .. " " .. safeDbg(text))
 		end
 
 		if ZSBT.DisplayText then

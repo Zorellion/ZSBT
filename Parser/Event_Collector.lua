@@ -310,12 +310,9 @@ Collector._pendingCastNextToken = Collector._pendingCastNextToken or 0
 local PENDING_CAST_WINDOW_SEC = 2.5
 local PENDING_CAST_MAX = 12
 
--- Periodic (DoT) combat text attribution: COMBAT_TEXT_UPDATE periodic ticks can
--- arrive long after the original cast and after the pending cast entry has been
--- consumed. Track recently-cast spell IDs so periodic ticks can still be routed
--- to outgoing.
-Collector._recentPeriodicSpellAt = Collector._recentPeriodicSpellAt or {}
-local PERIODIC_OUTGOING_WINDOW_SEC = 30.0
+-- Periodic (DoT) attribution state lives in Parser/Periodic_Tracker.lua
+-- (ZSBT.PeriodicTracker): per-DoT records, the throttled aura scan, cast
+-- seeding, and MatchHit candidate selection.
 
 local function isWarlockDotSpellId(spellId)
 	if type(spellId) ~= "number" then return false end
@@ -348,15 +345,19 @@ local WARLOCK_NUKE_SPELL_IDS = {
 	[27243] = true,   -- Seed of Corruption
 }
 
-local function isKnownPeriodicSpellId(spellId)
+-- Druid DoTs: Moonfire/Sunfire have multiple spellId variants across
+-- clients/expansions, so match by cleaned spell name like the warlock path.
+local DRUID_DOT_SPELL_NAMES = {
+	Moonfire = true,
+	Sunfire = true,
+	["Insect Swarm"] = true,
+}
+
+local function isDruidDotSpellId(spellId)
 	if type(spellId) ~= "number" then return false end
-	-- Warlock DoTs (name-based fallback handles spellId variants)
-	if isPlayerClassTag and isPlayerClassTag("WARLOCK") then
-		return isWarlockDotSpellId(spellId)
-	end
-	return spellId == 172
-		or spellId == 980
-		or spellId == 30108
+	local sn = (ZSBT and ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId)) or nil
+	if type(sn) ~= "string" or sn == "" then return false end
+	return DRUID_DOT_SPELL_NAMES[sn] == true
 end
 
 local isPlayerClassTag
@@ -381,23 +382,6 @@ end
 
 isWhirlwindSpellId = _G.isWhirlwindSpellId
 
-local function getMostRecentPeriodicSpellId(self, tNow)
-	local m = self and self._recentPeriodicSpellAt
-	if type(m) ~= "table" then return nil end
-	local bestId, bestAt
-	for sid, at in pairs(m) do
-		if type(sid) == "number" and type(at) == "number" then
-			local age = tNow - at
-			if age >= 0 and age <= PERIODIC_OUTGOING_WINDOW_SEC then
-				if (not bestAt) or at > bestAt then
-					bestAt = at
-					bestId = sid
-				end
-			end
-		end
-	end
-	return bestId
-end
 
 local function arePetsEnabled()
 	local petConf = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.pets
@@ -705,7 +689,7 @@ hasTargetDebuffSpellId = function(spellId)
 					found = true
 					return false
 				end
-				if wantName and type(auraData) == "table" and type(auraData.name) == "string" and auraData.name == wantName then
+				if wantName and type(auraData) == "table" and ZSBT.IsSafeString and ZSBT.IsSafeString(auraData.name) and auraData.name == wantName then
 					found = true
 					return false
 				end
@@ -912,8 +896,10 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 		end
 		local spellName = self._lastPlayerSpellName
 		enqueuePendingCast(self, spellId, spellName, self._lastPlayerSpellAt)
-		if isKnownPeriodicSpellId(spellId) then
-			self._recentPeriodicSpellAt[spellId] = self._lastPlayerSpellAt
+		-- Name-based seeding covers every class — needed because the aura scan
+		-- can't see freshly applied debuffs for seconds on secret-value clients.
+		if ZSBT.PeriodicTracker then
+			ZSBT.PeriodicTracker:NotePlayerCast(spellId, spellName, self._lastPlayerSpellAt)
 		end
 
 		-- Prime target health baseline to improve first-hit correlation.
@@ -1129,23 +1115,9 @@ end
 
 local function resolveRecentSpellIdByName(self, wantName, tNow)
 	if not wantName or type(wantName) ~= "string" then return nil end
-	if not self or type(self._recentPeriodicSpellAt) ~= "table" then return nil end
-	local bestId, bestAt
-	for sid, at in pairs(self._recentPeriodicSpellAt) do
-		if type(sid) == "number" and type(at) == "number" then
-			local age = tNow - at
-			if age >= 0 and age <= PERIODIC_OUTGOING_WINDOW_SEC then
-				local sn = ZSBT.CleanSpellName and ZSBT.CleanSpellName(sid) or nil
-				if type(sn) == "string" and sn == wantName then
-					if (not bestAt) or at > bestAt then
-						bestAt = at
-						bestId = sid
-					end
-				end
-			end
-		end
-	end
-	return bestId
+	local PT = ZSBT.PeriodicTracker
+	if not PT then return nil end
+	return PT:RecentByName(wantName, tNow)
 end
 
 function Collector:handleChatSelfDamage(event, msg)
@@ -1706,15 +1678,15 @@ function Collector:handleCombatTextUpdate(arg1)
 				if age >= 0 and age <= 1.25 then
 					outgoingSpellId = ctSpellId
 				end
-			elseif isPeriodic and self._recentPeriodicSpellAt and self._recentPeriodicSpellAt[ctSpellId] then
-				local age = tNow - (self._recentPeriodicSpellAt[ctSpellId] or 0)
-				if age >= 0 and age <= PERIODIC_OUTGOING_WINDOW_SEC then
+			elseif isPeriodic and ZSBT.PeriodicTracker then
+				local age = tNow - (ZSBT.PeriodicTracker:RecentAt(ctSpellId) or 0)
+				if age >= 0 and age <= ZSBT.PeriodicTracker:CastWindowSec() then
 					outgoingSpellId = ctSpellId
 				end
 			end
 		end
-		if (not outgoingSpellId) and isPeriodic and (not ctSpellId) then
-			outgoingSpellId = getMostRecentPeriodicSpellId(self, tNow)
+		if (not outgoingSpellId) and isPeriodic and (not ctSpellId) and ZSBT.PeriodicTracker then
+			outgoingSpellId = ZSBT.PeriodicTracker:MatchHit(tNow)
 		end
 
 		local pipeId = self._rawPipeCount + 1
@@ -2068,6 +2040,78 @@ local AUTO_OUTGOING_DEDUP_WINDOW = 0.35
 -- go below ~0.5s, so a short window only collapses duplicate reports.
 local PET_OUTGOING_DEDUP_WINDOW = 0.35
 
+-- Emit a periodic-tick outgoing hit. Secret amounts go through the raw pipe.
+local function emitDotOutgoingDamage(self, t, dotSpellId, amount, isCrit, school)
+	local tName = safeUnitName("target")
+	if ZSBT.IsSafeNumber(amount) then
+		emit("OUTGOING_DAMAGE_COMBAT", {
+			timestamp = t,
+			amount = amount,
+			amountText = tostring(math.floor(amount + 0.5)),
+			spellId = dotSpellId,
+			amountSource = "UNIT_COMBAT_DOT",
+			targetName = tName,
+			isCrit = isCrit,
+			isPeriodic = true,
+			schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil,
+		})
+	else
+		local pipeId = self._rawPipeCount + 1
+		self._rawPipeCount = pipeId
+		self._rawPipe[pipeId] = amount
+		emit("OUTGOING_DAMAGE_COMBAT", {
+			timestamp = t,
+			rawPipeId = pipeId,
+			spellId = dotSpellId,
+			amountSource = "UNIT_COMBAT_DOT",
+			targetName = tName,
+			isCrit = isCrit,
+			isPeriodic = true,
+			schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil,
+		})
+	end
+	self._lastOutgoingCombatAt = t
+	self._lastOutgoingCombatTargetName = tName
+end
+
+-- Combat-log line confirmation for DoT ticks. The log line and the
+-- UNIT_COMBAT hit arrive in the same frame in either order, so when the
+-- colour signal is active we defer the emit briefly and then check which
+-- line colour sits closest to the hit: a direct/melee/ranged line means
+-- this was not a tick and the emit is vetoed; a tick line (or no line at
+-- all, falling back to aura presence) lets it through.
+local DOT_LINE_WAIT = 0.15
+local DOT_LINE_WINDOW = 0.30
+
+local function maybeEmitDotOutgoing(self, t, dotSpellId, amount, isCrit, school)
+	local cl = ZSBT.CombatLogLines
+	local function decide()
+		local kind = nil
+		if cl and cl.ClosestKind then
+			kind = cl:ClosestKind(t, DOT_LINE_WINDOW)
+			if kind == "direct" or kind == "melee" or kind == "ranged" then
+				if OutDbgLevel() >= 4 then
+					ECPrint(("DOT_LINE_VETO token=%s spellId=%s kind=%s")
+						:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(kind)))
+				end
+				return
+			end
+		end
+		if OutDbgLevel() >= 4 then
+			local lineT = cl and cl._lastTickAt
+			ECPrint(("DOT_LINE_OK token=%s spellId=%s kind=%s hitT=%.2f now=%.2f lineT=%s")
+				:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(kind or "none"),
+					t, GetTime(), lineT and ("%.2f"):format(lineT) or "nil"))
+		end
+		emitDotOutgoingDamage(self, t, dotSpellId, amount, isCrit, school)
+	end
+	if cl and cl.SignalSeen and cl:SignalSeen() then
+		C_Timer.After(DOT_LINE_WAIT, decide)
+	else
+		decide()
+	end
+end
+
 -- Detect incoming player damage/healing from UNIT_COMBAT.
 -- In 12.0, the `action` string arg may be tainted. Rather than checking
 -- action == "WOUND", we emit all UNIT_COMBAT events for "player" that
@@ -2075,6 +2119,7 @@ local PET_OUTGOING_DEDUP_WINDOW = 0.35
 -- UNIT_COMBAT only fires for: WOUND, HEAL, BLOCK, DODGE, PARRY, RESIST, etc.
 -- Only WOUND and HEAL carry meaningful amounts.
 function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
+	local remappedNameplate = false
 	-- Midnight (12.0+): UNIT_COMBAT does not fire for the "target" unit token on some
 	-- clients (confirmed via debug: only UNIT_COMBAT_PLAYER lines appear). It DOES fire
 	-- for nameplate tokens (nameplate1..nameplateN) when a nameplated unit takes damage.
@@ -2099,6 +2144,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					end
 				end
 				unit = "target"
+				remappedNameplate = true
 			else
 				return
 			end
@@ -2123,6 +2169,27 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		if u:find("CRIT", 1, true) then
 			isCrit = true
 		end
+	end
+
+	-- A hit on a nameplated current target arrives twice — once for the
+	-- nameplate token (remapped above) and once for "target" itself. Skip the
+	-- "target" copy only when it directly follows a remapped nameplate event
+	-- with an identical signature, so genuine same-frame double hits still
+	-- count.
+	local ucTNow = now()
+	local ucSig = nil
+	do
+		local okS, s = pcall(function()
+			return tostring(action) .. "|" .. tostring(descriptor) .. "|" .. tostring(school)
+		end)
+		ucSig = (okS and s) or "?"
+	end
+	if remappedNameplate == true then
+		self._npRemapSig, self._npRemapAt = ucSig, ucTNow
+	elseif unit == "target"
+		and self._npRemapSig == ucSig
+		and (ucTNow - (self._npRemapAt or 0)) < 0.12 then
+		return
 	end
 
 	-- PET: pet incoming damage / healing (UNIT_COMBAT("pet") reports events happening to the pet)
@@ -2255,12 +2322,14 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							-- Exception: periodic damage can tick well after the cast and we'd still like
 							-- to show *player* DoTs without opening the door to follower/party damage.
 							-- Allow the pipeline only when we can correlate to a very recent periodic spell.
-							local dotSpellId = getMostRecentPeriodicSpellId and getMostRecentPeriodicSpellId(self, tNow) or nil
 							local okDot = false
-							if dotSpellId and self._recentPeriodicSpellAt and type(self._recentPeriodicSpellAt[dotSpellId]) == "number" then
-								local age = tNow - (self._recentPeriodicSpellAt[dotSpellId] or 0)
-								if age >= 0 and age <= (PERIODIC_OUTGOING_WINDOW_SEC or 8.0) then
-									okDot = true
+							if ZSBT.PeriodicTracker then
+								local dotSpellId = ZSBT.PeriodicTracker:MatchHit(tNow)
+								if dotSpellId then
+									local age = tNow - (ZSBT.PeriodicTracker:RecentAt(dotSpellId) or 0)
+									if age >= 0 and age <= ZSBT.PeriodicTracker:CastWindowSec() then
+										okDot = true
+									end
 								end
 							end
 							if not okDot then
@@ -2414,8 +2483,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- events. If we have a recent periodic spell in our window, prefer treating
 					-- this as player periodic damage instead of pet damage.
 					local dotSpellId = nil
-					if not isPhysicalEarly then
-						dotSpellId = getMostRecentPeriodicSpellId(self, t)
+					if not isPhysicalEarly and ZSBT.PeriodicTracker then
+						dotSpellId = ZSBT.PeriodicTracker:MatchHit(t, school)
 					end
 					-- Hard separation for low-level Warlock: Imp hits are fire. If an Imp is active
 					-- and we see a fire-school WOUND, never attribute it to player spells/DoTs.
@@ -2440,15 +2509,23 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					end
 					-- Safety: only treat it as a DoT tick if the target actually has the debuff.
 					-- Without this, any recent non-periodic cast (e.g. Shadow Bolt) can "stick"
-					-- as the spellId for unrelated magic WOUND ticks.
-					if dotSpellId and (not cachedHasTargetDebuffSpellId(dotSpellId)) then
+					-- as the spellId for unrelated magic WOUND ticks. When the combat-log color
+					-- signal is live the deferred line-color check vets it instead — fresh
+					-- auras are API-invisible for seconds on secret-value clients.
+					local clSigPet = ZSBT.CombatLogLines
+					local signalLivePet = clSigPet and clSigPet.SignalSeen and clSigPet:SignalSeen() == true
+					if dotSpellId and not ZSBT.PeriodicTracker:IsTracked(dotSpellId) and not signalLivePet
+						and (not cachedHasTargetDebuffSpellId(dotSpellId)) then
 						local allowWarlockDot = false
 						if isWarlockPlayer and isWarlockPlayer() then
 							if isWarlockDotSpellId(dotSpellId) and (ZSBT.IsSafeNumber(school) and school == 32) then
 								allowWarlockDot = true
 							end
 						end
-						if not allowWarlockDot then
+						-- Druid DoTs (Moonfire/Sunfire/Insect Swarm) can have aura
+						-- spellIds/names that don't match the cast ID on some clients.
+						local allowDruidDot = isDruidDotSpellId and isDruidDotSpellId(dotSpellId) or false
+						if not (allowWarlockDot or allowDruidDot) then
 							dotSpellId = nil
 						end
 					end
@@ -2460,21 +2537,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							end
 							return
 						end
-						self._recentPeriodicSpellAt[dotSpellId] = t
-						local tName = safeUnitName("target")
-						emit("OUTGOING_DAMAGE_COMBAT", {
-							timestamp = t,
-							amount = amount,
-							amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
-							spellId = dotSpellId,
-							amountSource = "UNIT_COMBAT_DOT",
-							targetName = tName,
-							isCrit = isCrit,
-							isPeriodic = true,
-							schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil,
-						})
-						self._lastOutgoingCombatAt = t
-						self._lastOutgoingCombatTargetName = tName
+						if ZSBT.PeriodicTracker then
+							ZSBT.PeriodicTracker:NoteEmit(dotSpellId, t, school)
+						end
+						maybeEmitDotOutgoing(self, t, dotSpellId, amount, isCrit, school)
 						return
 					end
 					-- UNIT_COMBAT has no source attribution on Midnight, so the pet
@@ -3191,14 +3257,84 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- or tiny procs/secondary effects. Prefer attribution first; only suppress when
 			-- we cannot correlate it to a recent cast/periodic effect.
 			local suppressIfUnattributed = false
-			if not isPhysical and ZSBT.IsSafeNumber(amount) and amount > 0 and amount < 500 then
-				-- DoT ticks often show up as small UNIT_COMBAT(target) magic WOUND events.
-				-- If we recently cast a periodic-capable spell, treat this as outgoing
-				-- periodic damage.
-				local dotSpellId = getMostRecentPeriodicSpellId(self, t)
+			local amountIsSafe = ZSBT.IsSafeNumber(amount)
+			local amountPositive = amountIsSafe and amount > 0
+			-- Secret amounts (Forever / restricted clients) can't be compared, so they
+			-- can't use the small-hit path — they only attribute via a confident DoT.
+			if not isPhysical and amount ~= nil and (amountPositive == true or not amountIsSafe) then
+				local smallHit = amountIsSafe and amount < 500
+				-- DoT ticks often show up as UNIT_COMBAT(target) magic WOUND events.
+				-- Small safe hits always get a periodic check; larger or secret hits
+				-- only when the periodic spell is a class-verified DoT.
+				local dotSpellId, auraBacked, auraDotAge
+				if ZSBT.PeriodicTracker then
+					dotSpellId, auraBacked, auraDotAge = ZSBT.PeriodicTracker:MatchHit(t, school)
+				end
+				if dl >= 4 and not dotSpellId then
+					local n = (ZSBT.PeriodicTracker and ZSBT.PeriodicTracker:Count()) or 0
+					ECPrint(("DOT_MISS token=%s auraN=%d scanAge=%.2f amt=%s school=%s")
+						:format(dbgSafe(self._castToken), n,
+							t - ((ZSBT.PeriodicTracker and ZSBT.PeriodicTracker._scanAt) or 0),
+							dbgSafe(amount), dbgSafe(school)))
+				end
+				-- When the combat-log color signal is live, the deferred decide()
+				-- vets every hit by line color — aura/debuff gates only serve to
+				-- drop the first ticks while freshly applied auras are still
+				-- invisible to the aura APIs on secret-value clients.
+				local clSig = ZSBT.CombatLogLines
+				local signalLive = clSig and clSig.SignalSeen and clSig:SignalSeen() == true
+				if dotSpellId and not smallHit then
+					-- Aura-derived spellIds are ground truth (the debuff is present
+					-- and ticking) — no class-name or school verification needed.
+					local confident = auraBacked == true
+						or (ZSBT.PeriodicTracker and ZSBT.PeriodicTracker:IsTracked(dotSpellId))
+					local dotAge = auraDotAge
+					local expectedSchool = nil
+					if not confident and isDruidDotSpellId and isDruidDotSpellId(dotSpellId) then
+						confident = true
+						expectedSchool = 8
+					elseif not confident and isWarlockDotSpellId and isWarlockDotSpellId(dotSpellId) then
+						confident = true
+						expectedSchool = 32
+					end
+					if confident and amountIsSafe and expectedSchool then
+						confident = ZSBT.IsSafeNumber(school) and school == expectedSchool
+					end
+					if confident and not amountIsSafe then
+						-- Secret amounts: require the hit to be past the initial-hit
+						-- window so a nuke landing right after the cast isn't
+						-- mislabeled as the first tick, and reject physical hits.
+						-- dotAge comes from PeriodicTracker (true apply time from
+						-- the aura's expirationTime - duration, or cast time).
+						if type(dotAge) ~= "number" then dotAge = 0 end
+						confident = (dotAge >= 1.5 or signalLive)
+							and not (ZSBT.IsSafeNumber(school) and school == 1)
+					end
+					-- Cast-memory candidate (aura not visible yet): the deferred
+					-- line-color check confirms it — emit and let it veto.
+					-- Only intercept hits the normal path couldn't attribute
+					-- anyway: a still-pending cast owns this hit (e.g. the nuke
+					-- that applied the DoT or a bolt cast mid-dot), and diverting
+					-- it here would veto it into nothing.
+					if not confident and signalLive
+						and not (ZSBT.IsSafeNumber(school) and school == 1) then
+						confident = consumeBestPendingCast(self, t, nil, nil, false) == nil
+					end
+					if dl >= 4 then
+						ECPrint(("DOT_EVAL token=%s sid=%s aura=%s conf=%s age=%s")
+							:format(dbgSafe(self._castToken), dbgSafe(dotSpellId),
+								dbgSafe(ZSBT.PeriodicTracker and ZSBT.PeriodicTracker:IsTracked(dotSpellId)),
+								dbgSafe(confident), dbgSafe(dotAge)))
+					end
+					if not confident then
+						dotSpellId = nil
+					end
+				end
 				-- Safety: only treat it as a DoT tick if the target actually has the debuff.
+				-- Aura-derived spellIds skip this — the aura's presence was just verified
+				-- by the periodic scan itself.
 				local debuffOk = nil
-				if dotSpellId then
+				if dotSpellId and (not (ZSBT.PeriodicTracker and ZSBT.PeriodicTracker:IsTracked(dotSpellId))) and not signalLive then
 					debuffOk = cachedHasTargetDebuffSpellId(dotSpellId)
 					if debuffOk ~= true then
 						local allowWarlockDot = false
@@ -3207,7 +3343,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								allowWarlockDot = true
 							end
 						end
-						if not allowWarlockDot then
+						-- Druid DoTs can have aura spellIds/names that don't match the
+						-- cast ID on some clients; hits here are already non-physical.
+						local allowDruidDot = isDruidDotSpellId and isDruidDotSpellId(dotSpellId) or false
+						if not (allowWarlockDot or allowDruidDot) then
 							if dl >= 4 then
 								ECPrint(("DOT_ATTRIB_FAIL src=UNIT_COMBAT_SMALL token=%s dotSpellId=%s debuffOk=%s amt=%s school=%s")
 									:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(debuffOk), dbgSafe(amount), dbgSafe(school)))
@@ -3217,28 +3356,19 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					end
 				end
 				if dotSpellId then
-					if dl >= 4 and ZSBT.IsSafeNumber(amount) and amount >= BIG_HIT_THRESHOLD then
+					if amountIsSafe and dl >= 4 and amount >= BIG_HIT_THRESHOLD then
 						ECPrint(("BIG_HIT DOT token=%s spellId=%s amt=%s")
 							:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(amount)))
 					end
-					self._recentPeriodicSpellAt[dotSpellId] = t
-					local tName = safeUnitName("target")
-					emit("OUTGOING_DAMAGE_COMBAT", {
-						timestamp = t,
-						amount = amount,
-						amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
-						spellId = dotSpellId,
-						amountSource = "UNIT_COMBAT_DOT",
-						targetName = tName,
-						isCrit = isCrit,
-						isPeriodic = true,
-						schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil,
-					})
-					self._lastOutgoingCombatAt = t
-					self._lastOutgoingCombatTargetName = tName
+					if ZSBT.PeriodicTracker then
+						ZSBT.PeriodicTracker:NoteEmit(dotSpellId, t, school)
+					end
+					maybeEmitDotOutgoing(self, t, dotSpellId, amount, isCrit, school)
 					return
 				end
-				suppressIfUnattributed = true
+				if smallHit then
+					suppressIfUnattributed = true
+				end
 			end
 			-- Physical with a pet is too ambiguous.
 			if isPhysical and hasPet then
@@ -3277,7 +3407,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							local okA, a = pcall(UnitCanAttack, "player", "target")
 							if okA and a == false then canAtk = false end
 						end
-						if inPlayerCombat and canAtk and (not (members and members > 1)) then
+						-- With an active pet, unattributed physical hits are almost
+						-- certainly pet melee — the pet fallback claims them. Skip
+						-- the auto-attack fallback so pet white hits don't wear the
+						-- player's auto-attack stream.
+						if inPlayerCombat and canAtk and (not (members and members > 1))
+							and not (hasPet and arePetsEnabled()) then
 							-- Same dedup as the physical branch: the fallback and
 							-- physical paths can both fire for one white swing.
 							local lastAuto = self._lastAutoOutgoingAt or 0
@@ -3737,6 +3872,26 @@ function Collector:Enable()
 				Collector:handleCombatTextUpdate(...)
 			elseif event == "UNIT_COMBAT" then
 				Collector:handleUnitCombat(...)
+			elseif event == "COMBAT_LOG_MESSAGE" then
+				-- (text, r, g, b, order): the text is never read — only the
+				-- line colour classifies the combat event kind.
+				local _, r, g, b, order = ...
+				Collector._clmDbgCount = (Collector._clmDbgCount or 0) + 1
+				if Collector._clmDbgCount == 1 and OutDbgLevel() >= 4 then
+					ECPrint(("CLM module=%s recordFn=%s")
+						:format(dbgSafe(ZSBT.CombatLogLines ~= nil),
+							dbgSafe(ZSBT.CombatLogLines and ZSBT.CombatLogLines.RecordLine ~= nil)))
+				end
+				if Collector._clmDbgCount <= 15 and OutDbgLevel() >= 4 then
+					ECPrint(("CLM raw r=%s g=%s b=%s order=%s safe=%s/%s/%s")
+						:format(dbgSafe(r), dbgSafe(g), dbgSafe(b), dbgSafe(order),
+							dbgSafe(ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(r)),
+							dbgSafe(ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(g)),
+							dbgSafe(ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(b))))
+				end
+				if ZSBT.CombatLogLines then
+					ZSBT.CombatLogLines:RecordLine(r, g, b)
+				end
 			elseif CHAT_OUTGOING_EVENTS[event] then
 				local dl = OutDbgLevel()
 				local msg = select(1, ...)
@@ -3820,6 +3975,13 @@ function Collector:Enable()
 	pcall(function() self._frame:RegisterEvent("UNIT_HEALTH_FREQUENT") end)
 	self._frame:RegisterEvent("COMBAT_TEXT_UPDATE")
 	self._frame:RegisterEvent("UNIT_COMBAT")
+	pcall(function() self._frame:RegisterEvent("COMBAT_LOG_MESSAGE") end)
+	-- COMBAT_LOG_MESSAGE only fires while filtered combat-log events are
+	-- enabled; turn them on so line colours reach us (display is unaffected —
+	-- the chat combat-log window controls what is shown).
+	if C_CombatLog and C_CombatLog.SetFilteredEventsEnabled then
+		pcall(function() C_CombatLog.SetFilteredEventsEnabled(true) end)
+	end
 	for evtName in pairs(CHAT_OUTGOING_EVENTS) do
 		pcall(function() self._frame:RegisterEvent(evtName) end)
 	end
@@ -3837,6 +3999,7 @@ function Collector:Disable()
 		pcall(function() self._frame:UnregisterEvent("UNIT_HEALTH_FREQUENT") end)
 		self._frame:UnregisterEvent("COMBAT_TEXT_UPDATE")
 		self._frame:UnregisterEvent("UNIT_COMBAT")
+		pcall(function() self._frame:UnregisterEvent("COMBAT_LOG_MESSAGE") end)
 		for evtName in pairs(CHAT_OUTGOING_EVENTS) do
 			pcall(function() self._frame:UnregisterEvent(evtName) end)
 		end
