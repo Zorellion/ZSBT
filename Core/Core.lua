@@ -3253,6 +3253,9 @@ function Core:ScanPlayerAuras(updateInfo, silent)
             if not auraData then return end
             local instanceId = auraData.auraInstanceID
             if not instanceId then return end
+            -- Secret values (toys, some client builds) can't be used as table
+            -- keys — skip auras whose instanceId isn't a usable number.
+            if ZSBT.IsSafeNumber and not ZSBT.IsSafeNumber(instanceId) then return end
 
             local sid = ResolveSafeAuraSpellID(auraData)
             local name = extractAuraInfo(auraData)

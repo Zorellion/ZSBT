@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.4.1
+
+### Fixed
+- Crash (`attempted to index a table that cannot be indexed with secret keys`) when auras report secret `auraInstanceID` — e.g. toys like Essence of Yu'lon. Such auras are now skipped in `ScanPlayerAuras` since they can't be tracked without a usable key.
+
 ## 3.4
 
 ### Added
