@@ -2292,7 +2292,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			instanceAware = true
 		end
 		-- Strict outgoing mode: still allow UNIT_COMBAT(target) for outgoing, but only
-		-- when we can correlate it to a very recent player cast (MSBT-style safety).
+		-- when we can correlate it to a very recent player cast.
 		if isStrictOutgoingCombatLogOnly() then
 			restrict = true
 			instanceAware = true

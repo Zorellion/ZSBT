@@ -37,7 +37,7 @@ local RecycleAnimFrame
 local AcquireFontString
 
 ------------------------------------------------------------------------
--- Central Animation Engine (MSBT-style)
+-- Central Animation Engine
 -- Single OnUpdate, per-scroll-area active event lists, and spawn-time
 -- re-timing to prevent overlap.
 ------------------------------------------------------------------------
@@ -49,26 +49,26 @@ AnimEngine._enabled = AnimEngine._enabled or true
 AnimEngine._frame = AnimEngine._frame or CreateFrame("Frame")
 AnimEngine._areas = AnimEngine._areas or {} -- [areaKey] = { events = {}, staticLanes = {} }
 
-local MSBT_MOVEMENT_SPEED = (3 / 260)
-local MSBT_MIN_VERTICAL_SPACING = 8
-local MSBT_DEFAULT_FADE_PERCENT = 0.8
-local MSBT_ANIMATION_DELAY = 0.015
+local AE_MOVEMENT_SPEED = (3 / 260)
+local AE_MIN_VERTICAL_SPACING = 8
+local AE_DEFAULT_FADE_PERCENT = 0.8
+local AE_ANIMATION_DELAY = 0.015
 
-local MSBT_POW_FADE_IN_TIME = 0.17
-local MSBT_POW_DISPLAY_TIME = 1.5
-local MSBT_POW_FADE_OUT_TIME = 0.5
-local MSBT_POW_TEXT_DELTA = 0.7
-local MSBT_JIGGLE_DELAY_TIME = 0.05
+local AE_POW_FADE_IN_TIME = 0.17
+local AE_POW_DISPLAY_TIME = 1.5
+local AE_POW_FADE_OUT_TIME = 0.5
+local AE_POW_TEXT_DELTA = 0.7
+local AE_JIGGLE_DELAY_TIME = 0.05
 
-local MSBT_POW_TEXT_DELTA_STICKY = 0.95
-local MSBT_JIGGLE_DELAY_TIME_STICKY = 0.035
-local MSBT_JIGGLE_RANGE_STICKY = 2
+local AE_POW_TEXT_DELTA_STICKY = 0.95
+local AE_JIGGLE_DELAY_TIME_STICKY = 0.035
+local AE_JIGGLE_RANGE_STICKY = 2
 
 local function AE_Now()
 	return (GetTime and GetTime()) or 0
 end
 
-local function AE_MSBT_InitShockwave(newDisplayEvent)
+local function AE_InitShockwave(newDisplayEvent)
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
 	local scrollTime = (0.16 + (0.70 / animationSpeed) + 0.55)
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
@@ -82,7 +82,7 @@ local function AE_MSBT_InitShockwave(newDisplayEvent)
 	newDisplayEvent._zsbtShockwaveTheta = math.random() * (math.pi * 2.0)
 end
 
-local function AE_MSBT_InitIgnite(newDisplayEvent)
+local function AE_InitIgnite(newDisplayEvent)
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
 	local scrollTime = (0.12 + (0.90 / animationSpeed) + 0.70)
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
@@ -95,7 +95,7 @@ local function AE_MSBT_InitIgnite(newDisplayEvent)
 	newDisplayEvent.positionY = newDisplayEvent.positionY + ry
 end
 
-local function AE_MSBT_InitChromatic(newDisplayEvent)
+local function AE_InitChromatic(newDisplayEvent)
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
 	local scrollTime = (0.10 + (0.95 / animationSpeed) + 0.65)
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
@@ -109,7 +109,7 @@ local function AE_MSBT_InitChromatic(newDisplayEvent)
 	newDisplayEvent._zsbtChromPhase = math.random() * 10.0
 end
 
-local function AE_MSBT_InitStomp(newDisplayEvent)
+local function AE_InitStomp(newDisplayEvent)
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
 	local scrollTime = (0.14 + (0.60 / animationSpeed) + 0.55)
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
@@ -122,7 +122,7 @@ local function AE_MSBT_InitStomp(newDisplayEvent)
 	newDisplayEvent.positionY = newDisplayEvent.positionY + ry
 end
 
-local function AE_MSBT_InitScreenPunch(newDisplayEvent)
+local function AE_InitScreenPunch(newDisplayEvent)
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
 	local scrollTime = (0.12 + (0.52 / animationSpeed) + 0.45)
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
@@ -136,7 +136,7 @@ local function AE_MSBT_InitScreenPunch(newDisplayEvent)
 	newDisplayEvent._zsbtPunchTheta = math.random() * (math.pi * 2.0)
 end
 
-local function AE_MSBT_InitShatter(newDisplayEvent)
+local function AE_InitShatter(newDisplayEvent)
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
 	local scrollTime = (0.10 + (0.75 / animationSpeed) + 0.60)
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
@@ -149,7 +149,7 @@ local function AE_MSBT_InitShatter(newDisplayEvent)
 	newDisplayEvent.positionY = newDisplayEvent.positionY + ry
 end
 
-local function AE_MSBT_InitAfterimage(newDisplayEvent)
+local function AE_InitAfterimage(newDisplayEvent)
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
 	local scrollTime = (0.12 + (0.85 / animationSpeed) + 0.70)
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
@@ -162,7 +162,7 @@ local function AE_MSBT_InitAfterimage(newDisplayEvent)
 	newDisplayEvent.positionY = newDisplayEvent.positionY + ry
 end
 
-local function AE_MSBT_InitRumble(newDisplayEvent)
+local function AE_InitRumble(newDisplayEvent)
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
 	local scrollTime = (0.14 + (0.65 / animationSpeed) + 0.55)
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
@@ -177,7 +177,7 @@ local function AE_MSBT_InitRumble(newDisplayEvent)
 end
 
 local function AE_InitWaterfallSpacing(newDisplayEvent, activeDisplayEvents, direction)
-	-- Time-domain spacing like MSBT Straight/Parabola, but using Waterfall's scrollTime.
+	-- Time-domain spacing like Straight/Parabola, but using Waterfall's scrollTime.
 	-- This keeps waterfall variants unique (wave math stays in update), while preventing spawn-edge overlap.
 	local scrollTime = newDisplayEvent.scrollTime
 	local scrollHeight = newDisplayEvent.scrollHeight
@@ -193,7 +193,7 @@ local function AE_InitWaterfallSpacing(newDisplayEvent, activeDisplayEvents, dir
 		local current = newDisplayEvent
 		for x = numActive, 1, -1 do
 			local prev = activeDisplayEvents[x]
-			local topTimeCurrent = current.elapsedTime + (current.fontSize + MSBT_MIN_VERTICAL_SPACING) * perPixelTime
+			local topTimeCurrent = current.elapsedTime + (current.fontSize + AE_MIN_VERTICAL_SPACING) * perPixelTime
 			if prev.elapsedTime < topTimeCurrent then
 				prev.elapsedTime = topTimeCurrent
 			else
@@ -205,9 +205,9 @@ local function AE_InitWaterfallSpacing(newDisplayEvent, activeDisplayEvents, dir
 		local current = newDisplayEvent
 		for x = numActive, 1, -1 do
 			local prev = activeDisplayEvents[x]
-			local topTimePrev = prev.elapsedTime + (prev.fontSize + MSBT_MIN_VERTICAL_SPACING) * perPixelTime
+			local topTimePrev = prev.elapsedTime + (prev.fontSize + AE_MIN_VERTICAL_SPACING) * perPixelTime
 			if topTimePrev < current.elapsedTime then
-				prev.elapsedTime = current.elapsedTime + (prev.fontSize + MSBT_MIN_VERTICAL_SPACING) * perPixelTime
+				prev.elapsedTime = current.elapsedTime + (prev.fontSize + AE_MIN_VERTICAL_SPACING) * perPixelTime
 			else
 				break
 			end
@@ -238,8 +238,8 @@ local function AE_SecondsPerPixel(ev)
 end
 
 local function AE_MinSeparationSeconds(ev)
-	-- Approximate MSBT: (fontSize + MIN_VERTICAL_SPACING) worth of travel time.
-	-- We don't have MSBT's MOVEMENT_SPEED, so we use duration/height.
+	-- Approximate spacing: (fontSize + MIN_VERTICAL_SPACING) worth of travel time.
+	-- Movement speed is derived from duration/height.
 	local fontSize = ev.effectiveFontSize or ev.fontSize or 18
 	local spacing = 2
 	local secondsPerPixel = AE_SecondsPerPixel(ev)
@@ -285,7 +285,7 @@ local function AE_ResolveStyleId(ev)
 	return "Straight"
 end
 
-local function AE_MSBT_InitSlam(newDisplayEvent)
+local function AE_InitSlam(newDisplayEvent)
 	-- Slam is a centered, impact-style crit animation.
 	-- Use a short, fixed scrollTime similar to Pow but slightly punchier.
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
@@ -342,7 +342,7 @@ local function AE_ReRollCenteredPosition(newDisplayEvent, events)
 	end
 end
 
-local function AE_MSBT_AnchorPoint(ev)
+local function AE_AnchorPoint(ev)
 	local v = (ev.dirMult and ev.dirMult < 0) and "TOP" or "BOTTOM"
 	if ev.anchorH == "LEFT" then
 		return v .. "LEFT"
@@ -352,40 +352,40 @@ local function AE_MSBT_AnchorPoint(ev)
 	return v
 end
 
-local function AE_MSBT_ScrollUp(displayEvent, animationProgress)
+local function AE_ScrollUp(displayEvent, animationProgress)
 	displayEvent.positionY = displayEvent.scrollHeight * animationProgress
 end
 
-local function AE_MSBT_ScrollDown(displayEvent, animationProgress)
+local function AE_ScrollDown(displayEvent, animationProgress)
 	displayEvent.positionY = displayEvent.scrollHeight - displayEvent.scrollHeight * animationProgress
 end
 
-local function AE_MSBT_ScrollLeftParabolaUp(displayEvent, animationProgress)
-	AE_MSBT_ScrollUp(displayEvent, animationProgress)
+local function AE_ScrollLeftParabolaUp(displayEvent, animationProgress)
+	AE_ScrollUp(displayEvent, animationProgress)
 	local y = displayEvent.positionY - displayEvent.midPoint
 	displayEvent.positionX = (y * y) / displayEvent.fourA
 end
 
-local function AE_MSBT_ScrollLeftParabolaDown(displayEvent, animationProgress)
-	AE_MSBT_ScrollDown(displayEvent, animationProgress)
+local function AE_ScrollLeftParabolaDown(displayEvent, animationProgress)
+	AE_ScrollDown(displayEvent, animationProgress)
 	local y = displayEvent.positionY - displayEvent.midPoint
 	displayEvent.positionX = (y * y) / displayEvent.fourA
 end
 
-local function AE_MSBT_ScrollRightParabolaUp(displayEvent, animationProgress)
-	AE_MSBT_ScrollUp(displayEvent, animationProgress)
+local function AE_ScrollRightParabolaUp(displayEvent, animationProgress)
+	AE_ScrollUp(displayEvent, animationProgress)
 	local y = displayEvent.positionY - displayEvent.midPoint
 	displayEvent.positionX = displayEvent.scrollWidth - ((y * y) / displayEvent.fourA)
 end
 
-local function AE_MSBT_ScrollRightParabolaDown(displayEvent, animationProgress)
-	AE_MSBT_ScrollDown(displayEvent, animationProgress)
+local function AE_ScrollRightParabolaDown(displayEvent, animationProgress)
+	AE_ScrollDown(displayEvent, animationProgress)
 	local y = displayEvent.positionY - displayEvent.midPoint
 	displayEvent.positionX = displayEvent.scrollWidth - ((y * y) / displayEvent.fourA)
 end
 
-local function AE_MSBT_InitStraight(newDisplayEvent, activeDisplayEvents, direction)
-	newDisplayEvent.scrollTime = newDisplayEvent.scrollHeight * MSBT_MOVEMENT_SPEED
+local function AE_InitStraight(newDisplayEvent, activeDisplayEvents, direction)
+	newDisplayEvent.scrollTime = newDisplayEvent.scrollHeight * AE_MOVEMENT_SPEED
 
 	local anchorPoint = newDisplayEvent.anchorPoint
 	if anchorPoint == "BOTTOMLEFT" then
@@ -398,15 +398,15 @@ local function AE_MSBT_InitStraight(newDisplayEvent, activeDisplayEvents, direct
 
 	local numActiveAnimations = #activeDisplayEvents
 	if direction == "Down" then
-		newDisplayEvent.animationHandler = AE_MSBT_ScrollDown
+		newDisplayEvent.animationHandler = AE_ScrollDown
 		if numActiveAnimations == 0 then return end
 
-		local perPixelTime = MSBT_MOVEMENT_SPEED / newDisplayEvent.animationSpeed
+		local perPixelTime = AE_MOVEMENT_SPEED / newDisplayEvent.animationSpeed
 		local currentDisplayEvent = newDisplayEvent
 		local prevDisplayEvent, topTimeCurrent
 		for x = numActiveAnimations, 1, -1 do
 			prevDisplayEvent = activeDisplayEvents[x]
-			topTimeCurrent = currentDisplayEvent.elapsedTime + (currentDisplayEvent.fontSize + MSBT_MIN_VERTICAL_SPACING) * perPixelTime
+			topTimeCurrent = currentDisplayEvent.elapsedTime + (currentDisplayEvent.fontSize + AE_MIN_VERTICAL_SPACING) * perPixelTime
 			if prevDisplayEvent.elapsedTime < topTimeCurrent then
 				prevDisplayEvent.elapsedTime = topTimeCurrent
 			else
@@ -415,17 +415,17 @@ local function AE_MSBT_InitStraight(newDisplayEvent, activeDisplayEvents, direct
 			currentDisplayEvent = prevDisplayEvent
 		end
 	else
-		newDisplayEvent.animationHandler = AE_MSBT_ScrollUp
+		newDisplayEvent.animationHandler = AE_ScrollUp
 		if numActiveAnimations == 0 then return end
 
-		local perPixelTime = MSBT_MOVEMENT_SPEED / newDisplayEvent.animationSpeed
+		local perPixelTime = AE_MOVEMENT_SPEED / newDisplayEvent.animationSpeed
 		local currentDisplayEvent = newDisplayEvent
 		local prevDisplayEvent, topTimePrev
 		for x = numActiveAnimations, 1, -1 do
 			prevDisplayEvent = activeDisplayEvents[x]
-			topTimePrev = prevDisplayEvent.elapsedTime - (prevDisplayEvent.fontSize + MSBT_MIN_VERTICAL_SPACING) * perPixelTime
+			topTimePrev = prevDisplayEvent.elapsedTime - (prevDisplayEvent.fontSize + AE_MIN_VERTICAL_SPACING) * perPixelTime
 			if topTimePrev < currentDisplayEvent.elapsedTime then
-				prevDisplayEvent.elapsedTime = currentDisplayEvent.elapsedTime + (prevDisplayEvent.fontSize + MSBT_MIN_VERTICAL_SPACING) * perPixelTime
+				prevDisplayEvent.elapsedTime = currentDisplayEvent.elapsedTime + (prevDisplayEvent.fontSize + AE_MIN_VERTICAL_SPACING) * perPixelTime
 			else
 				return
 			end
@@ -434,11 +434,11 @@ local function AE_MSBT_InitStraight(newDisplayEvent, activeDisplayEvents, direct
 	end
 end
 
-local function AE_MSBT_AnimatePowJiggle(displayEvent, animationProgress)
-	local fadeInPercent = MSBT_POW_FADE_IN_TIME / displayEvent.scrollTime
+local function AE_AnimatePowJiggle(displayEvent, animationProgress)
+	local fadeInPercent = AE_POW_FADE_IN_TIME / displayEvent.scrollTime
 	if animationProgress <= fadeInPercent then
 		local isSticky = (displayEvent.meta and (displayEvent.meta.stickyCrit == true or displayEvent.meta.sticky == true))
-		local d = isSticky and MSBT_POW_TEXT_DELTA_STICKY or MSBT_POW_TEXT_DELTA
+		local d = isSticky and AE_POW_TEXT_DELTA_STICKY or AE_POW_TEXT_DELTA
 		local t = (fadeInPercent > 0) and (animationProgress / fadeInPercent) or 1
 		local k = 1 - t
 		local slam = isSticky and 1.35 or 1.0
@@ -446,11 +446,11 @@ local function AE_MSBT_AnimatePowJiggle(displayEvent, animationProgress)
 		return
 	end
 
-	if animationProgress <= (displayEvent.fadePercent or MSBT_DEFAULT_FADE_PERCENT) then
+	if animationProgress <= (displayEvent.fadePercent or AE_DEFAULT_FADE_PERCENT) then
 		local elapsedTime = displayEvent.elapsedTime or 0
 		local last = displayEvent.timeLastJiggled or 0
-		local delay = (displayEvent.meta and (displayEvent.meta.stickyCrit == true or displayEvent.meta.sticky == true)) and MSBT_JIGGLE_DELAY_TIME_STICKY or MSBT_JIGGLE_DELAY_TIME
-		local range = (displayEvent.meta and (displayEvent.meta.stickyCrit == true or displayEvent.meta.sticky == true)) and MSBT_JIGGLE_RANGE_STICKY or 1
+		local delay = (displayEvent.meta and (displayEvent.meta.stickyCrit == true or displayEvent.meta.sticky == true)) and AE_JIGGLE_DELAY_TIME_STICKY or AE_JIGGLE_DELAY_TIME
+		local range = (displayEvent.meta and (displayEvent.meta.stickyCrit == true or displayEvent.meta.sticky == true)) and AE_JIGGLE_RANGE_STICKY or 1
 		if (elapsedTime - last) > delay then
 			displayEvent.positionX = (displayEvent.originalPositionX or 0) + math.random(-range, range)
 			displayEvent.positionY = (displayEvent.originalPositionY or 0) + math.random(-range, range)
@@ -465,12 +465,12 @@ local function AE_MSBT_AnimatePowJiggle(displayEvent, animationProgress)
 	end
 end
 
-local function AE_MSBT_InitParabola(newDisplayEvent, activeDisplayEvents, direction, behavior)
-	AE_MSBT_InitStraight(newDisplayEvent, activeDisplayEvents, direction)
+local function AE_InitParabola(newDisplayEvent, activeDisplayEvents, direction, behavior)
+	AE_InitStraight(newDisplayEvent, activeDisplayEvents, direction)
 	if direction == "Down" then
-		newDisplayEvent.animationHandler = (behavior == "CurvedRight") and AE_MSBT_ScrollRightParabolaDown or AE_MSBT_ScrollLeftParabolaDown
+		newDisplayEvent.animationHandler = (behavior == "CurvedRight") and AE_ScrollRightParabolaDown or AE_ScrollLeftParabolaDown
 	else
-		newDisplayEvent.animationHandler = (behavior == "CurvedRight") and AE_MSBT_ScrollRightParabolaUp or AE_MSBT_ScrollLeftParabolaUp
+		newDisplayEvent.animationHandler = (behavior == "CurvedRight") and AE_ScrollRightParabolaUp or AE_ScrollLeftParabolaUp
 	end
 	local midPoint = newDisplayEvent.scrollHeight / 2
 	newDisplayEvent.midPoint = midPoint
@@ -480,11 +480,11 @@ local function AE_MSBT_InitParabola(newDisplayEvent, activeDisplayEvents, direct
 	newDisplayEvent.fourA = ((midPoint * midPoint) / newDisplayEvent.scrollWidth) / inten
 end
 
-local function AE_MSBT_AnimatePowNormal(displayEvent, animationProgress)
-	local fadeInPercent = MSBT_POW_FADE_IN_TIME / displayEvent.scrollTime
+local function AE_AnimatePowNormal(displayEvent, animationProgress)
+	local fadeInPercent = AE_POW_FADE_IN_TIME / displayEvent.scrollTime
 	if animationProgress <= fadeInPercent then
 		local isSticky = (displayEvent.meta and (displayEvent.meta.stickyCrit == true or displayEvent.meta.sticky == true))
-		local d = isSticky and MSBT_POW_TEXT_DELTA_STICKY or MSBT_POW_TEXT_DELTA
+		local d = isSticky and AE_POW_TEXT_DELTA_STICKY or AE_POW_TEXT_DELTA
 		local t = (fadeInPercent > 0) and (animationProgress / fadeInPercent) or 1
 		local k = 1 - t
 		local slam = isSticky and 1.35 or 1.0
@@ -498,15 +498,15 @@ local function AE_MSBT_AnimatePowNormal(displayEvent, animationProgress)
 	end
 end
 
-local function AE_MSBT_InitPow(newDisplayEvent, activeDisplayEvents, direction)
+local function AE_InitPow(newDisplayEvent, activeDisplayEvents, direction)
 	local animationSpeed = newDisplayEvent.animationSpeed
-	local scrollTime = MSBT_POW_FADE_IN_TIME + (MSBT_POW_DISPLAY_TIME / animationSpeed) + MSBT_POW_FADE_OUT_TIME
+	local scrollTime = AE_POW_FADE_IN_TIME + (AE_POW_DISPLAY_TIME / animationSpeed) + AE_POW_FADE_OUT_TIME
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
-	newDisplayEvent.fadePercent = (MSBT_POW_FADE_IN_TIME + (MSBT_POW_DISPLAY_TIME / animationSpeed)) / scrollTime
+	newDisplayEvent.fadePercent = (AE_POW_FADE_IN_TIME + (AE_POW_DISPLAY_TIME / animationSpeed)) / scrollTime
 	local wantJiggle = (newDisplayEvent.meta
 		and (newDisplayEvent.meta.stickyCrit == true or newDisplayEvent.meta.sticky == true)
 		and newDisplayEvent.meta.stickyJiggle ~= false)
-	newDisplayEvent.animationHandler = wantJiggle and AE_MSBT_AnimatePowJiggle or AE_MSBT_AnimatePowNormal
+	newDisplayEvent.animationHandler = wantJiggle and AE_AnimatePowJiggle or AE_AnimatePowNormal
 
 	local anchorPoint = newDisplayEvent.anchorPoint
 	if anchorPoint == "BOTTOMLEFT" then
@@ -519,7 +519,7 @@ local function AE_MSBT_InitPow(newDisplayEvent, activeDisplayEvents, direction)
 	newDisplayEvent.positionY = newDisplayEvent.scrollHeight / 2
 
 	-- Randomized seed inside the area to reduce overlap (requested behavior).
-	-- Keep the range conservative so it still "feels" like MSBT Pow.
+	-- Keep the range conservative so it still "feels" like Pow.
 	local rx = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollWidth * 0.25)
 	local ry = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollHeight * 0.20)
 	newDisplayEvent.positionX = newDisplayEvent.positionX + rx
@@ -532,34 +532,34 @@ local function AE_MSBT_InitPow(newDisplayEvent, activeDisplayEvents, direction)
 	local numActiveAnimations = #activeDisplayEvents
 	if (numActiveAnimations == 0) then return end
 
-	-- MSBT anti-overlap: re-stack existing Pow events vertically around a middle reference.
+	-- Anti-overlap: re-stack existing Pow events vertically around a middle reference.
 	if direction == "Down" then
 		local middleSticky = math.floor((numActiveAnimations + 2) / 2)
 		activeDisplayEvents[middleSticky].originalPositionY = newDisplayEvent.scrollHeight / 2
 		activeDisplayEvents[middleSticky].positionY = activeDisplayEvents[middleSticky].originalPositionY
 		for x = middleSticky - 1, 1, -1 do
-			activeDisplayEvents[x].originalPositionY = activeDisplayEvents[x + 1].originalPositionY - activeDisplayEvents[x].fontSize - MSBT_MIN_VERTICAL_SPACING
+			activeDisplayEvents[x].originalPositionY = activeDisplayEvents[x + 1].originalPositionY - activeDisplayEvents[x].fontSize - AE_MIN_VERTICAL_SPACING
 			activeDisplayEvents[x].positionY = activeDisplayEvents[x].originalPositionY
 		end
 		for x = middleSticky + 1, numActiveAnimations do
-			activeDisplayEvents[x].originalPositionY = activeDisplayEvents[x - 1].originalPositionY + activeDisplayEvents[x - 1].fontSize + MSBT_MIN_VERTICAL_SPACING
+			activeDisplayEvents[x].originalPositionY = activeDisplayEvents[x - 1].originalPositionY + activeDisplayEvents[x - 1].fontSize + AE_MIN_VERTICAL_SPACING
 			activeDisplayEvents[x].positionY = activeDisplayEvents[x].originalPositionY
 		end
-		newDisplayEvent.originalPositionY = activeDisplayEvents[numActiveAnimations].originalPositionY + activeDisplayEvents[numActiveAnimations].fontSize + MSBT_MIN_VERTICAL_SPACING
+		newDisplayEvent.originalPositionY = activeDisplayEvents[numActiveAnimations].originalPositionY + activeDisplayEvents[numActiveAnimations].fontSize + AE_MIN_VERTICAL_SPACING
 		newDisplayEvent.positionY = newDisplayEvent.originalPositionY
 	else
 		local middleSticky = math.ceil(numActiveAnimations / 2)
 		activeDisplayEvents[middleSticky].originalPositionY = newDisplayEvent.scrollHeight / 2
 		activeDisplayEvents[middleSticky].positionY = activeDisplayEvents[middleSticky].originalPositionY
 		for x = middleSticky - 1, 1, -1 do
-			activeDisplayEvents[x].originalPositionY = activeDisplayEvents[x + 1].originalPositionY + activeDisplayEvents[x + 1].fontSize + MSBT_MIN_VERTICAL_SPACING
+			activeDisplayEvents[x].originalPositionY = activeDisplayEvents[x + 1].originalPositionY + activeDisplayEvents[x + 1].fontSize + AE_MIN_VERTICAL_SPACING
 			activeDisplayEvents[x].positionY = activeDisplayEvents[x].originalPositionY
 		end
 		for x = middleSticky + 1, numActiveAnimations do
-			activeDisplayEvents[x].originalPositionY = activeDisplayEvents[x - 1].originalPositionY - activeDisplayEvents[x].fontSize - MSBT_MIN_VERTICAL_SPACING
+			activeDisplayEvents[x].originalPositionY = activeDisplayEvents[x - 1].originalPositionY - activeDisplayEvents[x].fontSize - AE_MIN_VERTICAL_SPACING
 			activeDisplayEvents[x].positionY = activeDisplayEvents[x].originalPositionY
 		end
-		newDisplayEvent.originalPositionY = activeDisplayEvents[numActiveAnimations].originalPositionY - activeDisplayEvents[numActiveAnimations].fontSize - MSBT_MIN_VERTICAL_SPACING
+		newDisplayEvent.originalPositionY = activeDisplayEvents[numActiveAnimations].originalPositionY - activeDisplayEvents[numActiveAnimations].fontSize - AE_MIN_VERTICAL_SPACING
 		newDisplayEvent.positionY = newDisplayEvent.originalPositionY
 	end
 end
@@ -615,7 +615,7 @@ local function AE_UpdateEvent(ev, dt)
 	if not ev then return true end
 	local tNow = AE_Now()
 	if ev.startAt and tNow < ev.startAt then
-		-- MSBT-like behavior: queued events should not be visible until they start.
+		-- Queued events should not be visible until they start.
 		-- Without this, repeated tests create a cluttered pile at the spawn anchor.
 		if ev.fs then ev.fs:SetAlpha(0) end
 		if ev._zsbtAfterimageFS1 then ev._zsbtAfterimageFS1:SetAlpha(0) end
@@ -631,9 +631,9 @@ local function AE_UpdateEvent(ev, dt)
 		return false
 	end
 
-	-- MSBT throttles updates to ~66Hz using ANIMATION_DELAY.
+	-- Updates are throttled to ~66Hz using ANIMATION_DELAY.
 	ev.timeSinceLastUpdate = (ev.timeSinceLastUpdate or 0) + dt
-	if ev.timeSinceLastUpdate < MSBT_ANIMATION_DELAY then
+	if ev.timeSinceLastUpdate < AE_ANIMATION_DELAY then
 		return false
 	end
 	local step = ev.timeSinceLastUpdate
@@ -672,7 +672,7 @@ local function AE_UpdateEvent(ev, dt)
 	end
 
 	if styleId == "Pow" then
-		-- MSBT Pow: uses SetTextHeight during fade-in and restores font once.
+		-- Pow: uses SetTextHeight during fade-in and restores font once.
 		if ev.animationHandler then
 			ev.animationHandler(ev, progress)
 		end
@@ -693,7 +693,7 @@ local function AE_UpdateEvent(ev, dt)
 				if yOff2 > maxY then yOff2 = maxY end
 			end
 		end
-		local fadePercent = ev.fadePercent or MSBT_DEFAULT_FADE_PERCENT
+		local fadePercent = ev.fadePercent or AE_DEFAULT_FADE_PERCENT
 		if progress >= fadePercent then
 			ev.alpha = (1 - progress) / (1 - fadePercent)
 		else
@@ -1057,7 +1057,7 @@ local function AE_UpdateEvent(ev, dt)
 		ev.fs:SetAlpha(math.max(0, alpha))
 
 	elseif styleId == "Static" then
-		-- MSBT-like static: no movement, late fade only. Placement happens via lane.
+		-- Static: no movement, late fade only. Placement happens via lane.
 		xOff2, yOff2 = 0, 0
 		local fadeStart = 0.80
 		if progress >= fadeStart then
@@ -1066,7 +1066,7 @@ local function AE_UpdateEvent(ev, dt)
 		ev.fs:SetAlpha(math.max(0, alpha))
 
 	elseif styleId == "Parabola" then
-		-- MSBT exact parabola uses animationHandler set during init.
+		-- Parabola uses the animationHandler set during init.
 		if ev.animationHandler then
 			ev.animationHandler(ev, progress)
 			xOff2 = (ev.positionX or 0) - AnchorOriginX()
@@ -1078,7 +1078,7 @@ local function AE_UpdateEvent(ev, dt)
 			fadeInPercent = fadeInTime / ev.scrollTime
 			if fadeInPercent > 0.90 then fadeInPercent = 0.90 end
 		end
-		local fadePercent = ev.fadePercent or MSBT_DEFAULT_FADE_PERCENT
+		local fadePercent = ev.fadePercent or AE_DEFAULT_FADE_PERCENT
 		if fadeInPercent > 0 and progress <= fadeInPercent then
 			ev.alpha = progress / fadeInPercent
 		elseif progress >= fadePercent then
@@ -1174,13 +1174,13 @@ local function AE_UpdateEvent(ev, dt)
 		ev.fs:SetAlpha(math.max(0, alpha))
 
 	else
-		-- Straight (MSBT exact)
+		-- Straight
 		if ev.animationHandler then
 			ev.animationHandler(ev, progress)
 			xOff2 = (ev.positionX or 0) - AnchorOriginX()
 			yOff2 = ev.positionY or 0
 		end
-		local fadePercent = ev.fadePercent or MSBT_DEFAULT_FADE_PERCENT
+		local fadePercent = ev.fadePercent or AE_DEFAULT_FADE_PERCENT
 		if progress >= fadePercent then
 			ev.alpha = (1 - progress) / (1 - fadePercent)
 		else
@@ -1209,7 +1209,7 @@ local function AE_UpdateEvent(ev, dt)
 	end
 
 	-- Placement (match existing semantics)
-	-- MSBT does not ClearAllPoints each tick; doing so can cause flicker.
+	-- Do not ClearAllPoints each tick; doing so can cause flicker.
 	if styleId ~= "Straight" and styleId ~= "Parabola" and styleId ~= "Pow" and styleId ~= "Slam" then
 		ev.fs:ClearAllPoints()
 	end
@@ -1300,12 +1300,12 @@ local function AE_UpdateEvent(ev, dt)
 	if styleId == "Static" and ev.staticPoint and ev.staticSlotY ~= nil then
 		ev.fs:SetPoint(ev.staticPoint, ev.parent, ev.staticPoint, 0, ev.staticSlotY)
 	elseif styleId == "Pow" or styleId == "Slam" or styleId == "Shockwave" or styleId == "Ignite" or styleId == "Chromatic" or styleId == "Stomp" or styleId == "ScreenPunch" or styleId == "Shatter" or styleId == "Afterimage" or styleId == "Rumble" then
-		-- MSBT Pow uses the scroll area's anchorPoint.
+		-- Pow uses the scroll area's anchorPoint.
 		ev.fs:SetPoint(point, ev.parent, point, xOff2, yOff2)
 	else
 		local yPlaced = laneOff + yOff2
 		-- When anchored to TOP* for Down scrolling, positive y offsets move ABOVE the frame.
-		-- Convert MSBT-style [0..scrollHeight] offsets into downward-negative offsets.
+		-- Convert [0..scrollHeight] offsets into downward-negative offsets.
 		if type(point) == "string" and point:sub(1, 3) == "TOP" then
 			local sh = ev.scrollHeight or ev.areaH or 0
 			yPlaced = laneOff - (sh - (yOff2 or 0))
@@ -1313,7 +1313,7 @@ local function AE_UpdateEvent(ev, dt)
 		ev.fs:SetPoint(point, ev.parent, point, xOff2, yPlaced)
 	end
 	-- Edge fade (keep your existing edge behavior)
-	-- MSBT Straight/Parabola doesn't apply extra post-fade; it can cause visible jitter.
+	-- Straight/Parabola doesn't apply extra post-fade; it can cause visible jitter.
 	if styleId ~= "Straight" and styleId ~= "Parabola" and styleId ~= "Pow" and styleId ~= "Slam" then
 		local currentAlpha = ev.fs:GetAlpha()
 		local absY = math.abs(laneOff + yOff2)
@@ -1374,16 +1374,16 @@ function AnimEngine:Enqueue(areaKey, ev)
 	local st = AE_GetAreaState(areaKey)
 	local events = st.events
 
-	-- MSBT-exact initialization for Straight/Parabola.
+	-- Initialization for Straight/Parabola.
 	if ev.styleId == "Straight" or ev.styleId == "Parabola" then
 		ev.startAt = nil
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		ev.anchorPoint = AE_AnchorPoint(ev)
 		ev.animationSpeed = (type(ev.animationSpeed) == "number" and ev.animationSpeed > 0) and ev.animationSpeed or 1
 		ev.masterAlpha = ev.fontAlpha or 1
-		ev.fadePercent = MSBT_DEFAULT_FADE_PERCENT
+		ev.fadePercent = AE_DEFAULT_FADE_PERCENT
 		ev.alpha = 1
 		ev.fontSize = ev.effectiveFontSize or ev.fontSize or 18
 		-- Keep the baseline inside the area so large/crit text doesn't spawn above the frame.
@@ -1403,7 +1403,7 @@ function AnimEngine:Enqueue(areaKey, ev)
 
 		if ev.styleId == "Parabola" then
 			local behavior = (ev.paraDir and ev.paraDir > 0) and "CurvedRight" or "CurvedLeft"
-			AE_MSBT_InitParabola(ev, active, direction, behavior)
+			AE_InitParabola(ev, active, direction, behavior)
 			-- Prevent first-frame lateral snap: seed position on the curve at progress=0.
 			if ev.animationHandler then
 				ev.animationHandler(ev, 0)
@@ -1411,9 +1411,9 @@ function AnimEngine:Enqueue(areaKey, ev)
 			ev.alpha = 0
 			if ev.fs then ev.fs:SetAlpha(0) end
 		else
-			AE_MSBT_InitStraight(ev, active, direction)
+			AE_InitStraight(ev, active, direction)
 		end
-		-- MSBT applies speed after init.
+		-- Speed is applied after init.
 		ev.scrollTime = (ev.scrollTime or 0) / ev.animationSpeed
 	end
 
@@ -1423,8 +1423,8 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
-		AE_MSBT_InitSlam(ev)
+		ev.anchorPoint = AE_AnchorPoint(ev)
+		AE_InitSlam(ev)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
 	end
@@ -1434,8 +1434,8 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
-		AE_MSBT_InitShockwave(ev)
+		ev.anchorPoint = AE_AnchorPoint(ev)
+		AE_InitShockwave(ev)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
 	end
@@ -1445,8 +1445,8 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
-		AE_MSBT_InitIgnite(ev)
+		ev.anchorPoint = AE_AnchorPoint(ev)
+		AE_InitIgnite(ev)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
 	end
@@ -1456,8 +1456,8 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
-		AE_MSBT_InitChromatic(ev)
+		ev.anchorPoint = AE_AnchorPoint(ev)
+		AE_InitChromatic(ev)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
 	end
@@ -1467,8 +1467,8 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
-		AE_MSBT_InitStomp(ev)
+		ev.anchorPoint = AE_AnchorPoint(ev)
+		AE_InitStomp(ev)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
 	end
@@ -1478,8 +1478,8 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
-		AE_MSBT_InitScreenPunch(ev)
+		ev.anchorPoint = AE_AnchorPoint(ev)
+		AE_InitScreenPunch(ev)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
 	end
@@ -1489,8 +1489,8 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
-		AE_MSBT_InitShatter(ev)
+		ev.anchorPoint = AE_AnchorPoint(ev)
+		AE_InitShatter(ev)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
 	end
@@ -1500,8 +1500,8 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
-		AE_MSBT_InitAfterimage(ev)
+		ev.anchorPoint = AE_AnchorPoint(ev)
+		AE_InitAfterimage(ev)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
 	end
@@ -1511,14 +1511,14 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
-		AE_MSBT_InitRumble(ev)
+		ev.anchorPoint = AE_AnchorPoint(ev)
+		AE_InitRumble(ev)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
 	end
 
 
-	-- Waterfall: keep unique wave motion, but use MSBT-style retiming to prevent overlap.
+	-- Waterfall: keep unique wave motion, but use retiming to prevent overlap.
 	if ev.styleId == "Waterfall" then
 		ev.startAt = nil
 		ev.elapsedTime = 0
@@ -1545,16 +1545,16 @@ function AnimEngine:Enqueue(areaKey, ev)
 		AE_InitWaterfallSpacing(ev, active, direction)
 	end
 
-	-- MSBT-exact initialization for Pow (sticky crits).
+	-- Initialization for Pow (sticky crits).
 	if ev.styleId == "Pow" then
 		ev.startAt = nil
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		ev.anchorPoint = AE_AnchorPoint(ev)
 		ev.animationSpeed = (type(ev.animationSpeed) == "number" and ev.animationSpeed > 0) and ev.animationSpeed or 1
 		ev.masterAlpha = ev.fontAlpha or 1
-		ev.fadePercent = MSBT_DEFAULT_FADE_PERCENT
+		ev.fadePercent = AE_DEFAULT_FADE_PERCENT
 		ev.alpha = 1
 		ev.fontSize = ev.effectiveFontSize or ev.fontSize or 18
 		-- Keep the baseline inside the area so large/crit text doesn't spawn above the frame.
@@ -1571,7 +1571,7 @@ function AnimEngine:Enqueue(areaKey, ev)
 				active[#active + 1] = e
 			end
 		end
-		AE_MSBT_InitPow(ev, active, direction)
+		AE_InitPow(ev, active, direction)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / ev.animationSpeed
 	end
@@ -2697,7 +2697,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             end
         end
     end
-    -- Lane spacing. Static in MSBT uses very tight spacing (fontSize + small padding).
+    -- Lane spacing. Static uses very tight spacing (fontSize + small padding).
     -- Using too much padding makes Static run out of lanes and wrap early.
     local lineHeight = effectiveFontSize + 6
     if isStaticStyle then
@@ -2744,7 +2744,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
                 slotOffset = (pickedSlot - center) * lineHeight
             end
         elseif animStyle == "Static" or animStyle == "static" then
-            -- MSBT Static stacks in fixed lanes in a bottom-anchored coordinate space.
+            -- Static stacks in fixed lanes in a bottom-anchored coordinate space.
             -- Up: start at bottom (0) and go up. Down: start at top (areaH) and go down.
             if dirMult > 0 then
                 staticSlotY = pickedSlot * lineHeight
@@ -2757,7 +2757,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             slotOffset = pickedSlot * lineHeight * dirMult
         end
         -- Mark this lane as occupied long enough for the text to clear.
-        -- Static should occupy the lane for the full duration (MSBT-like).
+        -- Static should occupy the lane for the full duration.
         local occupyFor = duration
         if isStaticStyle then
             occupyFor = duration
@@ -2975,7 +2975,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
     -- Keep the legacy per-event OnUpdate path as a fallback.
     if AnimEngine and AnimEngine.Enqueue and AnimEngine._enabled then
         local startPointEngine = startPoint
-        -- Parabola in MSBT uses a left-origin coordinate space.
+        -- Parabola uses a left-origin coordinate space.
         if isParabola then
             startPointEngine = (dirMult > 0) and "BOTTOMLEFT" or "TOPLEFT"
         end
@@ -3110,7 +3110,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             --------------------------------------------------------
             -- STATIC — fade in, hold, fade out (notifications)
             --------------------------------------------------------
-            -- MSBT Static: no movement; alpha stays full until late fade.
+            -- Static: no movement; alpha stays full until late fade.
             xOff2 = 0
             yOff2 = 0
             local alpha = fontAlpha
@@ -3124,7 +3124,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             --------------------------------------------------------
             -- PARABOLA — deep half-moon arc
             --------------------------------------------------------
-            -- Match MSBT's Parabola math:
+            -- Match the Parabola math:
             -- ScrollUp:  positionY = scrollHeight * progress
             -- ScrollDown:positionY = scrollHeight - scrollHeight * progress
             -- x = (y-mid)^2 / fourA, where fourA = (mid^2)/scrollWidth
@@ -3156,7 +3156,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
                 positionX = x
             end
 
-            -- MSBT's parabola always operates in a left-origin coordinate space.
+            -- Parabola always operates in a left-origin coordinate space.
             -- To match CurvedLeft/CurvedRight semantics, we treat positionX as
             -- the literal offset from the LEFT edge and ignore the area's alignment.
             xOff2 = positionX
@@ -3303,13 +3303,13 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
         if usePow then
             fs:SetPoint("CENTER", parent, "CENTER", xOff2, yOff2)
         else
-            -- MSBT parabola anchors to the left edge (BottomLeft/TopLeft) regardless
+            -- Parabola anchors to the left edge (BottomLeft/TopLeft) regardless
             -- of the scroll area's alignment setting.
             local point = startPoint
             if isParabola then
                 point = (dirMult > 0) and "BOTTOMLEFT" or "TOPLEFT"
             end
-            -- MSBT Static uses bottom-anchored Y coordinates for stacking.
+            -- Static uses bottom-anchored Y coordinates for stacking.
             if staticSlotY ~= nil then
                 if anchorH == "LEFT" then
                     point = "BOTTOMLEFT"

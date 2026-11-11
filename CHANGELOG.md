@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.5.1
+
+### Added
+- Aura notifications no longer go silent in combat on secret-value clients: `SPELL_AURA_*` combat-text notices now act as a fallback when `UNIT_AURA` payloads are unreadable, deduplicated against readable aura updates.
+- Buff refresh re-notification: recasting a buff that keeps the same aura instance now re-shows its gain when `expirationTime` jumps forward.
+- Recast pairing: a cast of a known self-buff within 0.5s of an unreadable aura update re-shows the buff's cached name/icon.
+- `C_Secrets` per-index/per-instance predicates refine secret-aura gating (skips individual secret auras instead of all-or-nothing where the client supports it).
+- Name-keyed aura rules (`"name:X"` in `auraRules`) match every rank of an aura by name when no spellID rule exists.
+- Aura notifications can carry spell icons via `meta.spellIcon`.
+
+### Fixed
+- Duplicate aura gain notifications: recast pairing, watched-presence rules, and refresh re-notifies now stamp the aura-read timestamp so the combat-text fallback can't double-emit (e.g. two `+Buff` for one cast).
+
 ## 3.5.0
 
 ### Added
@@ -519,7 +532,7 @@ Both bugs only reproduce in group instanced content where Blizzard's secret valu
 ## 1.2.12
 
 ### Added
-- Added MSBT-style Trade Skill notifications (Skill Ups and Learned Recipes/Spells) routed through the Notifications system, with per-category scroll area routing and message templates.
+- Added Trade Skill notifications (Skill Ups and Learned Recipes/Spells) routed through the Notifications system, with per-category scroll area routing and message templates.
 
 ## 1.2.11
 
@@ -582,7 +595,7 @@ Both bugs only reproduce in group instanced content where Blizzard's secret valu
 ## 1.2.2
 
 ### Added
-- Added MSBT-style Loot Alerts parity: separate notifications for Loot Items, Loot Money, and Loot Currency.
+- Added Loot Alerts parity: separate notifications for Loot Items, Loot Money, and Loot Currency.
 - Added Loot Alerts templates for loot items, money, and currency with template codes (%e/%a/%t).
 - Added loot filtering options: quality exclusions, item allow/deny lists, always-show quest items, and optional show created/pushed items.
 
