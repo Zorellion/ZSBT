@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.5.0
+
+### Added
+- Full localization: the entire addon UI (menus, tabs, options, buttons, tooltips, dialogs, notifications, slash-command output) now routes through AceLocale with English-text keys.
+- Eight complete locale files: `deDE`, `esES`, `frFR`, `itIT`, `ptBR`, `ruRU`, `zhCN`, `koKR` — all at full key parity (1,077 keys each). Untranslated or missing keys fall back to English automatically.
+- Active locale now shown in the login message and at the top of the Help tab.
+- `Locales/ForceLocale.lua` test hook (disabled by default via commented .toc entry) for previewing any locale on an English client.
+
+### Fixed
+- Second localization sweep: ~50 user-facing strings that bypassed the first pass (color-coded tab/group names, dynamic button labels, probe/status messages, editor labels, help topic names, UT trigger defaults, static popup dialogs verified) are now localized.
+- enUS `TEST 12345` locale entry was `true` instead of a string — would have thrown a concat error in the scroll-area test feature.
+
 ## 3.4.4
 
 ### Fixed

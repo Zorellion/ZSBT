@@ -4,6 +4,8 @@
 ------------------------------------------------------------------------
 local ADDON_NAME, ZSBT = ...
 
+local L = ZSBT.L
+
 ------------------------------------------------------------------------
 -- Create the Ace3 addon object
 ------------------------------------------------------------------------
@@ -111,7 +113,7 @@ local function GetUTAnnouncerPresetTriggers()
 			eventType = "UT_KILL_1",
 			throttleSec = 0,
 			action = {
-				text = "First Blood!",
+				text = L["First Blood!"],
 				scrollArea = "Notifications",
 				sound = "ZSBT: First Blood",
 				color = { r = 1.0, g = 0.0, b = 0.11764705882353 },
@@ -129,7 +131,7 @@ local function GetUTAnnouncerPresetTriggers()
 			eventType = "UT_KILL_2",
 			throttleSec = 0,
 			action = {
-				text = "Double Kill!",
+				text = L["Double Kill!"],
 				scrollArea = "Notifications",
 				sound = "ZSBT: Double Kill",
 				color = { r = 1.0, g = 0.0, b = 0.11764705882353 },
@@ -147,7 +149,7 @@ local function GetUTAnnouncerPresetTriggers()
 			eventType = "UT_KILL_3",
 			throttleSec = 0,
 			action = {
-				text = "Killing Spree!",
+				text = L["Killing Spree!"],
 				scrollArea = "Notifications",
 				sound = "ZSBT: Killing Spree",
 				color = { r = 1.0, g = 0.0, b = 0.11764705882353 },
@@ -165,7 +167,7 @@ local function GetUTAnnouncerPresetTriggers()
 			eventType = "UT_KILL_4",
 			throttleSec = 0,
 			action = {
-				text = "Mega Kill!",
+				text = L["Mega Kill!"],
 				scrollArea = "Notifications",
 				sound = "ZSBT: Mega Kill",
 				color = { r = 1.0, g = 0.0, b = 0.11764705882353 },
@@ -183,7 +185,7 @@ local function GetUTAnnouncerPresetTriggers()
 			eventType = "UT_KILL_5",
 			throttleSec = 0,
 			action = {
-				text = "Rampage!",
+				text = L["Rampage!"],
 				scrollArea = "Notifications",
 				sound = "ZSBT: Rampage",
 				color = { r = 1.0, g = 0.0, b = 0.11764705882353 },
@@ -201,7 +203,7 @@ local function GetUTAnnouncerPresetTriggers()
 			eventType = "UT_KILL_6",
 			throttleSec = 0,
 			action = {
-				text = "Unstoppable!",
+				text = L["Unstoppable!"],
 				scrollArea = "Notifications",
 				sound = "ZSBT: Unstoppable",
 				color = { r = 1.0, g = 0.0, b = 0.11764705882353 },
@@ -219,7 +221,7 @@ local function GetUTAnnouncerPresetTriggers()
 			eventType = "UT_KILL_7",
 			throttleSec = 0,
 			action = {
-				text = "God Like!",
+				text = L["God Like!"],
 				scrollArea = "Notifications",
 				sound = "ZSBT: Godlike",
 				color = { r = 1.0, g = 0.81176470588235, b = 0.0 },
@@ -1366,14 +1368,14 @@ function Addon:OnInitialize()
 					local function copyFromSelectedChar(copySpellRules, copyAuraRules, copyTriggers)
 						local fromKey = addon._copyFromCharKey
 						if type(fromKey) ~= "string" or fromKey == "" then
-							if addon and addon.Print then addon:Print("Select a source character first.") end
+							if addon and addon.Print then addon:Print(L["Select a source character first."]) end
 							return
 						end
 						local ch = getSvCharTable()
 						local src = ch and ch[fromKey]
 						local dst = mainDb and mainDb.char
 						if type(src) ~= "table" or type(dst) ~= "table" then
-							if addon and addon.Print then addon:Print("Source/target character data not available.") end
+							if addon and addon.Print then addon:Print(L["Source/target character data not available."]) end
 							return
 						end
 						local mode = addon._copyCharMode
@@ -1445,79 +1447,79 @@ function Addon:OnInitialize()
 								pcall(function() ACR2:NotifyChange("ZSBT_BuffRules") end)
 								pcall(function() ACR2:NotifyChange("ZSBT") end)
 							end
-							if addon and addon.Print then addon:Print("Copied rules/triggers from " .. tostring(fromKey) .. " (" .. tostring(mode) .. ").") end
+							if addon and addon.Print then addon:Print(L["Copied rules/triggers from "] .. tostring(fromKey) .. " (" .. tostring(mode) .. ").") end
 						end
 					end
 
 					profilesTable.args.zsbtPresetProfiles = {
 						type = "group",
-						name = "Preset Profiles",
+						name = L["Preset Profiles"],
 						order = 999,
 						inline = true,
 						args = {
 						desc = {
 							type = "description",
-							name = "Restore shipped preset profiles (layouts) to their defaults. This only modifies the preset profile itself and does not change which profile you currently have selected.",
+							name = L["Restore shipped preset profiles (layouts) to their defaults. This only modifies the preset profile itself and does not change which profile you currently have selected."],
 							order = 1,
 							width = "full",
 						},
 						resetMelee = {
 							type = "execute",
-							name = "Reset Preset: Melee",
+							name = L["Reset Preset: Melee"],
 							order = 2,
 							width = "full",
 							func = function()
 								if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
 									ZSBT.Presets.ResetPreset("Melee")
-									if addon and addon.Print then addon:Print("Reset preset: Melee") end
+									if addon and addon.Print then addon:Print(L["Reset preset: Melee"]) end
 								end
 							end,
 						},
 						resetRanged = {
 							type = "execute",
-							name = "Reset Preset: Ranged",
+							name = L["Reset Preset: Ranged"],
 							order = 3,
 							width = "full",
 							func = function()
 								if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
 									ZSBT.Presets.ResetPreset("Ranged")
-									if addon and addon.Print then addon:Print("Reset preset: Ranged") end
+									if addon and addon.Print then addon:Print(L["Reset preset: Ranged"]) end
 								end
 							end,
 						},
 						resetTank = {
 							type = "execute",
-							name = "Reset Preset: Tank",
+							name = L["Reset Preset: Tank"],
 							order = 4,
 							width = "full",
 							func = function()
 								if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
 									ZSBT.Presets.ResetPreset("Tank")
-									if addon and addon.Print then addon:Print("Reset preset: Tank") end
+									if addon and addon.Print then addon:Print(L["Reset preset: Tank"]) end
 								end
 							end,
 						},
 						resetHealer = {
 							type = "execute",
-							name = "Reset Preset: Healer",
+							name = L["Reset Preset: Healer"],
 							order = 5,
 							width = "full",
 							func = function()
 								if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
 									ZSBT.Presets.ResetPreset("Healer")
-									if addon and addon.Print then addon:Print("Reset preset: Healer") end
+									if addon and addon.Print then addon:Print(L["Reset preset: Healer"]) end
 								end
 							end,
 						},
 						resetPetClass = {
 							type = "execute",
-							name = "Reset Preset: Pet Class",
+							name = L["Reset Preset: Pet Class"],
 							order = 6,
 							width = "full",
 							func = function()
 								if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
 									ZSBT.Presets.ResetPreset("PetClass")
-									if addon and addon.Print then addon:Print("Reset preset: Pet Class") end
+									if addon and addon.Print then addon:Print(L["Reset preset: Pet Class"]) end
 								end
 							end,
 						},
@@ -1526,19 +1528,19 @@ function Addon:OnInitialize()
 
 				profilesTable.args.zsbtCopyCharData = {
 					type = "group",
-					name = "Copy Rules / Triggers",
+					name = L["Copy Rules / Triggers"],
 					order = 998,
 					inline = true,
 					args = {
 						desc = {
 							type = "description",
-							name = "Copy per-character Spell Rules, Buff Rules, and Triggers into your current character. Profiles do not include these items.",
+							name = L["Copy per-character Spell Rules, Buff Rules, and Triggers into your current character. Profiles do not include these items."],
 							order = 1,
 							width = "full",
 						},
 						fromChar = {
 							type = "select",
-							name = "Copy From Character",
+							name = L["Copy From Character"],
 							order = 2,
 							width = "full",
 							values = function() return listCharKeys() end,
@@ -1547,37 +1549,37 @@ function Addon:OnInitialize()
 						},
 						mode = {
 							type = "select",
-							name = "Copy Mode",
+							name = L["Copy Mode"],
 							order = 3,
 							width = "full",
-							values = { merge = "Merge (add missing)", replace = "Replace" },
+							values = { merge = L["Merge (add missing)"], replace = "Replace" },
 							get = function() return addon._copyCharMode end,
 							set = function(_, v) addon._copyCharMode = tostring(v or "merge") end,
 						},
 						copySpellRules = {
 							type = "execute",
-							name = "Copy Spell Rules",
+							name = L["Copy Spell Rules"],
 							order = 10,
 							width = "full",
 							func = function() copyFromSelectedChar(true, false, false) end,
 						},
 						copyAuraRules = {
 							type = "execute",
-							name = "Copy Buff Rules",
+							name = L["Copy Buff Rules"],
 							order = 11,
 							width = "full",
 							func = function() copyFromSelectedChar(false, true, false) end,
 						},
 						copyTriggers = {
 							type = "execute",
-							name = "Copy Triggers",
+							name = L["Copy Triggers"],
 							order = 12,
 							width = "full",
 							func = function() copyFromSelectedChar(false, false, true) end,
 						},
 						copyAll = {
 							type = "execute",
-							name = "Copy All (Rules + Triggers)",
+							name = L["Copy All (Rules + Triggers)"],
 							order = 13,
 							width = "full",
 							func = function() copyFromSelectedChar(true, true, true) end,
@@ -1588,7 +1590,7 @@ function Addon:OnInitialize()
 				safeSetChooseArg(profilesTable)
 				safeRestrictDeleteDefault(profilesTable)
 				profilesTable.order = 100
-				profilesTable.name = "|cFFFFD100DB Profiles|r"
+				profilesTable.name = L["|cFFFFD100DB Profiles|r"]
 				if options and options.args and options.args.profiles and options.args.profiles.args then
 					options.args.profiles.args.acedbProfiles = profilesTable
 				elseif options and options.args then
@@ -1599,9 +1601,9 @@ function Addon:OnInitialize()
 		local ACR = LibStub("AceConfig-3.0", true)
 		local ACD = LibStub("AceConfigDialog-3.0", true)
 		if not ACR or not ACD then
-			self:Print("|cFFFF4444ZSBT config libraries are missing.|r")
-			self:Print("This usually means you installed a no-lib build or the addon was installed incompletely.")
-			self:Print("Fix: reinstall ZSBT with embedded libraries, or install the standalone 'Ace3' addon.")
+			self:Print(L["|cFFFF4444ZSBT config libraries are missing.|r"])
+			self:Print(L["This usually means you installed a no-lib build or the addon was installed incompletely."])
+			self:Print(L["Fix: reinstall ZSBT with embedded libraries, or install the standalone 'Ace3' addon."])
 			return
 		end
 		ACR:RegisterOptionsTable("ZSBT", options)
@@ -1660,8 +1662,9 @@ function Addon:OnInitialize()
 		end
 	end
 
-    self:Print("|cFF00CC66" .. ZSBT.ADDON_TITLE .. "|r |cFF808C9Ev" .. ZSBT.VERSION ..
-                   "|r loaded. Type |cFF00CC66/zsbt|r to configure.")
+    self:Print("|cFF00CC66" .. ZSBT.ADDON_TITLE .. L["|r |cFF808C9Ev"] .. ZSBT.VERSION ..
+                   L["|r loaded. Type |cFF00CC66/zsbt|r to configure."] ..
+                   " |cFF888888[" .. GetLocale() .. "]|r")
 end
 
 ------------------------------------------------------------------------
@@ -1714,7 +1717,7 @@ function Addon:OnEnable()
 		if (tonumber(channelDbg) or 0) >= 5 or (tonumber(legacyDbg) or 0) >= 5 then
 			if Addon and Addon.Print and not ZSBT._lcpDbgRegisteredPrintDone then
 				ZSBT._lcpDbgRegisteredPrintDone = true
-				Addon:Print("LibCombatPulse consumers active (cutover enabled).")
+				Addon:Print(L["LibCombatPulse consumers active (cutover enabled)."])
 			end
 		end
 		ZSBT._lcpConsumerHandle = LCP:NewConsumer("ZSBT", {
@@ -1816,7 +1819,7 @@ function Addon:OnEnable()
             -- Enable parsers with combat lockdown protection
             local success = EnableParsers()
             if not success then
-                Addon:Print("In combat - ZSBT will fully enable after combat ends.")
+                Addon:Print(L["In combat - ZSBT will fully enable after combat ends."])
             end
         else
             -- Respect saved disabled state
@@ -1875,7 +1878,7 @@ function Addon:HandleSlashCommand(input)
     if cmd == "minimap" then
 		local mm = ZSBT.Core and ZSBT.Core.Minimap
 		if not (mm and (mm.SetHidden or mm.UpdateVisibility)) then
-			self:Print("Minimap button module not available.")
+			self:Print(L["Minimap button module not available."])
 			return
 		end
 		if mm.Init then
@@ -1888,7 +1891,7 @@ function Addon:HandleSlashCommand(input)
 		else
 			mm:UpdateVisibility()
 		end
-		self:Print(("Minimap button %s."):format(g.minimap.hide and "hidden" or "shown"))
+		self:Print((L["Minimap button %s."]):format(g.minimap.hide and "hidden" or "shown"))
 		return
 	end
 
@@ -1902,7 +1905,7 @@ function Addon:HandleSlashCommand(input)
         self:HandleResetCommand()
         return
     elseif cmd == "version" then
-        self:Print(ZSBT.ADDON_TITLE .. " v" .. ZSBT.VERSION)
+        self:Print(ZSBT.ADDON_TITLE .. L[" v"] .. ZSBT.VERSION)
         return
     elseif cmd == "auratest" then
         if ZSBT.Core and ZSBT.Core.RunAuraTest then
@@ -1912,7 +1915,7 @@ function Addon:HandleSlashCommand(input)
     elseif cmd == "restorefct" then
         if ZSBT.Core and ZSBT.Core.RestoreBlizzardFCT then
             ZSBT.Core:RestoreBlizzardFCT()
-            self:Print("Restored Blizzard Floating Combat Text settings.")
+            self:Print(L["Restored Blizzard Floating Combat Text settings."])
         end
         return
     elseif cmd == "dumpcvars" then
@@ -1936,12 +1939,12 @@ function Addon:HandleSlashCommand(input)
 				return
 			end
 			if d ~= nil then
-				self:Print(name .. "=" .. tostring(v) .. " (def " .. tostring(d) .. ")")
+				self:Print(name .. "=" .. tostring(v) .. L[" (def "] .. tostring(d) .. ")")
 			else
 				self:Print(name .. "=" .. tostring(v))
 			end
 		end
-		self:Print("Blizzard Combat Text CVars:")
+		self:Print(L["Blizzard Combat Text CVars:"])
 		dump("enableFloatingCombatText")
 		dump("enableCombatText")
 		dump("floatingCombatTextCombatDamage")
@@ -1958,7 +1961,7 @@ function Addon:HandleSlashCommand(input)
 		dump("floatingCombatTextReactives_v2")
 		dump("CombatDamage")
 		dump("CombatHealing")
-		self:Print("World / XP text scale CVars:")
+		self:Print(L["World / XP text scale CVars:"])
 		dump("WorldTextScale")
 		dump("WorldTextSize")
 		dump("worldTextScale")
@@ -1969,8 +1972,8 @@ function Addon:HandleSlashCommand(input)
 		return
 	end
 
-    self:Print("|cFF808C9EUnknown command:|r " .. cmd)
-	self:Print("|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | reset | version | auratest | restorefct | dumpcvars]")
+    self:Print(L["|cFF808C9EUnknown command:|r "] .. cmd)
+	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | reset | version | auratest | restorefct | dumpcvars]"])
 end
 
 ------------------------------------------------------------------------
@@ -2030,28 +2033,28 @@ end
 ------------------------------------------------------------------------
 function Addon:HandleDebugCommand(levelStr)
 	local function usage()
-		self:Print("Usage:")
-		self:Print("  /zsbt debug show")
-		self:Print("  /zsbt debug frame <1-10>          (route debug output to ChatFrameN)")
-		self:Print("  /zsbt debug <0-5>                 (set global default)")
-		self:Print("  /zsbt debug <channel> <0-5>       (set per-channel override)")
-		self:Print("Levels: 0=Off, 1=Error, 2=Warn, 3=Info, 4=Debug, 5=Trace")
-		self:Print("Channels: core, cooldowns, incoming, outgoing, triggers, notifications, ui, diagnostics, lcp, safety, perf")
+		self:Print(L["Usage:"])
+		self:Print(L["  /zsbt debug show"])
+		self:Print(L["  /zsbt debug frame <1-10>          (route debug output to ChatFrameN)"])
+		self:Print(L["  /zsbt debug <0-5>                 (set global default)"])
+		self:Print(L["  /zsbt debug <channel> <0-5>       (set per-channel override)"])
+		self:Print(L["Levels: 0=Off, 1=Error, 2=Warn, 3=Info, 4=Debug, 5=Trace"])
+		self:Print(L["Channels: core, cooldowns, incoming, outgoing, triggers, notifications, ui, diagnostics, lcp, safety, perf"])
 	end
 
 	local function show()
 		local d = self.db and self.db.profile and self.db.profile.diagnostics
 		if type(d) ~= "table" then
-			self:Print("Diagnostics not initialized.")
+			self:Print(L["Diagnostics not initialized."])
 			return
 		end
 		local def = tonumber(d.debugDefaultLevel)
 		if type(def) ~= "number" then def = tonumber(d.debugLevel) or 0 end
-		self:Print("Debug default level: " .. tostring(def))
-		self:Print("Debug chat frame: " .. tostring(d.debugChatFrame or 1))
+		self:Print(L["Debug default level: "] .. tostring(def))
+		self:Print(L["Debug chat frame: "] .. tostring(d.debugChatFrame or 1))
 		local ch = d.debugChannels
 		if type(ch) ~= "table" then
-			self:Print("Debug channels: <none>")
+			self:Print(L["Debug channels: <none>"])
 			return
 		end
 		local keys = {}
@@ -2089,7 +2092,7 @@ function Addon:HandleDebugCommand(levelStr)
 			return
 		end
 		self.db.profile.diagnostics.debugChatFrame = n
-		self:Print("Debug output routed to ChatFrame" .. tostring(n))
+		self:Print(L["Debug output routed to ChatFrame"] .. tostring(n))
 		return
 	end
 
@@ -2102,7 +2105,7 @@ function Addon:HandleDebugCommand(levelStr)
 			return
 		end
 		self.db.profile.diagnostics.debugDefaultLevel = level
-		self:Print("Debug default level set to " .. tostring(level))
+		self:Print(L["Debug default level set to "] .. tostring(level))
 		return
 	end
 
@@ -2115,7 +2118,7 @@ function Addon:HandleDebugCommand(levelStr)
 	end
 	self.db.profile.diagnostics.debugChannels = self.db.profile.diagnostics.debugChannels or {}
 	self.db.profile.diagnostics.debugChannels[channel] = level
-	self:Print("Debug channel '" .. tostring(channel) .. "' set to " .. tostring(level))
+	self:Print(L["Debug channel '"] .. tostring(channel) .. L["' set to "] .. tostring(level))
 end
 
 ------------------------------------------------------------------------
@@ -2124,15 +2127,15 @@ end
 function Addon:HandleCooldownDebugCommand(levelStr)
 	local level = tonumber(levelStr)
 	if not level or level < 0 or level > 5 then
-		self:Print("Usage: /zsbt cddebug [0-5]")
-		self:Print("  Alias for: /zsbt debug cooldowns <0-5>")
+		self:Print(L["Usage: /zsbt cddebug [0-5]"])
+		self:Print(L["  Alias for: /zsbt debug cooldowns <0-5>"])
 		return
 	end
 
 	self.db.profile.diagnostics.cooldownsDebugLevel = level
 	self.db.profile.diagnostics.debugChannels = self.db.profile.diagnostics.debugChannels or {}
 	self.db.profile.diagnostics.debugChannels.cooldowns = level
-	self:Print("Cooldown debug channel set to " .. tostring(level))
+	self:Print(L["Cooldown debug channel set to "] .. tostring(level))
 end
 
 ------------------------------------------------------------------------
@@ -2140,6 +2143,6 @@ end
 ------------------------------------------------------------------------
 function Addon:HandleResetCommand()
     self.db:ResetProfile()
-    self:Print("Profile reset to defaults.")
+    self:Print(L["Profile reset to defaults."])
 end
 
