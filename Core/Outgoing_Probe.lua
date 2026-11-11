@@ -824,7 +824,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 						or evt.amountSource == "UNIT_COMBAT_BEST"
 						or evt.amountSource == "UNIT_COMBAT_PHYSICAL"
 				)) or (evt and evt.isPeriodic == true)
-		if prof.showSpellIcons and evt.isAuto ~= true and trustedForSpellIcon then
+		if prof.showSpellIcons and evt.isAuto ~= true and evt.suppressSpellIcon ~= true and trustedForSpellIcon then
 			local tex = nil
 			if type(resolvedSpellID) == "number" then
 				tex = ZSBT.CleanSpellIcon(resolvedSpellID)

@@ -837,18 +837,12 @@ local function consumeBestPendingCast(self, tNow, wantSpellId, maxWindowSec, doC
 					-- produce a hit of a different base school (Holy crit from a
 					-- Shadow Bolt). This keeps grouped hits from stealing casts.
 					local schoolOk = true
-					if ZSBT.IsSafeNumber(hitSchool) then
-						if ZSBT.IsSafeNumber(c.school) then
-							-- Cast school known: a hit must overlap the cast's
-							-- school (combined schools like Shadowflame share bits).
-							schoolOk = (bit.band(c.school, hitSchool) ~= 0)
-						else
-							-- Cast school unknown: only allow non-physical hits
-							-- through (spells are overwhelmingly non-physical).
-							-- Physical hits stay in the auto-attack/pet paths where
-							-- they belong instead of stealing a spell cast.
-							schoolOk = (hitSchool ~= 1)
-						end
+					if ZSBT.IsSafeNumber(hitSchool) and ZSBT.IsSafeNumber(c.school) then
+						-- Only reject when BOTH schools are known and cannot
+						-- overlap — combined schools like Shadowflame share bits.
+						-- Unknown cast school stays permissive: physical hitters
+						-- (Whirlwind, melee abilities) must not be gated out.
+						schoolOk = (bit.band(c.school, hitSchool) ~= 0)
 					end
 					if schoolOk and (not bestDt or dt < bestDt) then
 						bestDt = dt
@@ -863,6 +857,9 @@ local function consumeBestPendingCast(self, tNow, wantSpellId, maxWindowSec, doC
 		if doConsume == nil or doConsume == true then
 			table.remove(self._pendingCasts, bestI)
 		end
+		-- Multi-hit abilities (Whirlwind, cleaves): the first hit consumes the
+		-- cast; record it so follow-up hits can re-match within a short window.
+		self._lastMatchedCast = { cast = best, matchedAt = tNow }
 		return best
 	end
 	return nil
@@ -1847,6 +1844,11 @@ function Collector:handleCombatTextUpdate(arg1)
 				return
 			end
 		end
+		-- Formatted heal text puts the healer name on its own line
+		-- ("Name\n+1234"); collapse to a single line when we can safely edit.
+		if type(pipeAmount) == "string" and ZSBT.IsSafeString(pipeAmount) then
+			pipeAmount = (pipeAmount:gsub("\n", " "))
+		end
 
 		self._lastCombatTextHealAt = now()
 
@@ -1871,10 +1873,15 @@ function Collector:handleCombatTextUpdate(arg1)
 			end
 		end
 
-		-- For heals: use player.s own spell (self-heals)
+		-- For heals: use the player's own spell only when the last cast was a
+		-- helpful spell (self-heals). Stamping an outgoing damage cast here puts
+		-- its icon on other healers' heals.
 		local healSpellId = nil
 		if self._lastPlayerSpellAt and (now() - self._lastPlayerSpellAt) < 0.5 then
-			healSpellId = self._lastPlayerSpellId
+			local okH, helpful = pcall(IsHelpfulSpell, self._lastPlayerSpellId)
+			if okH and helpful == true then
+				healSpellId = self._lastPlayerSpellId
+			end
 		end
 
 		-- Calculate overheal using post-heal health state.
@@ -2793,6 +2800,30 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			return
 		end
 		if actionStr and actionStr ~= "WOUND" then
+			-- Miss outcomes (MISS/DODGE/PARRY/BLOCK/ABSORB/etc.) arrive as their
+			-- own action with no damage amount; emit them as miss text instead.
+			if actionStr == "MISS" or actionStr == "DODGE" or actionStr == "PARRY"
+				or actionStr == "BLOCK" or actionStr == "ABSORB" or actionStr == "IMMUNE"
+				or actionStr == "DEFLECT" or actionStr == "REFLECT" or actionStr == "EVADE" then
+				local spellId = nil
+				if self._lastPlayerSpellAt and self._lastPlayerSpellId then
+					local age = t - self._lastPlayerSpellAt
+					if age >= 0 and age <= 1.5 then
+						spellId = self._lastPlayerSpellId
+					end
+				end
+				if restrict and not spellId then
+					return
+				end
+				emit("OUTGOING_DAMAGE_COMBAT", {
+					timestamp = t,
+					amountText = actionStr,
+					spellId = spellId,
+					amountSource = "UNIT_COMBAT_MISS",
+					targetName = safeUnitName("target"),
+					isCrit = false,
+				})
+			end
 			return
 		end
 		-- Filter non-hit descriptors that frequently show up as small/zero values.
@@ -3076,6 +3107,16 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				doConsume = false
 			end
 			local matchedCast = consumeBestPendingCast(self, t, wantSpellId, castWindow, doConsume)
+			-- Multi-hit physical bursts (Whirlwind, cleaves): the first hit may
+			-- consume or outlast the narrow cast window; re-use the last matched
+			-- cast briefly so follow-up hits still attribute.
+			if not matchedCast then
+				local lm = self._lastMatchedCast
+				if lm and lm.cast and lm.matchedAt and (t - lm.matchedAt) >= 0 and (t - lm.matchedAt) <= 0.75
+					and (not wantSpellId or lm.cast.spellId == wantSpellId) then
+					matchedCast = lm.cast
+				end
+			end
 			-- Strict/restricted mode normally requires a pending-cast match. For Whirlwind,
 			-- the UNIT_COMBAT(target) stream can contain more hits than we can reliably
 			-- match; allow a short post-cast window to still attribute as Whirlwind.
@@ -3244,8 +3285,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				if chatTok == self._castToken and (t - chatAt) >= 0 and (t - chatAt) <= 1.25 then
 					return
 				end
-				wwAggPush(self, t, spellId, amount, isCrit, true)
-				return
+				if ZSBT.IsSafeNumber(amount) and amount > 0 then
+					wwAggPush(self, t, spellId, amount, isCrit, true)
+					return
+				end
+				-- Secret amounts cannot be summed for aggregation — fall through
+				-- to the direct raw-pipe emit so each hit still displays.
 			end
 			if spellId == 772 then
 				self._rendLastCastAt = t
@@ -3281,6 +3326,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				targetName = safeUnitName("target"),
 				isCrit = isCrit,
 				schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
+				-- Per-hit Whirlwind emits (secret amounts can't be aggregated):
+				-- suppress the icon or every hit in the burst renders one.
+				suppressSpellIcon = isWhirlwindSpellId(spellId) or nil,
 			})
 			return
 		end
@@ -3571,7 +3619,21 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							-- Try a wider window for travel-time spells before giving up.
 							matchedCast = consumeBestPendingCast(self, t, nil, PENDING_CAST_WINDOW_SEC, nil, school)
 							if not matchedCast then
-								return
+								-- Multi-hit abilities (Whirlwind, cleaves): the first hit
+								-- consumed the cast; allow follow-up hits to re-use it.
+								local lm = self._lastMatchedCast
+								if lm and lm.matchedAt and (t - lm.matchedAt) >= 0 and (t - lm.matchedAt) <= 0.75 and lm.cast then
+									local schOk = true
+									if ZSBT.IsSafeNumber(school) and ZSBT.IsSafeNumber(lm.cast.school) then
+										schOk = (bit.band(lm.cast.school, school) ~= 0)
+									end
+									if schOk then
+										matchedCast = lm.cast
+									end
+								end
+								if not matchedCast then
+									return
+								end
 							end
 						end
 					else
@@ -3730,6 +3792,22 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 	-- If tainted, we do NOT attempt to guess; in Midnight this can misfire
 	-- during pet combat and produce false player damage.
 	local actionStr = ZSBT.IsSafeString(action) and action or nil
+
+	-- Miss outcomes on the player (enemies missing/dodged/parried/blocked)
+	-- arrive as their own action with no damage amount; emit as miss text.
+	if unit == "player" and actionStr and actionStr ~= "WOUND" and actionStr ~= "HEAL" then
+		if actionStr == "MISS" or actionStr == "DODGE" or actionStr == "PARRY"
+			or actionStr == "BLOCK" or actionStr == "ABSORB" or actionStr == "IMMUNE"
+			or actionStr == "DEFLECT" or actionStr == "REFLECT" or actionStr == "EVADE" then
+			emit("INCOMING_DAMAGE", {
+				timestamp = t,
+				amountText = actionStr,
+				amountSource = "UNIT_COMBAT_MISS",
+				isCrit = false,
+			})
+		end
+		return
+	end
 
 	-- Sanity check for unit=="player": only emit incoming damage if the
 	-- player's health actually dropped. This blocks misfires where UNIT_COMBAT
