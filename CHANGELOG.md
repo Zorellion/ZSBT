@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.4.4
+
+### Fixed
+- Misses, dodges, parries, blocks, absorbs and immunes display again: `UNIT_COMBAT` carries them as their own actions, and the WOUND-only branch dropped them before any emit. Both incoming (player) and outgoing (target) now emit them as miss text; restrict mode still requires recent-cast correlation so foreign misses don't leak.
+- Whirlwind invisible on secret-value clients: the aggregation buffer required a safe numeric amount to sum, so every hit was silently dropped before display. Hits with secret amounts now emit directly via the raw-value path (aggregation is only used when amounts are readable).
+- Icon spam: each per-hit Whirlwind emit rendered a spell icon; per-hit Whirlwind emits now suppress the icon.
+- Multi-hit physical bursts (Whirlwind, cleaves) in groups: the first hit consumed the pending cast and follow-ups were dropped; the last matched cast can now be re-used for 0.75s, school-checked.
+- Incoming heals showed the outgoing spell's icon: the last player cast was stamped on any heal within 0.5s. Now only stamped when the last cast was a helpful spell.
+- Healer-name heal text: formatted safe strings ("Name\\n+1234") now collapse to a single line.
+
 ## 3.4.3
 
 ### Fixed
