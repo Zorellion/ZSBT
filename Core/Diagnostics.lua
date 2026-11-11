@@ -224,7 +224,7 @@ function Addon:ClearDiagnosticLog()
         self.db.profile.diagnostics.qHead = 1
         self.db.profile.diagnostics.qTail = 0
         self.db.profile.diagnostics.qCount = 0
-        self:Print("Diagnostic log cleared.")
+        self:Print(ZSBT.L["Diagnostic log cleared."])
     end
 end
 
@@ -244,7 +244,7 @@ function Addon:_perfEnabled()
 		elseif self.Dbg then
 			self:Dbg("safety", 1, "Performance profiling enabled but debugprofilestop() is unavailable in this client.")
 		else
-			self:Print("Performance profiling enabled but debugprofilestop() is unavailable in this client.")
+			self:Print(ZSBT.L["Performance profiling enabled but debugprofilestop() is unavailable in this client."])
 		end
 	end
 	return enabled and hasClock

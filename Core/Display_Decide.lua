@@ -9,6 +9,8 @@
 
 local ADDON_NAME, ZSBT = ...
 
+local L = ZSBT.L
+
 ZSBT.Core = ZSBT.Core or {}
 ZSBT.Core.Display = ZSBT.Core.Display or {}
 local Display = ZSBT.Core.Display
@@ -29,7 +31,7 @@ local function ResolveFontForArea(areaName)
         useGlobal = false
     end
 
-    local faceKey    = (not useGlobal and areaFont and areaFont.face)    or general.face or "Friz Quadrata TT"
+    local faceKey    = (not useGlobal and areaFont and areaFont.face)    or general.face or L["Friz Quadrata TT"]
     local sizeVal    = (not useGlobal and areaFont and areaFont.size)    or general.size or 18
     local outlineKey = (not useGlobal and areaFont and areaFont.outline) or general.outline or "Thin"
     local alphaVal   = (not useGlobal and areaFont and areaFont.alpha)   or general.alpha or 1.0
@@ -133,7 +135,7 @@ local function ResolveCritFont(meta)
     local general = profile.general.font or {}
 
     -- Face: use crit override or fall back to master
-    local faceKey = critConf.face or general.face or "Friz Quadrata TT"
+    local faceKey = critConf.face or general.face or L["Friz Quadrata TT"]
     local LSM = LibStub("LibSharedMedia-3.0", true)
     local critFace = "Fonts\\FRIZQT__.TTF"
     if LSM and faceKey then
@@ -231,15 +233,15 @@ local function FlushMergeByKey(key)
         if entry.mode == "numeric" and type(entry.totalAmount) == "number" and entry.totalAmount > 0 then
             text = tostring(math.floor(entry.totalAmount + 0.5))
             if showCount then
-                text = text .. " (x" .. entry.count .. ")"
+                text = text .. L[" (x"] .. entry.count .. ")"
             end
         elseif showCount then
             -- Secret/tainted or non-numeric text: count-only (no math).
             -- Keep the base label text and append count.
             if ZSBT.IsSafeString(text) then
-                text = text .. " (x" .. entry.count .. ")"
+                text = text .. L[" (x"] .. entry.count .. ")"
             else
-                text = "Hits (x" .. entry.count .. ")"
+                text = L["Hits (x"] .. entry.count .. ")"
             end
         end
     end
@@ -453,7 +455,7 @@ function Display:Emit(areaName, text, color, meta)
 			if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
 			return "<secret>"
 		end
-		Addon:Print("|cFF00CC66[EMIT]|r " .. safeDbg(areaName) .. " kind=heal text=" .. safeDbg(text))
+		Addon:Print(L["|cFF00CC66[EMIT]|r "] .. safeDbg(areaName) .. " kind=heal text=" .. safeDbg(text))
 	elseif dbg >= 4 and type(areaName) == "string" then
 		local isOutgoingArea = (areaName == "Outgoing") or (outHealArea and areaName == outHealArea)
 		if isOutgoingArea and (not (ZSBT.IsSafeString and ZSBT.IsSafeString(text))) then
@@ -466,7 +468,7 @@ function Display:Emit(areaName, text, color, meta)
 			if Addon and Addon.Dbg then
 				Addon:Dbg("safety", 4, "EMIT_SECRET", safeDbg(areaName), "kind=" .. safeDbg(meta and meta.kind), "text=" .. safeDbg(text))
 			elseif Addon and Addon.Print then
-				Addon:Print("|cFF00CC66[EMIT_SECRET]|r " .. safeDbg(areaName)
+				Addon:Print(L["|cFF00CC66[EMIT_SECRET]|r "] .. safeDbg(areaName)
 					.. " kind=" .. safeDbg(meta and meta.kind)
 					.. " text=" .. safeDbg(text))
 			end
@@ -500,7 +502,7 @@ function Display:Emit(areaName, text, color, meta)
 				if Addon and Addon.Dbg then
 					Addon:Dbg("ui", 4, "EMIT_BIG", safeDbg(areaName), "kind=" .. safeDbg(meta and meta.kind), "text=" .. safeDbg(text))
 				elseif Addon and Addon.Print then
-					Addon:Print("|cFF00CC66[EMIT_BIG]|r " .. safeDbg(areaName)
+					Addon:Print(L["|cFF00CC66[EMIT_BIG]|r "] .. safeDbg(areaName)
 						.. " kind=" .. safeDbg(meta and meta.kind)
 						.. " text=" .. safeDbg(text))
 				end
@@ -536,7 +538,7 @@ function Display:Emit(areaName, text, color, meta)
 				if Addon and Addon.Dbg then
 					Addon:Dbg("ui", 4, "EMIT_MILLION", safeDbg(areaName), "kind=" .. safeDbg(meta and meta.kind), "text=" .. safeDbg(text))
 				elseif Addon and Addon.Print then
-					Addon:Print("|cFF00CC66[EMIT_MILLION]|r " .. safeDbg(areaName)
+					Addon:Print(L["|cFF00CC66[EMIT_MILLION]|r "] .. safeDbg(areaName)
 						.. " kind=" .. safeDbg(meta and meta.kind)
 						.. " text=" .. safeDbg(text))
 				end
@@ -550,7 +552,7 @@ function Display:Emit(areaName, text, color, meta)
         -- Safe fallback: chat-only when a scroll area is missing.
         -- text may be tainted so we pass it directly to Print (which calls SetText).
         if Addon and Addon.Print then
-            Addon:Print("Display fallback:", areaName or "?")
+            Addon:Print(L["Display fallback:"], areaName or "?")
         end
         return
     end
@@ -558,7 +560,7 @@ function Display:Emit(areaName, text, color, meta)
     -- Require the test renderer (ScrollAreaFrames.lua)
     if type(ZSBT.FireTestText) ~= "function" then
         if Addon and Addon.Print then
-            Addon:Print("Display: no FireTestText renderer")
+            Addon:Print(L["Display: no FireTestText renderer"])
         end
         return
     end

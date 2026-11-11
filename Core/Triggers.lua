@@ -11,6 +11,8 @@
 --  - Optional color
 ------------------------------------------------------------------------
 local ADDON_NAME, ZSBT = ...
+
+local L = ZSBT.L
 local Addon = ZSBT.Addon
 
 ZSBT.Core = ZSBT.Core or {}
@@ -31,7 +33,7 @@ local function TrigDebug(msg)
 		return
 	end
 	if Addon and Addon.Print then
-		Addon:Print("|cFF00CCFF[TRG]|r " .. SafeToString(msg))
+		Addon:Print(L["|cFF00CCFF[TRG]|r "] .. SafeToString(msg))
 	end
 end
 
@@ -124,7 +126,7 @@ local function EmitAction(action, ctx)
 	end
 	if ZSBT.Core and ZSBT.Core.IsNotificationCategoryEnabled then
 		if ZSBT.Core:IsNotificationCategoryEnabled("triggers") == false then
-			TrigDebug("EmitAction suppressed: triggers category disabled")
+			TrigDebug(L["EmitAction suppressed: triggers category disabled"])
 			return
 		end
 	end
@@ -135,7 +137,7 @@ local function EmitAction(action, ctx)
 	elseif ZSBT.Core and ZSBT.Core.Display and ZSBT.Core.Display.Emit then
 		ZSBT.Core.Display:Emit(area, text, color, meta)
 	else
-		TrigDebug("EmitAction skip: no display backend")
+		TrigDebug(L["EmitAction skip: no display backend"])
 	end
 end
 
@@ -185,7 +187,7 @@ function Triggers:FireEvent(eventType, ctx)
 							match = false
 						elseif type(ctxSpellId) == "number" and (eventType == "AURA_GAIN" or eventType == "AURA_FADE") then
 							-- For aura events only: event has spellId but trigger doesn't - no match (prevents catch-all doubles)
-							TrigDebug("Trigger skipped: eventType=" .. tostring(eventType) .. " has specific spellId=" .. tostring(ctxSpellId) .. " but trigger has no spellId")
+							TrigDebug("Trigger skipped: eventType=" .. tostring(eventType) .. " has specific spellId=" .. tostring(ctxSpellId) .. L[" but trigger has no spellId"])
 							match = false
 						elseif type(ctxSpellId) == "number" and eventType == "SPELLCAST_SUCCEEDED" then
 							-- SPELLCAST_SUCCEEDED: allow catch-all triggers to match pet/player casts
@@ -263,7 +265,7 @@ function Triggers:OnAuraGain(spellId, source)
 			eventType = "AURA_GAIN",
 			direction = "incoming",
 			spellId = spellId,
-			spellName = name or ("Spell #" .. tostring(spellId)),
+			spellName = name or (L["Spell #"] .. tostring(spellId)),
 			timestamp = (GetTime and GetTime()) or 0,
 			confidence = "HIGH",
 			source = source,
@@ -273,7 +275,7 @@ function Triggers:OnAuraGain(spellId, source)
 		eventType = "AURA_GAIN",
 		event = "GAIN",
 		spellId = spellId,
-		spellName = name or ("Spell #" .. tostring(spellId)),
+		spellName = name or (L["Spell #"] .. tostring(spellId)),
 	})
 end
 
@@ -392,7 +394,7 @@ function Triggers:OnAuraFade(spellId, source)
 			eventType = "AURA_FADE",
 			direction = "incoming",
 			spellId = spellId,
-			spellName = name or ("Spell #" .. tostring(spellId)),
+			spellName = name or (L["Spell #"] .. tostring(spellId)),
 			timestamp = (GetTime and GetTime()) or 0,
 			confidence = "HIGH",
 			source = source,
@@ -402,7 +404,7 @@ function Triggers:OnAuraFade(spellId, source)
 		eventType = "AURA_FADE",
 		event = "FADE",
 		spellId = spellId,
-		spellName = name or ("Spell #" .. tostring(spellId)),
+		spellName = name or (L["Spell #"] .. tostring(spellId)),
 	})
 end
 
@@ -518,7 +520,7 @@ end
 
 function Triggers:SyncWatchedAurasFromCore()
 	if not self:IsEnabled() then
-		TrigDebug("AuraSync: skip (triggers disabled)")
+		TrigDebug(L["AuraSync: skip (triggers disabled)"])
 		return
 	end
 	GetTrackedTriggerList(self)
@@ -737,7 +739,7 @@ function Triggers:OnCooldownReady(event)
 		eventType = "COOLDOWN_READY",
 		event = "READY",
 		spellId = spellId,
-		spellName = spellName or (spellId and ("Spell #" .. tostring(spellId)) or "Cooldown"),
+		spellName = spellName or (spellId and (L["Spell #"] .. tostring(spellId)) or "Cooldown"),
 	})
 	TrigDebug("OnCooldownReady EXIT spellId=" .. tostring(spellId))
 end
@@ -791,7 +793,7 @@ GetTrackedTriggerList = function(self)
 					if type(n) == "number" and n > 0 then
 						trig.spellId = n
 						sid = n
-						TrigDebug("Aura trigger spellId coerced to number: " .. tostring(n))
+						TrigDebug(L["Aura trigger spellId coerced to number: "] .. tostring(n))
 					end
 				end
 				if type(sid) == "number" and sid > 0 then
@@ -823,7 +825,7 @@ function Triggers:OnSpellcastSucceeded(unit, spellId)
 		event = "SUCCEEDED",
 		unit = unit,
 		spellId = spellId,
-		spellName = name or ("Spell #" .. tostring(spellId)),
+		spellName = name or (L["Spell #"] .. tostring(spellId)),
 	})
 
 	-- WoW 12.x: some auras may not be enumerable during combat via AuraUtil/C_UnitAuras/UnitAura.
@@ -1189,7 +1191,7 @@ function Triggers:_CheckAuraStacks()
 					event = "STACKS",
 					unit = "player",
 					spellId = sid,
-					spellName = SafeSpellName(sid) or ("Spell #" .. tostring(sid)),
+					spellName = SafeSpellName(sid) or (L["Spell #"] .. tostring(sid)),
 					stacks = stacks,
 					threshold = minStacks,
 				})
@@ -1262,7 +1264,7 @@ function Triggers:_CheckSpellUsable()
 						_skipThrottle = true,
 						unit = "player",
 						spellId = sid,
-						spellName = SafeSpellName(sid) or ("Spell #" .. tostring(sid)),
+						spellName = SafeSpellName(sid) or (L["Spell #"] .. tostring(sid)),
 					})
 				end
 			else

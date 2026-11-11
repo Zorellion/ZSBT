@@ -3,6 +3,8 @@
 ------------------------------------------------------------------------
 local ADDON_NAME, ZSBT = ...
 
+local L = ZSBT.L
+
 ZSBT.Core = ZSBT.Core or {}
 local Core  = ZSBT.Core
 local Addon = ZSBT.Addon
@@ -762,9 +764,9 @@ function Core:MaybePromptRestoreBlizzardFCT()
     if not cvarsLookSuppressed() then return end
 
     StaticPopupDialogs["ZSBT_RESTORE_BLIZZARD_FCT"] = {
-        text = "ZSBT detected Blizzard Floating Combat Text is currently disabled.\n\nRestore your previous Blizzard combat text settings?",
-        button1 = "Restore",
-        button2 = "Not Now",
+        text = L["ZSBT detected Blizzard Floating Combat Text is currently disabled.\n\nRestore your previous Blizzard combat text settings?"],
+        button1 = L["Restore"],
+        button2 = L["Not Now"],
         timeout = 0,
         whileDead = true,
         hideOnEscape = true,
@@ -1017,7 +1019,7 @@ function Core:InitLibSinkOutput()
 				text = tostring(text or "")
 			end
 			if type(icon) == "string" and icon ~= "" then
-				text = "|T" .. icon .. ":15:15:0:0:64:64:4:60:4:60|t " .. text
+				text = "|T" .. icon .. L[":15:15:0:0:64:64:4:60:4:60|t "] .. text
 			end
 			local area = resolveAreaForExternal(addonObj, libSink)
 			local color = { r = type(r) == "number" and r or 1, g = type(g) == "number" and g or 1, b = type(b) == "number" and b or 1 }
@@ -1036,7 +1038,7 @@ function Core:InitLibSinkOutput()
 			libSink:RegisterSink(
 				"ZSBT",
 				"ZSBT",
-				"Route output to Zore's Scrolling Battle Text.",
+				L["Route output to Zore's Scrolling Battle Text."],
 				sinkHandler,
 				getScrollAreasList,
 				true
@@ -1065,7 +1067,7 @@ function Core:InitLibSinkOutput()
 				sinkConfig.args.ZSBT = {
 					type = "toggle",
 					name = "ZSBT",
-					desc = "Route output through ZSBT.",
+					desc = L["Route output through ZSBT."],
 				}
 			end)
 
@@ -1256,7 +1258,7 @@ function Core:InitTradeSkillTracking()
 			if not learned or learned == "" then
 				return
 			end
-			local tpl = getTemplate("tradeskillLearned", "Learned: %e")
+			local tpl = getTemplate("tradeskillLearned", L["Learned: %e"])
 			local out = applyTemplate(tpl, { e = learned })
 			if out and out ~= "" then
 				Core:EmitNotification(out, { r = 0.2, g = 0.8, b = 1.0 }, "tradeskillLearned")
@@ -1452,67 +1454,67 @@ function Core:InitInterruptTracking()
 	local _spellLabelCache = {}
 	local STOPPER_NAMES = {
 		-- Interrupts
-		[1766] = "Kick",
-		[57994] = "Wind Shear",
-		[183752] = "Disrupt",
-		[47528] = "Mind Freeze",
-		[187707] = "Muzzle",
-		[31935] = "Avenger's Shield",
-		[6552] = "Pummel",
-		[96231] = "Rebuke",
-		[116705] = "Spear Hand Strike",
-		[106839] = "Skull Bash",
-		[2139] = "Counterspell",
-		[19647] = "Spell Lock",
-		[89766] = "Axe Toss",
-		[347008] = "Axe Toss",
-		[15487] = "Silence",
-		[147362] = "Counter Shot",
-		[351338] = "Quell",
-		[28730] = "Arcane Torrent",
+		[1766] = L["Kick"],
+		[57994] = L["Wind Shear"],
+		[183752] = L["Disrupt"],
+		[47528] = L["Mind Freeze"],
+		[187707] = L["Muzzle"],
+		[31935] = L["Avenger's Shield"],
+		[6552] = L["Pummel"],
+		[96231] = L["Rebuke"],
+		[116705] = L["Spear Hand Strike"],
+		[106839] = L["Skull Bash"],
+		[2139] = L["Counterspell"],
+		[19647] = L["Spell Lock"],
+		[89766] = L["Axe Toss"],
+		[347008] = L["Axe Toss"],
+		[15487] = L["Silence"],
+		[147362] = L["Counter Shot"],
+		[351338] = L["Quell"],
+		[28730] = L["Arcane Torrent"],
 		-- Cast-stops (stuns/CC)
-		[107570] = "Storm Bolt",
-		[46968] = "Shockwave",
-		[132168] = "Shockwave",
-		[5246] = "Intimidating Shout",
-		[179057] = "Chaos Nova",
-		[205630] = "Illidan's Grasp",
-		[221562] = "Asphyxiate",
-		[108194] = "Asphyxiate",
-		[91800] = "Gnaw",
-		[47481] = "Gnaw",
-		[30283] = "Shadowfury",
-		[6789] = "Mortal Coil",
-		[6358] = "Seduction",
-		[5782] = "Fear",
-		[261589] = "Seduction",
-		[192058] = "Capacitor Totem",
-		[51514] = "Hex",
-		[118905] = "Static Charge",
-		[19577] = "Intimidation",
-		[186387] = "Bursting Shot",
-		[213691] = "Scatter Shot",
-		[187650] = "Freezing Trap",
-		[853] = "Hammer of Justice",
-		[20066] = "Repentance",
-		[408] = "Kidney Shot",
-		[1833] = "Cheap Shot",
-		[6770] = "Sap",
-		[2094] = "Blind",
-		[1776] = "Gouge",
-		[119381] = "Leg Sweep",
-		[5211] = "Mighty Bash",
-		[115078] = "Paralysis",
-		[33786] = "Cyclone",
-		[339] = "Entangling Roots",
-		[118] = "Polymorph",
-		[82691] = "Ring of Frost",
-		[157981] = "Blizzard",
-		[8122] = "Psychic Scream",
-		[9484] = "Shackle Undead",
-		[605] = "Mind Control",
-		[374348] = "Land Slide",
-		[370565] = "Terrorize",
+		[107570] = L["Storm Bolt"],
+		[46968] = L["Shockwave"],
+		[132168] = L["Shockwave"],
+		[5246] = L["Intimidating Shout"],
+		[179057] = L["Chaos Nova"],
+		[205630] = L["Illidan's Grasp"],
+		[221562] = L["Asphyxiate"],
+		[108194] = L["Asphyxiate"],
+		[91800] = L["Gnaw"],
+		[47481] = L["Gnaw"],
+		[30283] = L["Shadowfury"],
+		[6789] = L["Mortal Coil"],
+		[6358] = L["Seduction"],
+		[5782] = L["Fear"],
+		[261589] = L["Seduction"],
+		[192058] = L["Capacitor Totem"],
+		[51514] = L["Hex"],
+		[118905] = L["Static Charge"],
+		[19577] = L["Intimidation"],
+		[186387] = L["Bursting Shot"],
+		[213691] = L["Scatter Shot"],
+		[187650] = L["Freezing Trap"],
+		[853] = L["Hammer of Justice"],
+		[20066] = L["Repentance"],
+		[408] = L["Kidney Shot"],
+		[1833] = L["Cheap Shot"],
+		[6770] = L["Sap"],
+		[2094] = L["Blind"],
+		[1776] = L["Gouge"],
+		[119381] = L["Leg Sweep"],
+		[5211] = L["Mighty Bash"],
+		[115078] = L["Paralysis"],
+		[33786] = L["Cyclone"],
+		[339] = L["Entangling Roots"],
+		[118] = L["Polymorph"],
+		[82691] = L["Ring of Frost"],
+		[157981] = L["Blizzard"],
+		[8122] = L["Psychic Scream"],
+		[9484] = L["Shackle Undead"],
+		[605] = L["Mind Control"],
+		[374348] = L["Land Slide"],
+		[370565] = L["Terrorize"],
 	}
 	for id, nm in pairs(STOPPER_NAMES) do
 		_spellLabelCache[id] = nm
@@ -1906,7 +1908,7 @@ function Core:InitInterruptTracking()
 							if dl2 >= 5 then
 								SafeDbgPrint("[CastStop Emit] target=" .. safeStr(tn) .. " spellId=" .. tostring(castSpellId) .. " spellName=" .. safeStr(sn))
 							end
-							local tpl = getTemplate("caststops", "Stopped: %e (%t)")
+							local tpl = getTemplate("caststops", L["Stopped: %e (%t)"])
 							local out = applyTemplate(tpl, { e = sn, t = tn })
 							if out and out ~= "" then
 								Core._lastCastStopEmittedAt = GetTime()
@@ -2110,7 +2112,7 @@ function Core:InitInterruptTracking()
 				stopperLabel = Core._lastInterruptSpellName or safeSpellLabel(Core._lastStopperSpellId)
 			end
 			local playerName = UnitName and UnitName("player") or ""
-			local tpl = getTemplate(templateKey or emitCategory, "%t Interrupted!")
+			local tpl = getTemplate(templateKey or emitCategory, L["%t Interrupted!"])
 			local out = applyTemplate(tpl, { e = "", p = playerName, s = stopperLabel, t = targetName })
 			if out and out ~= "" then
 				if emitCategory == "caststops" then
@@ -2153,7 +2155,7 @@ function Core:InitInterruptTracking()
 			end
 
 			if not spellName then
-				local a, b = msg:match("You interrupt (.+)'s (.+)%.?")
+				local a, b = msg:match(L["You interrupt (.+)'s (.+)%.?"])
 				if a and b then
 					b = b:gsub("%s+$", "")
 					b = b:gsub("%.$", "")
@@ -2179,7 +2181,7 @@ function Core:InitInterruptTracking()
 		Core._lastNotifAt = t
 
 		emitCategory = "interrupts"
-		local tpl = getTemplate("interrupts", "Interrupted: %e")
+		local tpl = getTemplate("interrupts", L["Interrupted: %e"])
 		local out = applyTemplate(tpl, { e = spellName, t = targetName })
 		if out and out ~= "" then
 			Core:EmitNotification(out, { r = 1.0, g = 0.6, b = 0.0 }, emitCategory)
@@ -2361,7 +2363,7 @@ function Core:InitKillAnnouncer()
 		if event == "UNIT_HEALTH" or event == "UNIT_HEALTH_FREQUENT" then
 			if Core._utKillCreditOnly and Core._utKillCreditSeen then
 				if dl >= 4 then
-					SafePrint("|cFF00CC66[UT]|r suppress UNIT_HEALTH (killCreditOnly=true)")
+					SafePrint(L["|cFF00CC66[UT]|r suppress UNIT_HEALTH (killCreditOnly=true)"])
 				end
 				return
 			end
@@ -2394,7 +2396,7 @@ function Core:InitKillAnnouncer()
 				local tnSafe = (ZSBT.IsSafeString and ZSBT.IsSafeString(tn))
 				local lastSafe = (ZSBT.IsSafeString and ZSBT.IsSafeString(lastName))
 				if dl >= 4 then
-					SafePrint("|cFF00CC66[UT]|r killcheck deadEdge=true"
+					SafePrint(L["|cFF00CC66[UT]|r killcheck deadEdge=true"]
 						.. " age=" .. dbgSafe(age)
 						.. " tn=" .. dbgSafe(tnSafe and tn or nil)
 						.. " last=" .. dbgSafe(lastSafe and lastName or nil))
@@ -2427,12 +2429,12 @@ function Core:InitKillAnnouncer()
 
 		local function extractTarget(m)
 			if type(m) ~= "string" then return nil end
-			local t = m:match("You have slain (.+)")
+			local t = m:match(L["You have slain (.+)"])
 			if t then
 				t = t:gsub("[!.]+$", "")
 				return t
 			end
-			t = m:match("You have killed (.+)")
+			t = m:match(L["You have killed (.+)"])
 			if t then
 				t = t:gsub("[!.]+$", "")
 				return t
@@ -2773,7 +2775,7 @@ function Core:InitBuffTracking()
 						else
 							local ZSBTAddon = ZSBT and ZSBT.Addon
 							if ZSBTAddon and ZSBTAddon.Print then
-								ZSBTAddon:Print("[AURA] Deferred scan complete, tracked auras: " .. tostring(count) .. " sampleIDs: " .. table.concat(ids, ", "))
+								ZSBTAddon:Print("[AURA] Deferred scan complete, tracked auras: " .. tostring(count) .. L[" sampleIDs: "] .. table.concat(ids, ", "))
 							end
 						end
 					end
@@ -2959,19 +2961,19 @@ end
 function Core:RunAuraTest()
     if not self.IsMasterEnabled or not self:IsMasterEnabled() then
         if Addon and Addon.Print then
-            Addon:Print("AuraTest: ZSBT is disabled.")
+            Addon:Print(L["AuraTest: ZSBT is disabled."])
         end
         return
     end
     self._auraInstanceMap = {}
-    self:EmitNotification("AuraTest: scanning...", {r = 1.0, g = 1.0, b = 0.2})
+    self:EmitNotification(L["AuraTest: scanning..."], {r = 1.0, g = 1.0, b = 0.2})
     self:ScanPlayerAuras(nil)
 
     local count = 0
     for _ in pairs(self._auraInstanceMap or {}) do
         count = count + 1
     end
-    self:EmitNotification("AuraTest: found " .. tostring(count), {r = 1.0, g = 1.0, b = 0.2})
+    self:EmitNotification(L["AuraTest: found "] .. tostring(count), {r = 1.0, g = 1.0, b = 0.2})
 end
 
  local function BuildAuraNotifText(prefix, auraName)
@@ -3123,7 +3125,7 @@ function Core:ScanAuraRulesWatchedPresence(silent)
 				local harmful = isHarmfulSpellId(sid)
 				cache[sid] = { present = true, harmful = harmful }
 				if not silent then
-					local name = (ZSBT and ZSBT.CleanSpellName and ZSBT.CleanSpellName(sid)) or (GetSpellInfo and GetSpellInfo(sid)) or ("Spell #" .. tostring(sid))
+					local name = (ZSBT and ZSBT.CleanSpellName and ZSBT.CleanSpellName(sid)) or (GetSpellInfo and GetSpellInfo(sid)) or (L["Spell #"] .. tostring(sid))
 					local okToShow = self:ShouldEmitBuffNotif(sid, true, harmful)
 					if okToShow then
 						local color = harmful and { r = 1.0, g = 0.4, b = 0.4 } or { r = 0.5, g = 0.8, b = 1.0 }
@@ -3138,7 +3140,7 @@ function Core:ScanAuraRulesWatchedPresence(silent)
 				local harmful = type(was) == "table" and was.harmful == true
 				cache[sid] = { present = false, harmful = harmful }
 				if not silent then
-					local name = (ZSBT and ZSBT.CleanSpellName and ZSBT.CleanSpellName(sid)) or (GetSpellInfo and GetSpellInfo(sid)) or ("Spell #" .. tostring(sid))
+					local name = (ZSBT and ZSBT.CleanSpellName and ZSBT.CleanSpellName(sid)) or (GetSpellInfo and GetSpellInfo(sid)) or (L["Spell #"] .. tostring(sid))
 					local okToShow = self:ShouldEmitBuffNotif(sid, false, harmful)
 					if okToShow then
 						local color = { r = 0.6, g = 0.6, b = 0.6 }
@@ -3900,9 +3902,9 @@ function Core:InitLootTracking()
 		return (s:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1"))
 	end
 
-	local GOLD = (type(GOLD_AMOUNT) == "string") and GOLD_AMOUNT:gsub("%%d *", "") or nil
-	local SILVER = (type(SILVER_AMOUNT) == "string") and SILVER_AMOUNT:gsub("%%d *", "") or nil
-	local COPPER = (type(COPPER_AMOUNT) == "string") and COPPER_AMOUNT:gsub("%%d *", "") or nil
+	local GOLD = (type(GOLD_AMOUNT) == "string") and GOLD_AMOUNT:gsub(L["%%d *"], "") or nil
+	local SILVER = (type(SILVER_AMOUNT) == "string") and SILVER_AMOUNT:gsub(L["%%d *"], "") or nil
+	local COPPER = (type(COPPER_AMOUNT) == "string") and COPPER_AMOUNT:gsub(L["%%d *"], "") or nil
 	local GOLD_PAT = GOLD and escapePattern(GOLD) or nil
 	local SILVER_PAT = SILVER and escapePattern(SILVER) or nil
 	local COPPER_PAT = COPPER and escapePattern(COPPER) or nil
@@ -4124,15 +4126,15 @@ local function _initRepChangePatterns()
 	add(_G.FACTION_STANDING_DECREASED, -1)
 	add(_G.FACTION_STANDING_DECREASED_GENERIC, -1)
 
-	add("Reputation with %s increased by %d.", 1)
-	add("Reputation with %s decreased by %d.", -1)
-	add("Your reputation with %s has increased by %d.", 1)
-	add("Your reputation with %s has decreased by %d.", -1)
+	add(L["Reputation with %s increased by %d."], 1)
+	add(L["Reputation with %s decreased by %d."], -1)
+	add(L["Your reputation with %s has increased by %d."], 1)
+	add(L["Your reputation with %s has decreased by %d."], -1)
 
-	table.insert(_repChangePatterns, { pat = "Reputation with (.+) increased by ([%d,]+)", sign = 1 })
-	table.insert(_repChangePatterns, { pat = "Reputation with (.+) decreased by ([%d,]+)", sign = -1 })
-	table.insert(_repChangePatterns, { pat = "Your reputation with (.+) has increased by ([%d,]+)", sign = 1 })
-	table.insert(_repChangePatterns, { pat = "Your reputation with (.+) has decreased by ([%d,]+)", sign = -1 })
+	table.insert(_repChangePatterns, { pat = L["Reputation with (.+) increased by ([%d,]+)"], sign = 1 })
+	table.insert(_repChangePatterns, { pat = L["Reputation with (.+) decreased by ([%d,]+)"], sign = -1 })
+	table.insert(_repChangePatterns, { pat = L["Your reputation with (.+) has increased by ([%d,]+)"], sign = 1 })
+	table.insert(_repChangePatterns, { pat = L["Your reputation with (.+) has decreased by ([%d,]+)"], sign = -1 })
 end
 
 function Core:ParseReputationChangeMessage(msg)
@@ -4253,9 +4255,9 @@ function Core:InitProgressTracking()
 						or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 					local okName, playerName = pcall(UnitName, "player")
 					if not okName or type(playerName) ~= "string" then playerName = nil end
-					local who, amt = text:match("(.+) has gained (%d[%d,]+) experience")
+					local who, amt = text:match(L["(.+) has gained (%d[%d,]+) experience"])
 					if not who or not amt then
-						who, amt = text:match("(.+) gains (%d[%d,]+) experience")
+						who, amt = text:match(L["(.+) gains (%d[%d,]+) experience"])
 					end
 					if not who or not amt then return end
 					if playerName and who == playerName then return end
@@ -4301,11 +4303,11 @@ function Core:InitProgressTracking()
 			if not okName or type(playerName) ~= "string" then playerName = nil end
 			local xp, whoXP = nil, nil
 			pcall(function()
-				xp = msg:match("You gain (%d[%d,]+) experience")
+				xp = msg:match(L["You gain (%d[%d,]+) experience"])
 				if not xp then
-					local who, amt = msg:match("(.+) gains (%d[%d,]+) experience")
+					local who, amt = msg:match(L["(.+) gains (%d[%d,]+) experience"])
 					if not who or not amt then
-						who, amt = msg:match("(.+) has gained (%d[%d,]+) experience")
+						who, amt = msg:match(L["(.+) has gained (%d[%d,]+) experience"])
 					end
 					if who and amt then
 						if playerName and who == playerName then
@@ -4348,11 +4350,11 @@ function Core:InitProgressTracking()
 			end
         elseif event == "CHAT_MSG_COMBAT_HONOR_GAIN" then
             if (t - Core._lastHonorNotifAt) < PROGRESS_DEDUP_WINDOW then return end
-            local honor = msg:match("(%d[%d,]+) honor")
+            local honor = msg:match(L["(%d[%d,]+) honor"])
             if honor then
                 honor = honor:gsub(",", "")
                 Core._lastHonorNotifAt = t
-				Core:EmitNotification("+" .. honor .. " Honor", {r = 1.0, g = 0.5, b = 0.0}, "honor")
+				Core:EmitNotification("+" .. honor .. L[" Honor"], {r = 1.0, g = 0.5, b = 0.0}, "honor")
             end
 		elseif event == "CHAT_MSG_COMBAT_FACTION_CHANGE" or event == "CHAT_MSG_COMBAT_FACTION_CHANGE_STAT" then
 			if (t - Core._lastRepNotifAt) < PROGRESS_DEDUP_WINDOW then return end
@@ -4402,17 +4404,17 @@ function Core:InitPowerTracking()
             elseif pType == 1 then powerName = "Rage"
             elseif pType == 2 then powerName = "Focus"
             elseif pType == 3 then powerName = "Energy"
-            elseif pType == 4 then powerName = "Combo Points"
-            elseif pType == 6 then powerName = "Runic Power"
-            elseif pType == 8 then powerName = "Astral Power"
-            elseif pType == 9 then powerName = "Holy Power"
+            elseif pType == 4 then powerName = L["Combo Points"]
+            elseif pType == 6 then powerName = L["Runic Power"]
+            elseif pType == 8 then powerName = L["Astral Power"]
+            elseif pType == 9 then powerName = L["Holy Power"]
             elseif pType == 11 then powerName = "Maelstrom"
             elseif pType == 12 then powerName = "Chi"
             elseif pType == 13 then powerName = "Insanity"
             elseif pType == 17 then powerName = "Fury"
             elseif pType == 18 then powerName = "Pain"
             end
-            Core:EmitNotification(powerName .. " Full!", {r = 1.0, g = 0.6, b = 0.0}, "power")
+            Core:EmitNotification(powerName .. L[" Full!"], {r = 1.0, g = 0.6, b = 0.0}, "power")
         end
     end)
 end

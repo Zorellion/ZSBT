@@ -3,12 +3,14 @@
 ## Title: Zore's Scrolling Battle Text
 ## Notes: Zore's Scrolling Battle Text (ZSBT) for WoW Retail 12.x
 ## Author: Zorellion
-## Version: 3.4.4
+## Version: 3.5.0
 ## SavedVariables: ZSBTDB
 ## OptionalDeps: Ace3, LibSharedMedia-3.0
 
 # Libraries - Load order matters
 libs\LibStub\LibStub.lua
+#Locales\ForceLocale.lua
+libs\AceLocale-3.0\AceLocale-3.0.lua
 libs\LibCombatPulse-1.0\LibCombatPulse-1.0.lua
 libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
 libs\AceAddon-3.0\AceAddon-3.0.lua
@@ -25,6 +27,19 @@ libs\AceSerializer-3.0\AceSerializer-3.0.lua
 libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
 libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
 libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
+
+# Localization - L.lua registers the app first (silent), locale files must
+# load before any file that reads ZSBT.L at load time
+Core\L.lua
+Locales\enUS.lua
+Locales\deDE.lua
+Locales\esES.lua
+Locales\frFR.lua
+Locales\itIT.lua
+Locales\ptBR.lua
+Locales\ruRU.lua
+Locales\zhCN.lua
+Locales\koKR.lua
 
 # Core - Constants and defaults before init
 Core\Constants.lua
