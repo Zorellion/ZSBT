@@ -41,6 +41,33 @@ function Core:IsAurasSecretContext(updateInfo)
 	return false
 end
 
+-- C_Secrets predicates (SecretPredicateAPIDocumentation): per-index and
+-- per-instance answers let us skip individual secret auras instead of
+-- abandoning the whole scan. All feature-detected; absent on older clients.
+function Core:AuraSecretGlobal()
+	if C_Secrets and C_Secrets.ShouldAurasBeSecret then
+		local ok, res = pcall(C_Secrets.ShouldAurasBeSecret)
+		if ok and type(res) == "boolean" then return res end
+	end
+	return nil
+end
+
+function Core:AuraIndexSecret(index, filter)
+	if C_Secrets and C_Secrets.ShouldUnitAuraIndexBeSecret then
+		local ok, res = pcall(C_Secrets.ShouldUnitAuraIndexBeSecret, "player", index, filter)
+		if ok then return res == true end
+	end
+	return false
+end
+
+function Core:AuraInstanceSecret(instanceId)
+	if C_Secrets and C_Secrets.ShouldUnitAuraInstanceBeSecret then
+		local ok, res = pcall(C_Secrets.ShouldUnitAuraInstanceBeSecret, "player", instanceId)
+		if ok then return res == true end
+	end
+	return false
+end
+
 function Core:IsMasterEnabled()
     return ZSBT.db
        and ZSBT.db.profile
@@ -87,7 +114,7 @@ local function getAuraRuleForSpell(spellID)
 	return rule
 end
 
-function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride)
+function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride, auraName, trusted)
 	local isHarmful = (isHarmfulOverride == true)
 	if isHarmfulOverride == nil and type(spellID) == "number" then
 		if type(AuraUtil) == "table" and type(AuraUtil.FindAuraBySpellId) == "function" then
@@ -96,11 +123,33 @@ function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride)
 		end
 	end
 	local rule = getAuraRuleForSpell(spellID)
+	local ruleKey = nil
+	if rule ~= nil then
+		ruleKey = (type(spellID) == "number") and spellID or nil
+	end
+	-- Name-keyed rules ("name:X") match every rank of an aura by name; only
+	-- consulted when no spellID rule exists and the name is readable.
+	if rule == nil and type(auraName) == "string"
+		and ZSBT.IsSafeString and ZSBT.IsSafeString(auraName) then
+		local scn = ZSBT and ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+		local rules = scn and scn.auraRules
+		local nkey = "name:" .. auraName
+		local nr = type(rules) == "table" and rules[nkey] or nil
+		if type(nr) == "table" then
+			rule = (nr.enabled == false) and { disabled = true } or nr
+			ruleKey = nkey
+		elseif nr == false then
+			rule = { disabled = true }
+			ruleKey = nkey
+		end
+	end
 	local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("core"))
 		or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 	if not rule then
 		-- 12.1+ combat/secret context: do not emit unconfigured aura gains/fades.
-		if self.IsAurasSecretContext and self:IsAurasSecretContext() == true then
+		-- Trusted sources (combat-text notices, recast pairing) are reliable
+		-- Blizzard UI signals and bypass this blanket suppression.
+		if trusted ~= true and self.IsAurasSecretContext and self:IsAurasSecretContext() == true then
 			return false
 		end
 		local sc = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
@@ -151,7 +200,7 @@ function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride)
 		end
 		return true
 	end
-	if type(spellID) ~= "number" then
+	if ruleKey == nil then
 		return true
 	end
 	if rule.disabled then 
@@ -193,10 +242,10 @@ function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride)
 	if throttle <= 0 then return true end
 
 	if not self._auraRuleLastShown then self._auraRuleLastShown = {} end
-	local state = self._auraRuleLastShown[spellID]
+	local state = self._auraRuleLastShown[ruleKey]
 	if type(state) ~= "table" then
 		state = { gain = 0, fade = 0 }
-		self._auraRuleLastShown[spellID] = state
+		self._auraRuleLastShown[ruleKey] = state
 	end
 	local now = GetTime and GetTime() or 0
 	local key = isGain and "gain" or "fade"
@@ -1169,7 +1218,7 @@ end
 
 ------------------------------------------------------------------------
 -- Trade Skill Notifications
--- Skill ups and learned recipes/spells (MSBT-style) routed via Notifications.
+-- Skill ups and learned recipes/spells routed via Notifications.
 ------------------------------------------------------------------------
 function Core:InitTradeSkillTracking()
 	if self._tradeSkillFrame then return end
@@ -2590,7 +2639,7 @@ function Core:GetNotificationPerTypeConfig(category)
 	return type(conf) == "table" and conf or nil
 end
 
-function Core:EmitNotification(text, color, category)
+function Core:EmitNotification(text, color, category, extraMeta)
 	if category and not self:IsNotificationCategoryEnabled(category) then
 		return
 	end
@@ -2599,10 +2648,14 @@ function Core:EmitNotification(text, color, category)
 		if type(category) == "string" and category ~= "" and self.GetNotificationScrollArea then
 			area = self:GetNotificationScrollArea(category)
 		end
+		local imeta = { kind = "notification", category = category }
+		if type(extraMeta) == "table" then
+			for k, v in pairs(extraMeta) do imeta[k] = v end
+		end
 		if ZSBT.DisplayText then
-			ZSBT.DisplayText(area, text, color, { kind = "notification", category = category })
+			ZSBT.DisplayText(area, text, color, imeta)
 		elseif self.Display and self.Display.Emit then
-			self.Display:Emit(area, text, color, { kind = "notification", category = category })
+			self.Display:Emit(area, text, color, imeta)
 		end
 		return
 	end
@@ -2637,6 +2690,9 @@ function Core:EmitNotification(text, color, category)
 			end
 		end
 	end
+	if type(extraMeta) == "table" then
+		for k, v in pairs(extraMeta) do meta[k] = v end
+	end
 	if ZSBT.DisplayText then
 		ZSBT.DisplayText(area, text, finalColor, meta)
 	elseif self.Display and self.Display.Emit then
@@ -2644,7 +2700,7 @@ function Core:EmitNotification(text, color, category)
 	end
 end
 
-function Core:EmitBuffNotification(spellID, text, color, category)
+function Core:EmitBuffNotification(spellID, text, color, category, extraMeta)
 	if category and not self:IsNotificationCategoryEnabled(category) then
 		return
 	end
@@ -2661,10 +2717,14 @@ function Core:EmitBuffNotification(spellID, text, color, category)
 				area = rule.scrollArea
 			end
 		end
+		local bmeta = { kind = "notification" }
+		if type(extraMeta) == "table" then
+			for k, v in pairs(extraMeta) do bmeta[k] = v end
+		end
 		if ZSBT.DisplayText then
-			ZSBT.DisplayText(area, text, color, { kind = "notification" })
+			ZSBT.DisplayText(area, text, color, bmeta)
 		elseif self.Display and self.Display.Emit then
-			self.Display:Emit(area, text, color, { kind = "notification" })
+			self.Display:Emit(area, text, color, bmeta)
 		end
 		return
 	end
@@ -2705,6 +2765,9 @@ function Core:EmitBuffNotification(spellID, text, color, category)
 			end
 		end
 	end
+	if type(extraMeta) == "table" then
+		for k, v in pairs(extraMeta) do meta[k] = v end
+	end
 	if ZSBT.DisplayText then
 		ZSBT.DisplayText(area, text, finalColor, meta)
 	elseif self.Display and self.Display.Emit then
@@ -2724,6 +2787,13 @@ Core._auraInstanceHarmfulSpellIDs = {} -- [auraInstanceID] = spellID (harmful au
 Core._auraInstanceIsHarmful = {} -- [auraInstanceID] = boolean
 Core._auraRuleLastShown = nil  -- [spellID] = { gain=ts, fade=ts }
 Core._recentBuffStats = nil -- runtime-only: [spellID] = { count=N, lastSeen=ts }
+Core._auraReadAt = nil          -- last readable UNIT_AURA payload (combat-text dedup)
+Core._lastUnreadAuraAt = nil    -- last secret/unreadable UNIT_AURA payload (recast pairing)
+Core._auraInstanceExpires = Core._auraInstanceExpires or {} -- [instanceID] = expirationTime
+Core._buffSpellCache = Core._buffSpellCache or {}           -- [spellID] = { name=, icon= }
+Core._pendingBuffCast = nil     -- { spell=, at= } awaiting an unreadable aura update
+Core._lastCastSpellId = nil
+Core._lastCastAt = nil
 
 function Core:InitBuffTracking()
     if self._buffFrame then return end
@@ -2734,6 +2804,12 @@ function Core:InitBuffTracking()
     self._buffFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
     self._buffFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
     self._buffFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    -- COMBAT_TEXT_UPDATE carries SPELL_AURA_* notices that remain visible
+    -- when UNIT_AURA payloads go secret in combat. Not present on all clients.
+    pcall(function()
+        if C_EventUtils and C_EventUtils.IsEventValid and not C_EventUtils.IsEventValid("COMBAT_TEXT_UPDATE") then return end
+        self._buffFrame:RegisterEvent("COMBAT_TEXT_UPDATE")
+    end)
     self._buffFrame:SetScript("OnEvent", function(_, event, unit, ...)
         local info = ...
 		if event == "PLAYER_ENTERING_WORLD" then
@@ -2819,6 +2895,7 @@ function Core:InitBuffTracking()
 			Core._auraInstanceSpellIDs = {}
 			Core._auraInstanceHarmfulSpellIDs = {}
 			Core._auraInstanceIsHarmful = {}
+			Core._auraInstanceExpires = {}
 			Core._auraRuleLastShown = {}
 			Core._auraInitSeq = (tonumber(Core._auraInitSeq) or 0) + 1
 			local auraInitSeq = Core._auraInitSeq
@@ -2886,6 +2963,11 @@ function Core:InitBuffTracking()
             end
             return
         end
+        if event == "COMBAT_TEXT_UPDATE" then
+			-- For this event the first payload arg lands in `unit`.
+			Core:OnCombatTextAura(unit)
+			return
+		end
         if event == "UNIT_SPELLCAST_SUCCEEDED" then
 			if unit ~= "player" then return end
 			if not Core:IsMasterEnabled() then return end
@@ -2893,6 +2975,20 @@ function Core:InitBuffTracking()
 			local trg = ZSBT.Core and ZSBT.Core.Triggers
 			if trg and trg.OnSpellcastSucceeded then
 				pcall(function() trg:OnSpellcastSucceeded(unit, spellId) end)
+			end
+			-- Track the last player cast for aura icon attribution and buff
+			-- recast pairing (secret aura contexts can't see the refresh).
+			Core._lastCastSpellId = spellId
+			Core._lastCastAt = GetTime and GetTime() or 0
+			if type(spellId) == "number" and type(Core._buffSpellCache) == "table" and Core._buffSpellCache[spellId] then
+				-- A cast on a friendly target is theirs, not a self-buff recast.
+				local exists = UnitExists and UnitExists("target")
+				local assist = exists and UnitCanAssist and UnitCanAssist("player", "target")
+				local isSelf = exists and UnitIsUnit and UnitIsUnit("target", "player")
+				if not (assist and not isSelf) then
+					Core._pendingBuffCast = { spell = spellId, at = Core._lastCastAt }
+					Core:TryRecastBuffMatch()
+				end
 			end
 			return
 		end
@@ -3065,6 +3161,7 @@ local function extractAuraInfo(auraData)
 end
 
 local function GetPlayerAuraByIndex(index, filter)
+    if Core.AuraIndexSecret and Core:AuraIndexSecret(index, filter) then return nil end
     if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
         local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, "player", index, filter)
         if ok then return aura end
@@ -3126,8 +3223,10 @@ function Core:ScanAuraRulesWatchedPresence(silent)
 				cache[sid] = { present = true, harmful = harmful }
 				if not silent then
 					local name = (ZSBT and ZSBT.CleanSpellName and ZSBT.CleanSpellName(sid)) or (GetSpellInfo and GetSpellInfo(sid)) or (L["Spell #"] .. tostring(sid))
-					local okToShow = self:ShouldEmitBuffNotif(sid, true, harmful)
+					local okToShow = self:ShouldEmitBuffNotif(sid, true, harmful, name)
 					if okToShow then
+						-- Mark handled so the combat-text fallback doesn't double it.
+						self._auraReadAt = GetTime and GetTime() or 0
 						local color = harmful and { r = 1.0, g = 0.4, b = 0.4 } or { r = 0.5, g = 0.8, b = 1.0 }
 						if harmful then
 							self:EmitNotification(BuildAuraNotifText("+", name), color, "auras")
@@ -3141,8 +3240,10 @@ function Core:ScanAuraRulesWatchedPresence(silent)
 				cache[sid] = { present = false, harmful = harmful }
 				if not silent then
 					local name = (ZSBT and ZSBT.CleanSpellName and ZSBT.CleanSpellName(sid)) or (GetSpellInfo and GetSpellInfo(sid)) or (L["Spell #"] .. tostring(sid))
-					local okToShow = self:ShouldEmitBuffNotif(sid, false, harmful)
+					local okToShow = self:ShouldEmitBuffNotif(sid, false, harmful, name)
 					if okToShow then
+						-- Mark handled so the combat-text fallback doesn't double it.
+						self._auraReadAt = GetTime and GetTime() or 0
 						local color = { r = 0.6, g = 0.6, b = 0.6 }
 						if harmful then
 							self:EmitNotification(BuildAuraNotifText("-", name), color, "auras")
@@ -3162,7 +3263,26 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 
 	-- 12.1+ secret aura contexts: do not parse UNIT_AURA delta payloads.
 	-- Maintain configured auraRules via watched spellID presence checks only.
-	if self.IsAurasSecretContext and self:IsAurasSecretContext(updateInfo) == true then
+	-- C_Secrets.ShouldAurasBeSecret gives an authoritative answer when the
+	-- client provides it; the combat/arena heuristics remain as fallback and
+	-- a genuinely secret payload always wins over an explicit "not secret".
+	local secretCtx = self.IsAurasSecretContext and self:IsAurasSecretContext(updateInfo) == true or false
+	local payloadSecret = false
+	if updateInfo ~= nil and HasSecretValues then
+		local okP, resP = pcall(HasSecretValues, updateInfo)
+		payloadSecret = okP and resP == true
+	end
+	local auraSecret = self:AuraSecretGlobal()
+	if auraSecret == true then
+		secretCtx = true
+	elseif auraSecret == false and not payloadSecret then
+		secretCtx = false
+	end
+	if secretCtx then
+		if updateInfo ~= nil then
+			self._lastUnreadAuraAt = GetTime and GetTime() or 0
+			self:TryRecastBuffMatch()
+		end
 		self:ScanAuraRulesWatchedPresence(silent)
 		return
 	end
@@ -3259,6 +3379,13 @@ function Core:ScanPlayerAuras(updateInfo, silent)
             -- keys — skip auras whose instanceId isn't a usable number.
             if ZSBT.IsSafeNumber and not ZSBT.IsSafeNumber(instanceId) then return end
 
+            -- Track expirationTime for refresh detection (updated auras whose
+            -- time left jumped were recast).
+            local auraExp = auraData.expirationTime
+            if type(auraExp) == "number" and not isSecret(auraExp) then
+                if self._auraInstanceExpires then self._auraInstanceExpires[instanceId] = auraExp end
+            end
+
             local sid = ResolveSafeAuraSpellID(auraData)
             local name = extractAuraInfo(auraData)
 			if type(sid) ~= "number" then
@@ -3271,6 +3398,15 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                 end
                 if isHelpful and type(sid) == "number" then
                     self:RecordRecentBuff(sid)
+                    -- Cache helpful auras by spell for recast pairing and icon
+                    -- attribution when UNIT_AURA payloads go secret.
+                    if self._buffSpellCache then
+                        local centry = self._buffSpellCache[sid]
+                        if type(centry) ~= "table" then centry = {}; self._buffSpellCache[sid] = centry end
+                        if name then centry.name = name end
+                        local icon = auraData.icon
+                        if icon ~= nil and not isSecret(icon) and (type(icon) == "string" or type(icon) == "number") then centry.icon = icon end
+                    end
                 end
                 if type(sid) == "number" then
                     if isHelpful and self._auraInstanceSpellIDs then
@@ -3290,7 +3426,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                 -- Skip notification during grace period after aura removal (prevents instance ID refresh spam)
                 local inGracePeriod = self._auraGracePeriodUntil and (GetTime and GetTime() or 0) < self._auraGracePeriodUntil
                 if not silent and not seenDuringInit and not inGracePeriod then
-                    local okToShow = self:ShouldEmitBuffNotif(sid, true, isHelpful ~= true)
+                    local okToShow = self:ShouldEmitBuffNotif(sid, true, isHelpful ~= true, name)
                     if okToShow then
                         if sid and type(sid) == "number" then
                             self:EmitBuffNotification(sid, BuildAuraNotifText("+", newInstances[instanceId]), gainColor, "auras")
@@ -3400,7 +3536,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                     if isHarmful and (not sid) then
                         sid = self._auraInstanceHarmfulSpellIDs and self._auraInstanceHarmfulSpellIDs[oldInstanceId]
                     end
-                    local okToShow = self:ShouldEmitBuffNotif(sid, false, isHarmful)
+                    local okToShow = self:ShouldEmitBuffNotif(sid, false, isHarmful, oldName)
                     if okToShow then
                         if sid and type(sid) == "number" then
                             self:EmitBuffNotification(sid, BuildAuraNotifText("-", oldName or "Aura"), {r = 0.6, g = 0.6, b = 0.6}, "auras")
@@ -3426,10 +3562,14 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                 if self._auraInstanceSpellIDs then self._auraInstanceSpellIDs[oldInstanceId] = nil end
                 if self._auraInstanceHarmfulSpellIDs then self._auraInstanceHarmfulSpellIDs[oldInstanceId] = nil end
                 if self._auraInstanceIsHarmful then self._auraInstanceIsHarmful[oldInstanceId] = nil end
+                if self._auraInstanceExpires then self._auraInstanceExpires[oldInstanceId] = nil end
             end
         end
 
         self._auraInstanceMap = newInstances
+        if updateInfo ~= nil then
+            self._auraReadAt = GetTime and GetTime() or 0
+        end
         return
     end
 
@@ -3458,6 +3598,13 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                 -- Some combat updates can omit instance IDs; fall back to full rescan.
                 needsRescan = true
             else
+                if updateInfo ~= nil then
+                    self._auraReadAt = GetTime and GetTime() or 0
+                end
+                local auraExp = aura.expirationTime
+                if type(auraExp) == "number" and not isSecret(auraExp) then
+                    if self._auraInstanceExpires then self._auraInstanceExpires[instanceId] = auraExp end
+                end
                 if not self._auraInstanceMap[instanceId] then
                     self._auraInstanceMap[instanceId] = name or "Aura"
                     local color = {r = 0.5, g = 0.8, b = 1.0}  -- buff blue
@@ -3466,6 +3613,13 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                     end
                     if isHarmful ~= true and type(sid) == "number" then
                         self:RecordRecentBuff(sid)
+                        if self._buffSpellCache then
+                            local centry = self._buffSpellCache[sid]
+                            if type(centry) ~= "table" then centry = {}; self._buffSpellCache[sid] = centry end
+                            if name then centry.name = name end
+                            local icon = aura.icon
+                            if icon ~= nil and not isSecret(icon) and (type(icon) == "string" or type(icon) == "number") then centry.icon = icon end
+                        end
                     end
                     if type(self._auraInstanceIsHarmful) == "table" then
                         self._auraInstanceIsHarmful[instanceId] = isHarmful == true
@@ -3482,7 +3636,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                         self._aurasSeenDuringInit[sid] = true
                     end
                     if not silent then
-                        local okToShow = self:ShouldEmitBuffNotif(sid, true, isHarmful)
+                        local okToShow = self:ShouldEmitBuffNotif(sid, true, isHarmful, name)
                         if okToShow then
 							if isHarmful then
 								self:EmitNotification(BuildAuraNotifText("+", self._auraInstanceMap[instanceId]), color, "auras")
@@ -3531,7 +3685,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 	if updatedAuraInstanceIDs then
 		local needsRescan = false
 		for _, instanceId in safeIpairs(updatedAuraInstanceIDs) do
-			if instanceId then
+			if instanceId and not self:AuraInstanceSecret(instanceId) then
 				local auraData = nil
 				if C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
 					-- In some builds, this can throw when payloads are secret.
@@ -3541,10 +3695,20 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 				end
 
 				if auraData then
+					if updateInfo ~= nil then
+						self._auraReadAt = GetTime and GetTime() or 0
+					end
 					local name, isHarmful = extractAuraInfo(auraData)
 					local sid = ResolveSafeAuraSpellID(auraData)
 					if type(sid) == "number" and isHarmful ~= true then
 						self:RecordRecentBuff(sid)
+						if self._buffSpellCache then
+							local centry = self._buffSpellCache[sid]
+							if type(centry) ~= "table" then centry = {}; self._buffSpellCache[sid] = centry end
+							if name then centry.name = name end
+							local icon = auraData.icon
+							if icon ~= nil and not isSecret(icon) and (type(icon) == "string" or type(icon) == "number") then centry.icon = icon end
+						end
 					end
 					if type(self._auraInstanceIsHarmful) == "table" then
 						self._auraInstanceIsHarmful[instanceId] = isHarmful == true
@@ -3554,6 +3718,34 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 							self._auraInstanceHarmfulSpellIDs[instanceId] = sid
 						elseif isHarmful ~= true and self._auraInstanceSpellIDs then
 							self._auraInstanceSpellIDs[instanceId] = sid
+						end
+					end
+					-- Refresh detection: a recast keeps the same instanceID but
+					-- jumps expirationTime forward. Re-notify like a fresh gain.
+					local newExp = auraData.expirationTime
+					if self._auraInstanceExpires then
+						local oldExp = self._auraInstanceExpires[instanceId]
+						if type(oldExp) == "number" and oldExp > 0
+							and type(newExp) == "number" and not isSecret(newExp)
+							and newExp > oldExp + 2.0 and silent ~= true then
+							local rname = name or self._auraInstanceMap[instanceId]
+							local rsid = (type(sid) == "number") and sid
+								or (self._auraInstanceSpellIDs and self._auraInstanceSpellIDs[instanceId])
+							local isHarmfulAura = (isHarmful == true)
+								or (self._auraInstanceIsHarmful and self._auraInstanceIsHarmful[instanceId] == true)
+							local okToShow = self:ShouldEmitBuffNotif(rsid, true, isHarmfulAura, rname)
+							if okToShow then
+								local rtext = BuildAuraNotifText("+", rname or "Aura")
+								local rcolor = isHarmfulAura and {r = 1.0, g = 0.4, b = 0.4} or {r = 0.5, g = 0.8, b = 1.0}
+								if type(rsid) == "number" and not isHarmfulAura then
+									self:EmitBuffNotification(rsid, rtext, rcolor, "auras")
+								else
+									self:EmitNotification(rtext, rcolor, "auras")
+								end
+							end
+						end
+						if type(newExp) == "number" and not isSecret(newExp) then
+							self._auraInstanceExpires[instanceId] = newExp
 						end
 					end
 					if instanceId and name then
@@ -3596,7 +3788,8 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 				sid = self._auraInstanceHarmfulSpellIDs and self._auraInstanceHarmfulSpellIDs[instanceId]
 			end
             -- Fallback: if not in cache, try to resolve from game API
-            if not name and C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
+            if not name and not self:AuraInstanceSecret(instanceId)
+                and C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
                 local ok, auraData = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, "player", instanceId)
                 if ok and auraData then
                     name = extractAuraInfo(auraData)
@@ -3643,6 +3836,9 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 				end
 			end
 			if name then
+				if updateInfo ~= nil then
+					self._auraReadAt = GetTime and GetTime() or 0
+				end
 				self._auraInstanceMap[instanceId] = nil
 				-- Skip fade notifications during init (instance IDs are unstable after reload)
 				local inInitWindow = Core._auraInitInProgress
@@ -3677,7 +3873,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 					end
 				end
 				if silent ~= true and not inInitWindow then
-					local okToShow = self:ShouldEmitBuffNotif(sid, false, isHarmful)
+					local okToShow = self:ShouldEmitBuffNotif(sid, false, isHarmful, name)
 					if dl >= 4 then
 						if Addon and Addon.Dbg then
 							Addon:Dbg("core", 4, "[AURA] FADE okToShow=" .. tostring(okToShow))
@@ -3756,6 +3952,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 				if self._auraInstanceSpellIDs then self._auraInstanceSpellIDs[instanceId] = nil end
 				if self._auraInstanceHarmfulSpellIDs then self._auraInstanceHarmfulSpellIDs[instanceId] = nil end
 				if self._auraInstanceIsHarmful then self._auraInstanceIsHarmful[instanceId] = nil end
+				if self._auraInstanceExpires then self._auraInstanceExpires[instanceId] = nil end
 			end
 		end
 		if needsRescan then
@@ -3816,6 +4013,100 @@ function Core:ScanPlayerAuras(updateInfo, silent)
             self:ScanPlayerAuras(nil)
         end
     end
+end
+
+------------------------------------------------------------------------
+-- Combat-text aura fallback
+-- SPELL_AURA_* combat-text notices still fire when UNIT_AURA payloads go
+-- secret in combat. Deduped against _auraReadAt so readable UNIT_AURA
+-- updates always win.
+------------------------------------------------------------------------
+function Core:OnCombatTextAura(kind)
+	if type(kind) ~= "string" then return end
+	local gained = kind == "SPELL_AURA_START" or kind == "SPELL_AURA_START_HARMFUL"
+	local faded  = kind == "SPELL_AURA_END" or kind == "SPELL_AURA_END_HARMFUL"
+	if not (gained or faded) then return end
+	if not (C_CombatText and C_CombatText.GetCurrentEventInfo) then return end
+	local name = C_CombatText.GetCurrentEventInfo()
+	if name == nil then return end
+	local harmful = kind:find("HARMFUL", 1, true) ~= nil
+	local at = GetTime and GetTime() or 0
+	C_Timer.After(0.15, function()
+		if not (Core.IsMasterEnabled and Core:IsMasterEnabled()) then return end
+		if self._auraReadAt and self._auraReadAt >= at - 0.2 then return end
+		-- Respect the same anti-spam windows the UNIT_AURA path uses.
+		local now = GetTime and GetTime() or 0
+		if self._auraInitInProgress or (self._suppressAurasUntil and now < self._suppressAurasUntil) then return end
+		local safeName = (ZSBT.IsSafeString and ZSBT.IsSafeString(name)) and name or nil
+		local okToShow = self:ShouldEmitBuffNotif(nil, gained, harmful, safeName, true)
+		if not okToShow then return end
+		local prefix = gained and "+" or "-"
+		local color
+		if gained then
+			color = harmful and {r = 1.0, g = 0.4, b = 0.4} or {r = 0.5, g = 0.8, b = 1.0}
+		else
+			color = {r = 0.6, g = 0.6, b = 0.6}
+		end
+		-- Attribute the buff's icon from a same-frame helpful cast of your own;
+		-- secret aura names can't be resolved to icons.
+		local extraMeta = nil
+		if gained and not harmful and self._lastCastSpellId
+			and math.abs((self._lastCastAt or 0) - at) <= 0.005 then
+			local spell = self._lastCastSpellId
+			local helpful = false
+			if C_Spell and C_Spell.IsSpellHelpful then
+				local okH, resH = pcall(C_Spell.IsSpellHelpful, spell)
+				helpful = okH and resH == true
+			end
+			if helpful then
+				local tex = nil
+				if C_Spell and C_Spell.GetSpellTexture then
+					local okT, resT = pcall(C_Spell.GetSpellTexture, spell)
+					if okT and type(resT) == "number" then tex = resT end
+				end
+				if not tex and GetSpellTexture then
+					local okT2, resT2 = pcall(GetSpellTexture, spell)
+					if okT2 and type(resT2) == "number" then tex = resT2 end
+				end
+				if tex then extraMeta = { spellIcon = tex } end
+			end
+		end
+		self:EmitNotification(BuildAuraNotifText(prefix, name), color, "auras", extraMeta)
+	end)
+end
+
+------------------------------------------------------------------------
+-- Buff recast pairing
+-- Recasting a buff you already have refreshes it: no aura is added, and in
+-- secret contexts the UNIT_AURA payload can't be read at all. A cast of a
+-- spell we've previously seen as our own buff, within 0.5s of an unreadable
+-- aura update, re-shows that buff's cached name/icon.
+------------------------------------------------------------------------
+function Core:TryRecastBuffMatch()
+	local cast = self._pendingBuffCast
+	if type(cast) ~= "table" then return end
+	local now = GetTime and GetTime() or 0
+	if now - (cast.at or 0) > 2.0 then
+		self._pendingBuffCast = nil
+		return
+	end
+	local unread = self._lastUnreadAuraAt
+	if type(unread) ~= "number" or math.abs(cast.at - unread) > 0.5 then return end
+	self._pendingBuffCast = nil
+	local entry = self._buffSpellCache and self._buffSpellCache[cast.spell]
+	if type(entry) ~= "table" then return end
+	local now2 = GetTime and GetTime() or 0
+	if self._auraInitInProgress or (self._suppressAurasUntil and now2 < self._suppressAurasUntil) then return end
+	local okToShow = self:ShouldEmitBuffNotif(cast.spell, true, false, entry.name, true)
+	if not okToShow then return end
+	-- Mark the aura as handled so the combat-text fallback doesn't double it.
+	self._auraReadAt = now2
+	local extraMeta = nil
+	if entry.icon ~= nil and (type(entry.icon) == "string" or type(entry.icon) == "number") then
+		extraMeta = { spellIcon = entry.icon }
+	end
+	self:EmitBuffNotification(cast.spell, BuildAuraNotifText("+", entry.name or "Aura"),
+		{r = 0.5, g = 0.8, b = 1.0}, "auras", extraMeta)
 end
 
 function Core:InitLootTracking()

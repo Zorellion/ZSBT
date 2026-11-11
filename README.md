@@ -6,7 +6,7 @@ ZSBT is built to behave safely under modern Retail restrictions ("secret values"
 
 ## Why ZSBT
 - Built for Retail 12.x restrictions (avoids taint/blocked-action patterns)
-- Multiple independent scroll areas with an MSBT-style animation engine
+- Multiple independent scroll areas with a full animation engine
 - Strong spam control (merge/throttle/thresholds) so big pulls stay readable
 - Custom alerts system (Notifications + Cooldowns + Triggers)
 

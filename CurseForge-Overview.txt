@@ -7,7 +7,7 @@ If you want combat text that stays stable in open world and group content, ZSBT 
 
 Why ZSBT
 - Built for Retail 12.x restrictions (avoids taint/blocked-action patterns)
-- Multiple independent scroll areas with MSBT-style animation engine
+- Multiple independent scroll areas with a full animation engine
 - Strong spam control (merge/throttle/thresholds) so big pulls stay readable
 - Custom alerts system (Notifications + Cooldowns + Triggers)
 
