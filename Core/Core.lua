@@ -4974,17 +4974,17 @@ function Core:InitPowerTracking()
         if unit ~= "player" then return end
         if not Core:IsMasterEnabled() then return end
 
-        -- Only track primary resource
-        local pType = UnitPowerType("player")
-
-        -- Combo points (power type 4) are a secondary resource on rogues/ferals;
-        -- track them too so "Power Full" works when primary power is secret.
-        local types = { pType }
-        if pType ~= 4 then
-            local cpMax = UnitPowerMax("player", 4)
-            if ZSBT.IsSafeNumber(cpMax) and cpMax > 0 then
-                types[#types + 1] = 4
+        -- Track every power type this class can use so each resource's
+        -- "Resource Full" text notification fires independently.
+        local types = {}
+        for i = 0, 20 do
+            if ZSBT.CpPowerTypeAllowed and ZSBT.CpPowerTypeAllowed(i) then
+                types[#types + 1] = i
             end
+        end
+        if #types == 0 then
+            local pType = UnitPowerType("player")
+            if pType ~= nil then types[1] = pType end
         end
 
         for _, pt in ipairs(types) do
@@ -4996,26 +4996,18 @@ function Core:InitPowerTracking()
                 local prevPct = Core._lastPowerPct[pt] or 0
                 Core._lastPowerPct[pt] = pct
 
-                -- Notify at full resource
+                -- Notify at full resource. Per-resource opt-in: the
+                -- "power_<pt>" flag must be explicitly enabled in that
+                -- resource's config window (absent = off, so classes with
+                -- several power types don't spam "X Full!" texts).
                 if pct >= 100 and prevPct < 100 then
-                    local powerName = "Resource"
-                    if pt == 0 then powerName = "Mana"
-                    elseif pt == 1 then powerName = "Rage"
-                    elseif pt == 2 then powerName = "Focus"
-                    elseif pt == 3 then powerName = "Energy"
-                    elseif pt == 4 then powerName = L["Combo Points"]
-                    elseif pt == 5 then powerName = "Runes"
-                    elseif pt == 6 then powerName = L["Runic Power"]
-                    elseif pt == 8 then powerName = L["Astral Power"]
-                    elseif pt == 9 then powerName = L["Holy Power"]
-                    elseif pt == 11 then powerName = "Maelstrom"
-                    elseif pt == 12 then powerName = "Chi"
-                    elseif pt == 13 then powerName = "Insanity"
-                    elseif pt == 16 then powerName = "Arcane Charges"
-                    elseif pt == 17 then powerName = "Fury"
-                    elseif pt == 18 then powerName = "Pain"
+                    local p = ZSBT.db and ZSBT.db.profile
+                    local n = p and p.notifications
+                    if n and n["power_" .. pt] == true then
+                        Core:EmitNotificationTemplate("power_" .. pt, "%e Full!",
+                            { e = ZSBT.PowerTypeName and ZSBT.PowerTypeName(pt) or "Resource" },
+                            {r = 1.0, g = 0.6, b = 0.0})
                     end
-                    Core:EmitNotificationTemplate("power", "%e Full!", { e = powerName }, {r = 1.0, g = 0.6, b = 0.0})
                 end
             end
         end
@@ -5023,12 +5015,10 @@ function Core:InitPowerTracking()
 end
 
 ------------------------------------------------------------------------
--- Combo Point Counter
--- Persistent on-screen counter for combo points (power type 4).
--- Anchors to a scroll area's rect (or free position) and can play a
--- sound when combo points reach max.
+-- Resource Counter
+-- Persistent on-screen counters for unit power types (combo points,
+-- soul shards, mana, etc.), one frame per configured power type.
 ------------------------------------------------------------------------
-Core._cpWasFull = false
 
 local CP_ANCHORS = {
     ["Top Left"]     = { fx = -1, fy =  1 },
@@ -5046,9 +5036,179 @@ local CP_MAX_PIPS = 12
 local CP_PIP_SIZE = 12
 local CP_PIP_SPACING = 18
 
-local function CfgComboPoints()
-    local p = ZSBT.db and ZSBT.db.profile
-    return p and p.comboPoints
+-- DK rune slot shapes (power type 5). White-with-alpha TGAs tinted by the
+-- counter's color settings; "square" could reuse WHITE8X8 but keeping all
+-- four in Media keeps the code path uniform.
+local RUNE_SHAPE_TEX = {
+    square  = "Interface\\AddOns\\ZSBT\\Media\\Textures\\ZSBT_Rune_Square.tga",
+    diamond = "Interface\\AddOns\\ZSBT\\Media\\Textures\\ZSBT_Rune_Diamond.tga",
+    circle  = "Interface\\AddOns\\ZSBT\\Media\\Textures\\ZSBT_Rune_Circle.tga",
+    hexagon = "Interface\\AddOns\\ZSBT\\Media\\Textures\\ZSBT_Rune_Hexagon.tga",
+}
+
+------------------------------------------------------------------------
+-- Resource counters are keyed by power type under
+-- profile.resourceCounters[powerType]. Legacy profiles keep their single
+-- counter settings in flat comboPoints.* keys; the first access migrates
+-- them onto the effective power type (saved powerType when the class can
+-- use it, otherwise the unit's main power).
+------------------------------------------------------------------------
+
+-- Power types each class can actually use. UnitPowerMax returns a positive
+-- max for EVERY power type (combo points reads 5 even on a warlock), so
+-- "readable value" checks alone cannot filter — gate by class token.
+local ZSBT_CP_CLASS_POWERS = {
+	WARRIOR      = { [1] = true },
+	PALADIN      = { [0] = true, [9] = true },
+	HUNTER       = { [2] = true },
+	ROGUE        = { [3] = true, [4] = true },
+	PRIEST       = { [0] = true, [13] = true },
+	DEATHKNIGHT  = { [5] = true, [6] = true },
+	SHAMAN       = { [0] = true, [11] = true },
+	MAGE         = { [0] = true, [16] = true },
+	WARLOCK      = { [0] = true, [7] = true },
+	MONK         = { [3] = true, [12] = true },
+	DRUID        = { [0] = true, [1] = true, [3] = true, [4] = true },
+	DEMONHUNTER  = { [17] = true, [18] = true },
+	EVOKER       = { [0] = true },
+}
+
+function ZSBT.CpPowerTypeAllowed(i)
+	local _, classToken = UnitClass("player")
+	local allowed = classToken and ZSBT_CP_CLASS_POWERS[classToken]
+	if not allowed then return true end
+	if allowed[i] then return true end
+	-- Always allow the unit's current main power type so forms/specs we
+	-- didn't enumerate still work.
+	local main = UnitPowerType and UnitPowerType("player")
+	return i == main
+end
+
+local CP_POWER_NAMES = {
+	[0] = "Mana", [1] = "Rage", [2] = "Focus", [3] = "Energy",
+	[4] = "Combo Points", [5] = "Runes", [6] = "Runic Power",
+	[7] = "Soul Shards", [8] = "Astral Power", [9] = "Holy Power",
+	[11] = "Maelstrom", [12] = "Chi", [13] = "Insanity",
+	[16] = "Arcane Charges", [17] = "Fury", [18] = "Pain",
+}
+
+function ZSBT.PowerTypeName(i)
+	return CP_POWER_NAMES[tonumber(i) or -1] or ("Power " .. tostring(i))
+end
+
+-- Retail 12.x secrets the *current* value of primary power types (mana,
+-- rage, ...) while capped count resources (combo points, soul shards, ...)
+-- stay readable. C_Secrets.ShouldUnitPowerBeSecret is the authoritative
+-- per-type answer; older clients lack it and report false (readable).
+function ZSBT.PowerTypeSecret(i)
+	if C_Secrets and C_Secrets.ShouldUnitPowerBeSecret then
+		local ok, res = pcall(C_Secrets.ShouldUnitPowerBeSecret, "player", tonumber(i))
+		if ok and type(res) == "boolean" then return res end
+	end
+	return false
+end
+
+local function CpEffectivePowerType()
+	local p = ZSBT.db and ZSBT.db.profile
+	local cp = p and p.comboPoints
+	local saved = cp and tonumber(cp.powerType)
+	if saved and ZSBT.CpPowerTypeAllowed(saved)
+		and not ZSBT.PowerTypeSecret(saved) then
+		return saved
+	end
+	local main = UnitPowerType and UnitPowerType("player")
+	if main ~= nil and not ZSBT.PowerTypeSecret(main) then return main end
+	-- Main power is secret (e.g. warlock mana on Retail): fall back to the
+	-- first class-allowed, non-secret type with a real pool.
+	for i = 0, 20 do
+		if ZSBT.CpPowerTypeAllowed(i) and not ZSBT.PowerTypeSecret(i) then
+			local mx = UnitPowerMax and UnitPowerMax("player", i)
+			if ZSBT.IsSafeNumber(mx) and mx > 0 then return i end
+		end
+	end
+	return (main ~= nil) and main or (saved or 0)
+end
+
+-- Read accessor: returns the counter config for a power type, or nil.
+-- Lazily migrates the legacy flat comboPoints.* block the first time.
+function ZSBT.ResourceCounterConfig(powerType)
+	powerType = tonumber(powerType)
+	if not powerType then return nil end
+	local p = ZSBT.db and ZSBT.db.profile
+	local rc = p and p.resourceCounters
+	if rc == nil then
+		rc = {}
+		p.resourceCounters = rc
+		local cp = p.comboPoints
+		if cp then
+			local pt = CpEffectivePowerType()
+			local dst = {}
+			for k, v in pairs(cp) do
+				if k ~= "powerType" then dst[k] = v end
+			end
+			rc[pt] = dst
+
+			-- Carry the legacy global "power" notification settings over to
+			-- the per-resource "power_<pt>" category (once).
+			local nkey = "power_" .. pt
+			if type(p.notifications) == "table" and p.notifications[nkey] == nil and p.notifications.power ~= nil then
+				p.notifications[nkey] = p.notifications.power
+			end
+			if type(p.notificationsTemplates) == "table" and p.notificationsTemplates[nkey] == nil and p.notificationsTemplates.power ~= nil then
+				p.notificationsTemplates[nkey] = p.notificationsTemplates.power
+			end
+			if type(p.notificationsRouting) == "table" and p.notificationsRouting[nkey] == nil and p.notificationsRouting.power ~= nil then
+				p.notificationsRouting[nkey] = p.notificationsRouting.power
+			end
+			if type(p.notificationsPerType) == "table" and p.notificationsPerType[nkey] == nil and type(p.notificationsPerType.power) == "table" then
+				p.notificationsPerType[nkey] = p.notificationsPerType.power
+			end
+		end
+	end
+	return rc[powerType]
+end
+
+-- Sensible out-of-box appearance for a counter created from scratch
+-- (enabled stays unset so "Show Resource Tracker" begins off).
+local RC_DEFAULTS = {
+	attachArea = "None",
+	anchor = "Bottom",
+	xOffset = 7,
+	yOffset = 128,
+	format = "pips",
+	color = { r = 0.8274510502815247, g = 0.0, b = 0.03921568766236305 },
+	emptyColor = { r = 0.35, g = 0.35, b = 0.35 },
+	outlineColor = { r = 0.0, g = 0.0, b = 0.0 },
+	fontSize = 0,
+	fontOverride = true,
+	fontFace = "ZSBT: Bungee",
+	fontOutline = "Thin",
+	fontScale = 2.0,
+	width = 257,
+	height = 77,
+	hideAtZero = true,
+	hideOutOfCombat = true,
+	fullSoundEnabled = false,
+	fullSoundKey = "None",
+	fullEffect = "none",
+}
+
+-- Write accessor: ensures profile.resourceCounters exists (running the
+-- legacy migration if needed) and returns the slot for powerType.
+function ZSBT.ResourceCounterConfigWrite(powerType)
+	powerType = tonumber(powerType)
+	if not powerType then return nil end
+	ZSBT.ResourceCounterConfig(0) -- force migration/init
+	local p = ZSBT.db and ZSBT.db.profile
+	local rc = p and p.resourceCounters
+	if not rc then return nil end
+	local s = rc[powerType]
+	if not s then
+		s = {}
+		for k, v in pairs(RC_DEFAULTS) do s[k] = v end
+		rc[powerType] = s
+	end
+	return s
 end
 
 -- Edit mode is shared: scroll-area unlock OR the counter's own unlock.
@@ -5332,26 +5492,28 @@ local function StopComboPointsFx(frame)
     end
 end
 
-RefreshComboPoints = function()
-    local frame = Core._cpWidget
-    local cfg = CfgComboPoints()
-    if not frame then return end
+local function RefreshCpFrame(frame)
+    local pt = frame._cpPowerType
+    local cfg = pt and ZSBT.ResourceCounterConfig(pt) or nil
     local fs = frame._cpText
 
     if not cfg or cfg.enabled ~= true then
         StopComboPointsFx(frame)
         frame:Hide()
-        Core._cpWasFull = false
+        frame._cpWasFull = false
         return
     end
 
-    local cpType = tonumber(cfg.powerType) or 4
+    -- The counter is keyed by power type, so the frame's key IS the power.
+    local cpType = pt
     local curRaw = UnitPower("player", cpType)
     local mxRaw = UnitPowerMax("player", cpType)
+    -- Retail 12.x secrets the current value of primary power types (mana,
+    -- rage, ...). Those counters are unsupported — hide rather than display.
     if not ZSBT.IsSafeNumber(curRaw) or not ZSBT.IsSafeNumber(mxRaw) then
         StopComboPointsFx(frame)
         frame:Hide()
-        Core._cpWasFull = false
+        frame._cpWasFull = false
         return
     end
     local cur = math.floor(curRaw)
@@ -5359,7 +5521,7 @@ RefreshComboPoints = function()
     if mx <= 0 then
         StopComboPointsFx(frame)
         frame:Hide()
-        Core._cpWasFull = false
+        frame._cpWasFull = false
         return
     end
 
@@ -5374,7 +5536,10 @@ RefreshComboPoints = function()
             if unlocked then frame._cpGrip:Show() else frame._cpGrip:Hide() end
         end
     end
-    if not unlocked and cfg.hideAtZero ~= false and cur <= 0 then
+    -- Rune counters stay visible at 0: an all-cooldown board is exactly when
+    -- the per-slot sweeps are useful.
+    local isRuneMode = cpType == 5 and type(GetRuneCooldown) == "function" and frame._cpRuneBars ~= nil
+    if not isRuneMode and not unlocked and cfg.hideAtZero ~= false and cur <= 0 then
         StopComboPointsFx(frame)
         frame:Hide()
         return
@@ -5385,12 +5550,26 @@ RefreshComboPoints = function()
         return
     end
 
+    -- Rune mode snapshots cooldowns for rendering/hide-checks only; runes
+    -- continuously recharge so there is no "full"/"depleted" alert edge.
+    if isRuneMode then
+        frame._cpRuneCd = frame._cpRuneCd or {}
+        local ready = 0
+        for i = 1, 6 do
+            local s, d, r = GetRuneCooldown(i)
+            frame._cpRuneCd[i] = { start = s, duration = d, ready = r and true or false }
+            if r then ready = ready + 1 end
+        end
+        frame._cpRuneReady = ready
+    end
+
     -- Full indicator: the chosen effect loops while at max and stops the
     -- instant CP drops below max. Sound still fires only on the rising edge;
     -- re-entering combat at full resumes the loop without replaying the sound.
-    local isFull = cur >= mx
+    -- Secret values cannot be compared, so full detection is skipped entirely.
+    local isFull = not isRuneMode and cur >= mx
     if isFull then
-        if not Core._cpWasFull
+        if not frame._cpWasFull
             and cfg.fullSoundEnabled == true
             and type(cfg.fullSoundKey) == "string" and cfg.fullSoundKey ~= "" and cfg.fullSoundKey ~= "None"
             and ZSBT.PlayLSMSound then
@@ -5406,7 +5585,7 @@ RefreshComboPoints = function()
     else
         StopComboPointsFx(frame)
     end
-    Core._cpWasFull = isFull
+    frame._cpWasFull = isFull
     -- Apply configured frame size (set by resize grip or sliders).
     local tw = tonumber(cfg.width)
     local th = tonumber(cfg.height)
@@ -5415,6 +5594,112 @@ RefreshComboPoints = function()
     if frame._cpAppliedW ~= nw or frame._cpAppliedH ~= nh then
         frame._cpAppliedW, frame._cpAppliedH = nw, nh
         frame:SetSize(nw, nh)
+    end
+
+    -- DK runes: per-slot cooldown display instead of count pips/text.
+    -- Ready runes render in the "on" color; cooling runes fill upward in the
+    -- "empty" color (fill = recharge progress). Shapes come from cfg.runeShape.
+    if isRuneMode then
+        fs:Hide()
+        for i = 1, CP_MAX_PIPS do
+            frame._cpPips[i]:Hide()
+            frame._cpPipBacks[i]:Hide()
+        end
+        -- Optional: hide the whole tracker while every rune is ready —
+        -- runes are normally full, so the tracker only matters mid-fight.
+        if cfg.hideAllReady == true and frame._cpRuneReady >= mx and not unlocked then
+            frame:Hide()
+            return
+        end
+        local onR, onG, onB = (cfg.color or {}).r or 1, (cfg.color or {}).g or 0.82, (cfg.color or {}).b or 0
+        local offR, offG, offB = (cfg.emptyColor or {}).r or 0.35, (cfg.emptyColor or {}).g or 0.35, (cfg.emptyColor or {}).b or 0.35
+        local ol = cfg.outlineColor or { r = 0, g = 0, b = 0 }
+        local olR, olG, olB = ol.r or 0, ol.g or 0, ol.b or 0
+        local shape = (type(cfg.runeShape) == "string" and RUNE_SHAPE_TEX[cfg.runeShape]) and cfg.runeShape or "square"
+        local tex = RUNE_SHAPE_TEX[shape]
+        if frame._cpRuneTex ~= tex then
+            frame._cpRuneTex = tex
+            for i = 1, 6 do
+                frame._cpRuneBars[i]:SetStatusBarTexture(tex)
+                local bk = frame._cpRuneBacks and frame._cpRuneBacks[i]
+                if bk then bk:SetTexture(tex) end
+            end
+        end
+        local showTime = cfg.showRuneTime == true
+        local rface, rsize, routine = ResolveCpFont(cfg)
+        local runeFontKey = rface .. "|" .. tostring(rsize) .. "|" .. tostring(routine)
+        if showTime and frame._cpRuneFontKey ~= runeFontKey then
+            frame._cpRuneFontKey = runeFontKey
+            for j = 1, 6 do
+                local t = frame._cpRuneTexts and frame._cpRuneTexts[j]
+                if t then t:SetFont(rface, rsize, routine) end
+            end
+        end
+        local fw = frame:GetWidth() or 200
+        local fh = frame:GetHeight() or 26
+        local slots = math.max(1, math.min(6, mx))
+        local spacing = fw / slots
+        local slotSize = math.max(5, math.min(48, math.min(fh - 8, spacing / 1.5)))
+        local backSize = slotSize + 4
+        local now = GetTime()
+        for i = 1, 6 do
+            local bar = frame._cpRuneBars[i]
+            local back = frame._cpRuneBacks and frame._cpRuneBacks[i]
+            local cd = frame._cpRuneCd and frame._cpRuneCd[i]
+            local rtxt = frame._cpRuneTexts and frame._cpRuneTexts[i]
+            if i <= slots then
+                local x = (i - (slots + 1) / 2) * spacing
+                local ready = cd and cd.ready == true
+                local cooling = (not ready) and cd and cd.start and cd.duration and cd.duration > 0
+                -- Outline back sits slightly larger behind the shape.
+                if back then
+                    back:SetVertexColor(olR, olG, olB, 0.9)
+                    back:SetSize(backSize, backSize)
+                    back:ClearAllPoints()
+                    back:SetPoint("CENTER", frame, "CENTER", x, 0)
+                    back:Show()
+                end
+                if ready then
+                    bar:SetMinMaxValues(0, 1)
+                    bar:SetValue(1)
+                    bar:SetStatusBarColor(onR, onG, onB, 1)
+                elseif cooling then
+                    local elapsed = now - cd.start
+                    if elapsed < 0 then elapsed = 0 elseif elapsed > cd.duration then elapsed = cd.duration end
+                    bar:SetMinMaxValues(0, cd.duration)
+                    bar:SetValue(elapsed)
+                    bar:SetStatusBarColor(offR, offG, offB, 0.9)
+                else
+                    -- No cooldown data and not flagged ready: show empty.
+                    bar:SetMinMaxValues(0, 1)
+                    bar:SetValue(0)
+                    bar:SetStatusBarColor(offR, offG, offB, 0.35)
+                end
+                bar:SetSize(slotSize, slotSize)
+                bar:ClearAllPoints()
+                bar:SetPoint("CENTER", frame, "CENTER", x, 0)
+                bar:Show()
+                -- Optional seconds-remaining readout inside cooling runes.
+                if rtxt then
+                    if showTime and cooling then
+                        local remain = cd.duration - math.max(0, now - cd.start)
+                        if remain < 0 then remain = 0 end
+                        rtxt:SetText(string.format("%.0f", math.ceil(remain)))
+                        rtxt:SetTextColor(onR, onG, onB, 1)
+                        rtxt:Show()
+                    else
+                        rtxt:Hide()
+                    end
+                end
+            else
+                bar:Hide()
+                if back then back:Hide() end
+                if rtxt then rtxt:Hide() end
+            end
+        end
+        PositionComboPoints(frame, cfg)
+        frame:Show()
+        return
     end
 
     -- Text / pips
@@ -5490,11 +5775,17 @@ RefreshComboPoints = function()
     PositionComboPoints(frame, cfg)
     frame:Show()
 end
-ZSBT.RefreshComboPoints = function() RefreshComboPoints() end
 
-function Core:InitComboPoints()
-    if self._cpWidget then return end
-    local frame = CreateFrame("Frame", "ZSBT_ComboPoints", UIParent)
+-- Creates (once) and returns the counter frame for a power type.
+local function EnsureCpFrame(powerType)
+    powerType = tonumber(powerType)
+    if not powerType then return nil end
+    Core._cpWidgets = Core._cpWidgets or {}
+    local frame = Core._cpWidgets[powerType]
+    if frame then return frame end
+
+    frame = CreateFrame("Frame", "ZSBT_ResourceCounter_" .. powerType, UIParent)
+    frame._cpPowerType = powerType
     frame:SetFrameStrata("HIGH")
     frame:SetSize(220, 26)
     frame:EnableMouse(false)
@@ -5518,6 +5809,49 @@ function Core:InitComboPoints()
         pip:SetVertexColor(0.35, 0.35, 0.35, 0.8)
         pip:Hide()
         frame._cpPips[i] = pip
+    end
+
+    -- DK runes (power type 5) deplete from full rather than fill, so a count
+    -- is misleading: each of the 6 slots is driven by GetRuneCooldown and
+    -- shows ready (lit) vs cooling (sweep). Same model as Blizzard's
+    -- RuneFrame / MSUF's RUNE_CD mode.
+    if powerType == 5 then
+        frame._cpRuneBars = {}
+        frame._cpRuneBacks = {}
+        frame._cpRuneTexts = {}
+        for i = 1, 6 do
+            -- Outline back: same shape, slightly larger, drawn on BACKGROUND
+            -- so the status bar shape sits on top (mirrors the pip backs).
+            local back = frame:CreateTexture(nil, "BACKGROUND")
+            back:SetVertexColor(0, 0, 0, 0.9)
+            back:Hide()
+            frame._cpRuneBacks[i] = back
+
+            local bar = CreateFrame("StatusBar", nil, frame)
+            bar:SetStatusBarTexture(RUNE_SHAPE_TEX.square)
+            bar:SetOrientation("VERTICAL") -- fill grows upward = recharging
+            bar:SetMinMaxValues(0, 1)
+            bar:Hide()
+            frame._cpRuneBars[i] = bar
+
+            local rtxt = bar:CreateFontString(nil, "OVERLAY")
+            rtxt:SetPoint("CENTER", bar, "CENTER", 0, 0)
+            rtxt:SetJustifyH("CENTER")
+            rtxt:SetJustifyV("MIDDLE")
+            rtxt:Hide()
+            frame._cpRuneTexts[i] = rtxt
+        end
+        -- Cooldown sweeps need per-frame-ish updates: RUNE_POWER_UPDATE only
+        -- fires on spend/energize, not while a rune is recharging.
+        frame._cpRuneTick = 0
+        frame:SetScript("OnUpdate", function(self, elapsed)
+            self._cpRuneTick = (self._cpRuneTick or 0) + elapsed
+            if self._cpRuneTick < 0.1 then return end
+            self._cpRuneTick = 0
+            if self:IsShown() and self._cpRuneBars then
+                RefreshCpFrame(self)
+            end
+        end)
     end
 
     -- Resizable while unlocked (edit mode), like scroll area frames.
@@ -5547,7 +5881,7 @@ function Core:InitComboPoints()
         if not CpEditUnlocked() then return end
         local w = math.floor((frame:GetWidth() or 0) + 0.5)
         local h = math.floor((frame:GetHeight() or 0) + 0.5)
-        local cfg = CfgComboPoints()
+        local cfg = ZSBT.ResourceCounterConfigWrite(powerType)
         if cfg then
             cfg.width = math.max(80, math.min(800, w))
             cfg.height = math.max(20, math.min(200, h))
@@ -5571,7 +5905,7 @@ function Core:InitComboPoints()
         if not CpEditUnlocked() then return end
         local cx, cy = self:GetCenter()
         local ucx, ucy = UIParent:GetCenter()
-        local cfg = CfgComboPoints()
+        local cfg = ZSBT.ResourceCounterConfigWrite(powerType)
         if not cfg or not cx then return end
         -- Dropping anywhere detaches to a free position.
         cfg.attachArea = "None"
@@ -5603,29 +5937,62 @@ function Core:InitComboPoints()
     fs:SetJustifyH("CENTER")
     frame._cpText = fs
 
-    self._cpWidget = frame
-    Core._cpWidget = frame
+    Core._cpWidgets[powerType] = frame
+    return frame
+end
+
+RefreshComboPoints = function()
+    -- Force the legacy flat->resourceCounters migration, then refresh every
+    -- configured counter and hide frames whose config was removed/disabled.
+    ZSBT.ResourceCounterConfig(0)
+    local p = ZSBT.db and ZSBT.db.profile
+    local rc = p and p.resourceCounters
+    local seen = {}
+    if rc then
+        for pt, cfg in pairs(rc) do
+            pt = tonumber(pt)
+            if pt and cfg and cfg.enabled == true then
+                seen[pt] = true
+                local frame = EnsureCpFrame(pt)
+                if frame then RefreshCpFrame(frame) end
+            end
+        end
+    end
+    if Core._cpWidgets then
+        for pt, frame in pairs(Core._cpWidgets) do
+            if not seen[pt] then
+                StopComboPointsFx(frame)
+                frame:Hide()
+                frame._cpWasFull = false
+            end
+        end
+    end
+end
+ZSBT.RefreshComboPoints = function() RefreshComboPoints() end
+
+function Core:InitComboPoints()
+    if self._cpEventFrame then return end
+    Core._cpWidgets = Core._cpWidgets or {}
 
     local evFrame = CreateFrame("Frame")
     evFrame:RegisterUnitEvent("UNIT_POWER_UPDATE", "player")
     evFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     evFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
+    evFrame:RegisterEvent("RUNE_POWER_UPDATE")
     evFrame:SetScript("OnEvent", function(_, event, unit)
         if event == "UNIT_POWER_UPDATE" and unit ~= "player" then return end
         if not Core:IsMasterEnabled() then
-            if frame:IsShown() then frame:Hide() end
+            if Core._cpWidgets then
+                for _, f in pairs(Core._cpWidgets) do
+                    if f:IsShown() then f:Hide() end
+                end
+            end
             return
         end
         RefreshComboPoints()
     end)
     self._cpEventFrame = evFrame
 
-    -- Apply initial font once DB is available
-    local cfg = CfgComboPoints()
-    if cfg then
-        local face, size, outline = ResolveCpFont(cfg)
-        fs:SetFont(face, size, outline)
-    end
     C_Timer.After(0.5, function() RefreshComboPoints() end)
 end
 

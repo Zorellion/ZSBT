@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.5.6
+
+### Added
+- **Multiple resource counters:** the Resource Tracker now supports one independently-configured counter per resource (Combo Points, Soul Shards, Holy Power, Runes, etc.), each with its own config window, placement, colors, and full-resource alerts. Legacy `comboPoints` settings migrate automatically onto the effective power type.
+- **Retail secret-value filtering:** resources Blizzard marks secret via `C_Secrets.ShouldUnitPowerBeSecret` (Mana, Rage, Energy, Fury, Pain, Runic Power on Retail 12.x) no longer appear as tracker options; capped secondary resources stay fully supported. Older clients without the API are unaffected.
+- **DK rune tracker:** power type 5 renders six per-slot rune indicators driven by `GetRuneCooldown` — ready runes lit, recharging runes fill upward with optional seconds-remaining text. Updates via `RUNE_POWER_UPDATE` plus a light ticker for sweep animation. Rune shapes: Square, Diamond, Circle, Hexagon (new `Media/Textures` assets). Dedicated config page hides count-based options (format, hide-at-zero, alerts) that don't apply to runes; "Hide when All Runes Are Ready" supported.
+- Config options table is rebuilt each time the config window opens, fixing class-dependent options (like the Runes button) being missing until reload.
+
+### Fixed
+- Resource counter buttons now evaluate power availability at config-open time instead of addon load, when `UnitPowerMax`/class data may not be ready.
+
 ## 3.5.5
 
 ### Fixed
