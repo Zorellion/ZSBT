@@ -1654,6 +1654,13 @@ function Addon:OnInitialize()
 			self.configDialog:SetDefaultSize("ZSBT_TriggerEditor", 560, 520)
 		end
 
+		if ZSBT.BuildResourceCounterOptionsTable then
+			ACR:RegisterOptionsTable("ZSBT_ResourceCounter", function()
+				return ZSBT.BuildResourceCounterOptionsTable()
+			end)
+			self.configDialog:SetDefaultSize("ZSBT_ResourceCounter", 560, 620)
+		end
+
 		if ZSBT.BuildDebugOptionsTable then
 			ACR:RegisterOptionsTable("ZSBT_Debug", function()
 				return ZSBT.BuildDebugOptionsTable()
@@ -1972,6 +1979,148 @@ function Addon:HandleSlashCommand(input)
 		return
 	end
 
+    if cmd == "resdiag" then
+		local function s(v)
+			if issecretvalue and issecretvalue(v) then return "SECRET" end
+			local ok, r = pcall(tostring, v)
+			return ok and r or "ERR"
+		end
+		local _, classToken = UnitClass("player")
+		self:Print("ZSBT resdiag class=" .. tostring(classToken)
+			.. " mainPT=" .. s(UnitPowerType and UnitPowerType("player")))
+		for i = 0, 20 do
+			local cur = UnitPower("player", i)
+			local mx = UnitPowerMax("player", i)
+			local safe = ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(cur) and ZSBT.IsSafeNumber(mx)
+			local allowed = ZSBT.CpPowerTypeAllowed and ZSBT.CpPowerTypeAllowed(i)
+			local shouldSecret = C_Secrets and C_Secrets.ShouldUnitPowerBeSecret
+				and C_Secrets.ShouldUnitPowerBeSecret("player", i)
+			local btn = ZSBT.CpPowerTypeAllowed and ZSBT.CpPowerTypeAllowed(i)
+				and not (ZSBT.PowerTypeSecret and ZSBT.PowerTypeSecret(i))
+				and ZSBT.IsSafeNumber(mx) and mx > 0
+			self:Print(("  pt%d cur=%s max=%s safe=%s allowed=%s shouldSecret=%s button=%s"):format(
+				i, s(cur), s(mx), tostring(safe == true), tostring(allowed == true),
+				tostring(shouldSecret == true), tostring(btn == true)))
+		end
+		local rc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.resourceCounters
+		if rc then
+			for k, v in pairs(rc) do
+				self:Print("  rc[" .. tostring(k) .. "] enabled=" .. tostring(v and v.enabled == true)
+					.. " attach=" .. tostring(v and v.attachArea)
+					.. " pos=" .. tostring(v and v.xOffset) .. "," .. tostring(v and v.yOffset))
+			end
+		else
+			self:Print("  resourceCounters=nil")
+		end
+		if ZSBT.Core and ZSBT.Core._cpWidgets then
+			for pt, f in pairs(ZSBT.Core._cpWidgets) do
+				self:Print("  widget pt" .. tostring(pt) .. " shown=" .. tostring(f:IsShown()))
+			end
+		else
+			self:Print("  no widgets")
+		end
+		-- Probe alternate read paths for the secret UnitPower current.
+		local function probe(name, fn)
+			local ok, v = pcall(fn)
+			self:Print("  probe " .. name .. " = " .. (ok and s(v) or "ERR"))
+		end
+		probe("UnitPower(main)", function() return UnitPower("player") end)
+		probe("UnitPower(1)", function() return UnitPower("player", 1) end)
+		probe("UnitPower(Enum.Rage)", function()
+			return UnitPower("player", Enum and Enum.PowerType and Enum.PowerType.Rage or 1)
+		end)
+		local cur1 = UnitPower("player", 1)
+		probe("canaccessvalue(cur1)", function()
+			return canaccessvalue and canaccessvalue(cur1)
+		end)
+		probe("cur1+0", function() return cur1 + 0 end)
+		probe("cur1==0", function() return cur1 == 0 end)
+		probe("floor(cur1)", function() return math.floor(cur1) end)
+		probe("tostring(cur1)", function() return tostring(cur1) end)
+		probe("cur1<mx", function() return cur1 < UnitPowerMax("player", 1) end)
+		probe("ShouldUnitPowerBeSecret", function()
+			return C_Secrets and C_Secrets.ShouldUnitPowerBeSecret and C_Secrets.ShouldUnitPowerBeSecret("player", 1)
+		end)
+		probe("UnitPowerPercent(1)", function() return UnitPowerPercent("player", 1) end)
+		probe("UnitPowerMissing(1)", function() return UnitPowerMissing("player", 1) end)
+		probe("UnitPowerDisplayMod(1)", function() return UnitPowerDisplayMod and UnitPowerDisplayMod("player", 1) end)
+		probe("UnitPower(1,true)", function() return UnitPower("player", 1, true) end)
+		-- StatusBar interpreter test: SetValue accepts secrets natively and
+		-- the fill texture's pixel width is a readable real number.
+		local sb = CreateFrame("StatusBar", nil, UIParent)
+		sb:SetSize(10000, 10)
+		sb:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+		sb:SetMinMaxValues(0, 100)
+		local okSV = pcall(sb.SetValue, sb, cur1)
+		probe("sb.SetValue(secret)", function() return okSV end)
+		local tex = sb.GetStatusBarTexture and sb:GetStatusBarTexture()
+		probe("tex width", function() return tex and tex:GetWidth() end)
+		probe("sb width", function() return sb:GetWidth() end)
+		sb:Hide()
+		-- Secret strings can be *displayed* even though they can't be read.
+		-- Probe which formatting paths produce a usable secret string.
+		probe("fmt %d/%d", function() return string.format("%d/%d", cur1, 100) end)
+		probe("fmt %s", function() return string.format("%s", cur1) end)
+		probe("concat", function() return "" .. cur1 end)
+		probe("AbbreviateNumbers", function() return AbbreviateNumbers and AbbreviateNumbers(cur1) end)
+		local fs = UIParent:CreateFontString(nil, "OVERLAY")
+		fs:SetPoint("CENTER")
+		local okST = pcall(fs.SetText, fs, string.format("%d/%d", cur1, 100))
+		probe("fs.SetText(fmt)", function() return okST end)
+		probe("fs.GetText", function() return fs:GetText() end)
+		fs:Hide()
+		-- Blizzard unit-frame power bars set their value via secure code;
+		-- StatusBar:GetValue() may return the real number.
+		local barCount, secretCount, playerBars = 0, 0, 0
+		local function unitOf(f)
+			local d = f
+			for _ = 1, 6 do
+				if type(d) ~= "table" then return nil end
+				if d.unit == "player" then return "player" end
+				if d.GetAttribute and d:GetAttribute("unit") == "player" then return "player" end
+				d = d.GetParent and d:GetParent()
+			end
+			return nil
+		end
+		local function scanBar(f)
+			if type(f) ~= "table" or type(f.GetValue) ~= "function" then return end
+			barCount = barCount + 1
+			local okV, v = pcall(f.GetValue, f)
+			if okV and issecretvalue and issecretvalue(v) then
+				secretCount = secretCount + 1
+				v = nil
+			end
+			if unitOf(f) == "player" then
+				playerBars = playerBars + 1
+				local nm = f.GetName and f:GetName() or "?"
+				local okMM, mn, mx = pcall(f.GetMinMaxValues, f)
+				self:Print("  pbar " .. tostring(nm) .. " val=" .. s(v)
+					.. " minmax=" .. tostring(okMM and mn) .. "/" .. tostring(okMM and mx))
+			end
+		end
+		local function walk(f, depth)
+			if depth > 10 or type(f) ~= "table" or not f.GetChildren then return end
+			local kids = { f:GetChildren() }
+			for _, ch in ipairs(kids) do
+				pcall(scanBar, ch)
+				walk(ch, depth + 1)
+			end
+		end
+		local roots = { UIParent, WorldFrame }
+		for _, name in ipairs({ "PlayerFrame", "TargetFrame", "FocusFrame", "PetFrame",
+			"PartyFrame", "RaidFrame", "Minimap" }) do
+			local f = _G[name]
+			if f then roots[#roots + 1] = f end
+		end
+		for _, r in ipairs(roots) do
+			if r then pcall(walk, r, 0) pcall(scanBar, r) end
+		end
+		self:Print("  bars scanned=" .. barCount .. " secret=" .. secretCount
+			.. " playerBars=" .. playerBars
+			.. " inCombat=" .. tostring(UnitAffectingCombat("player") == true))
+		return
+    end
+
     if cmd == "attrib" or cmd == "attribpanel" or cmd == "attributions" then
 		local panel = ZSBT.AttribPanel
 		if not panel then
@@ -1995,13 +2144,26 @@ function Addon:HandleSlashCommand(input)
     end
 
     self:Print(L["|cFF808C9EUnknown command:|r "] .. cmd)
-	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | attrib [on|off|clear] | reset | version | auratest | restorefct | dumpcvars]"])
+	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | attrib [on|off|clear] | reset | version | auratest | restorefct | dumpcvars | resdiag]"])
 end
 
 ------------------------------------------------------------------------
 -- Open Configuration Window
 ------------------------------------------------------------------------
 function Addon:OpenConfig()
+	-- The options tree is built once in OnInitialize, before unit power
+	-- data is readable — resource buttons (and anything else gated on live
+	-- UnitPower/UnitClass state) would be missing for the whole session.
+	-- Rebuild on open so dynamic args reflect the current character.
+	if ZSBT.BuildOptionsTable then
+		local ok, options = pcall(ZSBT.BuildOptionsTable)
+		if ok and type(options) == "table" then
+			local ACR = LibStub("AceConfigRegistry-3.0", true)
+			if ACR then
+				pcall(ACR.RegisterOptionsTable, ACR, "ZSBT", options, true)
+			end
+		end
+	end
 	if self.configDialog then
 		self.configDialog:Open("ZSBT")
 	end
@@ -2017,6 +2179,15 @@ function Addon:OpenBuffRulesManager()
     if self.configDialog then
         self.configDialog:Open("ZSBT_BuffRules")
     end
+end
+
+function Addon:OpenResourceCounterConfig(powerType)
+	powerType = tonumber(powerType)
+	if not powerType then return end
+	ZSBT._editingResourcePowerType = powerType
+	if self.configDialog then
+		self.configDialog:Open("ZSBT_ResourceCounter")
+	end
 end
 
 function Addon:OpenDebugConfig()

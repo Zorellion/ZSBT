@@ -1083,3 +1083,17 @@ L["Rampage!"] = true
 L["Unstoppable!"] = true
 
 L["|cFFFFD100Midnight 12.0 note:|r Multi-charge spells (charges) may not be reliably trackable because charge/recharge data can be hidden (\"secret\"). Cooldown ready notifications for charge spells may be delayed or unavailable."] = true
+L["Rune Shape"] = true
+L["Shape drawn for each rune slot."] = true
+L["Square"] = true
+L["Diamond"] = true
+L["Circle"] = true
+L["Hexagon"] = true
+L["Show Seconds Remaining"] = true
+L["Display seconds left inside each rune that is recharging."] = true
+L["Ready Color"] = true
+L["Recharging Color"] = true
+L["Rune Outline Color"] = true
+L["Hide when All Runes Are Ready"] = true
+L["Hide the tracker while every rune is ready."] = true
+L["Rune Timer Font"] = true

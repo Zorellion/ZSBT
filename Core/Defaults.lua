@@ -95,7 +95,7 @@ ZSBT.DEFAULTS = {
 			caststops = false,
             cooldowns = true,
             auras = true,
-            power = true,
+            power = false,
             procs = true,
             triggers = true,
 			externalAddons = true,
@@ -173,7 +173,7 @@ ZSBT.DEFAULTS = {
 		},
 
 		comboPoints = {
-			enabled = true,
+			enabled = false,
 			powerType = 4,
 			attachArea = "None",
 			anchor = "Bottom",

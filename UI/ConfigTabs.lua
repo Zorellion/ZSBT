@@ -3739,526 +3739,23 @@ function ZSBT.BuildTab_Notifications()
 				desc = L["Persistent on-screen resource counter (combo points, holy power, chi, etc.) with optional max-resource alert."],
 				order = 8.5,
 				args = (function() local rtArgs = {
-					power = {
-						type  = "toggle",
-						name  = L["Resource Full"],
-						desc  = L["Show a scrolling notification when a resource reaches max."],
-						order = 1,
-						width = "full",
-						get   = function() return getCat("power") end,
-						set   = function(_, v) setCat("power", v) end,
-					},
-					powerRoute = routeSelect("power", 1.1),
-					powerTemplate = {
-						type = "input",
-						name = L["Template"],
-						desc = L["Template codes: %e=resource name. Default shows \"%e Full!\" (e.g. Combo Points Full!)."],
-						order = 1.15,
-						width = "full",
-						get = function() return getTpl("power", "%e Full!") end,
-						set = function(_, v) setTpl("power", v) end,
-					},
-					cpHeader = { type = "header", name = L["Resource Counter"], order = 3 },
-					cpEnabled = {
-						type  = "toggle",
-						name  = L["Show Resource Counter"],
-						order = 3.1,
-						width = "full",
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							return c and c.enabled == true
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.enabled = v and true or false
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
-					},
-					cpAttachArea = {
-						type  = "select",
-						name  = L["Anchor To"],
-						desc  = L["Attach the counter to a scroll area's position, or use a free position."],
-						order = 3.2,
-						width = "normal",
-						values = function()
-							local out = { ["None"] = L["Free Position"] }
-							local names = ZSBT.GetScrollAreaNames and ZSBT.GetScrollAreaNames() or {}
-							for n in pairs(names) do out[n] = n end
-							return out
-						end,
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							return (c and type(c.attachArea) == "string" and c.attachArea ~= "") and c.attachArea or "None"
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.attachArea = v
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
-					},
-					cpPowerType = {
-						type  = "select",
-						name  = L["Resource"],
-						desc  = L["Which unit power to display. Only resources your class/spec actually uses will show a value."],
-						order = 3.15,
-						width = "normal",
-						values = function()
-							local names = {
-								[0] = "Mana", [1] = "Rage", [2] = "Focus", [3] = "Energy",
-								[4] = "Combo Points", [5] = "Runes", [6] = "Runic Power",
-								[8] = "Astral Power", [9] = "Holy Power", [11] = "Maelstrom",
-								[12] = "Chi", [13] = "Insanity", [16] = "Arcane Charges",
-								[17] = "Fury", [18] = "Pain",
-							}
-							-- Only offer resources this class/spec can actually
-							-- display: BOTH current and max must be readable
-							-- (secret values like energy-in-combat are excluded)
-							-- and max must be > 0.
-							local out = {}
-							local any = false
-							for i = 0, 20 do
-								local cur = UnitPower("player", i)
-								local mx = UnitPowerMax("player", i)
-								if ZSBT.IsSafeNumber(cur) and ZSBT.IsSafeNumber(mx) and mx > 0 then
-									out[i] = names[i] or ("Power " .. i)
-									any = true
-								end
-							end
-							if not any then
-								-- Nothing readable (secret values / weird client):
-								-- fall back to the full list rather than an empty dropdown.
-								for i = 0, 20 do out[i] = names[i] or ("Power " .. i) end
-							else
-								-- Keep the saved selection visible even if the
-								-- current spec doesn't expose that power type.
-								local c = ZSBT.db.profile.comboPoints
-								local cur = c and tonumber(c.powerType)
-								if cur then out[cur] = names[cur] or ("Power " .. cur) end
-							end
-							return out
-						end,
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							return (c and tonumber(c.powerType)) or 4
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.powerType = tonumber(v) or 4
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
-					},
-					cpAnchor = {
-						type  = "select",
-						name  = L["Position"],
-						order = 3.3,
-						width = "normal",
-						values = {
-							["Top Left"] = "Top Left", ["Top"] = "Top", ["Top Right"] = "Top Right",
-							["Left"] = "Left", ["Center"] = "Center", ["Right"] = "Right",
-							["Bottom Left"] = "Bottom Left", ["Bottom"] = "Bottom", ["Bottom Right"] = "Bottom Right",
-						},
-						disabled = function()
-							local c = ZSBT.db.profile.comboPoints
-							local a = c and c.attachArea
-							return not a or a == "" or a == "None"
-						end,
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							local a = c and c.anchor
-							local valid = {
-								["Top Left"]=1, ["Top"]=1, ["Top Right"]=1,
-								["Left"]=1, ["Center"]=1, ["Right"]=1,
-								["Bottom Left"]=1, ["Bottom"]=1, ["Bottom Right"]=1,
-								["BOTTOM"]=1, ["TOP"]=1, ["CENTER"]=1, ["LEFT"]=1, ["RIGHT"]=1,
-							}
-							if type(a) == "string" and valid[a] then
-								-- normalize legacy uppercase defaults
-								if a == "BOTTOM" then return "Bottom" end
-								if a == "TOP" then return "Top" end
-								if a == "CENTER" then return "Center" end
-								if a == "LEFT" then return "Left" end
-								if a == "RIGHT" then return "Right" end
-								return a
-							end
-							return "Bottom"
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.anchor = v
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
-					},
-					cpPosX = {
-						type  = "range",
-						name  = L["X Offset"],
-						order = 3.4,
-						min   = -2000, max = 2000, step = 10,
-						disabled = function()
-							local c = ZSBT.db.profile.comboPoints
-							local a = c and c.attachArea
-							return a and a ~= "" and a ~= "None"
-						end,
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							return (c and tonumber(c.xOffset)) or 0
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.xOffset = v
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
-					},
-					cpPosY = {
-						type  = "range",
-						name  = L["Y Offset"],
-						order = 3.5,
-						min   = -2000, max = 2000, step = 10,
-						disabled = function()
-							local c = ZSBT.db.profile.comboPoints
-							local a = c and c.attachArea
-							return a and a ~= "" and a ~= "None"
-						end,
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							return (c and tonumber(c.yOffset)) or 0
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.yOffset = v
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
-					},
-					cpFormat = {
-						type  = "select",
-						name  = L["Display Format"],
-						order = 3.6,
-						width = "normal",
-						values = {
-							["fraction"] = L["Fraction (4/6)"],
-							["pips"]     = L["Diamond Pips"],
-							["number"]   = L["Number Only"],
-						},
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							return (c and type(c.format) == "string" and c.format ~= "") and c.format or "pips"
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.format = v
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
-					},
-					cpColor = {
-						type  = "color",
-						name  = L["Color"],
-						order = 3.7,
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							local col = c and c.color or { r = 1, g = 0.82, b = 0 }
-							return col.r or 1, col.g or 0.82, col.b or 0
-						end,
-						set   = function(_, r, g, b)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.color = { r = r, g = g, b = b }
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
-					},
-					cpEmptyColor = {
-						type  = "color",
-						name  = L["Empty Pip Color"],
-						order = 3.65,
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							local col = c and c.emptyColor or { r = 0.35, g = 0.35, b = 0.35 }
-							return col.r or 0.35, col.g or 0.35, col.b or 0.35
-						end,
-						set   = function(_, r, g, b)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.emptyColor = { r = r, g = g, b = b }
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
-					},
-					cpOutlineColor = {
-						type  = "color",
-						name  = L["Pip Outline Color"],
-						order = 3.75,
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							local col = c and c.outlineColor or { r = 1, g = 1, b = 1 }
-							return col.r or 1, col.g or 1, col.b or 1
-						end,
-						set   = function(_, r, g, b)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.outlineColor = { r = r, g = g, b = b }
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
-					},
-					cpWidth = {
-						type  = "range",
-						name  = L["Width"],
-						order = 3.76,
-						min   = 80, max = 800, step = 5,
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							return (c and tonumber(c.width)) or 220
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.width = v
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
-					},
-					cpHeight = {
-						type  = "range",
-						name  = L["Height"],
-						order = 3.77,
-						min   = 20, max = 200, step = 2,
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							return (c and tonumber(c.height)) or 26
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.height = v
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
-					},
-					cpHideAtZero = {
-						type  = "toggle",
-						name  = L["Hide at 0"],
-						order = 3.8,
-						width = "full",
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							return not c or c.hideAtZero ~= false
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.hideAtZero = v and true or false
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
-					},
-					cpHideOOC = {
-						type  = "toggle",
-						name  = L["Hide Out of Combat"],
-						order = 3.9,
-						width = "full",
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							return c and c.hideOutOfCombat == true
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.hideOutOfCombat = v and true or false
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
-					},
-					cpSoundHeader = { type = "header", name = L["Counter Sound"], order = 4 },
-					cpFullSound = {
-						type  = "toggle",
-						name  = L["Play Sound at Max"],
-						order = 4.1,
-						width = "full",
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							return c and c.fullSoundEnabled == true
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.fullSoundEnabled = v and true or false
-							notifyRt()
-						end,
-					},
-					cpFullSoundKey = {
-						type  = "select",
-						name  = L["Sound"],
-						order = 4.2,
-						width = "normal",
-						values = function() return (ZSBT.BuildSoundDropdown and ZSBT.BuildSoundDropdown()) or { ["None"] = L["None"] } end,
-						disabled = function()
-							local c = ZSBT.db.profile.comboPoints
-							return not (c and c.fullSoundEnabled == true)
-						end,
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							return (c and type(c.fullSoundKey) == "string" and c.fullSoundKey ~= "") and c.fullSoundKey or "None"
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.fullSoundKey = v
-							notifyRt()
-						end,
-					},
-					cpFullSoundTest = {
-						type  = "execute",
-						name  = L["Test Sound"],
-						order = 4.3,
-						width = "half",
-						disabled = function()
-							local c = ZSBT.db.profile.comboPoints
-							return not (c and c.fullSoundEnabled == true)
-						end,
-						func  = function()
-							local c = ZSBT.db.profile.comboPoints
-							local sk = c and c.fullSoundKey
-							if sk and sk ~= "None" and ZSBT.PlayLSMSound then
-								ZSBT.PlayLSMSound(sk)
-							end
-						end,
-					},
-					cpFullEffect = {
-						type  = "select",
-						name  = L["Full Effect"],
-						desc  = L["Animation that loops on the counter while the resource stays at max."],
-						order = 4.4,
-						width = "normal",
-						values = {
-							["none"]       = L["None"],
-							["ignite"]     = "Ignite",
-							["chromatic"]  = "Chromatic",
-							["shatter"]    = "Shatter",
-							["afterimage"] = "Afterimage",
-						},
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							local v = c and c.fullEffect
-							local valid = {
-								none = 1, ignite = 1, chromatic = 1, shatter = 1,
-								afterimage = 1,
-							}
-							return (type(v) == "string" and valid[v]) and v or "ignite"
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.fullEffect = v
-							notifyRt()
-						end,
-					},
-					rtFontHeader = { type = "header", name = L["Counter Font"], order = 5 },
-					rtFontOverride = {
-						type  = "toggle",
-						name  = L["Override Font"],
-						desc  = L["Use custom font settings for the resource counter text."],
-						order = 5.1,
-						width = "full",
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							return c and c.fontOverride == true
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.fontOverride = v and true or false
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
-					},
-					rtFontFace = {
-						type  = "select",
-						name  = L["Font Face"],
-						order = 5.2,
-						width = "normal",
-						values = function() return ZSBT.BuildFontDropdown() end,
-						hidden = function()
-							local c = ZSBT.db.profile.comboPoints
-							return not (c and c.fontOverride == true)
-						end,
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							return (c and type(c.fontFace) == "string" and c.fontFace ~= "") and c.fontFace or "Friz Quadrata TT"
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.fontFace = v
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
-					},
-					rtFontOutline = {
-						type  = "select",
-						name  = L["Outline Style"],
-						order = 5.3,
-						width = "normal",
-						values = function() return ZSBT.ValuesFromKeys(ZSBT.OUTLINE_STYLES) end,
-						hidden = function()
-							local c = ZSBT.db.profile.comboPoints
-							return not (c and c.fontOverride == true)
-						end,
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							return (c and type(c.fontOutline) == "string" and c.fontOutline ~= "") and c.fontOutline or "Thin"
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.fontOutline = v
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
-					},
-					rtFontSize = {
-						type  = "range",
-						name  = L["Font Size (0=use scale)"],
-						order = 5.4,
-						min   = 0, max = 72, softMax = 32, step = 1,
-						hidden = function()
-							local c = ZSBT.db.profile.comboPoints
-							return not (c and c.fontOverride == true)
-						end,
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							return (c and tonumber(c.fontSize)) or 0
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.fontSize = tonumber(v) or 0
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
-					},
-					rtFontScale = {
-						type  = "range",
-						name  = L["Font Scale"],
-						desc  = L["Multiplier applied to the general font size when Font Size is 0."],
-						order = 5.5,
-						min   = 0.5, max = 3.0, softMax = 2.0, step = 0.05,
-						hidden = function()
-							local c = ZSBT.db.profile.comboPoints
-							return not (c and c.fontOverride == true)
-						end,
-						get   = function()
-							local c = ZSBT.db.profile.comboPoints
-							return (c and tonumber(c.fontScale)) or 1.0
-						end,
-						set   = function(_, v)
-							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
-							ZSBT.db.profile.comboPoints.fontScale = tonumber(v) or 1.0
-							notifyRt()
-							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-						end,
+					rcHeader = { type = "header", name = L["Resource Counters"], order = 3 },
+					rcHint = {
+						type = "description",
+						name = L["Each button opens a separate config window for that resource's on-screen counter."],
+						order = 3.05,
+						fontSize = "small",
 					},
 					rtUnlock = {
 						type = "execute",
 						name = function()
 							if ZSBT and ZSBT.IsResourceCounterUnlocked and ZSBT.IsResourceCounterUnlocked() then
-								return L["Lock Resource Counter"]
+								return L["Lock Resource Counters"]
 							end
-							return L["Unlock Resource Counter"]
+							return L["Unlock Resource Counters"]
 						end,
-						desc = L["Show the resource counter frame for dragging and resizing without unlocking scroll areas."],
-						order = 5.6,
+						desc = L["Show the resource counter frames for dragging and resizing without unlocking scroll areas."],
+						order = 3.9,
 						width = "full",
 						func = function()
 							if ZSBT and ZSBT.ToggleResourceCounterUnlock then
@@ -4268,7 +3765,39 @@ function ZSBT.BuildTab_Notifications()
 						end,
 					},
 				}
-				for k, v in pairs(buildStyleSoundArgs("power", 1.2)) do rtArgs[k] = v end
+				-- One configure button per resource this class can use with
+				-- a real pool: class-token filtered AND requiring a safe
+				-- max > 0. Current value is NOT required — it can be a
+				-- secret in combat, but the max is static and still proves
+				-- the resource exists (warlock mana max=0 stays hidden).
+				for i = 0, 20 do
+					if ZSBT.CpPowerTypeAllowed and ZSBT.CpPowerTypeAllowed(i)
+						and not (ZSBT.PowerTypeSecret and ZSBT.PowerTypeSecret(i)) then
+						local mx = UnitPowerMax("player", i)
+						if ZSBT.IsSafeNumber(mx) and mx > 0 then
+							local pt = i
+							rtArgs["rc_" .. i] = {
+							type = "execute",
+							name = function()
+								local label = (ZSBT.PowerTypeName and ZSBT.PowerTypeName(pt)) or ("Power " .. pt)
+								local cfg = ZSBT.ResourceCounterConfig and ZSBT.ResourceCounterConfig(pt)
+								if cfg and cfg.enabled == true then
+									label = label .. "  |cFF66FF66•|r"
+								end
+								return label
+							end,
+							desc = L["Open the config window for this resource's on-screen counter."],
+							order = 3.1 + i * 0.01,
+							width = "full",
+							func = function()
+								if Addon and Addon.OpenResourceCounterConfig then
+									Addon:OpenResourceCounterConfig(pt)
+								end
+							end,
+						}
+						end
+					end
+				end
 				return rtArgs
 				end)(),
 			},
@@ -4276,6 +3805,836 @@ function ZSBT.BuildTab_Notifications()
 		},
 	}
 end
+
+------------------------------------------------------------------------
+-- Resource Counter Manager (per-resource config window)
+-- ZSBT._editingResourcePowerType selects which power type's counter the
+-- window edits. Opened via Addon:OpenResourceCounterConfig(powerType).
+------------------------------------------------------------------------
+function ZSBT.BuildResourceCounterManagerArgs()
+	local function pt()
+		return tonumber(ZSBT._editingResourcePowerType) or 0
+	end
+	local function rc()
+		return ZSBT.ResourceCounterConfig and ZSBT.ResourceCounterConfig(pt())
+	end
+	local function rcw()
+		return ZSBT.ResourceCounterConfigWrite and ZSBT.ResourceCounterConfigWrite(pt())
+	end
+	local _rcNotifyAt = 0
+	local function notify()
+		local now = GetTime()
+		if now - _rcNotifyAt < 0.15 then return end
+		_rcNotifyAt = now
+		local ACR = LibStub("AceConfigRegistry-3.0")
+		ACR:NotifyChange("ZSBT")
+		ACR:NotifyChange("ZSBT_ResourceCounter")
+	end
+	local function touch()
+		notify()
+		if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+	end
+
+	-- Per-resource "Resource Full" text notification. Uses the same
+	-- category-keyed stores as every other notification ("power_<pt>"), so
+	-- routing/templates/per-type style flow through EmitNotificationTemplate
+	-- unchanged. Sound is intentionally absent — the counter's own
+	-- full-resource sound covers it.
+	local function nkey() return "power_" .. pt() end
+	local function nEnabled()
+		local p = ZSBT.db and ZSBT.db.profile
+		local n = p and p.notifications
+		-- Opt-in per resource: absent means off so enabling a counter does
+		-- not silently start "X Full!" texts for every class resource.
+		return n and n[nkey()] == true
+	end
+	local function setNEnabled(v)
+		ZSBT.db.profile.notifications = ZSBT.db.profile.notifications or {}
+		ZSBT.db.profile.notifications[nkey()] = v and true or false
+		notify()
+	end
+	local function nTpl(fallback)
+		local p = ZSBT.db and ZSBT.db.profile
+		local t = p and p.notificationsTemplates
+		local v = t and t[nkey()]
+		return (type(v) == "string" and v ~= "") and v or fallback
+	end
+	local function setNTpl(val)
+		ZSBT.db.profile.notificationsTemplates = ZSBT.db.profile.notificationsTemplates or {}
+		ZSBT.db.profile.notificationsTemplates[nkey()] = (type(val) == "string") and val or ""
+		notify()
+	end
+	local function nRoute()
+		local p = ZSBT.db and ZSBT.db.profile
+		local r = p and p.notificationsRouting
+		local v = r and r[nkey()]
+		return (type(v) == "string" and v ~= "") and v or "Notifications"
+	end
+	local function setNRoute(v)
+		ZSBT.db.profile.notificationsRouting = ZSBT.db.profile.notificationsRouting or {}
+		ZSBT.db.profile.notificationsRouting[nkey()] = (type(v) == "string" and v ~= "") and v or "Notifications"
+		notify()
+	end
+	local function nStyle()
+		local p = ZSBT.db and ZSBT.db.profile
+		local nt = p and p.notificationsPerType
+		local v = nt and nt[nkey()]
+		return type(v) == "table" and v or nil
+	end
+	local function ensureNStyle()
+		ZSBT.db.profile.notificationsPerType = ZSBT.db.profile.notificationsPerType or {}
+		ZSBT.db.profile.notificationsPerType[nkey()] = ZSBT.db.profile.notificationsPerType[nkey()] or {}
+		local v = ZSBT.db.profile.notificationsPerType[nkey()]
+		v.style = type(v.style) == "table" and v.style or {}
+		return v
+	end
+
+	-- Progressive disclosure predicates.
+	local function counterOff()
+		local c = rc()
+		return not (c and c.enabled == true)
+	end
+	local function notifOff()
+		return not nEnabled()
+	end
+	-- DK runes (power type 5) get a dedicated page: six per-slot cooldown
+	-- shapes instead of count pips/text, and alerts fire on depletion.
+	local function runeMode()
+		return pt() == 5 and type(GetRuneCooldown) == "function"
+	end
+	local function runeTimeOn()
+		local c = rc()
+		return runeMode() and c and c.showRuneTime == true
+	end
+	local function notTextFormat()
+		local c = rc()
+		local f = c and c.format
+		return not (f == "fraction" or f == "number")
+	end
+	local function fontOverrideOff()
+		local c = rc()
+		return notTextFormat() or not (c and c.fontOverride == true)
+	end
+	-- Rune pages have no count text; the font section only applies to the
+	-- optional seconds-remaining readout on cooling runes.
+	local function fontAreaOff()
+		if counterOff() then return true end
+		if runeMode() then return not runeTimeOn() end
+		return notTextFormat()
+	end
+	local function fontCtlOff()
+		if counterOff() then return true end
+		if runeMode() then return not runeTimeOn() end
+		return fontOverrideOff()
+	end
+
+	return {
+		rcHeader = {
+			type = "header",
+			name = function()
+				return (ZSBT.PowerTypeName and ZSBT.PowerTypeName(pt())) or "Resource"
+			end,
+			order = 1,
+		},
+		rcEnabled = {
+			type  = "toggle",
+			name  = L["Show Resource Tracker"],
+			desc  = L["Display an on-screen counter for this resource."],
+			order = 2.0,
+			width = "full",
+			get   = function()
+				local c = rc()
+				return c and c.enabled == true
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.enabled = v and true or false
+					touch()
+				end
+			end,
+		},
+		placeHeader = { type = "header", name = L["Tracker Placement"], order = 3, hidden = counterOff },
+		rcAttachArea = {
+			hidden = counterOff,
+			type  = "select",
+			name  = L["Anchor To"],
+			desc  = L["Attach the counter to a scroll area's position, or use a free position."],
+			order = 3.1,
+			width = "normal",
+			values = function()
+				local out = { ["None"] = L["Free Position"] }
+				local names = ZSBT.GetScrollAreaNames and ZSBT.GetScrollAreaNames() or {}
+				for n in pairs(names) do out[n] = n end
+				return out
+			end,
+			get   = function()
+				local c = rc()
+				return (c and type(c.attachArea) == "string" and c.attachArea ~= "") and c.attachArea or "None"
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.attachArea = v
+					touch()
+				end
+			end,
+		},
+		rcAnchor = {
+			hidden = counterOff,
+			type  = "select",
+			name  = L["Position"],
+			order = 3.2,
+			width = "normal",
+			values = {
+				["Top Left"] = "Top Left", ["Top"] = "Top", ["Top Right"] = "Top Right",
+				["Left"] = "Left", ["Center"] = "Center", ["Right"] = "Right",
+				["Bottom Left"] = "Bottom Left", ["Bottom"] = "Bottom", ["Bottom Right"] = "Bottom Right",
+			},
+			disabled = function()
+				local c = rc()
+				local a = c and c.attachArea
+				return not a or a == "" or a == "None"
+			end,
+			get   = function()
+				local c = rc()
+				local a = c and c.anchor
+				local valid = {
+					["Top Left"]=1, ["Top"]=1, ["Top Right"]=1,
+					["Left"]=1, ["Center"]=1, ["Right"]=1,
+					["Bottom Left"]=1, ["Bottom"]=1, ["Bottom Right"]=1,
+					["BOTTOM"]=1, ["TOP"]=1, ["CENTER"]=1, ["LEFT"]=1, ["RIGHT"]=1,
+				}
+				if type(a) == "string" and valid[a] then
+					if a == "BOTTOM" then return "Bottom" end
+					if a == "TOP" then return "Top" end
+					if a == "CENTER" then return "Center" end
+					if a == "LEFT" then return "Left" end
+					if a == "RIGHT" then return "Right" end
+					return a
+				end
+				return "Bottom"
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.anchor = v
+					touch()
+				end
+			end,
+		},
+		rcPosX = {
+			hidden = counterOff,
+			type  = "range",
+			name  = L["X Offset"],
+			order = 3.3,
+			min   = -2000, max = 2000, step = 10,
+			disabled = function()
+				local c = rc()
+				local a = c and c.attachArea
+				return a and a ~= "" and a ~= "None"
+			end,
+			get   = function()
+				local c = rc()
+				return (c and tonumber(c.xOffset)) or 0
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.xOffset = v
+					touch()
+				end
+			end,
+		},
+		rcPosY = {
+			hidden = counterOff,
+			type  = "range",
+			name  = L["Y Offset"],
+			order = 3.4,
+			min   = -2000, max = 2000, step = 10,
+			disabled = function()
+				local c = rc()
+				local a = c and c.attachArea
+				return a and a ~= "" and a ~= "None"
+			end,
+			get   = function()
+				local c = rc()
+				return (c and tonumber(c.yOffset)) or 0
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.yOffset = v
+					touch()
+				end
+			end,
+		},
+		dispHeader = { type = "header", name = L["Display"], order = 4, hidden = counterOff },
+		rcFormat = {
+			hidden = function() return counterOff() or runeMode() end,
+			type  = "select",
+			name  = L["Display Format"],
+			order = 4.1,
+			width = "normal",
+			values = {
+				["fraction"] = L["Fraction (4/6)"],
+				["pips"]     = L["Diamond Pips"],
+				["number"]   = L["Number Only"],
+			},
+			get   = function()
+				local c = rc()
+				return (c and type(c.format) == "string" and c.format ~= "") and c.format or "pips"
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.format = v
+					touch()
+				end
+			end,
+		},
+		rcRuneShape = {
+			hidden = function() return counterOff() or not runeMode() end,
+			type  = "select",
+			name  = L["Rune Shape"],
+			desc  = L["Shape drawn for each rune slot."],
+			order = 4.15,
+			width = "normal",
+			values = {
+				["square"]  = L["Square"],
+				["diamond"] = L["Diamond"],
+				["circle"]  = L["Circle"],
+				["hexagon"] = L["Hexagon"],
+			},
+			get   = function()
+				local c = rc()
+				local v = c and c.runeShape
+				local valid = { square = 1, diamond = 1, circle = 1, hexagon = 1 }
+				return (type(v) == "string" and valid[v]) and v or "square"
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.runeShape = v
+					touch()
+				end
+			end,
+		},
+		rcRuneTime = {
+			hidden = function() return counterOff() or not runeMode() end,
+			type  = "toggle",
+			name  = L["Show Seconds Remaining"],
+			desc  = L["Display seconds left inside each rune that is recharging."],
+			order = 4.16,
+			width = "full",
+			get   = function()
+				local c = rc()
+				return c and c.showRuneTime == true
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.showRuneTime = v and true or false
+					touch()
+				end
+			end,
+		},
+		rcColor = {
+			hidden = counterOff,
+			type  = "color",
+			name  = function() return runeMode() and L["Ready Color"] or L["Color"] end,
+			order = 4.2,
+			get   = function()
+				local c = rc()
+				local col = c and c.color or { r = 1, g = 0.82, b = 0 }
+				return col.r or 1, col.g or 0.82, col.b or 0
+			end,
+			set   = function(_, r, g, b)
+				local c = rcw()
+				if c then
+					c.color = { r = r, g = g, b = b }
+					touch()
+				end
+			end,
+		},
+		rcEmptyColor = {
+			hidden = counterOff,
+			type  = "color",
+			name  = function() return runeMode() and L["Recharging Color"] or L["Empty Pip Color"] end,
+			order = 4.3,
+			get   = function()
+				local c = rc()
+				local col = c and c.emptyColor or { r = 0.35, g = 0.35, b = 0.35 }
+				return col.r or 0.35, col.g or 0.35, col.b or 0.35
+			end,
+			set   = function(_, r, g, b)
+				local c = rcw()
+				if c then
+					c.emptyColor = { r = r, g = g, b = b }
+					touch()
+				end
+			end,
+		},
+		rcOutlineColor = {
+			hidden = counterOff,
+			type  = "color",
+			name  = function() return runeMode() and L["Rune Outline Color"] or L["Pip Outline Color"] end,
+			order = 4.4,
+			get   = function()
+				local c = rc()
+				local col = c and c.outlineColor or { r = 1, g = 1, b = 1 }
+				return col.r or 1, col.g or 1, col.b or 1
+			end,
+			set   = function(_, r, g, b)
+				local c = rcw()
+				if c then
+					c.outlineColor = { r = r, g = g, b = b }
+					touch()
+				end
+			end,
+		},
+		rcWidth = {
+			hidden = counterOff,
+			type  = "range",
+			name  = L["Width"],
+			order = 4.5,
+			min   = 80, max = 800, step = 5,
+			get   = function()
+				local c = rc()
+				return (c and tonumber(c.width)) or 220
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.width = v
+					touch()
+				end
+			end,
+		},
+		rcHeight = {
+			hidden = counterOff,
+			type  = "range",
+			name  = L["Height"],
+			order = 4.6,
+			min   = 20, max = 200, step = 2,
+			get   = function()
+				local c = rc()
+				return (c and tonumber(c.height)) or 26
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.height = v
+					touch()
+				end
+			end,
+		},
+		rcHideAtZero = {
+			hidden = function() return counterOff() or runeMode() end,
+			type  = "toggle",
+			name  = L["Hide at 0"],
+			order = 4.7,
+			width = "full",
+			get   = function()
+				local c = rc()
+				return not c or c.hideAtZero ~= false
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.hideAtZero = v and true or false
+					touch()
+				end
+			end,
+		},
+		rcHideDepleted = {
+			hidden = function() return counterOff() or not runeMode() end,
+			type  = "toggle",
+			name  = L["Hide when All Runes Are Ready"],
+			desc  = L["Hide the tracker while every rune is ready."],
+			order = 4.75,
+			width = "full",
+			get   = function()
+				local c = rc()
+				return c and c.hideAllReady == true
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.hideAllReady = v and true or false
+					touch()
+				end
+			end,
+		},
+		rcHideOOC = {
+			hidden = counterOff,
+			type  = "toggle",
+			name  = L["Hide Out of Combat"],
+			order = 4.8,
+			width = "full",
+			get   = function()
+				local c = rc()
+				return c and c.hideOutOfCombat == true
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.hideOutOfCombat = v and true or false
+					touch()
+				end
+			end,
+		},
+		fullHeader = {
+			type = "header",
+			name = L["Full Resource"],
+			order = 5,
+			-- Runes recharge continuously; there is no "empty" alert state.
+			hidden = runeMode,
+		},
+		rcFullSound = {
+			type  = "toggle",
+			name  = L["Play Sound at Max"],
+			hidden = runeMode,
+			order = 5.1,
+			width = "full",
+			get   = function()
+				local c = rc()
+				return c and c.fullSoundEnabled == true
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.fullSoundEnabled = v and true or false
+					notify()
+				end
+			end,
+		},
+		rcFullSoundKey = {
+			type  = "select",
+			name  = L["Sound"],
+			hidden = runeMode,
+			order = 5.2,
+			width = "normal",
+			values = function() return (ZSBT.BuildSoundDropdown and ZSBT.BuildSoundDropdown()) or { ["None"] = L["None"] } end,
+			disabled = function()
+				local c = rc()
+				return not (c and c.fullSoundEnabled == true)
+			end,
+			get   = function()
+				local c = rc()
+				return (c and type(c.fullSoundKey) == "string" and c.fullSoundKey ~= "") and c.fullSoundKey or "None"
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.fullSoundKey = v
+					notify()
+				end
+			end,
+		},
+		rcFullSoundTest = {
+			type  = "execute",
+			name  = L["Test Sound"],
+			hidden = runeMode,
+			order = 5.3,
+			width = "half",
+			disabled = function()
+				local c = rc()
+				return not (c and c.fullSoundEnabled == true)
+			end,
+			func  = function()
+				local c = rc()
+				local sk = c and c.fullSoundKey
+				if sk and sk ~= "None" and ZSBT.PlayLSMSound then
+					ZSBT.PlayLSMSound(sk)
+				end
+			end,
+		},
+		rcFullEffect = {
+			type  = "select",
+			name  = L["Full Effect"],
+			desc  = L["Animation that loops on the counter while the resource stays at max."],
+			-- Rune slots already animate their own cooldown fill; a looping
+			-- overlay on top would just be noise.
+			hidden = runeMode,
+			order = 5.4,
+			width = "normal",
+			values = {
+				["none"]       = L["None"],
+				["ignite"]     = "Ignite",
+				["chromatic"]  = "Chromatic",
+				["shatter"]    = "Shatter",
+				["afterimage"] = "Afterimage",
+			},
+			get   = function()
+				local c = rc()
+				local v = c and c.fullEffect
+				local valid = {
+					none = 1, ignite = 1, chromatic = 1, shatter = 1,
+					afterimage = 1,
+				}
+				return (type(v) == "string" and valid[v]) and v or "ignite"
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.fullEffect = v
+					notify()
+				end
+			end,
+		},
+		fontHeader = {
+			type = "header",
+			name = function() return runeMode() and L["Rune Timer Font"] or L["Counter Font"] end,
+			order = 6,
+			hidden = fontAreaOff,
+		},
+		rcFontOverride = {
+			hidden = fontAreaOff,
+			type  = "toggle",
+			name  = L["Override Font"],
+			desc  = L["Use custom font settings for the resource counter text."],
+			order = 6.1,
+			width = "full",
+			get   = function()
+				local c = rc()
+				return c and c.fontOverride == true
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.fontOverride = v and true or false
+					touch()
+				end
+			end,
+		},
+		rcFontFace = {
+			hidden = fontCtlOff,
+			type  = "select",
+			name  = L["Font Face"],
+			order = 6.2,
+			width = "normal",
+			values = function() return ZSBT.BuildFontDropdown() end,
+			get   = function()
+				local c = rc()
+				return (c and type(c.fontFace) == "string" and c.fontFace ~= "") and c.fontFace or "Friz Quadrata TT"
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.fontFace = v
+					touch()
+				end
+			end,
+		},
+		rcFontOutline = {
+			hidden = fontCtlOff,
+			type  = "select",
+			name  = L["Outline Style"],
+			order = 6.3,
+			width = "normal",
+			values = function() return ZSBT.ValuesFromKeys(ZSBT.OUTLINE_STYLES) end,
+			get   = function()
+				local c = rc()
+				return (c and type(c.fontOutline) == "string" and c.fontOutline ~= "") and c.fontOutline or "Thin"
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.fontOutline = v
+					touch()
+				end
+			end,
+		},
+		rcFontSize = {
+			hidden = fontCtlOff,
+			type  = "range",
+			name  = L["Font Size (0=use scale)"],
+			order = 6.4,
+			min   = 0, max = 72, softMax = 32, step = 1,
+			get   = function()
+				local c = rc()
+				return (c and tonumber(c.fontSize)) or 0
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.fontSize = tonumber(v) or 0
+					touch()
+				end
+			end,
+		},
+		rcFontScale = {
+			hidden = fontCtlOff,
+			type  = "range",
+			name  = L["Font Scale"],
+			desc  = L["Multiplier applied to the general font size when Font Size is 0."],
+			order = 6.5,
+			min   = 0.5, max = 3.0, softMax = 2.0, step = 0.05,
+			get   = function()
+				local c = rc()
+				return (c and tonumber(c.fontScale)) or 1.0
+			end,
+			set   = function(_, v)
+				local c = rcw()
+				if c then
+					c.fontScale = tonumber(v) or 1.0
+					touch()
+				end
+			end,
+		},
+		rcNotifEnabled = {
+			type  = "toggle",
+			name  = L["Resource Full Text Notification"],
+			desc  = L["Show a scrolling notification when this resource reaches max."],
+			-- Runes have no meaningful "full"/"empty" notification edge.
+			hidden = runeMode,
+			order = 1.2,
+			width = "full",
+			get   = function() return nEnabled() end,
+			set   = function(_, v) setNEnabled(v) end,
+		},
+		rcNotifRoute = {
+			type  = "select",
+			name  = L["Route To"],
+			desc  = L["Choose which scroll area this notification should emit into."],
+			order = 1.3,
+			width = "normal",
+			hidden = function() return notifOff() or runeMode() end,
+			values = function()
+				local out = { ["Notifications"] = "Notifications" }
+				local names = ZSBT.GetScrollAreaNames and ZSBT.GetScrollAreaNames() or {}
+				for n in pairs(names) do out[n] = n end
+				return out
+			end,
+			get   = function() return nRoute() end,
+			set   = function(_, v) setNRoute(v) end,
+		},
+		rcNotifTemplate = {
+			type = "input",
+			name = L["Template"],
+			desc = L["Template codes: %e=resource name. Default shows \"%e Full!\" (e.g. Combo Points Full!)."],
+			order = 1.4,
+			width = "full",
+			hidden = function() return notifOff() or runeMode() end,
+			get = function() return nTpl("%e Full!") end,
+			set = function(_, v) setNTpl(v) end,
+		},
+		rcNotifColor = {
+			type  = "color",
+			name  = L["Color"],
+			order = 1.5,
+			hidden = function() return notifOff() or runeMode() end,
+			get   = function()
+				local c = nStyle()
+				local style = c and c.style
+				local col = style and style.color
+				col = col or { r = 1, g = 1, b = 1 }
+				return col.r, col.g, col.b
+			end,
+			set   = function(_, r, g, b)
+				local c = ensureNStyle()
+				c.style.color = { r = r, g = g, b = b }
+				notify()
+			end,
+		},
+		rcNotifFontOverride = {
+			type  = "toggle",
+			name  = L["Font Override"],
+			desc  = L["Override the font settings for this notification."],
+			order = 1.6,
+			width = "full",
+			hidden = function() return notifOff() or runeMode() end,
+			get   = function()
+				local c = nStyle()
+				return c and c.style and c.style.fontOverride == true
+			end,
+			set   = function(_, v)
+				local c = ensureNStyle()
+				c.style.fontOverride = v and true or false
+				notify()
+			end,
+		},
+		rcNotifFontFace = {
+			type  = "select",
+			name  = L["Font Face"],
+			order = 1.7,
+			width = "normal",
+			values = function() return ZSBT.BuildFontDropdown() end,
+			hidden = function()
+				local c = nStyle()
+				return notifOff() or runeMode() or not (c and c.style and c.style.fontOverride == true)
+			end,
+			get   = function()
+				local c = nStyle()
+				return (c and c.style and c.style.fontFace) or (ZSBT.db.profile.general.font and ZSBT.db.profile.general.font.face) or "Friz Quadrata TT"
+			end,
+			set   = function(_, v)
+				local c = ensureNStyle()
+				c.style.fontFace = v
+				notify()
+			end,
+		},
+		rcNotifFontOutline = {
+			type  = "select",
+			name  = L["Outline Style"],
+			order = 1.8,
+			width = "normal",
+			values = function() return ZSBT.ValuesFromKeys(ZSBT.OUTLINE_STYLES) end,
+			hidden = function()
+				local c = nStyle()
+				return notifOff() or runeMode() or not (c and c.style and c.style.fontOverride == true)
+			end,
+			get   = function()
+				local c = nStyle()
+				return (c and c.style and c.style.fontOutline) or (ZSBT.db.profile.general.font and ZSBT.db.profile.general.font.outline) or "Thin"
+			end,
+			set   = function(_, v)
+				local c = ensureNStyle()
+				c.style.fontOutline = v
+				notify()
+			end,
+		},
+		rcNotifFontSize = {
+			type  = "range",
+			name  = L["Font Size"],
+			order = 1.9,
+			min   = 8, max = 72, step = 1,
+			hidden = function()
+				local c = nStyle()
+				return notifOff() or runeMode() or not (c and c.style and c.style.fontOverride == true)
+			end,
+			get   = function()
+				local c = nStyle()
+				return tonumber((c and c.style and c.style.fontSize) or 18) or 18
+			end,
+			set   = function(_, v)
+				local c = ensureNStyle()
+				c.style.fontSize = v
+				notify()
+			end,
+		},
+		rcUnlock = {
+			type = "execute",
+			name = function()
+				if ZSBT and ZSBT.IsResourceCounterUnlocked and ZSBT.IsResourceCounterUnlocked() then
+					return L["Lock Resource Counters"]
+				end
+				return L["Unlock Resource Counters"]
+			end,
+			desc = L["Show the resource counter frames for dragging and resizing without unlocking scroll areas."],
+			order = 7,
+			width = "full",
+			func = function()
+				if ZSBT and ZSBT.ToggleResourceCounterUnlock then
+					ZSBT.ToggleResourceCounterUnlock()
+				end
+				notify()
+			end,
+		},
+	}
+end
+
 ------------------------------------------------------------------------
 -- TAB 2: SCROLL AREAS
 -- Create/delete/rename scroll areas and configure their geometry.

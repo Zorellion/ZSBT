@@ -3622,6 +3622,27 @@ function ZSBT.BuildSpellRulesOptionsTable()
     }
 end
 
+function ZSBT.BuildResourceCounterOptionsTable()
+    assert(ZSBT.BuildResourceCounterManagerArgs, L["ConfigTabs.lua must be loaded before Config.lua"])
+
+    local pt = tonumber(ZSBT._editingResourcePowerType) or 0
+    local resName = (ZSBT.PowerTypeName and ZSBT.PowerTypeName(pt)) or "Resource"
+
+    return {
+        type = "group",
+		name = L["|cFFFFD100Resource Counter|r"],
+		childGroups = "tab",
+		args = {
+			main = {
+				type  = "group",
+				name  = resName,
+				order = 1,
+				args  = ZSBT.BuildResourceCounterManagerArgs(),
+			},
+		},
+    }
+end
+
 function ZSBT.BuildDebugOptionsTable()
 	local function ensureDiagnostics()
 		if not (ZSBT and ZSBT.db and ZSBT.db.profile) then return nil end
@@ -4049,6 +4070,7 @@ function ZSBT.ApplyStrikeSilverStyling()
             or appName == "ZSBT_SpellRuleEditor"
             or appName == "ZSBT_BuffRuleEditor"
             or appName == "ZSBT_TriggerEditor"
+            or appName == "ZSBT_ResourceCounter"
             or appName == "ZSBT_Debug"
     end
 
