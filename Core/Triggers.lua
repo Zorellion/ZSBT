@@ -410,6 +410,22 @@ end
 
 function Triggers:IsAuraPresentSpellId(sid)
 	if type(sid) ~= "number" or sid <= 0 then return false end
+	-- Per-spell aura secrecy: Secret-level spells can never be matched by ID
+	-- in combat; NeverSecret spells return ordinary aura data. Record the
+	-- level for diagnostics.
+	self._presenceDiag = self._presenceDiag or {}
+	local diag = { sec = nil, findHit = false, enumHit = false, enumRan = false }
+	self._presenceDiag[sid] = diag
+	if C_Secrets then
+		if C_Secrets.GetSpellAuraSecrecy then
+			local okG, resG = pcall(C_Secrets.GetSpellAuraSecrecy, sid)
+			if okG then diag.sec = resG end
+		end
+		if diag.sec == nil and C_Secrets.ShouldSpellAuraBeSecret then
+			local okS, resS = pcall(C_Secrets.ShouldSpellAuraBeSecret, sid)
+			if okS then diag.sec = resS == true and "secret" or "readable" end
+		end
+	end
 	-- Synthetic presence fallback for auras that cannot be enumerated reliably in WoW 12.x during combat.
 	if self._syntheticAuraExpireAt and type(self._syntheticAuraExpireAt[sid]) == "number" then
 		local now = GetTime and GetTime() or 0
@@ -421,9 +437,9 @@ function Triggers:IsAuraPresentSpellId(sid)
 	-- Fast path if available
 	if AuraUtil and AuraUtil.FindAuraBySpellId then
 		local ok, aura = pcall(AuraUtil.FindAuraBySpellId, sid, "player", "HELPFUL")
-		if ok and aura then return true end
+		if ok and aura then diag.findHit = true; return true end
 		ok, aura = pcall(AuraUtil.FindAuraBySpellId, sid, "player", "HARMFUL")
-		if ok and aura then return true end
+		if ok and aura then diag.findHit = true; return true end
 		-- Do NOT early-return false here. During loading screens / API transitional states,
 		-- FindAuraBySpellId can transiently fail to report an aura. Fall through to
 		-- enumeration and name matching below to reduce false negatives.
@@ -438,6 +454,7 @@ function Triggers:IsAuraPresentSpellId(sid)
 	-- Fallback: enumerate auras and compare spellId when provided
 	if AuraUtil and AuraUtil.ForEachAura then
 		local found = false
+		diag.enumRan = true
 		pcall(function()
 			AuraUtil.ForEachAura("player", "HELPFUL", 255, function(auraData)
 				local asid = SafeAuraSpellId(auraData)
@@ -450,7 +467,7 @@ function Triggers:IsAuraPresentSpellId(sid)
 				return true
 			end, true)
 		end)
-		if found then return true end
+		if found then diag.enumHit = true; return true end
 		pcall(function()
 			AuraUtil.ForEachAura("player", "HARMFUL", 255, function(auraData)
 				local asid = SafeAuraSpellId(auraData)
@@ -463,19 +480,21 @@ function Triggers:IsAuraPresentSpellId(sid)
 				return true
 			end, true)
 		end)
+		diag.enumHit = found
 		return found
 	end
 
 	if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
+		diag.enumRan = true
 		for i = 1, 255 do
 			local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
 			if not ok or not auraData then break end
 			local asid = SafeAuraSpellId(auraData)
 			local okEq, eq = pcall(function() return asid == sid end)
-			if okEq and eq then return true end
+			if okEq and eq then diag.enumHit = true; return true end
 			if wantName and type(auraData.name) == "string" then
 				local okNameEq, nameEq = pcall(function() return auraData.name == wantName end)
-				if okNameEq and nameEq then return true end
+				if okNameEq and nameEq then diag.enumHit = true; return true end
 			end
 		end
 		for i = 1, 255 do
@@ -483,10 +502,10 @@ function Triggers:IsAuraPresentSpellId(sid)
 			if not ok or not auraData then break end
 			local asid = SafeAuraSpellId(auraData)
 			local okEq, eq = pcall(function() return asid == sid end)
-			if okEq and eq then return true end
+			if okEq and eq then diag.enumHit = true; return true end
 			if wantName and type(auraData.name) == "string" then
 				local okNameEq, nameEq = pcall(function() return auraData.name == wantName end)
-				if okNameEq and nameEq then return true end
+				if okNameEq and nameEq then diag.enumHit = true; return true end
 			end
 		end
 	end

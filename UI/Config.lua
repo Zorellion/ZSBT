@@ -1385,6 +1385,7 @@ function ZSBT.BuildBuffRuleEditorOptionsTable()
 					local name = (C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(id) and C_Spell.GetSpellInfo(id).name) or (GetSpellInfo and GetSpellInfo(id))
 					name = name or (L["Spell #"] .. tostring(id))
 					return name .. L["  |cFF888888(ID: "] .. tostring(id) .. ")|r"
+						.. (ZSBT.AuraTrackabilityLabel and ZSBT.AuraTrackabilityLabel(id) or "")
 				end,
 				order = 2,
 				fontSize = "medium",
@@ -1501,6 +1502,359 @@ function ZSBT.BuildBuffRuleEditorOptionsTable()
 					else
 						sc.auraRules[id].scrollArea = (type(v) == "string" and v ~= "") and v or nil
 					end
+				end,
+			},
+			showIcon = {
+				type = "toggle",
+				name = L["Show Icon"],
+				desc = L["Display the spell icon next to this buff's gain/fade notifications."],
+				order = 8,
+				width = "full",
+				get = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					return type(r) == "table" and r.showIcon == true
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.auraRules = sc.auraRules or {}
+					sc.auraRules[id] = sc.auraRules[id] or {}
+					sc.auraRules[id].showIcon = v and true or false
+				end,
+			},
+			notifyOnCast = {
+				type = "toggle",
+				name = L["Notify on Cast"],
+				desc = L["Also notify when you cast this spell. Only fires for castable spells; the aura gain is suppressed for the same application to avoid duplicates."],
+				order = 9,
+				width = "full",
+				get = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					return type(r) == "table" and r.notifyOnCast == true
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.auraRules = sc.auraRules or {}
+					sc.auraRules[id] = sc.auraRules[id] or {}
+					sc.auraRules[id].notifyOnCast = v and true or false
+				end,
+			},
+			styleHeader = {
+				type = "header",
+				name = L["Appearance"],
+				order = 10,
+			},
+			styleFontOverride = {
+				type = "toggle",
+				name = L["Font Override"],
+				desc = L["Override font and color for this buff's notifications."],
+				order = 11,
+				width = "full",
+				get = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local st = r and r.style
+					return type(st) == "table" and st.fontOverride == true
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.auraRules = sc.auraRules or {}
+					sc.auraRules[id] = sc.auraRules[id] or {}
+					sc.auraRules[id].style = sc.auraRules[id].style or {}
+					sc.auraRules[id].style.fontOverride = v and true or false
+				end,
+			},
+			styleFontFace = {
+				type = "select",
+				name = L["Font Face"],
+				order = 12,
+				values = function() return ZSBT.BuildFontDropdown() end,
+				hidden = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local st = r and r.style
+					return not (type(st) == "table" and st.fontOverride == true)
+				end,
+				get = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local st = r and r.style
+					return (type(st) == "table" and type(st.fontFace) == "string" and st.fontFace ~= "") and st.fontFace or L["Friz Quadrata TT"]
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.auraRules = sc.auraRules or {}
+					sc.auraRules[id] = sc.auraRules[id] or {}
+					sc.auraRules[id].style = sc.auraRules[id].style or {}
+					sc.auraRules[id].style.fontFace = (type(v) == "string" and v ~= "") and v or nil
+				end,
+			},
+			styleFontOutline = {
+				type = "select",
+				name = L["Outline Style"],
+				order = 13,
+				values = function() return ZSBT.ValuesFromKeys(ZSBT.OUTLINE_STYLES) end,
+				hidden = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local st = r and r.style
+					return not (type(st) == "table" and st.fontOverride == true)
+				end,
+				get = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local st = r and r.style
+					return (type(st) == "table" and type(st.fontOutline) == "string" and st.fontOutline ~= "") and st.fontOutline or "Thin"
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.auraRules = sc.auraRules or {}
+					sc.auraRules[id] = sc.auraRules[id] or {}
+					sc.auraRules[id].style = sc.auraRules[id].style or {}
+					sc.auraRules[id].style.fontOutline = (type(v) == "string" and v ~= "") and v or nil
+				end,
+			},
+			styleFontSize = {
+				type = "range",
+				name = L["Font Size (0=use scale)"],
+				order = 14,
+				min = 0,
+				max = 72,
+				softMax = 32,
+				step = 1,
+				hidden = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local st = r and r.style
+					return not (type(st) == "table" and st.fontOverride == true)
+				end,
+				get = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local st = r and r.style
+					return type(st) == "table" and (tonumber(st.fontSize) or 0) or 0
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.auraRules = sc.auraRules or {}
+					sc.auraRules[id] = sc.auraRules[id] or {}
+					sc.auraRules[id].style = sc.auraRules[id].style or {}
+					local n = tonumber(v) or 0
+					sc.auraRules[id].style.fontSize = (n > 0) and n or nil
+				end,
+			},
+			styleFontScale = {
+				type = "range",
+				name = L["Font Scale"],
+				desc = L["Multiplier applied to the resolved scroll area font size when Font Size is 0."],
+				order = 15,
+				min = 0.5,
+				max = 3.0,
+				softMax = 2.0,
+				step = 0.05,
+				hidden = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local st = r and r.style
+					return not (type(st) == "table" and st.fontOverride == true)
+				end,
+				get = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local st = r and r.style
+					return type(st) == "table" and (tonumber(st.fontScale) or 1.0) or 1.0
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.auraRules = sc.auraRules or {}
+					sc.auraRules[id] = sc.auraRules[id] or {}
+					sc.auraRules[id].style = sc.auraRules[id].style or {}
+					sc.auraRules[id].style.fontScale = tonumber(v) or 1.0
+				end,
+			},
+			styleColor = {
+				type = "color",
+				name = L["Color"],
+				order = 16,
+				hidden = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local st = r and r.style
+					return not (type(st) == "table" and st.fontOverride == true)
+				end,
+				get = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local st = r and r.style
+					local c = type(st) == "table" and st.color
+					if type(c) ~= "table" then return 1, 1, 1 end
+					return tonumber(c.r) or 1, tonumber(c.g) or 1, tonumber(c.b) or 1
+				end,
+				set = function(_, r, g, b)
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.auraRules = sc.auraRules or {}
+					sc.auraRules[id] = sc.auraRules[id] or {}
+					sc.auraRules[id].style = sc.auraRules[id].style or {}
+					sc.auraRules[id].style.color = { r = r, g = g, b = b }
+				end,
+			},
+			soundHeader = {
+				type = "header",
+				name = L["Sound"],
+				order = 17,
+			},
+			soundEnabled = {
+				type = "toggle",
+				name = L["Play Sound"],
+				order = 18,
+				width = "full",
+				get = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local s = r and r.sound
+					return type(s) == "table" and s.enabled == true
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.auraRules = sc.auraRules or {}
+					sc.auraRules[id] = sc.auraRules[id] or {}
+					sc.auraRules[id].sound = sc.auraRules[id].sound or {}
+					sc.auraRules[id].sound.enabled = v and true or false
+				end,
+			},
+			soundGainKey = {
+				type = "select",
+				name = L["Gain Sound"],
+				desc = L["Sound played when this buff is gained. Falls back to the shared Sound setting if unset."],
+				order = 19,
+				values = function() return ZSBT.BuildSoundDropdown() end,
+				hidden = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local s = r and r.sound
+					return not (type(s) == "table" and s.enabled == true)
+				end,
+				get = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local s = r and r.sound
+					return (type(s) == "table" and ((type(s.gainKey) == "string" and s.gainKey ~= "") and s.gainKey or s.soundKey)) or "None"
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.auraRules = sc.auraRules or {}
+					sc.auraRules[id] = sc.auraRules[id] or {}
+					sc.auraRules[id].sound = sc.auraRules[id].sound or {}
+					sc.auraRules[id].sound.gainKey = (type(v) == "string" and v ~= "") and v or nil
+				end,
+			},
+			soundFadeKey = {
+				type = "select",
+				name = L["Fade Sound"],
+				desc = L["Sound played when this buff fades. Falls back to the shared Sound setting if unset."],
+				order = 20,
+				values = function() return ZSBT.BuildSoundDropdown() end,
+				hidden = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local s = r and r.sound
+					return not (type(s) == "table" and s.enabled == true)
+				end,
+				get = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local s = r and r.sound
+					return (type(s) == "table" and ((type(s.fadeKey) == "string" and s.fadeKey ~= "") and s.fadeKey or s.soundKey)) or "None"
+				end,
+				set = function(_, v)
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					if not (sc and type(id) == "number") then return end
+					sc.auraRules = sc.auraRules or {}
+					sc.auraRules[id] = sc.auraRules[id] or {}
+					sc.auraRules[id].sound = sc.auraRules[id].sound or {}
+					sc.auraRules[id].sound.fadeKey = (type(v) == "string" and v ~= "") and v or nil
+				end,
+			},
+			soundTest = {
+				type = "execute",
+				name = L["Test Gain"],
+				desc = L["Play the gain sound."],
+				order = 21,
+				width = "half",
+				hidden = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local s = r and r.sound
+					return not (type(s) == "table" and s.enabled == true)
+				end,
+				func = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local s = r and r.sound
+					if type(s) == "table" then ZSBT.PlayLSMSound(s.gainKey or s.soundKey) end
+				end,
+			},
+			soundTestFade = {
+				type = "execute",
+				name = L["Test Fade"],
+				desc = L["Play the fade sound."],
+				order = 22,
+				width = "half",
+				hidden = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local s = r and r.sound
+					return not (type(s) == "table" and s.enabled == true)
+				end,
+				func = function()
+					local id = ZSBT._editingBuffRuleSpellID
+					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local s = r and r.sound
+					if type(s) == "table" then ZSBT.PlayLSMSound(s.fadeKey or s.soundKey) end
 				end,
 			},
 		},
@@ -3255,12 +3609,12 @@ function ZSBT.BuildSpellRulesOptionsTable()
 
     return {
         type = "group",
-		name = L["|cFFFFD100Spell Rules|r"],
+		name = L["|cFFFFD100Outgoing Spell Rules|r"],
 		childGroups = "tab",
 		args = {
 			main = {
 				type  = "group",
-				name  = L["Spell Rules"],
+				name  = L["Outgoing Spell Rules"],
 				order = 1,
 				args  = args,
 			},
@@ -3444,6 +3798,18 @@ function ZSBT.BuildDebugOptionsTable()
 					if ZSBT and ZSBT.Addon and ZSBT.Addon.Dbg then
 						ZSBT.Addon:Dbg("ui", 3, "Debug chat window set to ChatFrame" .. tostring(id))
 					end
+				end
+			end,
+		},
+		attribPanel = {
+			type = "execute",
+			name = L["Attribution Panel"],
+			desc = L["Toggle the live outgoing-attribution debug panel (color-coded by resolution source)."],
+			order = 3.3,
+			width = "full",
+			func = function()
+				if ZSBT.AttribPanel and ZSBT.AttribPanel.Toggle then
+					ZSBT.AttribPanel:Toggle()
 				end
 			end,
 		},
