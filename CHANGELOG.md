@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.5.5
+
+### Fixed
+- Outgoing misses/immunes/dodges/parries/blocks/absorbs/deflects/reflects/evades now display when "Show Misses" is enabled. The UNIT_COMBAT(target) path was emitting OUTGOING_DAMAGE_COMBAT with a source the Pulse Engine trust list rejects, so every miss event was suppressed before reaching the probe. It now emits the dedicated OUTGOING_MISS_COMBAT event that routes to kind="miss" and the configured Outgoing scroll area.
+
 ## 3.5.4
 
 ### Fixed
