@@ -455,12 +455,14 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 	-- presentation: no rule match, no rule icon/font/color/sound, no merge key.
 	local spellIdWeak = (evt and evt.spellIdWeak == true) or false
 
-	Dbg4("|cFFCC66FF[OUTDBG]|r", ("Probe kind=%s amt=%s rawPipeId=%s evtSpellId=%s weak=%s resolved=%s source=%s lastAge=%s target=%s crit=%s auto=%s secret=%s empty=%s")
+	local probeName = (resolvedSpellID and ZSBT.CleanSpellName and ZSBT.CleanSpellName(resolvedSpellID)) or "?"
+	Dbg4("|cFFCC66FF[OUTDBG]|r", ("Probe kind=%s amt=%s rawPipeId=%s evtSpellId=%s name=%s weak=%s resolved=%s source=%s lastAge=%s target=%s crit=%s auto=%s secret=%s empty=%s")
 		:format(
 			tostring(kind),
 			tostring(evt and (evt.amountText or evt.amount)),
 			tostring(evt and evt.rawPipeId),
 			tostring(evt and evt.spellId),
+			tostring(probeName),
 			tostring(evt and evt.spellIdWeak == true),
 			tostring(resolvedSpellID),
 			tostring(spellSource),
@@ -887,7 +889,8 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
 				return "<secret>"
 			end
-			Addon:Dbg("outgoing", 3, ("t=%.2f"):format(GetTime()), safeDbg(areaToUse), safeDbg(evt.spellId), safeDbg(text))
+			local sname = (evt.spellId and ZSBT.CleanSpellName and ZSBT.CleanSpellName(evt.spellId)) or "?"
+			Addon:Dbg("outgoing", 3, ("t=%.2f"):format(GetTime()), safeDbg(areaToUse), safeDbg(evt.spellId), safeDbg(sname), safeDbg(text))
 		elseif dbg >= 3 and Addon and Addon.Print then
 			local function safeDbg(v)
 				if v == nil then return "nil" end
@@ -895,7 +898,8 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
 				return "<secret>"
 			end
-			Addon:Print(("|cFF00CC66[OUT]|r t=%.2f "):format(GetTime()) .. safeDbg(areaToUse) .. " " .. safeDbg(evt.spellId) .. " " .. safeDbg(text))
+			local sname = (evt.spellId and ZSBT.CleanSpellName and ZSBT.CleanSpellName(evt.spellId)) or "?"
+			Addon:Print(("|cFF00CC66[OUT]|r t=%.2f "):format(GetTime()) .. safeDbg(areaToUse) .. " " .. safeDbg(evt.spellId) .. " " .. safeDbg(sname) .. " " .. safeDbg(text))
 		end
 
 		if ZSBT.DisplayText then

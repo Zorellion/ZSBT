@@ -238,6 +238,15 @@ local function flushBestOutgoing(self, token)
 	local bucket = self._bestOutgoingByToken and self._bestOutgoingByToken[token]
 	if not bucket then return end
 	self._bestOutgoingByToken[token] = nil
+	-- Group/instance restriction: a bucket that never earned a spellId is
+	-- unattributed damage on a shared target — in a raid that's other
+	-- players' hits, not yours. Drop it instead of emitting "Outgoing nil".
+	local groupRestricted = bucket.anonRestricted == true
+		or (ZSBT.Core and ZSBT.Core.ShouldRestrictOutgoingFallback
+			and ZSBT.Core:ShouldRestrictOutgoingFallback())
+	if groupRestricted and (bucket.spellId == nil or bucket.spellIdWeak == true) then
+		return
+	end
 	local Addon = ZSBT and ZSBT.Addon
 	local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("outgoing"))
 		or ((ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0)) or 0)
@@ -381,7 +390,7 @@ local function dbCastProfiles()
 	return db.global.castProfiles
 end
 
-local CAST_PROFILE_VERSION = 4
+local CAST_PROFILE_VERSION = 5
 
 local function hydrateCastProfiles(self)
 	if self._castProfilesHydrated then return end
@@ -1079,6 +1088,14 @@ local function consumeBestPendingCast(self, tNow, wantSpellId, maxWindowSec, doC
 						-- per-spell school profile. nil = not enough data yet.
 						local learned = learnedCastSchoolOk(self, c.spellId, hitSchool)
 						if learned == false then schoolOk = false end
+					end
+					-- Learned delay profile: once a spell's landing window is
+					-- known, hits arriving far outside it are collateral, not
+					-- the spell. Checking HERE (before consume) stops a foreign
+					-- hit from burning the pending cast your real damage needs.
+					if schoolOk then
+						local dok = learnedCastDelayOk(self, c.spellId, dt)
+						if dok == false then schoolOk = false end
 					end
 					if schoolOk and (not bestDt or dt < bestDt) then
 						bestDt = dt
@@ -2411,8 +2428,9 @@ end
 local DOT_LINE_WAIT = 0.15
 local DOT_LINE_WINDOW = 0.30
 
-local function maybeEmitDotOutgoing(self, t, dotSpellId, amount, isCrit, school)
+local function maybeEmitDotOutgoing(self, t, dotSpellId, amount, isCrit, school, requireTickColor)
 	local cl = ZSBT.CombatLogLines
+	local signalLive = cl and cl.SignalSeen and cl:SignalSeen() == true
 	local function decide()
 		local kind = nil
 		if cl and cl.ClosestKind then
@@ -2425,6 +2443,19 @@ local function maybeEmitDotOutgoing(self, t, dotSpellId, amount, isCrit, school)
 				return
 			end
 		end
+		-- Colour signal is live but produced no usable line kind. In
+		-- restricted/group content (instance-aware outgoing toggle on +
+		-- group instance) EVERY unattributed hit (other players' damage on
+		-- a shared target) looks like this — only a tick-coloured line may
+		-- emit. Outside that gate the legacy rule stands: a line-less hit
+		-- emits (aura-backed or not).
+		if signalLive and requireTickColor == true and kind ~= "tick" then
+			if OutDbgLevel() >= 4 then
+				ECPrint(("DOT_LINE_VETO token=%s spellId=%s kind=%s requireTick")
+					:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(kind or "none")))
+			end
+			return
+		end
 		if OutDbgLevel() >= 4 then
 			local lineT = cl and cl._lastTickAt
 			ECPrint(("DOT_LINE_OK token=%s spellId=%s kind=%s hitT=%.2f now=%.2f lineT=%s")
@@ -2433,7 +2464,7 @@ local function maybeEmitDotOutgoing(self, t, dotSpellId, amount, isCrit, school)
 		end
 		emitDotOutgoingDamage(self, t, dotSpellId, amount, isCrit, school)
 	end
-	if cl and cl.SignalSeen and cl:SignalSeen() then
+	if signalLive then
 		C_Timer.After(DOT_LINE_WAIT, decide)
 	else
 		decide()
@@ -2902,7 +2933,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school, ..
 						if ZSBT.PeriodicTracker then
 							ZSBT.PeriodicTracker:NoteEmit(dotSpellId, t, school)
 						end
-						maybeEmitDotOutgoing(self, t, dotSpellId, amount, isCrit, school)
+						maybeEmitDotOutgoing(self, t, dotSpellId, amount, isCrit, school, restrict == true)
 						return
 					end
 					-- UNIT_COMBAT has no source attribution on Midnight, so the pet
@@ -3883,6 +3914,23 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school, ..
 						end
 					end
 				end
+				-- The direct hit that applied/refreshed the DoT lands while a
+				-- pending cast for the SAME spell is still in the queue. If we
+				-- intercept it here, the deferred line-color check vetoes it as
+				-- "direct" and the hit dies — the normal path never sees it.
+				-- Peek only (no consume); below, the cast matcher attributes it
+				-- properly. Tick-colored hits are exempt so real ticks can't be
+				-- pulled out of periodic attribution by a pending recast.
+				if dotSpellId and not hitIsTick then
+					local castOwns = consumeBestPendingCast(self, t, dotSpellId, nil, false, school)
+					if castOwns then
+						if dl >= 4 then
+							ECPrint(("DOT_CAST_OWN token=%s sid=%s")
+								:format(dbgSafe(self._castToken), dbgSafe(dotSpellId)))
+						end
+						dotSpellId = nil
+					end
+				end
 				if dotSpellId then
 					if amountIsSafe and dl >= 4 and amount >= BIG_HIT_THRESHOLD then
 						ECPrint(("BIG_HIT DOT token=%s spellId=%s amt=%s")
@@ -3891,7 +3939,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school, ..
 					if ZSBT.PeriodicTracker then
 						ZSBT.PeriodicTracker:NoteEmit(dotSpellId, t, school)
 					end
-					maybeEmitDotOutgoing(self, t, dotSpellId, amount, isCrit, school)
+					maybeEmitDotOutgoing(self, t, dotSpellId, amount, isCrit, school, restrict == true)
 					return
 				end
 				if smallHit then
@@ -4178,8 +4226,15 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school, ..
 				end
 				spellId = nil
 			elseif learnable then
-				if schoolMask then noteCastSchoolSample(self, spellId, schoolMask) end
-				noteCastDelaySample(self, spellId, delay)
+				-- Group content: don't feed the school/delay profiles. Hits
+				-- there are mostly other players' damage on shared targets —
+				-- sampling them is an endless stream of meaningless data that
+				-- poisons the profiles solo/open-world attribution relies on.
+				local groupContent = restrict == true and members ~= nil and members > 1
+				if not groupContent then
+					if schoolMask then noteCastSchoolSample(self, spellId, schoolMask) end
+					noteCastDelaySample(self, spellId, delay)
+				end
 			end
 		end
 
@@ -4199,7 +4254,14 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school, ..
 		if schoolMask == 127 then
 			spellIdWeak = true
 		end
-
+		-- Group content: weak attribution is a guess, and UNIT_COMBAT(target)
+		-- guesses in a raid are usually somebody else's damage. Drop the
+		-- spellId entirely so the hit lands in the anonymous bucket path,
+		-- which the restrict gates (and the flush-time nil drop) reject.
+		if spellIdWeak == true and restrict == true and members ~= nil and members > 1 then
+			spellId = nil
+			spellIdWeak = nil
+		end
 		-- Merge window: multiple UNIT_COMBAT(target) hits can arrive per cast.
 		-- Keep only the largest amount in a short window to avoid showing tiny
 		-- proc/secondary values (the root cause of the "300-900 Shadow Bolt" bug).
@@ -4234,6 +4296,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school, ..
 				_seenSecond = nil,
 				isCrit = isCrit,
 				schoolMask = schoolMask,
+				anonRestricted = (restrict == true and members ~= nil and members > 1) or nil,
 			}
 			self._bestOutgoingByToken[token] = bucket
 			if C_Timer and C_Timer.After then
