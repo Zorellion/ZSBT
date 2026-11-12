@@ -408,6 +408,18 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 		local mode = tostring(critConf.instanceSoundMode or "Only when amount is known")
 		if mode == "Any Crit" then
 			ZSBT.PlayLSMSound(soundKey)
+			return
+		end
+		-- Secret amount (Midnight): the value can't be read as a number, but the
+		-- minimum can still be evaluated visually so "Only when amount is
+		-- known" doesn't go permanently silent.
+		local secretAmt = rawPipeValue
+		if secretAmt == nil and isTainted then secretAmt = evt.amount end
+		if secretAmt ~= nil and not ZSBT.IsSafeNumber(secretAmt) and ZSBT.EvaluateSecretThreshold then
+			local okEv, res = pcall(ZSBT.EvaluateSecretThreshold, secretAmt, minAmt)
+			if okEv and type(res) == "number" and res > 0 then
+				ZSBT.PlayLSMSound(soundKey)
+			end
 		end
 	end
     local kind = evt.kind
@@ -438,12 +450,18 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 		end
 	end
 
-	Dbg4("|cFFCC66FF[OUTDBG]|r", ("Probe kind=%s amt=%s rawPipeId=%s evtSpellId=%s resolved=%s source=%s lastAge=%s target=%s crit=%s auto=%s secret=%s empty=%s")
+	-- Weak attributions (collector recency-window guesses, not pending-cast
+	-- matches) keep the line visible but must never trigger spell-rule
+	-- presentation: no rule match, no rule icon/font/color/sound, no merge key.
+	local spellIdWeak = (evt and evt.spellIdWeak == true) or false
+
+	Dbg4("|cFFCC66FF[OUTDBG]|r", ("Probe kind=%s amt=%s rawPipeId=%s evtSpellId=%s weak=%s resolved=%s source=%s lastAge=%s target=%s crit=%s auto=%s secret=%s empty=%s")
 		:format(
 			tostring(kind),
 			tostring(evt and (evt.amountText or evt.amount)),
 			tostring(evt and evt.rawPipeId),
 			tostring(evt and evt.spellId),
+			tostring(evt and evt.spellIdWeak == true),
 			tostring(resolvedSpellID),
 			tostring(spellSource),
 			tostring(lastAge),
@@ -453,14 +471,21 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			tostring(isSecret),
 			tostring(isEmpty)
 		))
-	Dbg5("|cFFCC66FF[OUTDBG]|r", ("CORR Probe dbgChatId=%s src=%s evtSpellId=%s resolved=%s spellSource=%s")
+	Dbg5("|cFFCC66FF[OUTDBG]|r", ("CORR Probe dbgChatId=%s src=%s evtSpellId=%s weak=%s resolved=%s spellSource=%s")
 		:format(
 			tostring(evt and evt.dbgChatId),
 			tostring(evt and evt.amountSource),
 			tostring(evt and evt.spellId),
+			tostring(evt and evt.spellIdWeak == true),
 			tostring(resolvedSpellID),
 			tostring(spellSource)
 		))
+
+	-- Attribution debug panel: record every resolved outgoing event,
+	-- including secret/empty skips, before the early-out below.
+	if ZSBT.AttribPanel and ZSBT.AttribPanel.RecordOutgoing then
+		ZSBT.AttribPanel:RecordOutgoing(evt, resolvedSpellID, spellSource)
+	end
 
 	-- Secret/empty events are used for correlation diagnostics only; they should
 	-- not consume throttle budgets or be attributed to "last cast".
@@ -523,27 +548,27 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
         ec._rawPipe[evt.rawPipeId] = nil  -- consume it
     end
 
-    	-- Suppress training dummy damage if enabled
+    	-- Suppress training dummy damage if enabled (damage only — heals and
+    	-- other kinds on dummies must still display).
 	local spam = ZSBT.db.profile.spamControl
-	if spam and spam.suppressDummyDamage and ZSBT.IsTrainingDummy("target") then
+	if kind == "damage" and spam and spam.suppressDummyDamage and ZSBT.IsTrainingDummy("target") then
 		return
 	end
 
 		local sr = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl and ZSBT.db.char.spamControl.spellRules
 		local routing = spam and spam.routing
 		local defaultRuleArea = nil
-		if type(resolvedSpellID) == "number" and sr and next(sr) ~= nil and routing and type(routing.spellRulesDefaultArea) == "string" and routing.spellRulesDefaultArea ~= "" then
+		if type(resolvedSpellID) == "number" and not spellIdWeak and sr and next(sr) ~= nil and routing and type(routing.spellRulesDefaultArea) == "string" and routing.spellRulesDefaultArea ~= "" then
 			defaultRuleArea = routing.spellRulesDefaultArea
 		end
 		local ruleArea = nil
 		local rule = nil
-		if sr and type(resolvedSpellID) == "number" then
+		if sr and type(resolvedSpellID) == "number" and not spellIdWeak then
 			rule = sr[resolvedSpellID]
 			if type(rule) == "table" and rule.enabled ~= false then
 				ruleArea = (type(rule.scrollArea) == "string" and rule.scrollArea ~= "") and rule.scrollArea or nil
 			end
 		end
-
 		if evt and evt._zsbtAggSkip ~= true and type(resolvedSpellID) == "number" and type(rule) == "table" and rule.enabled ~= false then
 			local wwRuleExists = (sr and (type(sr[1680]) == "table" or type(sr[190411]) == "table")) and true or false
 			if not (wwRuleExists and isWhirlwindSpellId(resolvedSpellID)) then
@@ -642,7 +667,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			or evt.amountSource == "UNIT_COMBAT_PHYSICAL"
 			or evt.amountSource == "UNIT_COMBAT_AUTO_FALLBACK"
 		))
-		if rawPipeValue == nil and prof.showSpellNames and evt.isAuto ~= true and trustedForSpellLabel then
+		if rawPipeValue == nil and prof.showSpellNames and evt.isAuto ~= true and trustedForSpellLabel and not spellIdWeak then
 			local cleanName = ZSBT.CleanSpellName(evt.spellId)
 			if cleanName and ZSBT.IsSafeString(text) then
 				text = text .. " " .. cleanName
@@ -760,7 +785,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			school = evt.schoolMask,
 		}
 		local forceInline = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general and ZSBT.db.profile.general.forceCritsInline == true
-		if type(resolvedSpellID) == "number" then
+		if type(resolvedSpellID) == "number" and not spellIdWeak then
 			meta.spellId = resolvedSpellID
 		end
 
@@ -824,16 +849,14 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 						or evt.amountSource == "UNIT_COMBAT_BEST"
 						or evt.amountSource == "UNIT_COMBAT_PHYSICAL"
 				)) or (evt and evt.isPeriodic == true)
-		if prof.showSpellIcons and evt.isAuto ~= true and evt.suppressSpellIcon ~= true and trustedForSpellIcon then
-			local tex = nil
-			if type(resolvedSpellID) == "number" then
-				tex = ZSBT.CleanSpellIcon(resolvedSpellID)
-			end
-			-- Secret-value clients (e.g. WoW Forever) can leave the spellId
-			-- unresolvable; the aura/cast name still resolves an icon by name.
-			if not tex and evt and ZSBT.IsSafeString and ZSBT.IsSafeString(evt.spellName) then
-				tex = ZSBT.CleanSpellIcon(evt.spellName)
-			end
+		local iconAllowed = prof.showSpellIcons and trustedForSpellIcon
+		-- Hard rule: no resolved spellId -> no spell icon. A carried-over
+		-- spellName (cast-matched or otherwise) must never put an ability
+		-- icon on unattributed damage.
+		if iconAllowed and type(resolvedSpellID) == "number"
+			and not spellIdWeak
+			and evt.isAuto ~= true and evt.suppressSpellIcon ~= true then
+			local tex = ZSBT.CleanSpellIcon(resolvedSpellID)
 			if tex then meta.spellIcon = tex end
 		end
 
@@ -1010,7 +1033,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
             school = evt.schoolMask,
         }
 		local forceInline = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general and ZSBT.db.profile.general.forceCritsInline == true
-		if type(resolvedSpellID) == "number" then
+		if type(resolvedSpellID) == "number" and not spellIdWeak then
 			meta.spellId = resolvedSpellID
 		end
 
@@ -1049,9 +1072,11 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
             end
         end
 
-        -- Attach spell icon if enabled
-        if prof.showSpellIcons and evt.spellId then
-            local tex = ZSBT.CleanSpellIcon(evt.spellId)
+        -- Attach spell icon if enabled (global toggle only).
+        -- Requires the vetted resolvedSpellID — raw evt.spellId can carry
+        -- unsafe/secret values or bypass the attribution checks above.
+        if prof.showSpellIcons and type(resolvedSpellID) == "number" and not spellIdWeak then
+            local tex = ZSBT.CleanSpellIcon(resolvedSpellID)
             if tex then meta.spellIcon = tex end
         end
 

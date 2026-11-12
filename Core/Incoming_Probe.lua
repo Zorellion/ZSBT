@@ -524,6 +524,17 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
         local mode = tostring(critConf.instanceSoundMode or "Only when amount is known")
         if mode == "Any Crit" then
             ZSBT.PlayLSMSound(soundKey)
+            return
+        end
+        -- Secret amount (Midnight): evaluate the minimum visually instead of
+        -- going permanently silent when the amount can't be read.
+        local secretAmt = rawPipeValue
+        if secretAmt == nil and isTainted then secretAmt = evt.amount end
+        if secretAmt ~= nil and not ZSBT.IsSafeNumber(secretAmt) and ZSBT.EvaluateSecretThreshold then
+            local okEv, res = pcall(ZSBT.EvaluateSecretThreshold, secretAmt, minAmt)
+            if okEv and type(res) == "number" and res > 0 then
+                ZSBT.PlayLSMSound(soundKey)
+            end
         end
     end
 

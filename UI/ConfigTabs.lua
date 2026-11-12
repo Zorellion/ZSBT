@@ -34,6 +34,42 @@ local function SafeGetSpellName(spellID)
     return nil
 end
 
+-- Combat trackability for a buff aura:
+--   "cast"      - observed via UNIT_SPELLCAST_SUCCEEDED; cast-pairing makes it
+--                 work in and out of combat even when the aura is secret.
+--   "readable"  - aura data is not secret-level; presence polling matches it.
+--   "secret"    - secret-level aura, never cast-observed; rules only apply
+--                 when auras are readable (out of combat / open world).
+--   nil         - unknown (older clients without C_Secrets).
+function ZSBT.GetAuraTrackability(spellID)
+    if type(spellID) ~= "number" then return nil end
+    local cache = ZSBT.Core and ZSBT.Core._buffSpellCache
+    local centry = type(cache) == "table" and cache[spellID] or nil
+    if type(centry) == "table" and centry.fromCast == true then
+        return "cast"
+    end
+    local readable = nil
+    if C_Secrets and C_Secrets.ShouldSpellAuraBeSecret then
+        local okS, resS = pcall(C_Secrets.ShouldSpellAuraBeSecret, spellID)
+        if okS and type(resS) == "boolean" then readable = not resS end
+    end
+    if readable == nil and C_Secrets and C_Secrets.GetSpellAuraSecrecy then
+        local okG, resG = pcall(C_Secrets.GetSpellAuraSecrecy, spellID)
+        if okG and type(resG) == "number" then readable = resG < 2 end
+    end
+    if readable == true then return "readable" end
+    if readable == false then return "secret" end
+    return nil
+end
+
+function ZSBT.AuraTrackabilityLabel(spellID)
+    local t = ZSBT.GetAuraTrackability(spellID)
+    if t == "cast" then return "  |cFF00CC66(" .. L["cast-tracked"] .. ")|r" end
+    if t == "readable" then return "  |cFF888888(" .. L["trackable"] .. ")|r" end
+    if t == "secret" then return "  |cFFFF8844(" .. L["secret in combat"] .. ")|r" end
+    return ""
+end
+
 if StaticPopupDialogs and not StaticPopupDialogs["TRUESTRIKE_REMOVE_SPELL"] then
 	StaticPopupDialogs["TRUESTRIKE_REMOVE_SPELL"] = {
 		text = L["Remove %s from tracking?"],
@@ -504,7 +540,7 @@ do
 							local spellID = getSpellID()
 							if not spellID then return "" end
 							local name = SafeGetSpellName(spellID) or (L["Spell #"] .. tostring(spellID))
-							return "  \226\128\162 " .. name .. L["  |cFF888888(ID: "] .. tostring(spellID) .. ")|r"
+							return "  \226\128\162 " .. name .. L["  |cFF888888(ID: "] .. tostring(spellID) .. ")|r" .. (ZSBT.AuraTrackabilityLabel and ZSBT.AuraTrackabilityLabel(spellID) or "")
 						end,
 						order  = baseOrder + (slot - 1) * 7,
 						width  = "double",
@@ -587,7 +623,8 @@ do
 						local seen = tonumber(items[i].count) or 0
 						recentContainer.args["recentLabel_" .. row] = {
 						type  = "description",
-						name  = (L["%s  |cFF888888(ID: %s, seen: %d)|r"]):format(name, tostring(spellID), seen),
+						name  = (L["%s  |cFF888888(ID: %s, seen: %d)|r"]):format(name, tostring(spellID), seen)
+							.. (ZSBT.AuraTrackabilityLabel and ZSBT.AuraTrackabilityLabel(spellID) or ""),
 						order = row * 3,
 						width = "double",
 					}
@@ -8039,8 +8076,8 @@ function ZSBT.BuildTab_SpamControl()
 			},
 			openSpellRulesManager = {
 				type  = "execute",
-				name  = L["Open Spell Rules Manager"],
-				desc  = L["Open the Spell Rules Manager window."],
+				name  = L["Open Outgoing Spell Rules"],
+				desc  = L["Open the Outgoing Spell Rules window."],
 				order = 32,
 				width = "full",
 				func  = function()
@@ -8068,17 +8105,17 @@ end
 function ZSBT.BuildTab_SpellRulesManager()
 	return {
 		type  = "group",
-		name  = L["|cFFFFD100Spell Rules|r"],
+		name  = L["|cFFFFD100Outgoing Spell Rules|r"],
 		order = 1,
 		args  = {
 			headerRules = {
 				type  = "header",
-				name  = L["Spell Rules (Per-Spell)"],
+				name  = L["Outgoing Spell Rules (Per-Spell)"],
 				order = 1,
 			},
 			rulesDesc = {
 				type     = "description",
-				name     = L["Create per-spell outgoing throttle rules. These rules apply to Outgoing damage/healing only (not notifications)."],
+				name     = L["Create per-spell outgoing throttle rules. These rules apply to Outgoing damage/healing."],
 				order    = 2,
 				fontSize = "medium",
 			},

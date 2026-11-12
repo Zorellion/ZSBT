@@ -1972,8 +1972,30 @@ function Addon:HandleSlashCommand(input)
 		return
 	end
 
+    if cmd == "attrib" or cmd == "attribpanel" or cmd == "attributions" then
+		local panel = ZSBT.AttribPanel
+		if not panel then
+			self:Print(L["Attribution panel module not available."])
+			return
+		end
+		local arg = rest and rest:lower():gsub("^%s+", "") or ""
+		if arg == "clear" then
+			panel:Clear()
+			self:Print(L["Attribution panel cleared."])
+		elseif arg == "copy" then
+			panel:CopyToClipboard()
+		elseif arg == "on" or arg == "show" then
+			panel:Show()
+		elseif arg == "off" or arg == "hide" then
+			panel:Hide()
+		else
+			panel:Toggle()
+		end
+		return
+    end
+
     self:Print(L["|cFF808C9EUnknown command:|r "] .. cmd)
-	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | reset | version | auratest | restorefct | dumpcvars]"])
+	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | attrib [on|off|clear] | reset | version | auratest | restorefct | dumpcvars]"])
 end
 
 ------------------------------------------------------------------------
