@@ -1,5 +1,27 @@
 # Changelog
 
+## 3.5.3
+
+### Added
+- **Resource Tracker**: new config section under Alerts → Notifications → Resource Tracker with a standalone, freely-positionable resource counter widget.
+- Resource counter displays diamond pips (texture-based, outlined) or fraction/number text for any readable `UnitPower` resource; pips auto-scale to the frame and the widget supports drag-to-move and corner-resize while unlocked.
+- Looping "resource ready" effects while the tracked resource sits at max: **Ignite**, **Chromatic**, **Shatter**, and **Afterimage** — the chosen effect runs continuously and stops the instant the resource drops, the counter hides, or the effect is set to None.
+- Rising-edge full-resource sound (fires once on reaching max, not per animation loop).
+- Resource Full notification renamed from Power Full and moved into Resource Tracker; supports custom templates (`%e` = resource name, e.g. `"%e Full!"`), route selection, and per-category style/sound overrides.
+- Counter font override (face, outline, size/scale) matching the standard font-override pattern; notification styling uses the shared per-type style controls.
+- Dedicated "Unlock Resource Counter" button — unlocks only the counter frame (scroll areas unaffected); the shared Scroll Areas unlock also works.
+- Gold border shown around the counter while in edit/unlock mode.
+- Resource dropdown now lists only power types actually readable for the current class/spec — both current value and max must be safe-readable numbers and max > 0, so secret resources (e.g. Energy in combat) are excluded automatically.
+- Shipped defaults tuned for rogues: combo-point pips enabled, chromatic full effect, Finish Him sound, Bungee font overrides.
+
+### Fixed
+- Slider/config lag in Resource Tracker: setters now throttle `NotifyChange` refreshes (~0.15s) instead of rebuilding the entire options tree per pixel.
+- Position dropdown no longer returns empty (anchor value map + default normalization); unknown anchors fall back to Center.
+- `C_Timer` ticker callback arg treated as userdata — animation updates now use `GetTime()` deltas.
+- Full effects now stop correctly on every hide path (disabled, unsafe values, max 0, hide-at-zero, out of combat) and restore canonical pip layout.
+- Hide-at-zero toggle/runtime mismatch: code now treats any value other than explicit `false` as enabled.
+- Counter debug logging removed.
+
 ## 3.5.2
 
 ### Added

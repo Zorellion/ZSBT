@@ -1205,6 +1205,7 @@ function Core:Enable()
     self:InitTradeSkillTracking()
 	self:InitInterruptTracking()
     self:InitPowerTracking()
+    self:InitComboPoints()
     self:InitProgressTracking()
 end
 
@@ -4975,36 +4976,657 @@ function Core:InitPowerTracking()
 
         -- Only track primary resource
         local pType = UnitPowerType("player")
-        local current = UnitPower("player", pType)
-        local max = UnitPowerMax("player", pType)
 
-        if not ZSBT.IsSafeNumber(current) or not ZSBT.IsSafeNumber(max) then return end
-        if max <= 0 then return end
-
-        local pct = (current / max) * 100
-        local prevPct = Core._lastPowerPct[pType] or 0
-        Core._lastPowerPct[pType] = pct
-
-        -- Notify at full resource
-        if pct >= 100 and prevPct < 100 then
-            local powerName = "Resource"
-            if pType == 0 then powerName = "Mana"
-            elseif pType == 1 then powerName = "Rage"
-            elseif pType == 2 then powerName = "Focus"
-            elseif pType == 3 then powerName = "Energy"
-            elseif pType == 4 then powerName = L["Combo Points"]
-            elseif pType == 6 then powerName = L["Runic Power"]
-            elseif pType == 8 then powerName = L["Astral Power"]
-            elseif pType == 9 then powerName = L["Holy Power"]
-            elseif pType == 11 then powerName = "Maelstrom"
-            elseif pType == 12 then powerName = "Chi"
-            elseif pType == 13 then powerName = "Insanity"
-            elseif pType == 17 then powerName = "Fury"
-            elseif pType == 18 then powerName = "Pain"
+        -- Combo points (power type 4) are a secondary resource on rogues/ferals;
+        -- track them too so "Power Full" works when primary power is secret.
+        local types = { pType }
+        if pType ~= 4 then
+            local cpMax = UnitPowerMax("player", 4)
+            if ZSBT.IsSafeNumber(cpMax) and cpMax > 0 then
+                types[#types + 1] = 4
             end
-            Core:EmitNotification(powerName .. L[" Full!"], {r = 1.0, g = 0.6, b = 0.0}, "power")
+        end
+
+        for _, pt in ipairs(types) do
+            local current = UnitPower("player", pt)
+            local max = UnitPowerMax("player", pt)
+
+            if ZSBT.IsSafeNumber(current) and ZSBT.IsSafeNumber(max) and max > 0 then
+                local pct = (current / max) * 100
+                local prevPct = Core._lastPowerPct[pt] or 0
+                Core._lastPowerPct[pt] = pct
+
+                -- Notify at full resource
+                if pct >= 100 and prevPct < 100 then
+                    local powerName = "Resource"
+                    if pt == 0 then powerName = "Mana"
+                    elseif pt == 1 then powerName = "Rage"
+                    elseif pt == 2 then powerName = "Focus"
+                    elseif pt == 3 then powerName = "Energy"
+                    elseif pt == 4 then powerName = L["Combo Points"]
+                    elseif pt == 5 then powerName = "Runes"
+                    elseif pt == 6 then powerName = L["Runic Power"]
+                    elseif pt == 8 then powerName = L["Astral Power"]
+                    elseif pt == 9 then powerName = L["Holy Power"]
+                    elseif pt == 11 then powerName = "Maelstrom"
+                    elseif pt == 12 then powerName = "Chi"
+                    elseif pt == 13 then powerName = "Insanity"
+                    elseif pt == 16 then powerName = "Arcane Charges"
+                    elseif pt == 17 then powerName = "Fury"
+                    elseif pt == 18 then powerName = "Pain"
+                    end
+                    Core:EmitNotificationTemplate("power", "%e Full!", { e = powerName }, {r = 1.0, g = 0.6, b = 0.0})
+                end
+            end
         end
     end)
+end
+
+------------------------------------------------------------------------
+-- Combo Point Counter
+-- Persistent on-screen counter for combo points (power type 4).
+-- Anchors to a scroll area's rect (or free position) and can play a
+-- sound when combo points reach max.
+------------------------------------------------------------------------
+Core._cpWasFull = false
+
+local CP_ANCHORS = {
+    ["Top Left"]     = { fx = -1, fy =  1 },
+    ["Top"]          = { fx =  0, fy =  1 },
+    ["Top Right"]    = { fx =  1, fy =  1 },
+    ["Left"]         = { fx = -1, fy =  0 },
+    ["Center"]       = { fx =  0, fy =  0 },
+    ["Right"]        = { fx =  1, fy =  0 },
+    ["Bottom Left"]  = { fx = -1, fy = -1 },
+    ["Bottom"]       = { fx =  0, fy = -1 },
+    ["Bottom Right"] = { fx =  1, fy = -1 },
+}
+
+local CP_MAX_PIPS = 12
+local CP_PIP_SIZE = 12
+local CP_PIP_SPACING = 18
+
+local function CfgComboPoints()
+    local p = ZSBT.db and ZSBT.db.profile
+    return p and p.comboPoints
+end
+
+-- Edit mode is shared: scroll-area unlock OR the counter's own unlock.
+local function CpEditUnlocked()
+    return (ZSBT.IsScrollAreasUnlocked and ZSBT.IsScrollAreasUnlocked())
+        or ZSBT._cpUnlocked == true
+end
+
+function ZSBT.IsResourceCounterUnlocked()
+    return ZSBT._cpUnlocked == true
+end
+
+function ZSBT.ToggleResourceCounterUnlock()
+    ZSBT._cpUnlocked = not (ZSBT._cpUnlocked == true)
+    if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+end
+
+-- Gold border shown around the counter while it is in edit mode. Built from
+-- edge textures (SetBackdrop is unavailable on this client's frames).
+local function SetCpBorder(frame, on)
+    if on then
+        if not frame._cpBorder then
+            local edges = {}
+            for _, e in ipairs({
+                { "TOPLEFT", "TOPRIGHT", 1, -1, -1, -3 },
+                { "BOTTOMLEFT", "BOTTOMRIGHT", 1, 3, -1, 1 },
+                { "TOPLEFT", "BOTTOMLEFT", 1, -1, 3, 1 },
+                { "TOPRIGHT", "BOTTOMRIGHT", -3, -1, -1, 1 },
+            }) do
+                local t = frame:CreateTexture(nil, "OVERLAY")
+                t:SetColorTexture(1, 0.82, 0, 0.9)
+                t:SetPoint("TOPLEFT", frame, e[1], e[3], e[4])
+                t:SetPoint("BOTTOMRIGHT", frame, e[2], e[5], e[6])
+                t:Hide()
+                edges[#edges + 1] = t
+            end
+            frame._cpBorder = edges
+        end
+        for _, t in ipairs(frame._cpBorder) do t:Show() end
+    elseif frame._cpBorder then
+        for _, t in ipairs(frame._cpBorder) do t:Hide() end
+    end
+end
+
+local function ResolveCpFont(cfg)
+    local profile = ZSBT.db and ZSBT.db.profile
+    local general = profile and profile.general and profile.general.font or {}
+    local LSM = LibStub("LibSharedMedia-3.0", true)
+    local override = cfg and cfg.fontOverride == true
+    local faceKey = general.face
+    if override and type(cfg.fontFace) == "string" and cfg.fontFace ~= "" then
+        faceKey = cfg.fontFace
+    end
+    local face = "Fonts\\FRIZQT__.TTF"
+    local fetched = LSM and faceKey and LSM:Fetch("font", faceKey)
+    if fetched then face = fetched end
+    local size = tonumber(cfg and cfg.fontSize) or 0
+    if size <= 0 then
+        local sc = override and (tonumber(cfg.fontScale) or 1.0) or 1.0
+        size = math.max(8, math.floor(((tonumber(general.size) or 16) * sc) + 0.5))
+    end
+    local outlineKey = general.outline or "Thin"
+    if override and type(cfg.fontOutline) == "string" and cfg.fontOutline ~= "" then
+        outlineKey = cfg.fontOutline
+    end
+    local outline = (ZSBT.OUTLINE_STYLES and ZSBT.OUTLINE_STYLES[outlineKey]) or "OUTLINE"
+    return face, size, outline
+end
+
+local function PositionComboPoints(frame, cfg)
+    local areaName = cfg.attachArea
+    local areas = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.scrollAreas
+    local area = areaName and areaName ~= "" and areaName ~= "None" and areas and areas[areaName]
+
+    -- Include live area geometry so dragging a scroll area re-anchors the counter.
+    local geo = ""
+    if area then
+        geo = "|" .. tostring(area.xOffset) .. "," .. tostring(area.yOffset)
+            .. "," .. tostring(area.width) .. "," .. tostring(area.height)
+    end
+    local posKey = table.concat({
+        tostring(cfg.attachArea), tostring(cfg.anchor),
+        tostring(cfg.xOffset), tostring(cfg.yOffset), geo,
+    }, "|")
+    if frame._cpPosKey == posKey then return end
+    frame._cpPosKey = posKey
+
+    local px, py = tonumber(cfg.xOffset) or 0, tonumber(cfg.yOffset) or 0
+    if area then
+        local a = CP_ANCHORS[cfg.anchor]
+        if not a and type(cfg.anchor) == "string" then
+            a = CP_ANCHORS[cfg.anchor:sub(1, 1):upper() .. cfg.anchor:sub(2):lower()]
+        end
+        a = a or CP_ANCHORS["Center"] or { fx = 0, fy = 0 }
+        px = (tonumber(area.xOffset) or 0) + a.fx * ((tonumber(area.width) or 100) / 2)
+        py = (tonumber(area.yOffset) or 0) + a.fy * ((tonumber(area.height) or 100) / 2)
+    end
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", UIParent, "CENTER", px, py)
+end
+
+-- Full-effect styles animate the counter's own pip textures / text and LOOP
+-- while the resource stays at max, giving a persistent "ready" indicator.
+-- The ticker is stopped by RefreshComboPoints the moment the value drops.
+local CP_FX_DUR = {
+    ignite = 1.2, chromatic = 1.6, shatter = 1.4, afterimage = 1.6,
+}
+
+local RefreshComboPoints -- forward declaration (defined below)
+
+local function HsvToRgb(h, s, v)
+    h = (h % 360) / 60
+    local i = math.floor(h) % 6
+    local f = h - math.floor(h)
+    local p, q, t = v * (1 - s), v * (1 - s * f), v * (1 - s * (1 - f))
+    if i == 0 then return v, t, p
+    elseif i == 1 then return q, v, p
+    elseif i == 2 then return p, v, t
+    elseif i == 3 then return p, q, v
+    elseif i == 4 then return t, p, v
+    else return v, p, q end
+end
+
+local function CpFxUpdate(frame, cfg)
+    local st = frame._cpFx
+    if not st then return end
+    local p = (GetTime() - st.t0) / st.dur
+    if p >= 1 then
+        -- Loop: the effect runs continuously while the resource is maxed.
+        -- RefreshComboPoints cancels the ticker when the value drops.
+        st.t0 = GetTime()
+        p = 0
+        if st.style == "shatter" and st.dirs then
+            for i = 1, st.mx do
+                local a = math.random() * 6.28318
+                local d = 20 + math.random() * 30
+                st.dirs[i] = { math.cos(a) * d, math.sin(a) * d }
+            end
+        end
+    end
+
+    local style = st.style
+    local gx, gy, gs, ga = 0, 0, 1, 1
+    local hueFx = nil
+    local flicker = nil
+
+    if style == "ignite" then
+        gs = 1 + 0.07 * math.sin(p * math.pi * 4)
+        flicker = (math.sin(p * math.pi * 6) > 0) and 0.75 or 0.15
+    elseif style == "chromatic" then
+        hueFx = (p * 360) % 360
+    elseif style == "afterimage" then
+        gs = 1 + 0.22 * math.sin(p * math.pi * 2)
+    end
+
+    local pips = frame._cpPips
+    local backs = frame._cpPipBacks
+    local onR, onG, onB = st.onR, st.onG, st.onB
+
+    for i = 1, st.mx do
+        local pip = pips[i]
+        local back = backs[i]
+        local dx, dy, s, a = gx, gy, gs, ga
+
+        if style == "shatter" then
+            local d = st.dirs[i]
+            if p < 0.55 then
+                local q = p / 0.55
+                dx, dy = d[1] * q, d[2] * q
+                s, a = 1 - 0.55 * q, 1 - q
+            else
+                local q = (p - 0.55) / 0.45
+                dx, dy = d[1] * (1 - q), d[2] * (1 - q)
+                s, a = 0.45 + 0.55 * q, q
+            end
+        end
+
+        local x = st.xs[i] + dx
+        local psz = math.max(2, st.pipSize * s)
+        pip:SetSize(psz, psz)
+        pip:ClearAllPoints()
+        pip:SetPoint("CENTER", frame, "CENTER", x, dy)
+        pip:SetAlpha(a)
+        if i <= st.cur and (hueFx or flicker) then
+            local r, g, b = onR, onG, onB
+            if hueFx then
+                r, g, b = HsvToRgb(hueFx + i * 25, 0.85, 1)
+            elseif flicker then
+                r = onR + (1 - onR) * flicker
+                g = onG + (1 - onG) * flicker
+                b = onB + (1 - onB) * flicker
+            end
+            pip:SetVertexColor(r, g, b, a)
+        end
+
+        local bSize = st.backSize * s
+        if style == "afterimage" then
+            bSize = st.backSize * (1 + 0.55 * math.sin(math.pi * 2 * p))
+        end
+        back:SetSize(math.max(2, bSize), math.max(2, bSize))
+        back:ClearAllPoints()
+        back:SetPoint("CENTER", frame, "CENTER", x, dy)
+        back:SetAlpha(0.9 * a)
+    end
+
+    local fs = frame._cpText
+    if fs then
+        fs:ClearAllPoints()
+        fs:SetPoint("CENTER", frame, "CENTER", gx, gy)
+        fs:SetAlpha(ga)
+        if gs ~= 1 and st.fsFace then
+            fs:SetFont(st.fsFace, math.max(8, st.fsSize * gs), st.fsOutline)
+        end
+    end
+end
+
+-- Fires the full-resource celebration on the counter's own pips/text. The
+-- ticker loops until StopComboPointsFx cancels it (value drops or hides).
+local function FireComboPointsEffect(frame, cfg, cur, mx)
+    local style = cfg.fullEffect or "ignite"
+    local dur = CP_FX_DUR[style]
+    if not dur then return end
+    local pips = frame._cpPips
+    if not pips then return end
+
+    local fw = frame:GetWidth() or 200
+    local fh = frame:GetHeight() or 26
+    local spacing = fw / mx
+    local pipSize = math.min(fh - 8, spacing / 1.5)
+    pipSize = math.max(5, math.min(48, pipSize))
+    local xs = {}
+    for i = 1, mx do xs[i] = (i - (mx + 1) / 2) * spacing end
+
+    local fs = frame._cpText
+    local fsFace, fsSize, fsOutline = nil, nil, nil
+    if fs then fsFace, fsSize, fsOutline = fs:GetFont() end
+
+    local on = cfg.color or { r = 1, g = 0.82, b = 0 }
+    local st = {
+        style = style, t0 = GetTime(), dur = dur, mx = mx, cur = cur,
+        xs = xs, spacing = spacing, pipSize = pipSize, backSize = pipSize + 4,
+        onR = on.r or 1, onG = on.g or 0.82, onB = on.b or 0,
+        fsFace = fsFace, fsSize = fsSize, fsOutline = fsOutline,
+        dirs = nil,
+    }
+    if style == "shatter" then
+        st.dirs = {}
+        for i = 1, mx do
+            local a = math.random() * 6.28318
+            local d = 20 + math.random() * 30
+            st.dirs[i] = { math.cos(a) * d, math.sin(a) * d }
+        end
+    end
+
+    if frame._cpFxTicker then
+        frame._cpFxTicker:Cancel()
+        frame._cpFxTicker = nil
+    end
+    frame._cpFx = st
+    frame._cpFxTicker = C_Timer.NewTicker(0.033, function()
+        CpFxUpdate(frame, cfg)
+    end)
+end
+
+-- Cancels the looping full effect and restores the text element. Pip visuals
+-- are re-laid-out canonically by the next RefreshComboPoints pass.
+local function StopComboPointsFx(frame)
+    if frame._cpFxTicker then
+        frame._cpFxTicker:Cancel()
+        frame._cpFxTicker = nil
+    end
+    local st = frame._cpFx
+    frame._cpFx = nil
+    if not st then return end
+    local f = frame._cpText
+    if f then
+        f:ClearAllPoints()
+        f:SetPoint("CENTER", frame, "CENTER", 0, 0)
+        f:SetAlpha(1)
+        if st.fsFace then f:SetFont(st.fsFace, st.fsSize, st.fsOutline) end
+    end
+end
+
+RefreshComboPoints = function()
+    local frame = Core._cpWidget
+    local cfg = CfgComboPoints()
+    if not frame then return end
+    local fs = frame._cpText
+
+    if not cfg or cfg.enabled ~= true then
+        StopComboPointsFx(frame)
+        frame:Hide()
+        Core._cpWasFull = false
+        return
+    end
+
+    local cpType = tonumber(cfg.powerType) or 4
+    local curRaw = UnitPower("player", cpType)
+    local mxRaw = UnitPowerMax("player", cpType)
+    if not ZSBT.IsSafeNumber(curRaw) or not ZSBT.IsSafeNumber(mxRaw) then
+        StopComboPointsFx(frame)
+        frame:Hide()
+        Core._cpWasFull = false
+        return
+    end
+    local cur = math.floor(curRaw)
+    local mx = math.floor(mxRaw)
+    if mx <= 0 then
+        StopComboPointsFx(frame)
+        frame:Hide()
+        Core._cpWasFull = false
+        return
+    end
+
+    -- While in edit mode (scroll-area unlock or counter unlock) the counter
+    -- must stay visible & grabbable.
+    local unlocked = CpEditUnlocked()
+    if unlocked ~= frame._cpMouseOn then
+        frame._cpMouseOn = unlocked
+        frame:EnableMouse(unlocked == true)
+        SetCpBorder(frame, unlocked == true)
+        if frame._cpGrip then
+            if unlocked then frame._cpGrip:Show() else frame._cpGrip:Hide() end
+        end
+    end
+    if not unlocked and cfg.hideAtZero ~= false and cur <= 0 then
+        StopComboPointsFx(frame)
+        frame:Hide()
+        return
+    end
+    if not unlocked and cfg.hideOutOfCombat == true and not UnitAffectingCombat("player") then
+        StopComboPointsFx(frame)
+        frame:Hide()
+        return
+    end
+
+    -- Full indicator: the chosen effect loops while at max and stops the
+    -- instant CP drops below max. Sound still fires only on the rising edge;
+    -- re-entering combat at full resumes the loop without replaying the sound.
+    local isFull = cur >= mx
+    if isFull then
+        if not Core._cpWasFull
+            and cfg.fullSoundEnabled == true
+            and type(cfg.fullSoundKey) == "string" and cfg.fullSoundKey ~= "" and cfg.fullSoundKey ~= "None"
+            and ZSBT.PlayLSMSound then
+            ZSBT.PlayLSMSound(cfg.fullSoundKey)
+        end
+        local fxKey = cfg.fullEffect or "ignite"
+        local running = frame._cpFx ~= nil
+        if CP_FX_DUR[fxKey] and (not running or frame._cpFx.style ~= fxKey) then
+            FireComboPointsEffect(frame, cfg, cur, mx)
+        elseif not CP_FX_DUR[fxKey] and running then
+            StopComboPointsFx(frame)
+        end
+    else
+        StopComboPointsFx(frame)
+    end
+    Core._cpWasFull = isFull
+    -- Apply configured frame size (set by resize grip or sliders).
+    local tw = tonumber(cfg.width)
+    local th = tonumber(cfg.height)
+    local nw = tw and math.max(80, math.min(800, tw)) or (frame:GetWidth() or 220)
+    local nh = th and math.max(20, math.min(200, th)) or (frame:GetHeight() or 26)
+    if frame._cpAppliedW ~= nw or frame._cpAppliedH ~= nh then
+        frame._cpAppliedW, frame._cpAppliedH = nw, nh
+        frame:SetSize(nw, nh)
+    end
+
+    -- Text / pips
+    local fmt = cfg.format or "pips"
+    local usePips = (fmt == "pips" and mx <= CP_MAX_PIPS)
+    if usePips then
+        fs:Hide()
+        local onR, onG, onB = (cfg.color or {}).r or 1, (cfg.color or {}).g or 0.82, (cfg.color or {}).b or 0
+        local offR, offG, offB = (cfg.emptyColor or {}).r or 0.35, (cfg.emptyColor or {}).g or 0.35, (cfg.emptyColor or {}).b or 0.35
+        local ol = cfg.outlineColor or { r = 1, g = 1, b = 1 }
+        local olR, olG, olB = ol.r or 1, ol.g or 1, ol.b or 1
+        local backs = frame._cpPipBacks
+        local pips = frame._cpPips
+        -- Pips spread across the frame width; diamond size fits height & spacing.
+        local fw = frame:GetWidth() or 200
+        local fh = frame:GetHeight() or 26
+        local spacing = fw / mx
+        local pipSize = math.min(fh - 8, spacing / 1.5)
+        pipSize = math.max(5, math.min(48, pipSize))
+        local backSize = pipSize + 4
+        for i = 1, CP_MAX_PIPS do
+            local pip = pips[i]
+            local back = backs[i]
+            if i <= mx then
+                local x = (i - (mx + 1) / 2) * spacing
+                if i <= cur then
+                    pip:SetVertexColor(onR, onG, onB, 1)
+                else
+                    pip:SetVertexColor(offR, offG, offB, 0.8)
+                end
+                back:SetVertexColor(olR, olG, olB, 0.9)
+                back:SetSize(backSize, backSize)
+                back:ClearAllPoints()
+                back:SetPoint("CENTER", frame, "CENTER", x, 0)
+                back:Show()
+                pip:SetSize(pipSize, pipSize)
+                pip:ClearAllPoints()
+                pip:SetPoint("CENTER", frame, "CENTER", x, 0)
+                pip:Show()
+            else
+                pip:Hide()
+                back:Hide()
+            end
+        end
+    else
+        for i = 1, CP_MAX_PIPS do
+            frame._cpPips[i]:Hide()
+            frame._cpPipBacks[i]:Hide()
+        end
+        fs:Show()
+        local text
+        if fmt == "number" then
+            text = tostring(cur)
+        else
+            text = tostring(cur) .. "/" .. tostring(mx)
+        end
+        fs:SetText(text)
+        fs:ClearAllPoints()
+        fs:SetPoint("CENTER", frame, "CENTER", 0, 0)
+        fs:SetAlpha(1)
+
+        local col = cfg.color or { r = 1, g = 0.82, b = 0 }
+        fs:SetTextColor(col.r or 1, col.g or 0.82, col.b or 0)
+    end
+
+    local face, size, outline = ResolveCpFont(cfg)
+    local fontKey = face .. "|" .. tostring(size) .. "|" .. tostring(outline)
+    if frame._cpFontKey ~= fontKey then
+        frame._cpFontKey = fontKey
+        fs:SetFont(face, size, outline)
+    end
+
+    PositionComboPoints(frame, cfg)
+    frame:Show()
+end
+ZSBT.RefreshComboPoints = function() RefreshComboPoints() end
+
+function Core:InitComboPoints()
+    if self._cpWidget then return end
+    local frame = CreateFrame("Frame", "ZSBT_ComboPoints", UIParent)
+    frame:SetFrameStrata("HIGH")
+    frame:SetSize(220, 26)
+    frame:EnableMouse(false)
+    frame:Hide()
+
+    -- Pip outline backs: slightly larger rotated squares drawn behind each
+    -- diamond for contrast. Drawn on BACKGROUND so pips (ARTWORK) sit on top.
+    frame._cpPipBacks = {}
+    frame._cpPips = {}
+    for i = 1, CP_MAX_PIPS do
+        local back = frame:CreateTexture(nil, "BACKGROUND")
+        back:SetTexture("Interface\\Buttons\\WHITE8X8")
+        back:SetRotation(math.pi / 4)
+        back:SetVertexColor(1, 1, 1, 0.9)
+        back:Hide()
+        frame._cpPipBacks[i] = back
+
+        local pip = frame:CreateTexture(nil, "ARTWORK")
+        pip:SetTexture("Interface\\Buttons\\WHITE8X8")
+        pip:SetRotation(math.pi / 4)
+        pip:SetVertexColor(0.35, 0.35, 0.35, 0.8)
+        pip:Hide()
+        frame._cpPips[i] = pip
+    end
+
+    -- Resizable while unlocked (edit mode), like scroll area frames.
+    frame:SetResizable(true)
+    if frame.SetResizeBounds then
+        frame:SetResizeBounds(80, 20, 800, 200)
+    end
+    local grip = CreateFrame("Button", nil, frame)
+    grip:SetSize(16, 16)
+    grip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 2)
+    grip:SetFrameLevel(frame:GetFrameLevel() + 5)
+    grip:EnableMouse(true)
+    local gripTex = grip:CreateTexture(nil, "OVERLAY")
+    gripTex:SetAllPoints(grip)
+    gripTex:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    grip._cpGripTex = gripTex
+    grip:Hide()
+    frame._cpGrip = grip
+    grip:SetScript("OnMouseDown", function(_, button)
+        if button ~= "LeftButton" then return end
+        if not CpEditUnlocked() then return end
+        frame:StartSizing("BOTTOMRIGHT")
+    end)
+    grip:SetScript("OnMouseUp", function(_, button)
+        if button ~= "LeftButton" then return end
+        frame:StopMovingOrSizing()
+        if not CpEditUnlocked() then return end
+        local w = math.floor((frame:GetWidth() or 0) + 0.5)
+        local h = math.floor((frame:GetHeight() or 0) + 0.5)
+        local cfg = CfgComboPoints()
+        if cfg then
+            cfg.width = math.max(80, math.min(800, w))
+            cfg.height = math.max(20, math.min(200, h))
+            local ACR = LibStub("AceConfigRegistry-3.0", true)
+            if ACR then ACR:NotifyChange("ZSBT") end
+        end
+        frame._cpAppliedW, frame._cpAppliedH = nil, nil
+        RefreshComboPoints()
+    end)
+
+    -- Drag-to-move, only while scroll areas are unlocked (edit mode).
+    frame:SetMovable(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function(self)
+        if CpEditUnlocked() then
+            self:StartMoving()
+        end
+    end)
+    frame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        if not CpEditUnlocked() then return end
+        local cx, cy = self:GetCenter()
+        local ucx, ucy = UIParent:GetCenter()
+        local cfg = CfgComboPoints()
+        if not cfg or not cx then return end
+        -- Dropping anywhere detaches to a free position.
+        cfg.attachArea = "None"
+        cfg.xOffset = math.floor(cx - ucx + 0.5)
+        cfg.yOffset = math.floor(cy - ucy + 0.5)
+        local ACR = LibStub("AceConfigRegistry-3.0", true)
+        if ACR then ACR:NotifyChange("ZSBT") end
+        frame._cpPosKey = nil
+        RefreshComboPoints()
+    end)
+
+    -- Watcher: unlock mode can toggle without a power update, so poll lightly
+    -- to enable mouse (drag) and force the counter visible while editing.
+    C_Timer.NewTicker(0.5, function()
+        local unl = CpEditUnlocked()
+        if unl ~= frame._cpMouseOn then
+            frame._cpMouseOn = unl
+            frame:EnableMouse(unl == true)
+            SetCpBorder(frame, unl == true)
+            if frame._cpGrip then
+                if unl then frame._cpGrip:Show() else frame._cpGrip:Hide() end
+            end
+            if unl then RefreshComboPoints() end
+        end
+    end)
+
+    local fs = frame:CreateFontString(nil, "OVERLAY")
+    fs:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    fs:SetJustifyH("CENTER")
+    frame._cpText = fs
+
+    self._cpWidget = frame
+    Core._cpWidget = frame
+
+    local evFrame = CreateFrame("Frame")
+    evFrame:RegisterUnitEvent("UNIT_POWER_UPDATE", "player")
+    evFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    evFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
+    evFrame:SetScript("OnEvent", function(_, event, unit)
+        if event == "UNIT_POWER_UPDATE" and unit ~= "player" then return end
+        if not Core:IsMasterEnabled() then
+            if frame:IsShown() then frame:Hide() end
+            return
+        end
+        RefreshComboPoints()
+    end)
+    self._cpEventFrame = evFrame
+
+    -- Apply initial font once DB is available
+    local cfg = CfgComboPoints()
+    if cfg then
+        local face, size, outline = ResolveCpFont(cfg)
+        fs:SetFont(face, size, outline)
+    end
+    C_Timer.After(0.5, function() RefreshComboPoints() end)
 end
 
 ------------------------------------------------------------------------

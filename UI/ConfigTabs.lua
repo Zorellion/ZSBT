@@ -3129,6 +3129,17 @@ function ZSBT.BuildTab_Notifications()
 		local v = n and n[key]
 		return v ~= false
 	end
+
+	-- Throttled registry notify for the Resource Tracker setters: range/color
+	-- sliders fire set() every pixel while dragging, and a full NotifyChange
+	-- revalidates the whole options tree each tick (visible lag).
+	local _rtNotifyAt = 0
+	local function notifyRt()
+		local now = GetTime()
+		if now - _rtNotifyAt < 0.15 then return end
+		_rtNotifyAt = now
+		LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+	end
 	local function setCat(key, val)
 		ZSBT.db.profile.notifications = ZSBT.db.profile.notifications or {}
 		ZSBT.db.profile.notifications[key] = val and true or false
@@ -3722,15 +3733,545 @@ function ZSBT.BuildTab_Notifications()
 					},
 				},
 			},
-			power = {
-				type  = "toggle",
-				name  = L["Power Full"],
-				order = 8,
-				width = "full",
-				get   = function() return getCat("power") end,
-				set   = function(_, v) setCat("power", v) end,
+			resourceTracker = {
+				type = "group",
+				name = L["Resource Tracker"],
+				desc = L["Persistent on-screen resource counter (combo points, holy power, chi, etc.) with optional max-resource alert."],
+				order = 8.5,
+				args = (function() local rtArgs = {
+					power = {
+						type  = "toggle",
+						name  = L["Resource Full"],
+						desc  = L["Show a scrolling notification when a resource reaches max."],
+						order = 1,
+						width = "full",
+						get   = function() return getCat("power") end,
+						set   = function(_, v) setCat("power", v) end,
+					},
+					powerRoute = routeSelect("power", 1.1),
+					powerTemplate = {
+						type = "input",
+						name = L["Template"],
+						desc = L["Template codes: %e=resource name. Default shows \"%e Full!\" (e.g. Combo Points Full!)."],
+						order = 1.15,
+						width = "full",
+						get = function() return getTpl("power", "%e Full!") end,
+						set = function(_, v) setTpl("power", v) end,
+					},
+					cpHeader = { type = "header", name = L["Resource Counter"], order = 3 },
+					cpEnabled = {
+						type  = "toggle",
+						name  = L["Show Resource Counter"],
+						order = 3.1,
+						width = "full",
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							return c and c.enabled == true
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.enabled = v and true or false
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					cpAttachArea = {
+						type  = "select",
+						name  = L["Anchor To"],
+						desc  = L["Attach the counter to a scroll area's position, or use a free position."],
+						order = 3.2,
+						width = "normal",
+						values = function()
+							local out = { ["None"] = L["Free Position"] }
+							local names = ZSBT.GetScrollAreaNames and ZSBT.GetScrollAreaNames() or {}
+							for n in pairs(names) do out[n] = n end
+							return out
+						end,
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							return (c and type(c.attachArea) == "string" and c.attachArea ~= "") and c.attachArea or "None"
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.attachArea = v
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					cpPowerType = {
+						type  = "select",
+						name  = L["Resource"],
+						desc  = L["Which unit power to display. Only resources your class/spec actually uses will show a value."],
+						order = 3.15,
+						width = "normal",
+						values = function()
+							local names = {
+								[0] = "Mana", [1] = "Rage", [2] = "Focus", [3] = "Energy",
+								[4] = "Combo Points", [5] = "Runes", [6] = "Runic Power",
+								[8] = "Astral Power", [9] = "Holy Power", [11] = "Maelstrom",
+								[12] = "Chi", [13] = "Insanity", [16] = "Arcane Charges",
+								[17] = "Fury", [18] = "Pain",
+							}
+							-- Only offer resources this class/spec can actually
+							-- display: BOTH current and max must be readable
+							-- (secret values like energy-in-combat are excluded)
+							-- and max must be > 0.
+							local out = {}
+							local any = false
+							for i = 0, 20 do
+								local cur = UnitPower("player", i)
+								local mx = UnitPowerMax("player", i)
+								if ZSBT.IsSafeNumber(cur) and ZSBT.IsSafeNumber(mx) and mx > 0 then
+									out[i] = names[i] or ("Power " .. i)
+									any = true
+								end
+							end
+							if not any then
+								-- Nothing readable (secret values / weird client):
+								-- fall back to the full list rather than an empty dropdown.
+								for i = 0, 20 do out[i] = names[i] or ("Power " .. i) end
+							else
+								-- Keep the saved selection visible even if the
+								-- current spec doesn't expose that power type.
+								local c = ZSBT.db.profile.comboPoints
+								local cur = c and tonumber(c.powerType)
+								if cur then out[cur] = names[cur] or ("Power " .. cur) end
+							end
+							return out
+						end,
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							return (c and tonumber(c.powerType)) or 4
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.powerType = tonumber(v) or 4
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					cpAnchor = {
+						type  = "select",
+						name  = L["Position"],
+						order = 3.3,
+						width = "normal",
+						values = {
+							["Top Left"] = "Top Left", ["Top"] = "Top", ["Top Right"] = "Top Right",
+							["Left"] = "Left", ["Center"] = "Center", ["Right"] = "Right",
+							["Bottom Left"] = "Bottom Left", ["Bottom"] = "Bottom", ["Bottom Right"] = "Bottom Right",
+						},
+						disabled = function()
+							local c = ZSBT.db.profile.comboPoints
+							local a = c and c.attachArea
+							return not a or a == "" or a == "None"
+						end,
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							local a = c and c.anchor
+							local valid = {
+								["Top Left"]=1, ["Top"]=1, ["Top Right"]=1,
+								["Left"]=1, ["Center"]=1, ["Right"]=1,
+								["Bottom Left"]=1, ["Bottom"]=1, ["Bottom Right"]=1,
+								["BOTTOM"]=1, ["TOP"]=1, ["CENTER"]=1, ["LEFT"]=1, ["RIGHT"]=1,
+							}
+							if type(a) == "string" and valid[a] then
+								-- normalize legacy uppercase defaults
+								if a == "BOTTOM" then return "Bottom" end
+								if a == "TOP" then return "Top" end
+								if a == "CENTER" then return "Center" end
+								if a == "LEFT" then return "Left" end
+								if a == "RIGHT" then return "Right" end
+								return a
+							end
+							return "Bottom"
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.anchor = v
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					cpPosX = {
+						type  = "range",
+						name  = L["X Offset"],
+						order = 3.4,
+						min   = -2000, max = 2000, step = 10,
+						disabled = function()
+							local c = ZSBT.db.profile.comboPoints
+							local a = c and c.attachArea
+							return a and a ~= "" and a ~= "None"
+						end,
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							return (c and tonumber(c.xOffset)) or 0
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.xOffset = v
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					cpPosY = {
+						type  = "range",
+						name  = L["Y Offset"],
+						order = 3.5,
+						min   = -2000, max = 2000, step = 10,
+						disabled = function()
+							local c = ZSBT.db.profile.comboPoints
+							local a = c and c.attachArea
+							return a and a ~= "" and a ~= "None"
+						end,
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							return (c and tonumber(c.yOffset)) or 0
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.yOffset = v
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					cpFormat = {
+						type  = "select",
+						name  = L["Display Format"],
+						order = 3.6,
+						width = "normal",
+						values = {
+							["fraction"] = L["Fraction (4/6)"],
+							["pips"]     = L["Diamond Pips"],
+							["number"]   = L["Number Only"],
+						},
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							return (c and type(c.format) == "string" and c.format ~= "") and c.format or "pips"
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.format = v
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					cpColor = {
+						type  = "color",
+						name  = L["Color"],
+						order = 3.7,
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							local col = c and c.color or { r = 1, g = 0.82, b = 0 }
+							return col.r or 1, col.g or 0.82, col.b or 0
+						end,
+						set   = function(_, r, g, b)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.color = { r = r, g = g, b = b }
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					cpEmptyColor = {
+						type  = "color",
+						name  = L["Empty Pip Color"],
+						order = 3.65,
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							local col = c and c.emptyColor or { r = 0.35, g = 0.35, b = 0.35 }
+							return col.r or 0.35, col.g or 0.35, col.b or 0.35
+						end,
+						set   = function(_, r, g, b)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.emptyColor = { r = r, g = g, b = b }
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					cpOutlineColor = {
+						type  = "color",
+						name  = L["Pip Outline Color"],
+						order = 3.75,
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							local col = c and c.outlineColor or { r = 1, g = 1, b = 1 }
+							return col.r or 1, col.g or 1, col.b or 1
+						end,
+						set   = function(_, r, g, b)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.outlineColor = { r = r, g = g, b = b }
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					cpWidth = {
+						type  = "range",
+						name  = L["Width"],
+						order = 3.76,
+						min   = 80, max = 800, step = 5,
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							return (c and tonumber(c.width)) or 220
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.width = v
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					cpHeight = {
+						type  = "range",
+						name  = L["Height"],
+						order = 3.77,
+						min   = 20, max = 200, step = 2,
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							return (c and tonumber(c.height)) or 26
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.height = v
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					cpHideAtZero = {
+						type  = "toggle",
+						name  = L["Hide at 0"],
+						order = 3.8,
+						width = "full",
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							return not c or c.hideAtZero ~= false
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.hideAtZero = v and true or false
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					cpHideOOC = {
+						type  = "toggle",
+						name  = L["Hide Out of Combat"],
+						order = 3.9,
+						width = "full",
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							return c and c.hideOutOfCombat == true
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.hideOutOfCombat = v and true or false
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					cpSoundHeader = { type = "header", name = L["Counter Sound"], order = 4 },
+					cpFullSound = {
+						type  = "toggle",
+						name  = L["Play Sound at Max"],
+						order = 4.1,
+						width = "full",
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							return c and c.fullSoundEnabled == true
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.fullSoundEnabled = v and true or false
+							notifyRt()
+						end,
+					},
+					cpFullSoundKey = {
+						type  = "select",
+						name  = L["Sound"],
+						order = 4.2,
+						width = "normal",
+						values = function() return (ZSBT.BuildSoundDropdown and ZSBT.BuildSoundDropdown()) or { ["None"] = L["None"] } end,
+						disabled = function()
+							local c = ZSBT.db.profile.comboPoints
+							return not (c and c.fullSoundEnabled == true)
+						end,
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							return (c and type(c.fullSoundKey) == "string" and c.fullSoundKey ~= "") and c.fullSoundKey or "None"
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.fullSoundKey = v
+							notifyRt()
+						end,
+					},
+					cpFullSoundTest = {
+						type  = "execute",
+						name  = L["Test Sound"],
+						order = 4.3,
+						width = "half",
+						disabled = function()
+							local c = ZSBT.db.profile.comboPoints
+							return not (c and c.fullSoundEnabled == true)
+						end,
+						func  = function()
+							local c = ZSBT.db.profile.comboPoints
+							local sk = c and c.fullSoundKey
+							if sk and sk ~= "None" and ZSBT.PlayLSMSound then
+								ZSBT.PlayLSMSound(sk)
+							end
+						end,
+					},
+					cpFullEffect = {
+						type  = "select",
+						name  = L["Full Effect"],
+						desc  = L["Animation that loops on the counter while the resource stays at max."],
+						order = 4.4,
+						width = "normal",
+						values = {
+							["none"]       = L["None"],
+							["ignite"]     = "Ignite",
+							["chromatic"]  = "Chromatic",
+							["shatter"]    = "Shatter",
+							["afterimage"] = "Afterimage",
+						},
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							local v = c and c.fullEffect
+							local valid = {
+								none = 1, ignite = 1, chromatic = 1, shatter = 1,
+								afterimage = 1,
+							}
+							return (type(v) == "string" and valid[v]) and v or "ignite"
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.fullEffect = v
+							notifyRt()
+						end,
+					},
+					rtFontHeader = { type = "header", name = L["Counter Font"], order = 5 },
+					rtFontOverride = {
+						type  = "toggle",
+						name  = L["Override Font"],
+						desc  = L["Use custom font settings for the resource counter text."],
+						order = 5.1,
+						width = "full",
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							return c and c.fontOverride == true
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.fontOverride = v and true or false
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					rtFontFace = {
+						type  = "select",
+						name  = L["Font Face"],
+						order = 5.2,
+						width = "normal",
+						values = function() return ZSBT.BuildFontDropdown() end,
+						hidden = function()
+							local c = ZSBT.db.profile.comboPoints
+							return not (c and c.fontOverride == true)
+						end,
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							return (c and type(c.fontFace) == "string" and c.fontFace ~= "") and c.fontFace or "Friz Quadrata TT"
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.fontFace = v
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					rtFontOutline = {
+						type  = "select",
+						name  = L["Outline Style"],
+						order = 5.3,
+						width = "normal",
+						values = function() return ZSBT.ValuesFromKeys(ZSBT.OUTLINE_STYLES) end,
+						hidden = function()
+							local c = ZSBT.db.profile.comboPoints
+							return not (c and c.fontOverride == true)
+						end,
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							return (c and type(c.fontOutline) == "string" and c.fontOutline ~= "") and c.fontOutline or "Thin"
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.fontOutline = v
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					rtFontSize = {
+						type  = "range",
+						name  = L["Font Size (0=use scale)"],
+						order = 5.4,
+						min   = 0, max = 72, softMax = 32, step = 1,
+						hidden = function()
+							local c = ZSBT.db.profile.comboPoints
+							return not (c and c.fontOverride == true)
+						end,
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							return (c and tonumber(c.fontSize)) or 0
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.fontSize = tonumber(v) or 0
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					rtFontScale = {
+						type  = "range",
+						name  = L["Font Scale"],
+						desc  = L["Multiplier applied to the general font size when Font Size is 0."],
+						order = 5.5,
+						min   = 0.5, max = 3.0, softMax = 2.0, step = 0.05,
+						hidden = function()
+							local c = ZSBT.db.profile.comboPoints
+							return not (c and c.fontOverride == true)
+						end,
+						get   = function()
+							local c = ZSBT.db.profile.comboPoints
+							return (c and tonumber(c.fontScale)) or 1.0
+						end,
+						set   = function(_, v)
+							ZSBT.db.profile.comboPoints = ZSBT.db.profile.comboPoints or {}
+							ZSBT.db.profile.comboPoints.fontScale = tonumber(v) or 1.0
+							notifyRt()
+							if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
+						end,
+					},
+					rtUnlock = {
+						type = "execute",
+						name = function()
+							if ZSBT and ZSBT.IsResourceCounterUnlocked and ZSBT.IsResourceCounterUnlocked() then
+								return L["Lock Resource Counter"]
+							end
+							return L["Unlock Resource Counter"]
+						end,
+						desc = L["Show the resource counter frame for dragging and resizing without unlocking scroll areas."],
+						order = 5.6,
+						width = "full",
+						func = function()
+							if ZSBT and ZSBT.ToggleResourceCounterUnlock then
+								ZSBT.ToggleResourceCounterUnlock()
+							end
+							notifyRt()
+						end,
+					},
+				}
+				for k, v in pairs(buildStyleSoundArgs("power", 1.2)) do rtArgs[k] = v end
+				return rtArgs
+				end)(),
 			},
-			powerRoute = routeSelect("power", 8.1),
 			externalAddons = buildLeafGroup("externalAddons", 9),
 		},
 	}
