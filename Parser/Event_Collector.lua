@@ -3202,7 +3202,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school, ..
 				if restrict and not spellId then
 					return
 				end
-				emit("OUTGOING_DAMAGE_COMBAT", {
+				emit("OUTGOING_MISS_COMBAT", {
 					timestamp = t,
 					amountText = actionStr,
 					spellId = spellId,
