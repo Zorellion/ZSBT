@@ -4,16 +4,21 @@
 
 ### Added
 - Outgoing periodic heals (HoTs): delayed `UNIT_COMBAT(target)` HEAL ticks are now attributed to recent heal casts via a learned hot-spell matcher, so Lifebloom/Rejuvenation/Wild Growth/Riptide-style ticks keep scrolling after the direct heal instead of going silent under restricted outgoing modes.
-- Buff rule sounds: aura rules now support separate **Gain Sound** and **Fade Sound** selections (with per-event test buttons); unset keys fall back to the shared sound.
+- Buff rule sounds: aura rules now support separate **Gain Sound** and **Fade Sound** selections with per-event test buttons; unset keys fall back to the shared sound.
+- Warlock spell school seeds for all specs (Shadow Bolt, Demonbolt, Hand of Gul'dan, Incinerate, Conflagrate, Chaos Bolt, Shadowburn, Agony, Corruption, Unstable Affliction, Seed of Corruption, Phantom Singularity, Immolate, Haunt, Rain of Fire, Channel Demonfire, Infernal, Shadowfury) — day-one-confident school rejection instead of learning from zero.
+- Attribution diagnostics: `weak=` flags in `FLUSH_BEST`/probe debug output and the custom attribution panel (`/zsbt debug`) show exactly how each outgoing hit was attributed.
 
 ### Removed
 - Spell Rules no longer have a Show Icon option; per-rule icons were removed because hit-level spell attribution on secret-value clients can't guarantee the configured spell. Global spell icons still apply.
 
 ### Fixed
+- **Icon/attribution bleed (major):** `spellIdWeak` was computed correctly by the collector but dropped by Pulse_Engine when rebuilding events — every inferred/weak attribution reached the probe as authoritative, so rule icons/fonts/names bled onto unrelated hits. The flag now propagates end-to-end.
+- `school=127` (all-schools) hits carry zero school information but were keeping full spell-rule styling; they are now forced weak.
+- Seeded spells now require hits to cover the full school signature (e.g. Hand of Gul'dan needs `school=36`, not a pure-fire `4` subset) for strong attribution — subset hits display anonymously.
+- Weak attributions can no longer teach cast school/delay profiles, and only fresh pending-cast matches landing promptly after the cast contribute samples — the learning loop no longer feeds on its own guesses.
 - `suppressDummyDamage` no longer suppresses heals/misses on training dummies — it was killing every non-damage event kind.
-- `spellIdWeak` now propagates through Pulse_Engine to the outgoing probe; weak (inferred) attributions finally lose rule icons/fonts/names as intended instead of being treated as authoritative.
-- `school=127` (all-schools) hits are marked weak — they carry zero school information and were keeping full spell-rule styling.
-- Warlock spell school seeds (all specs) for day-one-confident school rejection; learned cast profiles bumped to v4.
+- Cast attribution profiles reset (v4) to clear poisoned school data learned during the permissive phase.
+- Pet-priority rerouting strengthened: rejected hits matching pet damage signatures go to the pet stream instead of wearing player spell styling.
 
 ## 3.5.1
 
