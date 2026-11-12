@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.5.4
+
+### Fixed
+- **Raid/group outgoing leak (major):** in group instances with instance-aware outgoing enabled, other players' damage on shared targets could flood the Outgoing stream — unattributed `UNIT_COMBAT(target)` hits were claimed by stale periodic records and emitted as `Outgoing nil` / mislabeled spellIds, bypassing merge entirely. Restricted content now requires a tick-colored combat-log line for periodic emits, drops nil/weak attributions at the merge-bucket flush, and no longer lets foreign hits burn pending casts (learned delay check moved inside cast matching).
+- Cast school/delay profiles no longer record samples in group content — raid collateral can't poison the profiles solo/open-world attribution relies on; stored profiles were version-bumped and relearn clean.
+- Periodic tracker candidates can no longer self-perpetuate: false emits no longer refresh tick liveness, so dead DoT records stop matching on their own.
+- Moonfire (and similar) opener hits: a pending cast for the same spell now takes precedence over periodic interception, so the initial direct blast displays instead of being vetoed into nothing when the aura scan wins the race.
+
 ## 3.5.3
 
 ### Added

@@ -2554,6 +2554,11 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
 	if meta and meta.isPeriodic == true and ZSBT.Addon and ZSBT.Addon.Dbg then
 		ZSBT.Addon:Dbg("outgoing", 4, ("PER_FIRE t=%.2f"):format(GetTime()))
 	end
+	if meta and meta.stream == "outgoing" and meta.kind == "damage" and ZSBT.Addon and ZSBT.Addon.Dbg then
+		local sname = (meta.spellId and ZSBT.CleanSpellName and ZSBT.CleanSpellName(meta.spellId)) or "?"
+		ZSBT.Addon:Dbg("outgoing", 4, ("FIRE_DMG t=%.2f spellId=%s name=%s per=%s crit=%s")
+			:format(GetTime(), tostring(meta.spellId), tostring(sname), tostring(meta.isPeriodic == true), tostring(meta.isCrit == true)))
+	end
     -- Validate area data with safe defaults
     local xOff = (type(area.xOffset) == "number") and area.xOffset or 0
     local yOff = (type(area.yOffset) == "number") and area.yOffset or 0

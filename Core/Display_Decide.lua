@@ -702,6 +702,11 @@ function Display:Emit(areaName, text, color, meta)
 		end
 	end
 
+    if ZSBT.Addon and ZSBT.Addon.Dbg and meta and meta.stream == "outgoing" and meta.kind == "damage" then
+        local sname = (meta.spellId and ZSBT.CleanSpellName and ZSBT.CleanSpellName(meta.spellId)) or "?"
+        ZSBT.Addon:Dbg("outgoing", 4, ("EMIT_OK t=%.2f area=%s spellId=%s name=%s per=%s")
+            :format(GetTime(), tostring(areaName), tostring(meta.spellId), tostring(sname), tostring(meta.isPeriodic == true)))
+    end
     TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag, fontAlpha,
         anchorH, dirMult, duration, color, meta)
 	if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
