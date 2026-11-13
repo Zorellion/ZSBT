@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.5.8
+
+### Fixed
+- **Resource counters after login/logout:** delayed refreshes now run at 0.5s, 2s, and 5s after initialization instead of a single early read, so counters recover on their own when power/max-power data isn't ready at first pass. Previously a counter could stay hidden until a setting was touched.
+
+### Removed
+- **RESOURCE_THRESHOLD trigger:** removed from the Event Type dropdown and docs. The underlying event path was never wired up and every offered resource (mana/rage/energy/focus/runic/fury/pain) is secret on Retail 12.x, so it could never fire — hiding it prevents user confusion. Existing saved triggers of this type remain but are inert.
+
 ## 3.5.7
 
 ### Added

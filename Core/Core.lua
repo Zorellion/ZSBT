@@ -6088,7 +6088,12 @@ function Core:InitComboPoints()
     end)
     self._cpEventFrame = evFrame
 
-    C_Timer.After(0.5, function() RefreshComboPoints() end)
+    -- Unit power data can be unreadable/secret for a moment after login;
+    -- a single early refresh would hide counters with no later event to
+    -- bring them back. Retry on a short backoff so the state self-corrects.
+    for _, delay in ipairs({ 0.5, 2, 5 }) do
+        C_Timer.After(delay, function() RefreshComboPoints() end)
+    end
 end
 
 ------------------------------------------------------------------------
