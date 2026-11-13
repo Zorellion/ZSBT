@@ -2123,6 +2123,50 @@ function Addon:HandleSlashCommand(input)
 		return
     end
 
+    if cmd == "aodiag" then
+		-- Toggle verbose AoE damage tracing and print pipeline counters.
+		local aoe = ZSBT.AoEDamage
+		if not aoe then
+			self:Print("ZSBT aodiag: AoEDamage module not loaded")
+			return
+		end
+		aoe._verbose = not aoe._verbose
+		local s = aoe._stats
+		self:Print("ZSBT aodiag " .. (aoe._verbose and "ON" or "OFF")
+			.. " enabled=" .. tostring(aoe._enabled == true)
+			.. " | events=" .. tostring(s.events)
+			.. " dedup=" .. tostring(s.dedup)
+			.. " notAtk=" .. tostring(s.notAttackable)
+			.. " secret=" .. tostring(s.secret)
+			.. " noBase=" .. tostring(s.noBaseline)
+			.. " nonDmg=" .. tostring(s.nonDamage)
+			.. " clamped=" .. tostring(s.clamped)
+			.. " emitted=" .. tostring(s.emitted)
+			.. " ucEv=" .. tostring(s.ucEvents)
+			.. " ucEmit=" .. tostring(s.ucEmitted)
+			.. " ucHeal=" .. tostring(s.ucHeal)
+			.. " peIn=" .. tostring(s.peIn or 0)
+			.. " gStrict=" .. tostring(s.gateStrict or 0)
+			.. " gRestr=" .. tostring(s.gateRestrict or 0)
+			.. " gLine=" .. tostring(s.gateLine or 0)
+			.. " gClu=" .. tostring(s.gateCluster or 0))
+		local core = ZSBT.Core
+		local iaw = core and core.IsInstanceAwareOutgoingEnabled and core:IsInstanceAwareOutgoingEnabled() == true
+		local grp = core and core._inGroupInstance == true
+		local inInst, instType = false, "?"
+		if type(IsInInstance) == "function" then
+			local okI, ii, it = pcall(IsInInstance)
+			if okI then inInst, instType = ii == true, tostring(it) end
+		end
+		self:Print("ZSBT aodiag gates: iaw=" .. tostring(iaw)
+			.. " grp=" .. tostring(grp)
+			.. " inInst=" .. tostring(inInst) .. "/" .. instType)
+		if aoe._verbose then
+			self:Print("AODEBUG lines: emit=plate hit accepted, fire=attributed+scroll, drop=unattributed")
+		end
+		return
+    end
+
     if cmd == "xpdiag" then
 		-- Toggle a live probe that prints every XP-relevant event to chat.
 		-- Used to determine which channel carries XP gain on this client.
@@ -2574,7 +2618,7 @@ function Addon:HandleSlashCommand(input)
     end
 
     self:Print(L["|cFF808C9EUnknown command:|r "] .. cmd)
-	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | attrib [on|off|clear] | reset | version | auratest | restorefct | dumpcvars | resdiag | xpdiag | xpfind | findcvar <text> | textscan | ctinspect | xpwrap]"])
+	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | attrib [on|off|clear] | reset | version | auratest | restorefct | dumpcvars | resdiag | aodiag | xpdiag | xpfind | findcvar <text> | textscan | ctinspect | xpwrap]"])
 end
 
 ------------------------------------------------------------------------

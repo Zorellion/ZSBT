@@ -115,6 +115,20 @@ function CL:ClosestKind(tHit, window)
 	return best
 end
 
+local DAMAGE_KINDS = { direct = true, tick = true, melee = true, ranged = true }
+
+-- True when a damage-kind (not heal) palette line sits within `window`
+-- seconds of tHit — i.e. "your damage happened right now".
+function CL:DamageLineNear(tHit, window)
+	for i = 1, #self._lines do
+		local l = self._lines[i]
+		if DAMAGE_KINDS[l.kind] and math.abs(l.at - tHit) <= window then
+			return true
+		end
+	end
+	return false
+end
+
 -- True when any palette-matching line was seen recently — i.e. the combat-log
 -- filter is installed and active, so line-based decisions are meaningful.
 function CL:SignalSeen()
@@ -167,6 +181,20 @@ function CL:InstallFilterAtLogout()
 		filter.colors.eventColoring[event] = { r = c[1], g = c[2], b = c[3], a = 1 }
 	end
 
+	-- Restrict sources to the player and their pet so a classified line's
+	-- existence proves the damage was theirs — required for AoE plate
+	-- pairing. NOTE: while the ZSBT filter is active the combat log only
+	-- shows your own (+pet) damage, same tradeoff MSBT makes.
+	local mineFlag = COMBATLOG_FILTER_MINE
+	local petFlag = COMBATLOG_FILTER_MY_PET
+	if type(filter.filters) == "table" and mineFlag ~= nil and petFlag ~= nil then
+		for _, part in ipairs(filter.filters) do
+			if type(part) == "table" then
+				part.sourceFlags = { [mineFlag] = true, [petFlag] = true }
+			end
+		end
+	end
+
 	local index
 	for i, f in ipairs(saved.filters) do
 		if type(f) == "table" and f.name == FILTER_NAME then
@@ -211,6 +239,28 @@ function CL:VerifyFilterAtLogin()
 	clDbg(("[CL] login verify: active filter='%s' lineColoring=%s spdColor={%s} keys=%s")
 		:format(tostring(f.name), tostring(f.settings and f.settings.lineColoring), spdStr,
 			type(ec) == "table" and "table" or type(ec)))
+
+	-- Pairing is only trustworthy when the active filter is ours AND its
+	-- source flags were restricted to player+pet; otherwise a classified
+	-- line could belong to anyone and must not bypass group-content gates.
+	CL._pairingTrusted = false
+	if f.name == FILTER_NAME then
+		local mineFlag = COMBATLOG_FILTER_MINE
+		local petFlag = COMBATLOG_FILTER_MY_PET
+		local trusted = type(mineFlag) == "number" and type(petFlag) == "number"
+			and type(f.filters) == "table" and #f.filters > 0
+		if trusted then
+			for _, part in ipairs(f.filters) do
+				local sf = type(part) == "table" and part.sourceFlags or nil
+				if not (type(sf) == "table" and sf[mineFlag] == true and sf[petFlag] == true) then
+					trusted = false
+					break
+				end
+			end
+		end
+		CL._pairingTrusted = trusted == true
+		clDbg(("[CL] login verify: pairingTrusted=%s"):format(tostring(CL._pairingTrusted)))
+	end
 end
 
 if not CL._frame then

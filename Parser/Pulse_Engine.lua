@@ -715,6 +715,195 @@ function Engine:_processHealthDamage(sample)
 	end
 end
 
+-- AoE plate damage has no source attribution at all — stricter than the
+-- target path: emit only when the drop correlates to a recent player cast
+-- or a tracked periodic effect, otherwise other players' hits on nearby
+-- mobs would spam the scroll.
+function Engine:_processAoEDamage(sample)
+	if not sample or not CorrelationLogic or not StateManager then return end
+	if ZSBT.AoEDamage then
+		ZSBT.AoEDamage._stats.peIn = (ZSBT.AoEDamage._stats.peIn or 0) + 1
+	end
+
+	-- NOTE: strictOutgoingCombatLogOnly is intentionally NOT applied here.
+	-- That gate exists to block unattributed UNIT_COMBAT fallback noise; AoE
+	-- plate hits already require positive cast/periodic attribution below,
+	-- which is stricter than the strict-mode bar.
+
+	if ZSBT.Core and ZSBT.Core.ShouldRestrictOutgoingFallback and ZSBT.Core:ShouldRestrictOutgoingFallback() then
+		if ZSBT.AoEDamage then ZSBT.AoEDamage._stats.gateRestrict = (ZSBT.AoEDamage._stats.gateRestrict or 0) + 1 end
+		return
+	end
+
+	-- Ownership proof: the ZSBT combat-log filter only emits the player's
+	-- (+pet) damage lines in our palette colours, so a damage-kind line
+	-- within ~0.2s of the plate hit means the hit was ours. No line → not
+	-- ours (or the filter isn't active) → drop.
+	local tHit = sample.timestamp or GetTime()
+	local cl = ZSBT.CombatLogLines
+	if not (cl and cl.DamageLineNear and cl:DamageLineNear(tHit, 0.20)) then
+		if ZSBT.AoEDamage then ZSBT.AoEDamage._stats.gateLine = (ZSBT.AoEDamage._stats.gateLine or 0) + 1 end
+		return
+	end
+
+	local activeCasts = StateManager:getActiveCasts()
+	local bestCast, confidence = CorrelationLogic:findBestCast(activeCasts, sample)
+	local castOK = bestCast ~= nil and confidence ~= nil and confidence ~= CorrelationLogic.CONFIDENCE.UNKNOWN
+	if not castOK then
+		-- AoE fallback: plate WOUNDs carry no spellId and (secret) no amount,
+		-- so scoreCandidate can't reach MEDIUM on timing alone. All victims of
+		-- one cast land within ~0.3s of each other — attribute to the most
+		-- recent active cast in the damage window instead.
+		local t = sample.timestamp or 0
+		local bestAt
+		for i = 1, #(activeCasts or {}) do
+			local c = activeCasts[i]
+			if c and c.status ~= "EXPIRED" and type(c.startedAt) == "number" then
+				local age = t - c.startedAt
+				if age >= -0.2 and age <= 3.0 and (bestAt == nil or c.startedAt > bestAt) then
+					bestCast, bestAt = c, c.startedAt
+				end
+			end
+		end
+		if bestCast then
+			castOK = true
+			confidence = "MEDIUM"
+		end
+	end
+	if castOK then
+		StateManager:markMatched(bestCast, sample)
+	end
+
+	local spellId = castOK and bestCast.spellId or nil
+	local spellName = castOK and bestCast.spellName or nil
+	local isPeriodic = false
+
+	if not castOK and ZSBT.PeriodicTracker then
+		local t = sample.timestamp or GetTime()
+		local sid = ZSBT.PeriodicTracker:MatchHit(t)
+		if sid then
+			spellId = sid
+			spellName = ZSBT.PeriodicTracker:NameFor(sid)
+			isPeriodic = true
+		end
+	end
+
+	if not spellId then
+		if ZSBT.AoEDamage and ZSBT.AoEDamage._verbose then
+			local Addon = ZSBT.Addon
+			if Addon and Addon.Print then
+				local t = GetTime()
+				if t - (ZSBT.AoEDamage._dbgLastPePrint or 0) >= 0.1 then
+					ZSBT.AoEDamage._dbgLastPePrint = t
+					local ncasts, newest = 0, -1
+					for i = 1, #(activeCasts or {}) do
+						local c = activeCasts[i]
+						if c and c.status ~= "EXPIRED" then
+							ncasts = ncasts + 1
+							if type(c.startedAt) == "number" and c.startedAt > newest then newest = c.startedAt end
+						end
+					end
+					Addon:Print(("AODEBUG drop unit=%s amt=%s tgt=%s casts=%d newestAge=%.2f"):format(
+						tostring(sample.unit), tostring(sample.amount), tostring(sample.targetName),
+						ncasts, newest > 0 and (t - newest) or -1))
+				end
+			end
+		end
+		return
+	end
+	if isPeriodic and ZSBT.PeriodicTracker then
+		ZSBT.PeriodicTracker:NoteEmit(spellId, sample.timestamp or GetTime())
+	end
+	if ZSBT.AoEDamage and ZSBT.AoEDamage._verbose then
+		local Addon = ZSBT.Addon
+		if Addon and Addon.Print then
+			local t = GetTime()
+			if t - (ZSBT.AoEDamage._dbgLastPePrint or 0) >= 0.1 then
+				ZSBT.AoEDamage._dbgLastPePrint = t
+				Addon:Print(("AODEBUG cand spellId=%s name=%s periodic=%s tgt=%s"):format(
+					tostring(spellId), tostring(spellName), tostring(isPeriodic), tostring(sample.targetName)))
+			end
+		end
+	end
+
+	local instanceAware = (ZSBT.Core and ZSBT.Core.IsInstanceAwareOutgoingEnabled and ZSBT.Core:IsInstanceAwareOutgoingEnabled()) or false
+	if instanceAware == true and castOK then
+		if confidence ~= CorrelationLogic.CONFIDENCE.HIGH and confidence ~= CorrelationLogic.CONFIDENCE.MEDIUM then
+			return
+		end
+	end
+
+	-- Cluster gate: the line pairing only proves "some damage of yours
+	-- happened recently" — in group content that window is saturated, so
+	-- isolated plate hits are usually other players'/pet damage coinciding.
+	-- Real AoE/cleave/periodic damage lands on several plates within ~0.5s.
+	-- Buffer candidates briefly and emit only groups spanning >=2 distinct
+	-- units; singles are dropped as likely coincidences.
+	local payload = {
+		eventType = sample.eventType,
+		kind = "damage",
+		amount = sample.amount,
+		amountText = sample.amountText,
+		rawPipeId = sample.rawPipeId,
+		spellName = spellName,
+		spellId = spellId,
+		targetName = sample.targetName,
+		isCrit = sample.isCrit or false,
+		timestamp = sample.timestamp,
+		confidence = castOK and (confidence or "HIGH") or "MEDIUM",
+		isPeriodic = isPeriodic,
+	}
+	local pend = self._aoePending
+	if not pend then
+		pend = {}
+		self._aoePending = pend
+	end
+	pend[#pend + 1] = {
+		at = sample.timestamp or GetTime(),
+		unit = sample.unit,
+		key = tostring(spellId) .. (isPeriodic and ":p" or ":d"),
+		payload = payload,
+	}
+	if #pend > 128 then table.remove(pend, 1) end
+	if not self._aoeFlushScheduled then
+		self._aoeFlushScheduled = true
+		C_Timer.After(0.55, function() self:_flushAoECluster() end)
+	end
+end
+
+function Engine:_flushAoECluster()
+	local pend = self._aoePending
+	self._aoePending = nil
+	self._aoeFlushScheduled = nil
+	if not pend or #pend == 0 then return end
+	local now = GetTime()
+	local groups = {}
+	for i = 1, #pend do
+		local e = pend[i]
+		if now - e.at <= 0.9 then
+			local g = groups[e.key]
+			if not g then
+				g = { units = {}, items = {} }
+				groups[e.key] = g
+			end
+			g.units[e.unit] = true
+			g.items[#g.items + 1] = e
+		end
+	end
+	local st = ZSBT.AoEDamage and ZSBT.AoEDamage._stats
+	for _, g in pairs(groups) do
+		local n = 0
+		for _ in pairs(g.units) do n = n + 1 end
+		if n >= 2 then
+			for i = 1, #g.items do
+				self:_emitOutgoing(g.items[i].payload)
+			end
+		else
+			if st then st.gateCluster = (st.gateCluster or 0) + #g.items end
+		end
+	end
+end
+
 function Engine:_processHealthHeal(sample)
 	if not sample or not CorrelationLogic or not StateManager then return end
 
@@ -901,6 +1090,8 @@ function Engine:flushBucket()
 				self:_processSpellcast(sample)
 			elseif et == "HEALTH_DAMAGE" then
 				self:_processHealthDamage(sample)
+			elseif et == "AOE_HEALTH_DAMAGE" or et == "AOE_UNIT_COMBAT" then
+				self:_processAoEDamage(sample)
 			elseif et == "HEALTH_HEAL" then
 				self:_processHealthHeal(sample)
 			elseif et == "HEALTH_CHANGE_SECRET" then

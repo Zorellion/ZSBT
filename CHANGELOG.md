@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.5.9
+
+### Added
+- **Off-target / AoE damage numbers:** damage your spells deal to nameplated mobs other than your current target (cleaves, multi-target abilities, ground effects, and your DoTs ticking on off-target mobs) now produces scroll numbers, one per affected mob. Works in open world and solo content.
+- **Combat-log ownership pairing:** a new `Parser/CombatLog_Lines` module pairs plate hits with color-coded combat-log lines. The "ZSBT" combat-log filter (written at logout, active next login) restricts sources to player + pet, so a matching damage line proves the hit was yours before it can scroll.
+- **Cluster gate:** candidates are held ~0.55s and only emitted when the same spell hits at least two distinct nameplates, filtering coincidental single hits from pets/environmental damage.
+- **Periodic ground-effect coverage:** Death and Decay, Blistering Scythe, Consecration, Blizzard, Rain of Fire, Hurricane, Volley, Hellfire, Starfall, Comet Storm, Frozen Orb, Flamestrike, Soul Effigy seed the periodic tracker so their ticks attribute between casts; cast-attribution window widened to ~3s for cast-time AoE.
+- **`/zsbt aodiag` diagnostics:** verbose tracing plus pipeline counters (`gLine`, `gRestr`, `gClu`) for AoE debugging.
+
+### Notes
+- AoE numbers are deliberately suppressed in group instances and PvP when instance-aware outgoing is enabled: nameplate events carry no source attribution, and other players' damage saturates the pairing signal, so per-hit ownership can't be proven there. Open world/solo only.
+- Requires one relog after first install for the restricted combat-log filter to take effect; while active, the combat log shows only your (+pet) damage.
+- Spell names on off-target hits are best-effort (nameplate events carry no spellId); icons may be approximate on Retail 12.x.
+
 ## 3.5.8
 
 ### Fixed
