@@ -327,7 +327,6 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 		["AURA_STACKS"] = "AURA_STACKS",
 		["COOLDOWN_READY"] = "COOLDOWN_READY",
 		["LOW_HEALTH"] = "LOW_HEALTH",
-		["RESOURCE_THRESHOLD"] = "RESOURCE_THRESHOLD",
 		["SPELL_USABLE"] = "SPELL_USABLE",
 		["SPELLCAST_SUCCEEDED"] = "SPELLCAST_SUCCEEDED",
 		["KILLING_BLOW"] = "KILLING_BLOW",
@@ -351,7 +350,6 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 		AURA_STACKS = L["Fires when the player's aura stack count is at/above the configured threshold. Optionally set Max Stacks to cap it."],
 		COOLDOWN_READY = L["Fires when a tracked cooldown becomes ready. Best used with specific SpellID."],
 		LOW_HEALTH = L["Fires when Blizzard's low health warning triggers (red border)."],
-		RESOURCE_THRESHOLD = L["Fires when your resource (mana/rage/energy/etc.) crosses the threshold (above or below)."],
 		SPELL_USABLE = L["Fires when the spell becomes usable (edge: unusable  usable). Uses polling and can flicker based on resources/targeting; use Rearm-after-unusable and/or Throttle to prevent noise. Great workaround for Execute-style reminders when target HP is protected."],
 		SPELLCAST_SUCCEEDED = L["Fires when you successfully cast a spell (UNIT_SPELLCAST_SUCCEEDED on player). Optionally set SpellID to match a specific spell."],
 		KILLING_BLOW = L["Fires when you personally land a killing blow (combat log PARTY_KILL)."],
@@ -2424,8 +2422,6 @@ Triggers let you create your own notifications when specific events happen.
 ### Warnings / thresholds
 - **LOW_HEALTH**
   - Fires when low-health warning logic triggers.
-- **RESOURCE_THRESHOLD**
-  - Fires when a configured resource threshold is crossed.
 
 ### Kill / UT-style
 - **KILLING_BLOW**
