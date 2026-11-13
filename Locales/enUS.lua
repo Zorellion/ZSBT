@@ -959,6 +959,7 @@ L["X Offset"] = true
 L["X: %d  Y: %d"] = true
 L["Y Offset"] = true
 L["You gain (%d[%d,]+) experience"] = true
+L["you gain (%d[%d,]+) experience"] = true
 L["You have killed (.+)"] = true
 L["You have slain (.+)"] = true
 L["You interrupt (.+)'s (.+)%.?"] = true

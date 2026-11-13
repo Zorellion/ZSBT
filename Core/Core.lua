@@ -512,6 +512,10 @@ local BLIZZARD_FCT_CVARS = {
     "fctCombatXP",
     "fctCombatXP_v2",
 
+    -- Midnight-era XP gain gate (used by MidnightXP; present on 12.x clients)
+    "floatingCombatTextXPChanges",
+    "floatingCombatTextXPChanges_v2",
+
     -- Midnight 12.0 _v2 CVars (override the legacy ones for crits/procs)
     "floatingCombatTextCombatDamage_v2",
     "floatingCombatTextCombatHealing_v2",
@@ -573,6 +577,8 @@ local BLIZZARD_FCT_XP_REP_HONOR_CVARS = {
 	"floatingCombatTextCombatXP_v2",
 	"fctCombatXP",
 	"fctCombatXP_v2",
+	"floatingCombatTextXPChanges",
+	"floatingCombatTextXPChanges_v2",
 	"floatingCombatTextRepChanges",
 	"floatingCombatTextHonorGains",
 }
@@ -589,6 +595,46 @@ local BLIZZARD_FCT_PET_CVARS = {
 	"floatingCombatTextPetSpellDamage",
 	"floatingCombatTextPetSpellDamage_v2",
 }
+
+-- World text CVars gate the C++-side floating text that has no Lua hook
+-- (XP gains, honor/rep toasts, etc.). There is no guaranteed off switch,
+-- so when ZSBT suppresses every Blizzard text category we additionally
+-- inflate world text far off-screen as a last-resort mitigation (same
+-- approach as MidnightXP). These are snapshotted with the FCT backup and
+-- restored with it; only applied while ALL categories are hidden.
+local BLIZZARD_WORLDTEXT_SCALE_CVARS = {
+	"WorldTextScale",
+	"WorldTextScale_v2",
+}
+local BLIZZARD_WORLDTEXT_Y_CVARS = {
+	"WorldTextScreenY",
+	"WorldTextScreenY_v2",
+}
+local BLIZZARD_WORLDTEXT_CVARS = {}
+for _, cvar in ipairs(BLIZZARD_WORLDTEXT_SCALE_CVARS) do
+	BLIZZARD_WORLDTEXT_CVARS[#BLIZZARD_WORLDTEXT_CVARS + 1] = cvar
+end
+for _, cvar in ipairs(BLIZZARD_WORLDTEXT_Y_CVARS) do
+	BLIZZARD_WORLDTEXT_CVARS[#BLIZZARD_WORLDTEXT_CVARS + 1] = cvar
+end
+
+-- Stable filter function for CHAT_MSG_COMBAT_XP_GAIN. On some clients the
+-- floating XP popup is spawned by the chat-event display path, so filtering
+-- the chat message can suppress it. Filters only gate chat-frame display;
+-- other addons' event handlers (including ours) still receive the event.
+local XP_GAIN_CHAT_FILTER = function() return true end
+
+local function setXPGainChatFilter(enabled)
+	if enabled then
+		if ChatFrame_AddMessageEventFilter then
+			ChatFrame_AddMessageEventFilter("CHAT_MSG_COMBAT_XP_GAIN", XP_GAIN_CHAT_FILTER)
+		end
+	else
+		if ChatFrame_RemoveMessageEventFilter then
+			ChatFrame_RemoveMessageEventFilter("CHAT_MSG_COMBAT_XP_GAIN", XP_GAIN_CHAT_FILTER)
+		end
+	end
+end
 
 local function trySetCVarGroup(cvars, value)
 	if type(cvars) ~= "table" then return end
@@ -616,6 +662,9 @@ local function snapshotBlizzardFCTCVarsOnce()
 
     local backup = {}
     for _, cvar in ipairs(BLIZZARD_FCT_CVARS) do
+        backup[cvar] = tryGetCVar(cvar)
+    end
+    for _, cvar in ipairs(BLIZZARD_WORLDTEXT_CVARS) do
         backup[cvar] = tryGetCVar(cvar)
     end
 
@@ -649,6 +698,7 @@ local function clearBlizzardFCTBackup()
     st.hasBackup = false
     st.suppressedByZSBT = false
     st.combatText = nil
+    st.worldTextMinimized = false
 end
 
 local function snapshotCombatTextFramesOnce()
@@ -805,9 +855,21 @@ function Core:SuppressBlizzardFCT()
     -- Additional fallback: some clients route XP/rep/honor through CombatText_AddMessage* paths
     -- even when COMBAT_TEXT_UPDATE isn't exposed. Null them out while suppression is active.
     suppressCombatTextAddFns()
+
+    -- Last-resort world text mitigation (same as the hideAll path in
+    -- ApplyBlizzardFCTCVars); values restored via the FCT backup.
+    for _, cvar in ipairs(BLIZZARD_WORLDTEXT_SCALE_CVARS) do
+        trySetCVar(cvar, "1000")
+    end
+    for _, cvar in ipairs(BLIZZARD_WORLDTEXT_Y_CVARS) do
+        trySetCVar(cvar, "0")
+    end
+    local st = getFCTStateTable()
+    if st then st.worldTextMinimized = true end
 end
 
 function Core:RestoreBlizzardFCT()
+    setXPGainChatFilter(false)
     if restoreBlizzardFCTFromBackup() then
         restoreCombatTextFrames()
         restoreCombatTextAddFns()
@@ -904,6 +966,7 @@ function Core:ApplyBlizzardFCTCVars()
     trySetCVar("CombatHealing", "1")
 
 	if g.hideBlizzardFCT ~= true then
+		setXPGainChatFilter(false)
 		self:RestoreBlizzardFCT()
 		return
 	end
@@ -933,6 +996,11 @@ function Core:ApplyBlizzardFCTCVars()
 	trySetCVarGroup(BLIZZARD_FCT_RESOURCE_GAINS_CVARS, hideRes and "0" or "1")
 	trySetCVarGroup(BLIZZARD_FCT_PET_CVARS, hidePet and "0" or "1")
 
+	-- Chat-event filter for XP gain: suppresses the chat line and, on clients
+	-- where the floating XP popup is spawned by that display path, the popup
+	-- too. ZSBT's own XP notification still fires (filters don't block events).
+	setXPGainChatFilter(hideXP == true)
+
 	if hideAll then
 		suppressCombatTextFrames()
 		suppressCombatTextAddFns()
@@ -950,6 +1018,29 @@ function Core:ApplyBlizzardFCTCVars()
 			restoreCombatTextFrames()
 			restoreCombatTextAddFns()
 		end
+	end
+
+	-- World text mitigation: only when every text category is hidden do we
+	-- inflate world text off-screen, since it affects ALL floating text
+	-- (including kinds ZSBT doesn't cover). Values chosen to match
+	-- MidnightXP's approach.
+	local st = getFCTStateTable()
+	if hideAll then
+		for _, cvar in ipairs(BLIZZARD_WORLDTEXT_SCALE_CVARS) do
+			trySetCVar(cvar, "1000")
+		end
+		for _, cvar in ipairs(BLIZZARD_WORLDTEXT_Y_CVARS) do
+			trySetCVar(cvar, "0")
+		end
+		if st then st.worldTextMinimized = true end
+	elseif st and st.worldTextMinimized == true then
+		for _, cvar in ipairs(BLIZZARD_WORLDTEXT_CVARS) do
+			local backup = st.backup and st.backup[cvar]
+			if backup ~= nil then
+				trySetCVar(cvar, backup)
+			end
+		end
+		st.worldTextMinimized = false
 	end
 
     -- Option C: if ZSBT previously suppressed and the CVars still look off,
@@ -4893,6 +4984,10 @@ function Core:InitProgressTracking()
 			local xp, whoXP = nil, nil
 			pcall(function()
 				xp = msg:match(L["You gain (%d[%d,]+) experience"])
+				if not xp then
+					-- Forever/Classic-style: "<mob> dies, you gain 70 experience."
+					xp = msg:match(L["you gain (%d[%d,]+) experience"])
+				end
 				if not xp then
 					local who, amt = msg:match(L["(.+) gains (%d[%d,]+) experience"])
 					if not who or not amt then

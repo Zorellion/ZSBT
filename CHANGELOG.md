@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.5.7
+
+### Added
+- **WoW Forever XP notifications:** the progress tracker now parses Forever's `"<creature> dies, you gain N experience."` chat format, so the `+N XP` notification fires correctly on Forever (build 1.60.x) alongside Retail's existing formats.
+- **XP CVar coverage:** `floatingCombatTextXPChanges`/`_v2` added to the Blizzard FCT suppression lists so Retail's XP-change text follows the XP suppression toggle.
+- **Diagnostic commands:** `/zsbt xpdiag`, `xpfind`, `textscan`, `findcvar`, `ctinspect`, `xpwrap`, `dumpcvars` for live client probing (used to isolate Forever's XP popup path).
+
+### Changed
+- **World-text suppression:** when all Blizzard text categories are hidden, ZSBT now inflates `WorldTextScale`/`_v2` to `1000` (flinging world text off-screen) instead of shrinking to `0.01`. Verified on WoW Forever where the XP popup is world-text-driven and ignores every other suppression path; values still snapshot/restore with the FCT backup.
+
 ## 3.5.6
 
 ### Added

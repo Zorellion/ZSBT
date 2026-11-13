@@ -1964,6 +1964,8 @@ function Addon:HandleSlashCommand(input)
 		dump("floatingCombatTextCombatXP_v2")
 		dump("fctCombatXP")
 		dump("fctCombatXP_v2")
+		dump("floatingCombatTextXPChanges")
+		dump("floatingCombatTextXPChanges_v2")
 		dump("floatingCombatTextReactives")
 		dump("floatingCombatTextReactives_v2")
 		dump("CombatDamage")
@@ -2121,6 +2123,434 @@ function Addon:HandleSlashCommand(input)
 		return
     end
 
+    if cmd == "xpdiag" then
+		-- Toggle a live probe that prints every XP-relevant event to chat.
+		-- Used to determine which channel carries XP gain on this client.
+		if self._xpDiagFrame then
+			self._xpDiagFrame:UnregisterAllEvents()
+			self._xpDiagFrame:SetScript("OnEvent", nil)
+			self._xpDiagFrame = nil
+			self:Print("ZSBT xpdiag OFF")
+			return
+		end
+		local f = CreateFrame("Frame")
+		self._xpDiagFrame = f
+		for _, ev in ipairs({
+			"CHAT_MSG_COMBAT_XP_GAIN",
+			"CHAT_MSG_SYSTEM",
+			"CHAT_MSG_COMBAT_MISC_INFO",
+			"COMBAT_TEXT_UPDATE",
+		}) do
+			pcall(f.RegisterEvent, f, ev)
+		end
+		f:SetScript("OnEvent", function(_, event, a1, a2, a3)
+			local function s(v)
+				if issecretvalue and issecretvalue(v) then return "<secret>" end
+				local ok, r = pcall(tostring, v)
+				return ok and r or "<err>"
+			end
+			self:Print(("XPDBG|%s|%s|%s|%s"):format(
+				tostring(event), s(a1), s(a2), s(a3)))
+		end)
+		self:Print("ZSBT xpdiag ON — get some kills, then /zsbt xpdiag to stop")
+		return
+    end
+
+    if cmd == "xpfind" then
+		-- Trap the XP popup: on CHAT_MSG_COMBAT_XP_GAIN, scan the whole UI
+		-- tree a few times and print any FontString whose text looks like
+		-- "+75 xp". Names the exact frame responsible for the popup.
+		if self._xpFindFrame then
+			self._xpFindFrame:UnregisterAllEvents()
+			self._xpFindFrame:SetScript("OnEvent", nil)
+			self._xpFindFrame = nil
+			self:Print("ZSBT xpfind OFF")
+			return
+		end
+		local Z = self
+		local function scan(tag)
+			local hits = 0
+			local seen = {}
+			local function check(fs)
+				local ok, txt = pcall(fs.GetText, fs)
+				if ok and type(txt) == "string" and txt ~= "" then
+					local low = txt:lower()
+					if low:find("xp", 1, true) or txt:match("^%+%d") then
+						local parent = fs.GetParent and fs:GetParent() or nil
+						local pname = parent and parent.GetName and parent:GetName() or nil
+						local key = tostring(fs) .. "|" .. txt
+						if not seen[key] then
+							seen[key] = true
+							Z:Print(("XPFIND|%s|%s|parent=%s|shown=%s"):format(
+								tag, txt, tostring(pname or fs),
+								tostring(parent and parent.IsShown and parent:IsShown())))
+							hits = hits + 1
+						end
+					end
+				end
+			end
+			local function walk(frame, depth)
+				if not frame or depth > 8 or hits >= 40 then return end
+				pcall(check, frame)
+				if frame.GetFontString then
+					local ok, fs = pcall(frame.GetFontString, frame)
+					if ok and fs then check(fs) end
+				end
+				if frame.GetChildren then
+					local okC, ch = pcall(frame.GetChildren, frame)
+					if okC and ch then
+						for _, c in ipairs(ch) do
+							walk(c, depth + 1)
+						end
+					end
+				end
+			end
+			for _, v in pairs(_G) do
+				if type(v) == "table" or type(v) == "userdata" then
+					local ok, isFrame = pcall(function()
+						return v.IsObjectType and v:IsObjectType("Frame") end)
+					if ok and isFrame then walk(v, 0) end
+				end
+			end
+			if hits == 0 then Z:Print("XPFIND|" .. tag .. "|no xp fontstrings") end
+		end
+		local f = CreateFrame("Frame")
+		self._xpFindFrame = f
+		pcall(f.RegisterEvent, f, "CHAT_MSG_COMBAT_XP_GAIN")
+		f:SetScript("OnEvent", function(_, event)
+			if event ~= "CHAT_MSG_COMBAT_XP_GAIN" then return end
+			if not (C_Timer and C_Timer.After) then return end
+			for _, d in ipairs({ 0.15, 0.4, 0.9, 1.6 }) do
+				C_Timer.After(d, function() scan("t" .. d) end)
+			end
+		end)
+		self:Print("ZSBT xpfind ON — get some kills, then /zsbt xpfind to stop")
+		return
+    end
+
+    if cmd == "textscan" then
+		-- Enumerate text-related globals on this client and hook the
+		-- CombatText_AddMessage family to see what carries XP gain text.
+		local arg = rest and rest:lower():gsub("^%s+", "") or ""
+		local needles
+		if arg ~= "" then
+			needles = {}
+			for w in arg:gmatch("%S+") do needles[#needles + 1] = w end
+		else
+			needles = { "combattext", "worldtext", "floatingtext", "xpgain",
+				"experience", "combat_text", "scrolletext", "addmessage", "addtext",
+				"playerxp", "rested", "exhaustion", "xp" }
+		end
+		local function matchName(n)
+			if type(n) ~= "string" then return false end
+			local ln = n:lower()
+			for _, nd in ipairs(needles) do
+				if ln:find(nd, 1, true) then return true end
+			end
+			return false
+		end
+		local names = {}
+		for n in pairs(_G) do
+			if matchName(n) then names[#names + 1] = n end
+		end
+		table.sort(names)
+		local shown = 0
+		for _, n in ipairs(names) do
+			local ok, v = pcall(function() return _G[n] end)
+			if ok then
+				local ty = type(v)
+				if ty ~= "string" then
+					local extra = ""
+					pcall(function()
+						if (ty == "table" or ty == "userdata")
+							and type(v.IsObjectType) == "function"
+							and v:IsObjectType("Frame") then
+							extra = " frame shown=" .. tostring(v:IsShown())
+						end
+					end)
+					self:Print("G " .. n .. " = " .. ty .. extra)
+					shown = shown + 1
+					if shown >= 200 then break end
+				end
+			end
+		end
+		self:Print("textscan globals=" .. shown)
+		-- Wrap AddMessage-family globals; print only XP-ish calls.
+		-- (Session-only diagnostic; /reload restores originals.)
+		if not self._textScanHooked then
+			self._textScanHooked = true
+			for n, v in pairs(_G) do
+				if type(v) == "function" and type(n) == "string"
+					and (n:lower():find("addmessage", 1, true)
+						or n:lower():find("addtext", 1, true)) then
+					local orig = v
+					_G[n] = function(...)
+						local parts = {}
+						for i = 1, 6 do
+							local a = select(i, ...)
+							if a == nil then break end
+							local okS, s = pcall(tostring, a)
+							parts[#parts + 1] = okS and s or "?"
+						end
+						local line = table.concat(parts, "|")
+						if line:lower():find("xp", 1, true)
+							or line:lower():find("experience", 1, true) then
+							pcall(self.Print, self, "HOOK " .. n .. " " .. line)
+						end
+						return orig(...)
+					end
+					self:Print("wrapped " .. n)
+				end
+			end
+		end
+		return
+    end
+
+    if cmd == "xpwrap" then
+		-- Wrap CombatText:AddMessage (and CombatText2 if present) to log
+		-- argument shapes for XP-ish messages. Diagnostic only.
+		if self._xpWrapHooked then
+			self:Print("xpwrap already active")
+			return
+		end
+		self._xpWrapHooked = true
+		local targets = {}
+		for _, fname in ipairs({ "CombatText", "CombatText2" }) do
+			local f = _G[fname]
+			if f and type(f.AddMessage) == "function" then
+				targets[#targets + 1] = { name = fname, frame = f }
+			end
+		end
+		-- Also find any other frame carrying the combat-text AddMessage method
+		-- (per-unit/nameplate combat text frames share the mixin).
+		local seen = {}
+		for _, t in ipairs(targets) do seen[t.frame] = true end
+		local function scan(f, depth)
+			if depth > 12 or type(f) ~= "table" or not f.GetChildren then return end
+			pcall(function()
+				if type(f.AddMessage) == "function" and not seen[f] then
+					seen[f] = true
+					targets[#targets + 1] = {
+						name = (f.GetName and f:GetName()) or "?",
+						frame = f,
+					}
+				end
+			end)
+			local ok, kids = pcall(f.GetChildren, f)
+			if ok and kids then
+				for _, ch in ipairs(kids) do scan(ch, depth + 1) end
+			end
+		end
+		pcall(scan, UIParent, 0)
+		pcall(scan, WorldFrame, 0)
+		for _, t in ipairs(targets) do
+			local f = t.frame
+			if type(f.AddMessage) == "function" then
+				local orig = f.AddMessage
+				f.AddMessage = function(selfArg, ...)
+					local parts = {}
+					for i = 1, 8 do
+						local a = select(i, ...)
+						if a == nil then break end
+						local okS, s = pcall(tostring, a)
+						parts[#parts + 1] = okS and s or "?"
+					end
+					local line = table.concat(parts, "|")
+					local ll = line:lower()
+					if ll:find("xp", 1, true) or ll:find("experience", 1, true)
+						or ll:find("honor", 1, true) or ll:find("reputation", 1, true) then
+						pcall(self.Print, self, "XPWRAP " .. t.name .. " " .. line)
+					end
+					return orig(selfArg, ...)
+				end
+				self:Print("xpwrap armed on " .. t.name)
+			else
+				self:Print("xpwrap: " .. t.name .. ".AddMessage missing")
+			end
+		end
+		self:Print("xpwrap targets=" .. #targets)
+		return
+    end
+
+    if cmd == "ctinspect" then
+		-- Dump the combat-text event registry and frame state to find what
+		-- drives the XP floating text on this client.
+		local cfe = CombatTextFrameEvents
+		if type(cfe) == "table" then
+			local keys = {}
+			for k in pairs(cfe) do keys[#keys + 1] = tostring(k) end
+			table.sort(keys)
+			self:Print("CombatTextFrameEvents keys (" .. #keys .. "):")
+			for _, k in ipairs(keys) do self:Print("  " .. k) end
+		else
+			self:Print("CombatTextFrameEvents = " .. type(cfe))
+		end
+		local ct = CombatText
+		if ct and type(ct.IsEventRegistered) == "function" then
+			local cands = {
+				"COMBAT_TEXT_UPDATE", "CHAT_MSG_COMBAT_XP_GAIN", "UNIT_COMBAT",
+				"CHAT_MSG_SYSTEM", "CHAT_MSG_COMBAT_MISC_INFO",
+				"CHAT_MSG_COMBAT_HONOR_GAIN", "CHAT_MSG_COMBAT_FACTION_CHANGE",
+				"PLAYER_XP_UPDATE", "COMBAT_LOG_EVENT_UNFILTERED",
+			}
+			for _, ev in ipairs(cands) do
+				local ok, reg = pcall(ct.IsEventRegistered, ct, ev)
+				self:Print("CombatText event " .. ev .. " = " .. tostring(ok and reg))
+			end
+			local kids = {}
+			pcall(function()
+				for _, ch in ipairs({ ct:GetChildren() }) do
+					kids[#kids + 1] = ch:GetName() or "?"
+				end
+			end)
+			self:Print("CombatText children: " .. table.concat(kids, ", "))
+		else
+			self:Print("CombatText frame unavailable")
+		end
+		if type(C_CombatText) == "table" then
+			local keys = {}
+			for k in pairs(C_CombatText) do keys[#keys + 1] = tostring(k) end
+			table.sort(keys)
+			self:Print("C_CombatText keys (" .. #keys .. "):")
+			for _, k in ipairs(keys) do self:Print("  " .. k) end
+		else
+			self:Print("C_CombatText = " .. type(C_CombatText))
+		end
+		-- Dump the mixin API and per-event config so we can find the
+		-- message-add interception point.
+		if type(CombatTextMixin) == "table" then
+			local keys = {}
+			for k in pairs(CombatTextMixin) do keys[#keys + 1] = tostring(k) end
+			table.sort(keys)
+			self:Print("CombatTextMixin keys (" .. #keys .. "):")
+			for _, k in ipairs(keys) do self:Print("  " .. k) end
+		end
+		if type(CombatTextUtil) == "table" then
+			local keys = {}
+			for k in pairs(CombatTextUtil) do keys[#keys + 1] = tostring(k) end
+			table.sort(keys)
+			self:Print("CombatTextUtil keys (" .. #keys .. "):")
+			for _, k in ipairs(keys) do self:Print("  " .. k) end
+		end
+		for _, tname in ipairs({ "CombatTextTypeInfo", "CombatTextConstants",
+			"CombatTextCachableCVars", "CombatTextFont", "CombatTextFontOutline" }) do
+			local t = _G[tname]
+			if type(t) == "table" then
+				local keys = {}
+				for k in pairs(t) do keys[#keys + 1] = tostring(k) end
+				table.sort(keys)
+				self:Print(tname .. " keys (" .. #keys .. "):")
+				for _, k in ipairs(keys) do
+					self:Print("  " .. k)
+				end
+			else
+				self:Print(tname .. " = " .. type(t))
+			end
+		end
+		if type(cfe) == "table" then
+			for ev, cfg in pairs(cfe) do
+				if type(cfg) == "table" then
+					local ck = {}
+					for k in pairs(cfg) do ck[#ck + 1] = tostring(k) end
+					table.sort(ck)
+					self:Print("CFE." .. tostring(ev) .. " cfg: " .. table.concat(ck, ","))
+				end
+			end
+		end
+		return
+    end
+
+    if cmd == "findcvar" then
+		-- List CVars/commands containing the given substring with current values.
+		local arg = rest and rest:lower():gsub("^%s+", "") or ""
+		if arg == "" then
+			self:Print("Usage: /zsbt findcvar <substring> [more substrings]  (space-separated OR match)")
+			return
+		end
+		local needles = {}
+		for w in arg:gmatch("%S+") do needles[#needles + 1] = w end
+		local function matchAny(name)
+			local ln = name:lower()
+			for _, nd in ipairs(needles) do
+				if ln:find(nd, 1, true) then return true end
+			end
+			return false
+		end
+		local found = 0
+		local enumerator = (C_Console and C_Console.GetAllCommands)
+			or (C_CVar and (C_CVar.GetAllCVars or C_CVar.GetCVars))
+			or _G.GetAllCommands or _G.GetAllCVars
+		if enumerator then
+			local okList, list = pcall(enumerator)
+			if okList and type(list) == "table" then
+				for _, name in ipairs(list) do
+					if type(name) == "string" and matchAny(name) then
+						local ok, v = pcall(GetCVar, name)
+						self:Print(name .. " = " .. (ok and tostring(v) or "?"))
+						found = found + 1
+						if found >= 80 then break end
+					end
+				end
+			end
+		else
+			-- Older clients lack C_Console.GetAllCommands; probe a candidate
+			-- list of known text/XP-related CVars instead.
+			local candidates = {
+				"enableCombatText", "enableFloatingCombatText",
+				"floatingCombatTextAllSpellMechanics", "floatingCombatTextAuras",
+				"floatingCombatTextCombatDamage", "floatingCombatTextCombatDamageAllAutos",
+				"floatingCombatTextCombatDamageDirectionalOffset", "floatingCombatTextCombatDamageDirectionalScale",
+				"floatingCombatTextCombatDamageStyle", "floatingCombatTextCombatHealing",
+				"floatingCombatTextCombatHealingAbsorbSelf", "floatingCombatTextCombatHealingAbsorbTarget",
+				"floatingCombatTextCombatLogPeriodicSpells", "floatingCombatTextCombatState",
+				"floatingCombatTextComboPoints", "floatingCombatTextDamageReduction",
+				"floatingCombatTextDodgeParryMiss", "floatingCombatTextEnergyGains",
+				"floatingCombatTextFloatMode", "floatingCombatTextFriendlyHealers",
+				"floatingCombatTextHonorGains", "floatingCombatTextLowManaHealth",
+				"floatingCombatTextPeriodicEnergyGains", "floatingCombatTextPetMeleeDamage",
+				"floatingCombatTextPetSpellDamage", "floatingCombatTextReactives",
+				"floatingCombatTextRepChanges", "floatingCombatTextSpellMechanics",
+				"floatingCombatTextSpellMechanicsOther",
+				"floatingCombatTextCombatXP", "floatingCombatTextXPChanges",
+				"fctCombatXP", "fctCombatXP_v2",
+				"floatingCombatTextCombatDamage_v2", "floatingCombatTextCombatHealing_v2",
+				"floatingCombatTextCombatXP_v2", "floatingCombatTextXPChanges_v2",
+				"floatingCombatTextReactives_v2", "floatingCombatTextFloatMode_v2",
+				"WorldTextScale", "WorldTextScale_v2", "WorldTextScreenY", "WorldTextScreenY_v2",
+				"WorldTextSize", "worldTextScale", "worldTextSize",
+				"WorldTextCritScreenY", "WorldTextGravity", "WorldTextNonRandomZ",
+				"WorldTextRampDuration", "WorldTextRampPow", "WorldTextRampPowCrit",
+				"WorldTextRandomXY", "WorldTextRandomZMax", "WorldTextRandomZMin",
+				"WorldTextStartPosRandomness",
+				"xpBarText", "showHonorAsExperience", "threatWorldText",
+				"statusText", "statusTextDisplay",
+				"showXPGain", "xpGain", "experienceGain", "gainExperience",
+				"showExperienceGain", "combatTextXP", "fctXP", "fctExperience",
+				"floatingTextXP", "floatingTextExperience", "popupXP",
+				"announceXP", "xpAnnounce", "experienceText", "xpText",
+				"showCombatText", "combatText", "floatingCombatText",
+				"enableWorldText", "worldText", "damageText", "healText",
+				"showAllFloatingCombatText", "combatTextEnabled",
+				"nameplateShowAll", "alwaysShowNameplates",
+			}
+			local probed = 0
+			for _, name in ipairs(candidates) do
+				if matchAny(name) then
+					probed = probed + 1
+					local ok, v = pcall(GetCVar, name)
+					if ok and v ~= nil then
+						self:Print(name .. " = " .. tostring(v))
+						found = found + 1
+					end
+				end
+			end
+			self:Print("(probed " .. probed .. " candidates; only existing CVars shown)")
+		end
+		self:Print("findcvar enum=" .. tostring(enumerator ~= nil))
+		self:Print("findcvar '" .. arg .. "' matches=" .. found)
+		return
+    end
+
     if cmd == "attrib" or cmd == "attribpanel" or cmd == "attributions" then
 		local panel = ZSBT.AttribPanel
 		if not panel then
@@ -2144,7 +2574,7 @@ function Addon:HandleSlashCommand(input)
     end
 
     self:Print(L["|cFF808C9EUnknown command:|r "] .. cmd)
-	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | attrib [on|off|clear] | reset | version | auratest | restorefct | dumpcvars | resdiag]"])
+	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | attrib [on|off|clear] | reset | version | auratest | restorefct | dumpcvars | resdiag | xpdiag | xpfind | findcvar <text> | textscan | ctinspect | xpwrap]"])
 end
 
 ------------------------------------------------------------------------
