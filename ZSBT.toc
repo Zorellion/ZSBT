@@ -3,7 +3,7 @@
 ## Title: Zore's Scrolling Battle Text
 ## Notes: Zore's Scrolling Battle Text (ZSBT) for WoW Retail 12.x
 ## Author: Zorellion
-## Version: 3.5.8
+## Version: 3.5.9
 ## SavedVariables: ZSBTDB
 ## OptionalDeps: Ace3, LibSharedMedia-3.0
 
@@ -67,6 +67,7 @@ Parser\State_Manager.lua
 Parser\Correlation_Logic.lua
 Parser\CombatLog_Lines.lua
 Parser\Periodic_Tracker.lua
+Parser\AoE_Damage.lua
 Parser\Event_Collector.lua
 Parser\Pulse_Engine.lua
 

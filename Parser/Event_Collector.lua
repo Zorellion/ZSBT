@@ -2517,6 +2517,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school, ..
 				unit = "target"
 				remappedNameplate = true
 			else
+				-- Off-target nameplate damage feeds the AoE tracker; the
+				-- module applies its own hostility/dedup gates.
+				if ZSBT.AoEDamage then
+					ZSBT.AoEDamage:HandleUnitCombat(unit, action, descriptor, amount, school)
+				end
 				return
 			end
 		else
@@ -4543,7 +4548,14 @@ end
 
 	-- Track health deltas for units used by the damage correlation engine.
 function Collector:handleUnitHealth(unit)
-	if unit ~= "target" and unit ~= "mouseover" and unit ~= "player" then return end
+	if unit ~= "target" and unit ~= "mouseover" and unit ~= "player" then
+		-- Nameplate units feed the AoE damage tracker (multi-target hits like
+		-- Consecration). All other unit tokens stay ignored.
+		if type(unit) == "string" and unit:match("^nameplate%d+$") and ZSBT.AoEDamage then
+			ZSBT.AoEDamage:HandleUnitHealth(unit)
+		end
+		return
+	end
 
 	local health = UnitHealth and UnitHealth(unit) or nil
 	local healthMax = UnitHealthMax and UnitHealthMax(unit) or nil
@@ -4832,6 +4844,9 @@ function Collector:Enable()
 		pcall(function() self._frame:RegisterEvent(evtName) end)
 	end
 	self._enabled = true
+	if ZSBT.AoEDamage then
+		ZSBT.AoEDamage:Enable()
+	end
 	if ZSBT.Addon and ZSBT.Addon.Print then
 	end
 end
@@ -4857,4 +4872,7 @@ function Collector:Disable()
 	self._lastPlayerSpellId = nil
 	self._recentHealCasts = nil
 	self._hotHealSpells = nil
+	if ZSBT.AoEDamage then
+		ZSBT.AoEDamage:Disable()
+	end
 end

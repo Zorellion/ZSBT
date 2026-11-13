@@ -81,6 +81,13 @@ local PERIODIC_AURA_NAMES = {
 	["Fire Breath"] = true,
 	-- Warrior
 	["Rend"] = true, ["Deep Wounds"] = true,
+	-- Ground-targeted AoE periodic effects (seeded by cast; matched by
+	-- AoE_Damage plate hits and combat-text ticks alike)
+	["Consecration"] = true, ["Blizzard"] = true, ["Hurricane"] = true,
+	["Rain of Fire"] = true, ["Volley"] = true, ["Hellfire"] = true,
+	["Death and Decay"] = true, ["Blistering Scythe"] = true,
+	["Starfall"] = true, ["Comet Storm"] = true, ["Frozen Orb"] = true,
+	["Flamestrike"] = true, ["Soul Effigy"] = true,
 }
 
 -- Canonical spellIds kept as a fallback for casts whose name doesn't resolve
