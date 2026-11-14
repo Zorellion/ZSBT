@@ -342,6 +342,95 @@ local function AE_ReRollCenteredPosition(newDisplayEvent, events)
 	end
 end
 
+-- Centered crit styles all spawn near the middle of the area. Random re-rolls
+-- only have a handful of non-colliding spots in a small crits window, so dense
+-- bursts still land on top of each other. Assign explicit vertical lanes
+-- (oldest->newest, newest entering at the scroll-direction edge) instead.
+local CRIT_CENTERED_STYLES = {
+	Pow = true, Slam = true, Shockwave = true, Ignite = true, Chromatic = true,
+	Stomp = true, ScreenPunch = true, Shatter = true, Afterimage = true, Rumble = true,
+}
+
+local function AE_SpaceCenteredCrits(newDisplayEvent, events)
+	local crits = {}
+	for i = 1, #events do
+		local e = events[i]
+		if e and CRIT_CENTERED_STYLES[e.styleId] then
+			crits[#crits + 1] = e
+		end
+	end
+	crits[#crits + 1] = newDisplayEvent
+	local n = #crits
+	if n <= 1 then return end
+
+	local function fs(e)
+		return e.effectiveFontSize or e.fontSize or 18
+	end
+
+	local h = newDisplayEvent.scrollHeight or newDisplayEvent.areaH or 0
+	if h <= 0 then return end
+	local centerY = h / 2
+
+	local sumFs = 0
+	local maxFs = 0
+	for i = 1, n do
+		local f = fs(crits[i])
+		sumFs = sumFs + f
+		if f > maxFs then maxFs = f end
+	end
+
+	local spacing = AE_MIN_VERTICAL_SPACING
+	local avail = math.max(maxFs + 8, h - maxFs - 4)
+	local effSpacing = spacing
+	local needed = sumFs + (n - 1) * spacing
+	if needed > avail and n > 1 then
+		-- Compress gaps (never below 15% of normal) so oversized bursts stay
+		-- inside the area instead of overflowing off-screen.
+		effSpacing = math.max(spacing * 0.15, (avail - sumFs) / (n - 1))
+	end
+
+	local totalH = sumFs + (n - 1) * effSpacing
+	local stackTop = centerY + (totalH / 2)
+
+	-- Y jitter stays well inside the gap between lanes so crits keep a random
+	-- feel without ever overlapping their neighbors.
+	local yJitter = math.min(effSpacing * 0.45, 8)
+	local w = newDisplayEvent.scrollWidth or newDisplayEvent.areaW or 0
+	local xCenter = w / 2
+	local xSpread = math.max(0, w * 0.42 - (maxFs * 0.5))
+
+	-- Lane order top->bottom. "Up" scroll puts the newest crit at the bottom;
+	-- "Down" puts it at the top. crits[] is already oldest->newest.
+	local dirDown = (newDisplayEvent.dirMult and newDisplayEvent.dirMult < 0)
+	local cursor = stackTop
+	for k = 1, n do
+		local idx = dirDown and (n - k + 1) or k
+		local e = crits[idx]
+		local f = fs(e)
+		cursor = cursor - (f / 2)
+		-- Cached jitter keeps each crit's offset stable when the stack re-lanes
+		-- on the next spawn instead of making existing crits jump around.
+		if e._laneJx == nil then
+			e._laneJx = (math.random() * 2.0 - 1.0)
+			e._laneJy = (math.random() * 2.0 - 1.0)
+		end
+		local y = cursor + (e._laneJy * yJitter)
+		-- Clamp inside the area so jitter can't push text off-frame.
+		local yMin = (f / 2) + 1
+		local yMax = h - (f / 2) - 1
+		if y < yMin then y = yMin elseif y > yMax then y = yMax end
+		cursor = cursor - (f / 2) - effSpacing
+		e.positionY = y
+		if w > 0 then
+			e.positionX = xCenter + (e._laneJx * xSpread)
+		end
+		if e.styleId == "Pow" then
+			e.originalPositionY = y
+			e.originalPositionX = e.positionX
+		end
+	end
+end
+
 local function AE_AnchorPoint(ev)
 	local v = (ev.dirMult and ev.dirMult < 0) and "TOP" or "BOTTOM"
 	if ev.anchorH == "LEFT" then
@@ -587,6 +676,8 @@ local function AE_RecycleEvent(ev)
 	ev._zsbtSpinStart = nil
 	ev._zsbtSpinElapsed = nil
 	ev._zsbtSpinDoneOnce = nil
+	ev._laneJx = nil
+	ev._laneJy = nil
 	if ev._zsbtAfterimageFS1 then
 		RecycleFontString(ev._zsbtAfterimageFS1)
 		ev._zsbtAfterimageFS1 = nil
@@ -1629,6 +1720,11 @@ function AnimEngine:Enqueue(areaKey, ev)
 		-- Tiny stagger to separate dense bursts (keeps cadence, reduces overlap).
 		local stagger = (s % 3) * 0.02
 		ev.startAt = (ev.startAt or AE_Now()) + stagger
+	end
+
+	-- Lane-separate centered crit events so bursts don't stack on each other.
+	if CRIT_CENTERED_STYLES[ev.styleId] then
+		AE_SpaceCenteredCrits(ev, events)
 	end
 
 	events[#events + 1] = ev

@@ -8,7 +8,7 @@ local ADDON_NAME, ZSBT = ...
 ------------------------------------------------------------------------
 -- Version & Identity
 ------------------------------------------------------------------------
-ZSBT.VERSION = "3.5.9"
+ZSBT.VERSION = "3.6.0"
 ZSBT.ADDON_TITLE = "Zore's Scrolling Battle Text"
 ZSBT.ADDON_SHORT = "ZSBT"
 ZSBT.ADDON_AUTHOR = "Zorellion"
@@ -422,6 +422,180 @@ local function GetThresholdBar()
     return thresholdBar
 end
 
+-- One-shot diagnostic: probe every candidate secret-value comparison
+-- technique against a live secret amount and report which (if any) yield a
+-- usable clean result. Runs once per session on the first tainted eval.
+local secretProbeDone = false
+local function ProbeSecretValueEval(v, threshold)
+    if secretProbeDone then return end
+    secretProbeDone = true
+    local lines = {}
+    local function add(s) lines[#lines + 1] = s end
+    local function isSec(x)
+        return (issecretvalue and issecretvalue(x)) and true or false
+    end
+    -- tostring(secret) yields a SECRET STRING which crashes chat concat —
+    -- always sanitize dynamic values before building output lines.
+    local function fmt(x)
+        if x == nil then return "nil" end
+        local xt = type(x)
+        if xt == "table" or xt == "function" or xt == "userdata" then
+            local ok, s = pcall(tostring, x)
+            return ok and s or "<secret>"
+        end
+        if ZSBT.IsSafeString and ZSBT.IsSafeString(x) then return x end
+        if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(x) then
+            local ok, s = pcall(tostring, x)
+            return ok and s or "?"
+        end
+        return "<secret>"
+    end
+
+    add("value secret=" .. tostring(isSec(v)))
+
+    -- Direct comparisons: do they return clean booleans, secret booleans, or error?
+    local ok, r = pcall(function() return v < threshold end)
+    add("cmp< ok=" .. tostring(ok) .. " res=" .. fmt(r) .. " resSecret=" .. tostring(ok and isSec(r)))
+    ok, r = pcall(function() return v >= threshold end)
+    add("cmp>= ok=" .. tostring(ok) .. " res=" .. fmt(r) .. " resSecret=" .. tostring(ok and isSec(r)))
+    ok, r = pcall(function()
+        if v < threshold then return 0 else return 1 end
+    end)
+    add("branch ok=" .. tostring(ok) .. " res=" .. fmt(r))
+
+    -- Arithmetic / coercion attempts
+    ok, r = pcall(function() return math.floor(v) end)
+    add("floor ok=" .. tostring(ok) .. " res=" .. fmt(r))
+    ok, r = pcall(function() return tostring(v) end)
+    add("tostring ok=" .. tostring(ok) .. " res=" .. fmt(r))
+    ok, r = pcall(function() return v + 0 end)
+    add("add0 ok=" .. tostring(ok) .. " res=" .. fmt(r))
+
+    -- C_CurveUtil surface
+    local okCU, isTable = pcall(function() return type(C_CurveUtil) == "table" end)
+    if okCU and isTable then
+        local names = {}
+        for k in pairs(C_CurveUtil) do names[#names + 1] = tostring(k) end
+        table.sort(names)
+        add("C_CurveUtil keys: " .. table.concat(names, ","))
+
+        -- Probe CreateCurve argument shapes
+        local curve = nil
+        ok, r = pcall(function()
+            return C_CurveUtil.CreateCurve({
+                { x = 0, y = 0 }, { x = threshold - 1, y = 0 }, { x = threshold, y = 1 },
+            })
+        end)
+        add("createCurve(points) ok=" .. tostring(ok) .. " res=" .. fmt(r))
+        if ok and r ~= nil then curve = r end
+        if curve == nil then
+            ok, r = pcall(function()
+                return C_CurveUtil.CreateCurve({ 0, 0, threshold - 1, 0, threshold, 1 })
+            end)
+            add("createCurve(flat) ok=" .. tostring(ok) .. " res=" .. fmt(r))
+            if ok and r ~= nil then curve = r end
+        end
+
+        -- Probe EvaluateGameCurve signatures against the secret value
+        local function tryEval(tag, fn)
+            local ok2, r2 = pcall(fn)
+            add(tag .. " ok=" .. tostring(ok2) .. " res=" .. fmt(r2)
+                .. " resSecret=" .. tostring(ok2 and isSec(r2)))
+        end
+        if curve ~= nil then
+            tryEval("evalGame(curve,v)", function() return C_CurveUtil.EvaluateGameCurve(curve, v) end)
+            tryEval("evalGame(v,curve)", function() return C_CurveUtil.EvaluateGameCurve(v, curve) end)
+            tryEval("evalGame(curve,v,thr)", function() return C_CurveUtil.EvaluateGameCurve(curve, v, threshold) end)
+        end
+        tryEval("evalGame(0,v)", function() return C_CurveUtil.EvaluateGameCurve(0, v) end)
+        tryEval("evalGame(1,v)", function() return C_CurveUtil.EvaluateGameCurve(1, v) end)
+        tryEval("evalGame(v,thr)", function() return C_CurveUtil.EvaluateGameCurve(v, threshold) end)
+        tryEval("evalColorBool(true)", function() return C_CurveUtil.EvaluateColorValueFromBoolean(true) end)
+        tryEval("evalColorValBool(true)", function() return C_CurveUtil.EvaluateColorFromBoolean(true) end)
+    else
+        add("C_CurveUtil: " .. tostring(C_CurveUtil))
+    end
+
+    -- String channel: tostring(secret) yields a secret STRING. If string ops
+    -- leak length/bytes we can threshold by magnitude (digit count).
+    local s = nil
+    ok, s = pcall(tostring, v)
+    add("str isSecret=" .. tostring(isSec(s)) .. " isSafeStr=" .. tostring(ZSBT.IsSafeString and ZSBT.IsSafeString(s)))
+    if s ~= nil then
+        ok, r = pcall(function() return #s end)
+        add("len ok=" .. tostring(ok) .. " res=" .. fmt(r))
+        ok, r = pcall(function() return string.len(s) end)
+        add("str.len ok=" .. tostring(ok) .. " res=" .. fmt(r))
+        ok, r = pcall(function() return s:byte(1) end)
+        add("byte1 ok=" .. tostring(ok) .. " res=" .. fmt(r))
+        ok, r = pcall(function() return s < "0" end)
+        add("strcmp ok=" .. tostring(ok) .. " res=" .. fmt(r))
+        ok, r = pcall(function() return string.find(s, "%d") end)
+        add("find ok=" .. tostring(ok) .. " res=" .. fmt(r))
+        ok, r = pcall(function() return s:upper() end)
+        add("upper ok=" .. tostring(ok) .. " res=" .. fmt(r))
+        ok, r = pcall(function() return string.format("%s", s) end)
+        add("fmt%%s ok=" .. tostring(ok) .. " res=" .. fmt(r))
+        -- FontString readback: does GetText return clean or secret?
+        ok, r = pcall(function()
+            local f = UIParent:CreateFontString()
+            f:SetText(s)
+            local t = f:GetText()
+            f:Hide()
+            return t
+        end)
+        add("fs.GetText ok=" .. tostring(ok) .. " res=" .. fmt(r) .. " resSecret=" .. tostring(ok and isSec(r)))
+        -- SetText with raw secret value directly
+        ok, r = pcall(function()
+            local f = UIParent:CreateFontString()
+            f:SetText(v)
+            local t = f:GetText()
+            f:Hide()
+            return t
+        end)
+        add("fs.SetText(v).GetText ok=" .. tostring(ok) .. " res=" .. fmt(r) .. " resSecret=" .. tostring(ok and isSec(r)))
+    end
+
+    -- StatusBar readback
+    ok, r = pcall(function()
+        local bar = GetThresholdBar()
+        bar:SetMinMaxValues(0, threshold)
+        bar:SetValue(v)
+        local cur = bar:GetValue()
+        return cur
+    end)
+    add("statusbar ok=" .. tostring(ok) .. " resSecret=" .. tostring(ok and isSec(r)) .. " resSafe=" .. tostring(ok and ZSBT.IsSafeNumber(r)))
+
+    -- issecretvalue on comparison result via select
+    ok, r = pcall(function() return issecretvalue ~= nil and issecretvalue(v < threshold) end)
+    add("isec(cmp) ok=" .. tostring(ok) .. " res=" .. fmt(r))
+
+    for _, s in ipairs(lines) do
+        if ZSBT.Addon and ZSBT.Addon.Print then
+            ZSBT.Addon:Print("|cFFCC66FF[SECRET_EVAL]|r " .. s)
+        else
+            print("|cFFCC66FF[SECRET_EVAL]|r " .. s)
+        end
+    end
+end
+
+-- Re-run the secret-eval probe on the most recent secret amount seen.
+-- Used by /zsbt sectest — the automatic once-per-session probe usually fires
+-- on a non-crit event before the user is watching.
+function ZSBT.RunSecretProbe()
+    secretProbeDone = false
+    local v = ZSBT._lastSecretSample
+    if v == nil then
+        if ZSBT.Addon and ZSBT.Addon.Print then
+            ZSBT.Addon:Print("|cFFFF6666[SECRET_EVAL]|r no secret sample yet — deal/take a hit first")
+        else
+            print("|cFFFF6666[SECRET_EVAL]|r no secret sample yet")
+        end
+        return
+    end
+    ProbeSecretValueEval(v, ZSBT._lastSecretThr or 1)
+end
+
 -- Evaluate whether a secret value passes a threshold.
 -- Returns an alpha multiplier: 0 = hide, 1 = show.
 -- Safe to call on both clean and tainted values.
@@ -433,6 +607,17 @@ function ZSBT.EvaluateSecretThreshold(secretValue, threshold)
     if ZSBT.IsSafeNumber(secretValue) then
         if secretValue < threshold then return 0 end
         return 1.0
+    end
+
+    -- Stash a live secret sample so /zsbt sectest can re-run the probe on demand.
+    ZSBT._lastSecretSample = secretValue
+    ZSBT._lastSecretThr = threshold
+
+    local okP, errP = pcall(function()
+        ProbeSecretValueEval(secretValue, threshold)
+    end)
+    if not okP then
+        print("|cFFFF6666[SECRET_EVAL]|r probe error: " .. tostring(errP))
     end
 
     -- Value is tainted (dungeon/raid) — try Midnight-safe visual eval
@@ -487,6 +672,37 @@ function ZSBT.EvaluateSecretThreshold(secretValue, threshold)
 
     -- Fallback: can't evaluate in dungeon, show everything
     return 1.0
+end
+
+-- Crit display minimum: returns true when a crit meets critConf.minDisplayAmount
+-- and should keep crit presentation (routing/sticky/color). Below the minimum
+-- the hit is demoted to a normal hit — still displayed, just not as a crit.
+-- Secret amounts go through the same visual threshold evaluation as the
+-- crit-sound gate; unreadable amounts keep crit presentation (can't prove
+-- they're below the minimum).
+function ZSBT.CritMeetsDisplayMin(critConf, rawPipeValue, isTainted, evtAmount)
+    local minAmt = critConf and tonumber(critConf.minDisplayAmount) or 0
+    if minAmt <= 0 then return true end
+
+    local amt = nil
+    if rawPipeValue ~= nil and ZSBT.IsSafeNumber(rawPipeValue) then
+        amt = rawPipeValue
+    elseif isTainted == false and ZSBT.IsSafeNumber(evtAmount) then
+        amt = evtAmount
+    end
+    if amt ~= nil then
+        return amt >= minAmt
+    end
+
+    local secretAmt = rawPipeValue
+    if secretAmt == nil and isTainted then secretAmt = evtAmount end
+    if secretAmt ~= nil and ZSBT.EvaluateSecretThreshold then
+        local ok, res = pcall(ZSBT.EvaluateSecretThreshold, secretAmt, minAmt)
+        if ok and type(res) == "number" then
+            return res > 0
+        end
+    end
+    return true
 end
 
 ------------------------------------------------------------------------

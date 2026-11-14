@@ -1981,6 +1981,13 @@ function Addon:HandleSlashCommand(input)
 		return
 	end
 
+    if cmd == "sectest" then
+		if ZSBT.RunSecretProbe then
+			ZSBT.RunSecretProbe()
+		end
+		return
+    end
+
     if cmd == "resdiag" then
 		local function s(v)
 			if issecretvalue and issecretvalue(v) then return "SECRET" end
@@ -2164,6 +2171,22 @@ function Addon:HandleSlashCommand(input)
 		if aoe._verbose then
 			self:Print("AODEBUG lines: emit=plate hit accepted, fire=attributed+scroll, drop=unattributed")
 		end
+		return
+    end
+
+    if cmd == "icdiag" then
+		-- Toggle item-cooldown tracing: record -> cooldown read -> ready.
+		local ic = ZSBT.ItemCooldowns
+		if not ic then
+			self:Print("ZSBT icdiag: ItemCooldowns module not loaded")
+			return
+		end
+		ic._verbose = not ic._verbose
+		self:Print("ZSBT icdiag " .. (ic._verbose and "ON" or "OFF"))
+		if ic._hookLog and #ic._hookLog > 0 then
+			self:Print("ICDBG hooks: " .. table.concat(ic._hookLog, " "))
+		end
+		self:Print(("ICDBG bagEvents=%d"):format(ic._bagEvents or 0))
 		return
     end
 
@@ -2618,7 +2641,7 @@ function Addon:HandleSlashCommand(input)
     end
 
     self:Print(L["|cFF808C9EUnknown command:|r "] .. cmd)
-	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | attrib [on|off|clear] | reset | version | auratest | restorefct | dumpcvars | resdiag | aodiag | xpdiag | xpfind | findcvar <text> | textscan | ctinspect | xpwrap]"])
+	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | attrib [on|off|clear] | reset | version | auratest | restorefct | dumpcvars | resdiag | sectest | aodiag | xpdiag | xpfind | findcvar <text> | textscan | ctinspect | xpwrap]"])
 end
 
 ------------------------------------------------------------------------

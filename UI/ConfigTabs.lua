@@ -3066,6 +3066,8 @@ function ZSBT.BuildTab_Notifications()
 		lootItems = true,
 		lootMoney = true,
 		lootCurrency = true,
+		itemCooldowns = true,
+		emotes = true,
 		tradeskillUps = true,
 		tradeskillLearned = true,
 		power = true,
@@ -3081,6 +3083,8 @@ function ZSBT.BuildTab_Notifications()
 		lootItems = "Loot Items",
 		lootMoney = "Loot Money",
 		lootCurrency = "Loot Currency",
+		itemCooldowns = "Item Cooldowns",
+		emotes = "Target Emotes",
 		tradeskillUps = L["Trade Skills: Skill Ups"],
 		tradeskillLearned = L["Trade Skills: Learned Recipes/Spells"],
 		interrupts = L["Interrupts (Successful)"],
@@ -3098,6 +3102,8 @@ function ZSBT.BuildTab_Notifications()
 		lootItems = "Template codes: %e=item, %a=amount looted, %t=total owned.",
 		lootMoney = "Template codes: %e=money string.",
 		lootCurrency = "Template codes: %e=currency link/name, %a=amount gained, %t=total quantity.",
+		itemCooldowns = "Template codes: %e=item name.",
+		emotes = "Template codes: %e=emote text.",
 		tradeskillUps = L["Template codes: %e=skill, %a=amount, %t=new level."],
 		tradeskillLearned = L["Template codes: %e=learned recipe/spell."],
 		interrupts = L["Message template codes: %t=target, %s=your ability."],
@@ -3115,6 +3121,8 @@ function ZSBT.BuildTab_Notifications()
 		lootItems = "+%a %e (%t)",
 		lootMoney = "+%e",
 		lootCurrency = "+%a %e (%t)",
+		itemCooldowns = "%e is ready",
+		emotes = "%e",
 		tradeskillUps = "%e +%a (%t)",
 		tradeskillLearned = L["Learned: %e"],
 		interrupts = L["%t Interrupted!"],
@@ -3457,6 +3465,28 @@ function ZSBT.BuildTab_Notifications()
 					get = function() return getTpl(key, DEFAULT_TEMPLATES[key] or "%e") end,
 					set = function(_, v) setTpl(key, v) end,
 				}
+				if key == "itemCooldowns" then
+					args.exclusionsHeader = { type = "header", name = L["Exclusions"], order = 1.25 }
+					args.exclusions = {
+						type = "execute",
+						name = function()
+							local ex = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.itemCooldownExclusions
+							local count = 0
+							if type(ex) == "table" then
+								for _ in pairs(ex) do count = count + 1 end
+							end
+							return L["Manage Excluded Items"] .. (count > 0 and (" (" .. count .. ")") or "")
+						end,
+						desc = L["Open the exclusion list. Drag items onto the drop zone to exclude them from Item Cooldown alerts."],
+						order = 1.3,
+						width = "full",
+						func = function()
+							if ZSBT.OpenItemCooldownExclusions then
+								ZSBT.OpenItemCooldownExclusions()
+							end
+						end,
+					}
+				end
 				local extra = buildStyleSoundArgs(key, 2)
 				for k, v in pairs(extra) do
 					args[k] = v
@@ -3506,6 +3536,8 @@ function ZSBT.BuildTab_Notifications()
 			lootItems = buildLeafGroup("lootItems", 5),
 			lootMoney = buildLeafGroup("lootMoney", 5.1),
 			lootCurrency = buildLeafGroup("lootCurrency", 5.2),
+			itemCooldowns = buildLeafGroup("itemCooldowns", 5.3),
+			emotes = buildLeafGroup("emotes", 5.4),
 			tradeskillUps = buildLeafGroup("tradeskillUps", 6),
 			tradeskillLearned = buildLeafGroup("tradeskillLearned", 6.1),
 			interruptAlerts = {
@@ -6200,6 +6232,24 @@ function ZSBT.BuildTab_Incoming()
 					ZSBT.db.profile.incoming.critDamage.minSoundAmount = tonumber(v) or 0
 				end,
 			},
+			critDamageMinDisplayAmount = {
+				type = "range",
+				name = L["Minimum Crit Damage Amount (display)"],
+				desc = L["Crits below this amount display as normal hits instead of crit-styled scrolls. In instances, secret amounts are evaluated visually."],
+				order = 4.495,
+				min = 0,
+				max = 999999,
+				softMax = 250000,
+				step = 100,
+				get = function()
+					local c = ZSBT.db.profile.incoming.critDamage
+					return (c and tonumber(c.minDisplayAmount)) or 0
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.incoming.critDamage = ZSBT.db.profile.incoming.critDamage or {}
+					ZSBT.db.profile.incoming.critDamage.minDisplayAmount = tonumber(v) or 0
+				end,
+			},
 			critDamageInstanceSoundMode = {
 				type = "select",
 				name = L["Instances: When amount is unavailable (damage)"],
@@ -6858,6 +6908,24 @@ function ZSBT.BuildTab_Incoming()
 				set = function(_, v)
 					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
 					ZSBT.db.profile.incoming.critHealing.minSoundAmount = tonumber(v) or 0
+				end,
+			},
+			critHealingMinDisplayAmount = {
+				type = "range",
+				name = L["Minimum Crit Healing Amount (display)"],
+				desc = L["Crits below this amount display as normal heals instead of crit-styled scrolls. In instances, secret amounts are evaluated visually."],
+				order = 15.85,
+				min = 0,
+				max = 999999,
+				softMax = 250000,
+				step = 100,
+				get = function()
+					local c = ZSBT.db.profile.incoming.critHealing
+					return (c and tonumber(c.minDisplayAmount)) or 0
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.incoming.critHealing = ZSBT.db.profile.incoming.critHealing or {}
+					ZSBT.db.profile.incoming.critHealing.minDisplayAmount = tonumber(v) or 0
 				end,
 			},
 			critHealingInstanceSoundMode = {
@@ -7679,6 +7747,24 @@ function ZSBT.BuildTab_Outgoing()
 					ZSBT.db.profile.outgoing.critDamage.minSoundAmount = tonumber(v) or 0
 				end,
 			},
+			critDamageMinDisplayAmountOut = {
+				type = "range",
+				name = L["Minimum Crit Damage Amount (display)"],
+				desc = L["Crits below this amount display as normal hits instead of crit-styled scrolls. In instances, secret amounts are evaluated visually."],
+				order = 8.45,
+				min = 0,
+				max = 999999,
+				softMax = 250000,
+				step = 100,
+				get = function()
+					local c = ZSBT.db.profile.outgoing.critDamage
+					return (c and tonumber(c.minDisplayAmount)) or 0
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.outgoing.critDamage = ZSBT.db.profile.outgoing.critDamage or {}
+					ZSBT.db.profile.outgoing.critDamage.minDisplayAmount = tonumber(v) or 0
+				end,
+			},
 			critDamageInstanceSoundMode = {
 				type = "select",
 				name = L["Instances: When amount is unavailable (damage)"],
@@ -8293,6 +8379,24 @@ function ZSBT.BuildTab_Outgoing()
 				set = function(_, v)
 					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
 					ZSBT.db.profile.outgoing.critHealing.minSoundAmount = tonumber(v) or 0
+				end,
+			},
+			critHealingMinDisplayAmountOut = {
+				type = "range",
+				name = L["Minimum Crit Healing Amount (display)"],
+				desc = L["Crits below this amount display as normal heals instead of crit-styled scrolls. In instances, secret amounts are evaluated visually."],
+				order = 15.85,
+				min = 0,
+				max = 999999,
+				softMax = 250000,
+				step = 100,
+				get = function()
+					local c = ZSBT.db.profile.outgoing.critHealing
+					return (c and tonumber(c.minDisplayAmount)) or 0
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.outgoing.critHealing = ZSBT.db.profile.outgoing.critHealing or {}
+					ZSBT.db.profile.outgoing.critHealing.minDisplayAmount = tonumber(v) or 0
 				end,
 			},
 			critHealingInstanceSoundMode = {
@@ -9990,6 +10094,39 @@ function ZSBT.BuildTab_Media()
                 width = "half",
                 func  = function()
                     ZSBT.PlayLSMSound(ZSBT.db.profile.media.sounds.lowHealth)
+                end,
+            },
+
+            -- Low Mana warning: standard select
+            lowManaSound = {
+                type   = "select",
+                name   = L["Low Mana Warning"],
+                desc   = L["Sound to play when your mana drops below the threshold. Only works when the client exposes a readable mana value."],
+                order  = 3.5,
+                values = function() return ZSBT.BuildSoundDropdown() end,
+                get    = function() return ZSBT.db.profile.media.sounds.lowMana end,
+                set    = function(_, val) ZSBT.db.profile.media.sounds.lowMana = val end,
+            },
+            lowManaThreshold = {
+                type    = "range",
+                name    = L["Low Mana Threshold (%)"],
+                desc    = L["Play the low mana sound when mana falls below this percent."],
+                order   = 3.6,
+                min     = 5,
+                max     = 50,
+                step    = 5,
+                width   = "normal",
+                get     = function() return ZSBT.db.profile.media.lowManaThreshold or 20 end,
+                set     = function(_, val) ZSBT.db.profile.media.lowManaThreshold = val end,
+            },
+            testLowMana = {
+                type  = "execute",
+                name  = L["Play Sound"],
+                desc  = L["Preview the selected low mana warning sound."],
+                order = 3.7,
+                width = "half",
+                func  = function()
+                    ZSBT.PlayLSMSound(ZSBT.db.profile.media.sounds.lowMana)
                 end,
             },
 

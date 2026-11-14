@@ -129,6 +129,45 @@ function CL:DamageLineNear(tHit, window)
 	return false
 end
 
+-- Non-consuming check: is there an unconsumed damage-kind line near tHit?
+-- `kinds` optionally restricts which line kinds qualify (e.g. direct hits
+-- shouldn't be corroborated by a DoT tick's line).
+function CL:HasDamageLineNear(tHit, window, kinds)
+	for i = 1, #self._lines do
+		local l = self._lines[i]
+		if DAMAGE_KINDS[l.kind] and not l.consumed
+			and (kinds == nil or kinds[l.kind] == true)
+			and math.abs(l.at - tHit) <= window then
+			return true
+		end
+	end
+	return false
+end
+
+-- Consume one damage-kind line near tHit: returns true exactly once per
+-- recorded line. In group content a raid member's hit on your target
+-- produces a UNIT_COMBAT event but NO palette line (the filter only passes
+-- player+pet sources), while each of your hits produces both — so pairing
+-- hits to unconsumed lines separates yours from theirs.
+function CL:TakeDamageLine(tHit, window, kinds)
+	local best, bestDt
+	for i = 1, #self._lines do
+		local l = self._lines[i]
+		if DAMAGE_KINDS[l.kind] and not l.consumed
+			and (kinds == nil or kinds[l.kind] == true) then
+			local dt = math.abs(l.at - tHit)
+			if dt <= window and (bestDt == nil or dt < bestDt) then
+				best, bestDt = i, dt
+			end
+		end
+	end
+	if best then
+		self._lines[best].consumed = true
+		return true
+	end
+	return false
+end
+
 -- True when any palette-matching line was seen recently — i.e. the combat-log
 -- filter is installed and active, so line-based decisions are meaningful.
 function CL:SignalSeen()

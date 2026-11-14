@@ -68,6 +68,18 @@ local function emit(eventType, payload)
 	if Collector._sink then
 		Collector._sink(eventType, payload)
 	end
+	-- Line-consumption economy: every emitted damage event consumes one
+	-- combat-log palette line so group-content gates can tell your hits
+	-- (which have lines) from other players' hits on shared targets
+	-- (which don't). Only acts when pairing is trusted; no-op otherwise.
+	if (eventType == "OUTGOING_DAMAGE_COMBAT" or eventType == "PET_DAMAGE_COMBAT")
+		and payload and payload._lineTaken ~= true then
+		local cl = ZSBT.CombatLogLines
+		if cl and cl._pairingTrusted == true and cl.TakeDamageLine
+			and payload.timestamp then
+			cl:TakeDamageLine(payload.timestamp, 0.30)
+		end
+	end
 end
 
 local function OutDbgLevel()
@@ -233,11 +245,19 @@ local function isImpPet()
 	return false
 end
 
+-- Line kinds allowed to corroborate direct-hit bucket flushes. Tick lines
+-- belong to the DoT path — letting them vouch for nuke/melee hits would let
+-- a Corruption tick "rescue" an unrelated foreign hit in a raid.
+local DIRECT_LINE_KINDS = { direct = true, melee = true, ranged = true }
+
 local function flushBestOutgoing(self, token)
 	if not self or not token then return end
 	local bucket = self._bestOutgoingByToken and self._bestOutgoingByToken[token]
 	if not bucket then return end
 	self._bestOutgoingByToken[token] = nil
+	local Addon = ZSBT and ZSBT.Addon
+	local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("outgoing"))
+		or ((ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0)) or 0)
 	-- Group/instance restriction: a bucket that never earned a spellId is
 	-- unattributed damage on a shared target — in a raid that's other
 	-- players' hits, not yours. Drop it instead of emitting "Outgoing nil".
@@ -247,9 +267,29 @@ local function flushBestOutgoing(self, token)
 	if groupRestricted and (bucket.spellId == nil or bucket.spellIdWeak == true) then
 		return
 	end
-	local Addon = ZSBT and ZSBT.Addon
-	local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("outgoing"))
-		or ((ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0)) or 0)
+	-- Group content + trusted combat-log pairing: UNIT_COMBAT(target/nameplate)
+	-- reports hits from ANY source on a shared target. Each of your hits has a
+	-- matching palette line; foreign hits don't. Consume one unconsumed
+	-- non-tick damage line per emitted hit — tick lines belong to the DoT
+	-- path and must not corroborate (or be stolen by) direct hits.
+	local lineTaken = false
+	if groupRestricted then
+		local cl = ZSBT.CombatLogLines
+		local lineKinds = DIRECT_LINE_KINDS
+		if cl and cl._pairingTrusted == true
+			and cl.SignalSeen and cl:SignalSeen() == true
+			and cl.TakeDamageLine then
+			if cl:TakeDamageLine(bucket.timestamp, 0.20, lineKinds) then
+				lineTaken = true
+			else
+				if (tonumber(dl) or 0) >= 4 then
+					ECPrint(("NP_LINE_VETO token=%s spellId=%s amt=%s school=%s")
+						:format(dbgSafe(token), dbgSafe(bucket.spellId), dbgSafe(bucket.amount), dbgSafe(bucket.schoolMask)))
+				end
+				return
+			end
+		end
+	end
 
 	local pipeId = self._rawPipeCount + 1
 	self._rawPipeCount = pipeId
@@ -282,6 +322,7 @@ local function flushBestOutgoing(self, token)
 		targetName = bucket.targetName,
 		isCrit = bucket.isCrit,
 		schoolMask = bucket.schoolMask,
+		_lineTaken = lineTaken or nil,
 	})
 end
 
@@ -742,6 +783,24 @@ local function isLikelyPetSchoolHit(school)
 	return false
 end
 
+-- Pet-activity evidence: a pet-side signal (pet spellcast or "Your pet
+-- hits" chat line) within this window proves the pet is actively
+-- fighting. Used to gate unattributed-hit pet fallback in groups,
+-- where other players' damage on shared targets is indistinguishable.
+local PET_ACTIVITY_WINDOW = 2.0
+
+local function hasRecentPetActivity(self, t)
+	local castAt = self._lastPetCastAt
+	if type(castAt) == "number" and t - castAt >= 0 and t - castAt <= PET_ACTIVITY_WINDOW then
+		return true
+	end
+	local chatAt = self._lastPetChatAt
+	if type(chatAt) == "number" and t - chatAt >= 0 and t - chatAt <= PET_ACTIVITY_WINDOW then
+		return true
+	end
+	return false
+end
+
 local function isLikelyPetSchoolHitGivenRecentPlayerSpell(self, school, lastPlayerSpellId)
 	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) then return false end
 	if type(lastPlayerSpellId) ~= "number" then return false end
@@ -1127,6 +1186,10 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 	-- Pet casts are used for custom triggers (e.g. Growl), but should not
 	-- participate in the player cast correlation pipeline.
 	if unit == "pet" then
+		-- Pet-activity evidence: caster-pet spells (imp firebolts, succubus
+		-- abilities, etc.) prove the pet is actively fighting. Used to gate
+		-- pet-fallback attribution in group content.
+		self._lastPetCastAt = now()
 		local trg = ZSBT.Core and ZSBT.Core.Triggers
 		if trg and trg.OnSpellcastSucceeded then
 			pcall(function() trg:OnSpellcastSucceeded(unit, spellId) end)
@@ -2985,6 +3048,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school, ..
 								end
 								return
 							end
+							-- School signature alone still lets other players' hits
+							-- ride in on pet timing in a raid. Require a real
+							-- pet-side signal (pet cast or "Your pet hits" chat)
+							-- within the activity window.
+							if not hasRecentPetActivity(self, t) then
+								if dl >= 4 then
+									ECPrint(("PET_FALLBACK_GROUP_NOEVIDENCE members=%s school=%s amt=%s")
+										:format(dbgSafe(members), dbgSafe(school), dbgSafe(amount)))
+								end
+								return
+							end
 						end
 						-- Dedup: the same pet swing can arrive twice via UNIT_COMBAT
 						-- or once here and once via the "Your pet hits" chat line.
@@ -3619,6 +3693,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school, ..
 					return IsAutoRepeatAction(1) == false
 				end)
 				if okAR and notAuto == true then
+					-- In groups, "not auto-attacking" doesn't prove the hit is
+					-- the pet's — other players' melee on your target looks
+					-- identical. Require pet-side evidence too.
+					if restrict == true and members and members > 1
+						and not hasRecentPetActivity(self, t) then
+						if dl >= 4 then
+							ECPrint(("PET_PRIORITY_PHYS_NOEVIDENCE members=%s amt=%s")
+								:format(dbgSafe(members), dbgSafe(amount)))
+						end
+						return
+					end
 					emitPetDamageCombat(self, t, amount, isCrit, school, "PET_PRIORITY_PHYS", dl)
 					return
 				end
@@ -4273,6 +4358,16 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school, ..
 		local token = tokenKey
 		local targetName = safeUnitName("target")
 		local bucket = self._bestOutgoingByToken[token]
+		-- Group content: an unattributed hit must not merge into an attributed
+		-- bucket — it would inherit the spellId and inflate that spell's
+		-- displayed damage with unverifiable (usually foreign) hits. Flush the
+		-- pending bucket and let this hit form its own anonymous bucket,
+		-- which the group gates reject at flush.
+		if bucket and bucket.spellId ~= nil and spellId == nil
+			and restrict == true and members ~= nil and members > 1 then
+			flushBestOutgoing(self, token)
+			bucket = nil
+		end
 		-- Secret amounts can't be compared for "keep largest" — merging would
 		-- silently swallow legitimate multi-source damage (multiple pets,
 		-- cleave, summon + maw). Flush the pending bucket and let this hit
@@ -4305,7 +4400,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school, ..
 			}
 			self._bestOutgoingByToken[token] = bucket
 			if C_Timer and C_Timer.After then
-				C_Timer.After(0.08, function() flushBestOutgoing(self, token) end)
+				-- Group-restricted buckets wait longer so the corroborating
+				-- combat-log line (which can arrive just after UNIT_COMBAT)
+				-- is recorded before the flush-time line check runs.
+				C_Timer.After(bucket.anonRestricted == true and 0.18 or 0.08,
+					function() flushBestOutgoing(self, token) end)
 			else
 				-- Fallback: emit immediately if timers are unavailable.
 				flushBestOutgoing(self, token)

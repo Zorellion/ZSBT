@@ -765,8 +765,23 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				critConf = profOut.critDamage
 			end
 		end
+		-- Below critConf.minDisplayAmount a crit is demoted to a normal hit:
+		-- still displayed, but no crit color/routing/sticky presentation.
+		local dispIsCrit = evt.isCrit == true
+			and ZSBT.CritMeetsDisplayMin(critConf, rawPipeValue, isTainted, evt.amount)
+		if evt.isCrit == true then
+			local csrc = "crits"
+			if profOut and critConf == profOut.critDamage then csrc = "critDamage"
+			elseif profOut and critConf == profOut.critHealing then csrc = "critHealing" end
+			local amtShown = "secret"
+			if rawPipeValue ~= nil and ZSBT.IsSafeNumber(rawPipeValue) then amtShown = tostring(rawPipeValue)
+			elseif ZSBT.IsSafeNumber(evt.amount) then amtShown = tostring(evt.amount) end
+			Dbg4("|cFFCC66FF[OUTDBG]|r", ("CRIT_MIN kind=%s src=%s min=%s amt=%s tainted=%s dispIsCrit=%s")
+				:format(tostring(kind), csrc, tostring(critConf and critConf.minDisplayAmount),
+					amtShown, tostring(isTainted), tostring(dispIsCrit)))
+		end
 		-- Crit color: apply configured crit color whenever set (routing is optional)
-		if evt.isCrit then
+		if dispIsCrit then
 			local cc = critConf and critConf.color
 			if type(cc) == "table" and type(cc.r) == "number" and type(cc.g) == "number" and type(cc.b) == "number" then
 				color = { r = cc.r, g = cc.g, b = cc.b }
@@ -782,7 +797,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			stream = "outgoing",
 			kind = kind,
 			isAuto = evt.isAuto == true,
-			isCrit = evt.isCrit == true,
+			isCrit = dispIsCrit,
 			isPeriodic = evt.isPeriodic == true,
 			school = evt.schoolMask,
 		}
@@ -863,7 +878,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 		end
 
         local areaToUse = ruleArea or conf.scrollArea or defaultRuleArea or "Outgoing"
-        if (not forceInline) and evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
+        if (not forceInline) and dispIsCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
             areaToUse = critConf.scrollArea
             meta.critRouted = true
             if critConf.sticky ~= false then
@@ -872,7 +887,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
                 meta.stickyScale = 1.12
                 meta.stickyDurationMult = 1.25
             end
-        elseif evt.isCrit and critConf and critConf.sticky ~= false then
+        elseif dispIsCrit and critConf and critConf.sticky ~= false then
             -- Even without routing, allow sticky styling when enabled.
             meta.stickyCrit = true
             meta.stickyJiggle = (critConf.stickyJiggle ~= false)
@@ -1018,8 +1033,21 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				critConf = profOut.critDamage
 			end
 		end
+		local dispIsCrit = evt.isCrit == true
+			and ZSBT.CritMeetsDisplayMin(critConf, rawPipeValue, isTainted, evt.amount)
+		if evt.isCrit == true then
+			local csrc = "crits"
+			if profOut and critConf == profOut.critDamage then csrc = "critDamage"
+			elseif profOut and critConf == profOut.critHealing then csrc = "critHealing" end
+			local amtShown = "secret"
+			if rawPipeValue ~= nil and ZSBT.IsSafeNumber(rawPipeValue) then amtShown = tostring(rawPipeValue)
+			elseif ZSBT.IsSafeNumber(evt.amount) then amtShown = tostring(evt.amount) end
+			Dbg4("|cFFCC66FF[OUTDBG]|r", ("CRIT_MIN kind=%s src=%s min=%s amt=%s tainted=%s dispIsCrit=%s")
+				:format(tostring(kind), csrc, tostring(critConf and critConf.minDisplayAmount),
+					amtShown, tostring(isTainted), tostring(dispIsCrit)))
+		end
 		-- Crit color: apply configured crit color whenever set (routing is optional)
-		if evt.isCrit then
+		if dispIsCrit then
 			local cc = critConf and critConf.color
 			if type(cc) == "table" and type(cc.r) == "number" and type(cc.g) == "number" and type(cc.b) == "number" then
 				color = { r = cc.r, g = cc.g, b = cc.b }
@@ -1033,7 +1061,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
             replay = isReplay == true,
             stream = "outgoing",
             kind = kind,
-            isCrit = evt.isCrit == true,
+            isCrit = dispIsCrit,
             school = evt.schoolMask,
         }
 		local forceInline = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general and ZSBT.db.profile.general.forceCritsInline == true
@@ -1044,7 +1072,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 		maybePlayCritSound(critConf, rawPipeValue, isTainted)
 
 		local areaToUse = ruleArea or conf.scrollArea or defaultRuleArea or "Outgoing"
-		if (not forceInline) and evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
+		if (not forceInline) and dispIsCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
 			areaToUse = critConf.scrollArea
 			meta.critRouted = true
 			if critConf.sticky ~= false then
@@ -1053,14 +1081,14 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				meta.stickyScale = 1.12
 				meta.stickyDurationMult = 1.25
 			end
-		elseif evt.isCrit and critConf and critConf.sticky ~= false then
+		elseif dispIsCrit and critConf and critConf.sticky ~= false then
 			-- Even without routing, allow sticky styling when enabled.
 			meta.stickyCrit = true
 			meta.stickyJiggle = (critConf.stickyJiggle ~= false)
 			meta.stickyScale = 1.12
 			meta.stickyDurationMult = 1.25
 		end
-		if forceInline and evt.isCrit then
+		if forceInline and dispIsCrit then
 			meta.critAnim = "Area"
 		end
 
