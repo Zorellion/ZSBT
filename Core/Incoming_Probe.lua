@@ -552,13 +552,16 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
         end
     end
     local resolvedCritConf = kindOverrideCritConf or baseCritConf
+    -- Below critConf.minDisplayAmount a crit is demoted to a normal hit.
+    local dispIsCrit = evt.isCrit == true
+        and ZSBT.CritMeetsDisplayMin(resolvedCritConf, rawPipeValue, isTainted, evt.amount)
 
     -- New incoming crit routing (Incoming tab)
-    if (not forceInline) and evt.isCrit == true and resolvedCritConf and resolvedCritConf.enabled == true and ZSBT.IsSafeString(resolvedCritConf.scrollArea) and resolvedCritConf.scrollArea ~= "" then
+    if (not forceInline) and dispIsCrit and resolvedCritConf and resolvedCritConf.enabled == true and ZSBT.IsSafeString(resolvedCritConf.scrollArea) and resolvedCritConf.scrollArea ~= "" then
         area = resolvedCritConf.scrollArea
         critRouted = true
     -- Legacy per-category crit routing (Damage/Healing)
-    elseif (not forceInline) and evt.isCrit == true and conf.critScrollArea and ZSBT.IsSafeString(conf.critScrollArea) and conf.critScrollArea ~= "" then
+    elseif (not forceInline) and dispIsCrit and conf.critScrollArea and ZSBT.IsSafeString(conf.critScrollArea) and conf.critScrollArea ~= "" then
         area = conf.critScrollArea
         critRouted = true
     end
@@ -670,7 +673,7 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
     end
 
     -- Crit color override
-    if evt.isCrit then
+    if dispIsCrit then
         local cc = resolvedCritConf and resolvedCritConf.color
         if type(cc) == "table" and type(cc.r) == "number" and type(cc.g) == "number" and type(cc.b) == "number" then
             color = { r = cc.r, g = cc.g, b = cc.b }
@@ -690,13 +693,13 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
         stream = "incoming",
         spellId = sid,
         targetName = (kind == "heal" and playerName) or evt.targetName,
-        isCrit = evt.isCrit == true,
+        isCrit = dispIsCrit,
         school = evt.schoolMask,
     }
 
     maybePlayCritSound(resolvedCritConf, rawPipeValue, isTainted)
 
-    if evt.isCrit and resolvedCritConf and resolvedCritConf.enabled == true then
+    if dispIsCrit and resolvedCritConf and resolvedCritConf.enabled == true then
         if resolvedCritConf.sticky ~= false then
             meta.stickyCrit = true
             meta.stickyJiggle = (resolvedCritConf.stickyJiggle ~= false)
@@ -752,8 +755,8 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
 
     if mergeEnabled then
         local schoolKey = (ZSBT.IsSafeNumber(evt.schoolMask) and evt.schoolMask) or 0
-        local key = tostring(area) .. ":" .. tostring(kind) .. ":" .. (evt.isCrit and "C" or "N") .. ":" .. tostring(schoolKey) .. ":" .. tostring(mergeMode)
-        PushIncomingMerge(key, area, kind, evt.isCrit == true, schoolKey, mergeMode, mergeAmount, text, color, meta)
+        local key = tostring(area) .. ":" .. tostring(kind) .. ":" .. (dispIsCrit and "C" or "N") .. ":" .. tostring(schoolKey) .. ":" .. tostring(mergeMode)
+        PushIncomingMerge(key, area, kind, dispIsCrit, schoolKey, mergeMode, mergeAmount, text, color, meta)
         return
     end
 

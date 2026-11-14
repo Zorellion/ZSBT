@@ -89,6 +89,8 @@ ZSBT.DEFAULTS = {
 			lootItems = true,
 			lootMoney = true,
 			lootCurrency = true,
+			itemCooldowns = false,
+			emotes = false,
 			tradeskillUps = true,
 			tradeskillLearned = true,
 			interrupts = true,
@@ -112,6 +114,8 @@ ZSBT.DEFAULTS = {
 			lootItems = "Notifications",
 			lootMoney = "Notifications",
 			lootCurrency = "Notifications",
+			itemCooldowns = "Notifications",
+			emotes = "Notifications",
 			tradeskillUps = "Notifications",
 			tradeskillLearned = "Notifications",
 			interrupts = "Notifications",
@@ -135,6 +139,8 @@ ZSBT.DEFAULTS = {
 			lootItems = "+%a %e (%t)",
 			lootMoney = "+%e",
 			lootCurrency = "+%a %e (%t)",
+			itemCooldowns = "%e is ready",
+			emotes = "%e",
 			tradeskillUps = "%e +%a (%t)",
 			tradeskillLearned = "Learned: %e",
 			interrupts = "%t Interrupted!",
@@ -151,6 +157,8 @@ ZSBT.DEFAULTS = {
 			lootMoney = "text",
 		},
 
+		itemCooldownExclusions = {},
+
 		notificationsPerType = {
 			combatState = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			enterCombat = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None", stopOnLeaveCombat = false } },
@@ -162,6 +170,8 @@ ZSBT.DEFAULTS = {
 			lootItems = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			lootMoney = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			lootCurrency = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
+			itemCooldowns = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
+			emotes = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			tradeskillUps = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			tradeskillLearned = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			externalAddons = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
@@ -315,6 +325,7 @@ ZSBT.DEFAULTS = {
                 soundEnabled = false,
                 sound = "None",
                 minSoundAmount = 0,
+                minDisplayAmount = 0,
                 instanceSoundMode = "Only when amount is known",
             },
             showSpellNames = false,
@@ -407,8 +418,10 @@ ZSBT.DEFAULTS = {
             soundChannel = "Master",
             sounds = {
                 lowHealth     = "None",
+                lowMana       = "None",
                 cooldownReady = "None",
             },
+            lowManaThreshold = 20,
             custom = {
                 fonts = {
                     -- [displayName] = "path"

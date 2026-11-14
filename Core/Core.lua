@@ -1293,6 +1293,7 @@ function Core:Enable()
     self:InitBuffTracking()
     self:InitKillAnnouncer()
     self:InitLootTracking()
+    self:InitEmoteTracking()
     self:InitTradeSkillTracking()
 	self:InitInterruptTracking()
     self:InitPowerTracking()
@@ -4752,6 +4753,31 @@ function Core:InitLootTracking()
 end
 
 ------------------------------------------------------------------------
+-- Monster Emote Tracking
+-- CHAT_MSG_MONSTER_EMOTE delivers (message, sourceName); the message
+-- contains a %s placeholder for the speaker. Scroll it only when the
+-- speaker is the player's current target.
+------------------------------------------------------------------------
+function Core:InitEmoteTracking()
+	if self._emoteFrame then return end
+	self._emoteFrame = CreateFrame("Frame")
+	self._emoteFrame:RegisterEvent("CHAT_MSG_MONSTER_EMOTE")
+	self._emoteFrame:SetScript("OnEvent", function(_, event, msg, sourceName)
+		if not Core:IsMasterEnabled() then return end
+		if not Core:IsNotificationCategoryEnabled("emotes") then return end
+		if type(msg) ~= "string" or msg == "" then return end
+		if type(sourceName) ~= "string" or sourceName == "" then return end
+		if not (ZSBT.IsSafeString and ZSBT.IsSafeString(msg) and ZSBT.IsSafeString(sourceName)) then return end
+		if type(UnitName) ~= "function" then return end
+		local okT, targetName = pcall(UnitName, "target")
+		if not (okT and type(targetName) == "string" and targetName ~= "") then return end
+		if targetName ~= sourceName then return end
+		local text = msg:gsub("%%s", sourceName)
+		Core:EmitNotificationTemplate("emotes", "%e", { e = text }, { r = 0.8, g = 0.6, b = 1.0 })
+	end)
+end
+
+------------------------------------------------------------------------
 -- Honor / XP / Reputation Tracking
 -- Backup path via CHAT_MSG events (COMBAT_TEXT_UPDATE may not fire
 -- for all honor/XP gains, especially from quests/bonus events).
@@ -6108,7 +6134,8 @@ function Core:InitHealthWarnings()
     if self._healthWarnFrame then return end
     self._healthWarnFrame = CreateFrame("Frame")
     self._healthWarnFrame:RegisterEvent("UNIT_HEALTH")
-    self._healthWarnFrame:SetScript("OnEvent", function(_, event, unit, ...)
+    self._healthWarnFrame:RegisterEvent("UNIT_POWER_UPDATE")
+    self._healthWarnFrame:SetScript("OnEvent", function(_, event, unit, powerType)
         if unit ~= "player" then return end
         if not Core:IsMasterEnabled() then return end
 
@@ -6117,6 +6144,11 @@ function Core:InitHealthWarnings()
 
         if event == "UNIT_HEALTH" then
             Core:CheckLowHealth(profile)
+        elseif event == "UNIT_POWER_UPDATE" then
+            local manaType = (Enum and Enum.PowerType and Enum.PowerType.Mana) or 0
+            if powerType == manaType then
+                Core:CheckLowMana(profile)
+            end
         end
     end)
 end
@@ -6139,5 +6171,42 @@ function Core:CheckLowHealth(profile)
         end
     else
         self._healthBorderWarnState = false
+    end
+end
+
+-- Low mana warning: no Blizzard equivalent of LowHealthFrame, so we track
+-- UnitPower/UnitPowerMax for the mana power type ourselves. Secret values
+-- (mana is secret on Retail 12.x for many classes) skip silently — the
+-- warning simply never fires rather than risk unsafe reads.
+local LOW_MANA_POWER = (Enum and Enum.PowerType and Enum.PowerType.Mana) or 0
+
+function Core:CheckLowMana(profile)
+    if type(UnitPower) ~= "function" or type(UnitPowerMax) ~= "function" then return end
+    local okC, cur = pcall(UnitPower, "player", LOW_MANA_POWER)
+    local okM, max = pcall(UnitPowerMax, "player", LOW_MANA_POWER)
+    if not (okC and okM) then return end
+    if not (ZSBT.IsSafeNumber(cur) and ZSBT.IsSafeNumber(max)) then
+        self._manaWarnState = false
+        return
+    end
+    if max <= 0 then
+        self._manaWarnState = false
+        return
+    end
+    local media = profile.media
+    local threshold = 20
+    if media and type(media.lowManaThreshold) == "number" then
+        threshold = media.lowManaThreshold
+    end
+    if (cur / max) * 100 < threshold then
+        if not self._manaWarnState then
+            self._manaWarnState = true
+            local soundKey = media and media.sounds and media.sounds.lowMana
+            if soundKey and soundKey ~= "None" and ZSBT.PlayLSMSound then
+                ZSBT.PlayLSMSound(soundKey)
+            end
+        end
+    else
+        self._manaWarnState = false
     end
 end

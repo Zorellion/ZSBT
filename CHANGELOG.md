@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.6.0
+
+### Added
+- **Minimum crit display amount:** new "Minimum Crit Damage/Healing Amount (display)" option in each crit section (Incoming/Outgoing × Damage/Healing). Crits below the threshold display as normal hits — no crit color, routing, or sticky presentation. Works wherever amounts are readable (open world, WoW Forever); secret amounts on Retail 12.x can't be numerically compared (Blizzard restriction) and keep crit styling.
+- **Crit lane spacing:** centered crit animations (Pow, Slam, Shockwave, Ignite, Chromatic, Stomp, ScreenPunch, Shatter, Afterimage, Rumble) now stack in vertically-spaced lanes with per-crit random X/Y jitter, so bursts in a dedicated crits window no longer overlap. Mixed crit animations share lanes; oversized bursts compress spacing instead of overflowing off-screen.
+- **`/zsbt sectest` diagnostic:** re-runs the secret-value evaluation probe on the most recent secret combat amount (secret-comparison capability report for debugging threshold filtering).
+
+### Changed
+- **Raid/shared-target attribution hardened:** `UNIT_COMBAT` hits on a shared target (raids, group content) now require corroboration from the restricted "ZSBT" combat-log filter before being attributed to a spell — one trusted direct/melee/ranged line per emitted hit, 0.20s window, tick lines excluded. Foreign players' damage on the same target is dropped instead of displayed as yours.
+- **Pet fallback requires pet-side evidence in groups:** unattributed physical/pet-signature hits in restricted content now need recent pet activity (pet spellcast or "Your pet hits" chat) before emitting as pet damage, closing a misattribution path where other players' hits could appear as your pet's.
+- **Weak-attribution merge leak fixed:** hits whose spellId was discarded (school=127 / weak signature / tick-colored) can no longer merge into an attributed spell bucket and inflate it in group content.
+- **Group bucket flush delay** increased 0.08s → 0.18s so combat-log corroboration lines arrive before the line gate runs.
+
+### Notes
+- In raids the stricter evidence requirements trade some under-reporting for much cleaner output: legitimate hits still pass when a matching combat-log line exists, but borderline cases (physical melee pets with no cast/chat signal, simultaneous same-kind hits) may be dropped rather than risk showing another player's damage.
+- Crit min display amount is independent of the crit sound threshold (`minSoundAmount`); secret amounts that can't be evaluated keep crit presentation rather than being hidden.
+
 ## 3.5.9
 
 ### Added
