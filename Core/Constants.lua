@@ -8,7 +8,7 @@ local ADDON_NAME, ZSBT = ...
 ------------------------------------------------------------------------
 -- Version & Identity
 ------------------------------------------------------------------------
-ZSBT.VERSION = "3.6.1"
+ZSBT.VERSION = "3.6.2"
 ZSBT.ADDON_TITLE = "Zore's Scrolling Battle Text"
 ZSBT.ADDON_SHORT = "ZSBT"
 ZSBT.ADDON_AUTHOR = "Zorellion"
@@ -426,7 +426,7 @@ end
 -- technique against a live secret amount and report which (if any) yield a
 -- usable clean result. Runs once per session on the first tainted eval.
 local secretProbeDone = false
-local function ProbeSecretValueEval(v, threshold)
+local function ProbeSecretValueEval(v, threshold, viaDbg)
     if secretProbeDone then return end
     secretProbeDone = true
     local lines = {}
@@ -571,10 +571,13 @@ local function ProbeSecretValueEval(v, threshold)
     add("isec(cmp) ok=" .. tostring(ok) .. " res=" .. fmt(r))
 
     for _, s in ipairs(lines) do
-        if ZSBT.Addon and ZSBT.Addon.Print then
-            ZSBT.Addon:Print("|cFFCC66FF[SECRET_EVAL]|r " .. s)
+        local line = "|cFFCC66FF[SECRET_EVAL]|r " .. s
+        if viaDbg and ZSBT.Addon and ZSBT.Addon.Dbg then
+            ZSBT.Addon:Dbg("diagnostics", 4, line)
+        elseif ZSBT.Addon and ZSBT.Addon.Print then
+            ZSBT.Addon:Print(line)
         else
-            print("|cFFCC66FF[SECRET_EVAL]|r " .. s)
+            print(line)
         end
     end
 end
@@ -613,11 +616,21 @@ function ZSBT.EvaluateSecretThreshold(secretValue, threshold)
     ZSBT._lastSecretSample = secretValue
     ZSBT._lastSecretThr = threshold
 
-    local okP, errP = pcall(function()
-        ProbeSecretValueEval(secretValue, threshold)
-    end)
-    if not okP then
-        print("|cFFFF6666[SECRET_EVAL]|r probe error: " .. tostring(errP))
+    -- Auto-run the probe only when the diagnostics channel is at debug
+    -- verbosity; /zsbt sectest remains the on-demand path at any level.
+    local diagLvl = (ZSBT.Addon and ZSBT.Addon.GetDebugLevel
+        and ZSBT.Addon:GetDebugLevel("diagnostics")) or 0
+    if (tonumber(diagLvl) or 0) >= 4 then
+        local okP, errP = pcall(function()
+            ProbeSecretValueEval(secretValue, threshold, true)
+        end)
+        if not okP then
+            if ZSBT.Addon and ZSBT.Addon.Dbg then
+                ZSBT.Addon:Dbg("diagnostics", 4, "[SECRET_EVAL] probe error: " .. tostring(errP))
+            else
+                print("|cFFFF6666[SECRET_EVAL]|r probe error: " .. tostring(errP))
+            end
+        end
     end
 
     -- Value is tainted (dungeon/raid) — try Midnight-safe visual eval

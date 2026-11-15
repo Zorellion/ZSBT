@@ -3830,6 +3830,59 @@ function ZSBT.BuildDebugOptionsTable()
 				end
 			end,
 		},
+		sessionDiagHeader = {
+			type = "header",
+			name = L["Session Diagnostics"],
+			order = 3.4,
+		},
+		secretProbe = {
+			type = "execute",
+			name = L["Run Secret-Value Probe"],
+			desc = L["Re-runs the secret amount evaluation probe on the most recent secret combat value (same as /zsbt sectest)."],
+			order = 3.5,
+			width = "full",
+			func = function()
+				if ZSBT.RunSecretProbe then
+					ZSBT.RunSecretProbe()
+				end
+			end,
+		},
+		aoeDiag = {
+			type = "execute",
+			name = L["Toggle AoE Damage Diagnostics"],
+			desc = L["Toggles verbose AoE damage attribution tracing (same as /zsbt aodiag)."],
+			order = 3.6,
+			width = "full",
+			func = function()
+				if ZSBT.Addon and ZSBT.Addon.HandleSlashCommand then
+					ZSBT.Addon:HandleSlashCommand("aodiag")
+				end
+			end,
+		},
+		icDiag = {
+			type = "execute",
+			name = L["Toggle Item Cooldown Diagnostics"],
+			desc = L["Toggles item cooldown tracing (same as /zsbt icdiag)."],
+			order = 3.7,
+			width = "full",
+			func = function()
+				if ZSBT.Addon and ZSBT.Addon.HandleSlashCommand then
+					ZSBT.Addon:HandleSlashCommand("icdiag")
+				end
+			end,
+		},
+		xpDiag = {
+			type = "execute",
+			name = L["Toggle XP Event Probe"],
+			desc = L["Toggles a live probe that prints XP-related events (same as /zsbt xpdiag)."],
+			order = 3.8,
+			width = "full",
+			func = function()
+				if ZSBT.Addon and ZSBT.Addon.HandleSlashCommand then
+					ZSBT.Addon:HandleSlashCommand("xpdiag")
+				end
+			end,
+		},
 		allOff = {
 			type = "execute",
 			name = L["All Off"],

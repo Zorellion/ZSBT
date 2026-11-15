@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.6.2
+
+### Changed
+- **Ad-hoc debug output gated behind debug levels:** the secret-value evaluation probe (`[SECRET_EVAL]`) no longer auto-fires once per session for all users — it now only runs when the `diagnostics` channel is at level 4+ (Debug settings or `/zsbt debug diagnostics 4`), with output routed to the configured debug chat frame. `/zsbt sectest` still runs it on demand at any level.
+- **Trigger aura-sync errors routed through the debug system:** the `[TRG] AuraSync error` print now goes through `Addon:Dbg("triggers", 1)` instead of printing unconditionally.
+
+### Added
+- **Session Diagnostics section in Debug settings:** Quick Actions now includes buttons for the case-by-case probes — Run Secret-Value Probe, Toggle AoE Damage Diagnostics, Toggle Item Cooldown Diagnostics, and Toggle XP Event Probe. All are session-only and off by default, same as their `/zsbt` slash-command equivalents.
+
 ## 3.6.1
 
 ### Fixed
