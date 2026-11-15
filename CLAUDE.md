@@ -110,3 +110,55 @@ Single-file revert of `Event_Collector.lua`; new module is additive until step 5
 - New: `Parser/Periodic_Tracker.lua`
 - Edited: `Parser/Event_Collector.lua` (three call sites → `PT:` API), `ZSBT.toc`, `CHANGELOG.md`
 - Sync target after verification: `_forever_` copy
+
+---
+
+# Masterplan: Config UI unification
+
+Status: **Phase 0 audit done; Phase 1 was implemented then REVERTED — user rejected the result ("too much to worry with"). Do not re-attempt Phase 1 changes without asking first.** Phase 2/3 on hold. Plan kept below for reference only.
+
+## Phase 0 audit findings (2025-11)
+
+True duplicates (same db key, multiple editors):
+- `general.enabled`, `general.combatOnly`, `general.hideBlizzardFCT` + 7 sub-toggles + `hideBlizzardFCTPet` + `restoreBlizzardFCTNow`, `general.quickControlBarEnabled` + reset — all edited in BOTH QuickStart and General. QuickStart versions had better legacy-aware getters; General's `enabled` set was the only one doing real runtime toggling (QuickStart called nonexistent `Core:SetEnabled` — fixed in Phase 1).
+- `media.sounds.cooldownReady` — edited in both Cooldowns tab and Media tab (benign; left as-is, same value two contexts).
+- `general.critFont` — split editing: General had face/size/useScale/anim/outline/scale; CombatText had the 8 `*Intensity` sliders (found at bottom of Combat Text tab, order 23.57+). Consolidated in Phase 1.
+
+Read-only cross-references (NOT duplicates, left alone): `general.font.*` in ScrollAreas (fallback reads), `notifications*` in ResourceCounter args (routing selectors), `outgoing.crits` in QuickStart (test button), `char.cooldowns.tracked` in General (reset-to-defaults preservation), `char.spamControl.*` shared by rule managers (same underlying tables by design).
+
+## Hard constraints
+
+- **Zero `db.profile`/`db.char` key renames, moves, or path changes** — saved settings must survive untouched.
+- All existing `get`/`set`/`disabled` functions preserved verbatim; only `args` structure, headers, order, and descriptions change.
+- New UI strings go through `L[]` with locale entries (Locales/*.lua for every shipped locale).
+- Satellite option tables keep their `ACR:RegisterOptionsTable("ZSBT_*")` registrations and all `ACR:NotifyChange("ZSBT_*")` calls — nothing that calls `ACD:Open("ZSBT_X")` may break.
+- Options are rebuilt on every `Addon:OpenConfig()` — presentation-layer reshuffling is safe.
+
+## Architecture (current)
+
+- Main window: `UI/Config.lua` builds the AceConfig tree (`ZSBT` options table) from `UI/ConfigTabs.lua` arg groups.
+- 7 satellite dialogs: Spell Rules, Buff Rules, Spell Rule Editor, Buff Rule Editor, Trigger Editor, Resource Counter, Debug — separate `ACD:Open` windows launched via buttons.
+- `UI/ConfigTabs.lua` (~10.7k lines) holds per-section arg definitions; `UI/Config.lua` (~5.1k lines) assembles order/tree/groups.
+
+## Phases
+
+### Phase 0 — Audit (no behavior change)
+Script/grep pass over `ConfigTabs.lua` + `Config.lua` cataloging every option's effective db path. Distinguish true duplicates (same key written from two places) from presentation-only overlaps. Output decides what Phase 1 may safely dedupe.
+
+### Phase 1 — Main-tree polish — REVERTED (user rejected; files restored from repo)
+What was tried (all reverted): Combat Text moved before Display (order 0.65); Blizzard FCT toggles deduped to QuickStart-only with an "Open Quick Start" button in General; QuickStart `enabled` toggle fixed to do real runtime toggling (it previously called nonexistent `Core:SetEnabled` — **this was a genuine bug fix, lost in the revert**); 8 `general.critFont.*Intensity` sliders moved from CombatText bottom into General's Critical Hit Font section; tab descriptions added to Incoming/Outgoing.
+If revisited, the only piece arguably worth re-applying alone is the QuickStart `enabled` set fix (Core:Enable/Disable + Parser toggles instead of the no-op `Core:SetEnabled` call) — **this fix WAS re-applied after the revert** (QuickStart enabled toggle now does real runtime toggling; unreleased).
+
+### Phase 2 — Satellite consolidation (medium risk, NOT started)
+- Option A (safer): keep dialogs, add "← Back to ZSBT" behavior, launch with relevant tree node pre-selected.
+- Option B (bigger): embed rule *managers* as collapsible groups inside main tree (`childGroups="tree"`), keep standalone windows registered for deep links. Editors stay popups.
+- Decision point: revisit after Phase 1 is tested in-game.
+
+### Phase 3 — Nice-to-haves (not started)
+QuickStart presets/wizard polish; test buttons colocated with tested settings; profile import/export surfacing.
+
+## Files
+
+- `UI/Config.lua`, `UI/ConfigTabs.lua` — Phase 0/1 targets
+- `Locales/*.lua` — new strings
+- `CLAUDE.md` — this masterplan (keep updated with progress)

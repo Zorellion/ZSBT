@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.6.1
+
+### Fixed
+- **DB Profiles page blank:** `Addon:OpenConfig()` rebuilds the options tree on every open (for live resource-button state), but the AceDBOptions "DB Profiles" injection only ran once during `OnInitialize` — every rebuild replaced it with an empty placeholder. The injection is now a reusable `Addon:InjectDBProfilesOptions()` called on every rebuild, so DB Profiles (profile list, new/choose/copy/delete, preset resets, copy-rules tools) renders correctly again.
+- **Quick Start "Enable ZSBT" toggle inert:** it called `Core:SetEnabled`, which doesn't exist, so flipping it only wrote the DB without toggling runtime state until reload. It now performs the same `Core:Enable/Disable` + parser enable/disable work as the General tab toggle.
+
 ## 3.6.0
 
 ### Added
