@@ -1110,8 +1110,12 @@ function Triggers:Enable()
 				if not Triggers._lastAuraSyncAt or (now - Triggers._lastAuraSyncAt) >= 0.5 then
 					Triggers._lastAuraSyncAt = now
 					local ok, err = pcall(function() Triggers:SyncWatchedAurasFromCore() end)
-					if not ok and Addon and Addon.Print then
-						Addon:Print("[TRG] AuraSync error: " .. tostring(err))
+					if not ok then
+						if Addon and Addon.Dbg then
+							Addon:Dbg("triggers", 1, "AuraSync error:", err)
+						elseif Addon and Addon.Print then
+							Addon:Print("[TRG] AuraSync error: " .. tostring(err))
+						end
 					end
 				end
 			end
