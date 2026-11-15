@@ -265,6 +265,376 @@ end
 ------------------------------------------------------------------------
 -- OnInitialize: Fires once when addon loads (before PLAYER_LOGIN)
 ------------------------------------------------------------------------
+function Addon:InjectDBProfilesOptions(options)
+	local AceDBOptions = LibStub("AceDBOptions-3.0", true)
+	if not AceDBOptions and self.Print then
+		self:Print("|cFFFF4444ZSBT: AceDBOptions-3.0 library not loaded - DB Profiles page will be empty.|r")
+	end
+	if AceDBOptions then
+		local mainDb = self.db
+		local function deepCopyTable(src, seen)
+			if type(src) ~= "table" then return src end
+			-- IMPORTANT: Never deep-copy the AceDB database object.
+			-- If we clone it, the Profiles UI would operate on a detached copy and
+			-- newly created profiles would not persist to SavedVariables.
+			if src == mainDb then return src end
+			seen = seen or {}
+			if seen[src] then return seen[src] end
+			local dst = {}
+			seen[src] = dst
+			for k, v in pairs(src) do
+				dst[deepCopyTable(k, seen)] = deepCopyTable(v, seen)
+			end
+			local mt = getmetatable(src)
+			if mt ~= nil then
+				setmetatable(dst, mt)
+			end
+			return dst
+		end
+		local function wrapHandler(handler)
+			if type(handler) ~= "table" then return handler end
+			local h = {}
+			setmetatable(h, { __index = handler })
+			h.DeleteProfile = function(selfH, info, value)
+				if value == "Default" then
+					return
+				end
+				if type(handler.DeleteProfile) == "function" then
+					return handler.DeleteProfile(handler, info, value)
+				end
+			end
+			return h
+		end
+		local function cloneProfilesTable(t)
+			local copy = deepCopyTable(t)
+			if copy and copy.handler then
+				copy.handler = wrapHandler(copy.handler)
+			end
+			return copy
+		end
+		local function safeGetProfilesTable(db)
+			local ok, t = pcall(AceDBOptions.GetOptionsTable, AceDBOptions, db, true)
+			if not ok then
+				if ZSBT and ZSBT.Print then ZSBT:Print("|cFFFF4444ZSBT: AceDBOptions profile table failed:|r " .. tostring(t)) end
+				return nil
+			end
+			return cloneProfilesTable(t)
+		end
+		local function safeListProfiles(handler, info)
+			if not handler or type(handler.ListProfiles) ~= "function" then return nil end
+			local ok, t = pcall(handler.ListProfiles, handler, info)
+			if ok and type(t) == "table" then return t end
+			return nil
+		end
+		local function safeSetChooseArg(tbl)
+			local chooseOpt = tbl and tbl.args and tbl.args.choose
+			if chooseOpt then
+				chooseOpt.arg = "nocurrent"
+			end
+		end
+		local function safeRestrictDeleteDefault(tbl)
+			local deleteOpt = tbl and tbl.args and tbl.args.delete
+			if deleteOpt then
+				deleteOpt.values = function(info)
+					local profiles = safeListProfiles(info and info.handler, info)
+					if type(profiles) == "table" then
+						profiles["Default"] = nil
+					end
+					return profiles
+				end
+				deleteOpt.disabled = function(info)
+					local profiles = info and info.option and info.option.values and info.option.values(info)
+					return (type(profiles) ~= "table") or (not next(profiles))
+				end
+			end
+		end
+		-- Request the profiles options table without AceDBOptions' built-in
+		-- "common" suggestions (realm/class/char/Default). We only want to show
+		-- real saved profiles the user has actually created.
+		local profilesTable = safeGetProfilesTable(self.db)
+		if profilesTable and profilesTable.handler and profilesTable.args then
+			local addon = self
+			local function getCharKey()
+				local name = UnitName and UnitName("player")
+				local realm = (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName and GetRealmName())
+				if type(name) ~= "string" or name == "" then return nil end
+				if type(realm) ~= "string" or realm == "" then realm = "UnknownRealm" end
+				return name .. "-" .. realm
+			end
+			addon._copyFromCharKey = addon._copyFromCharKey or ""
+			addon._copyCharMode = addon._copyCharMode or "merge"
+			local function getSvCharTable()
+				local sv = mainDb and mainDb.sv
+				local ch = sv and sv.char
+				if type(ch) == "table" then return ch end
+				return nil
+			end
+			local function listCharKeys()
+				local out = {}
+				local ch = getSvCharTable()
+				local cur = getCharKey()
+				if type(ch) ~= "table" then
+					return out
+				end
+				for k in pairs(ch) do
+					if type(k) == "string" and k ~= "" and k ~= cur then
+						out[k] = k
+					end
+				end
+				return out
+			end
+			local function mergeMissing(dst, src)
+				if type(dst) ~= "table" or type(src) ~= "table" then return end
+				for k, v in pairs(src) do
+					if dst[k] == nil then
+						dst[k] = deepCopyTable(v)
+					end
+				end
+			end
+			local function replaceTable(dst, src)
+				if type(dst) ~= "table" or type(src) ~= "table" then return end
+				for k in pairs(dst) do
+					dst[k] = nil
+				end
+				for k, v in pairs(src) do
+					dst[k] = deepCopyTable(v)
+				end
+			end
+			local function copyFromSelectedChar(copySpellRules, copyAuraRules, copyTriggers)
+				local fromKey = addon._copyFromCharKey
+				if type(fromKey) ~= "string" or fromKey == "" then
+					if addon and addon.Print then addon:Print(L["Select a source character first."]) end
+					return
+				end
+				local ch = getSvCharTable()
+				local src = ch and ch[fromKey]
+				local dst = mainDb and mainDb.char
+				if type(src) ~= "table" or type(dst) ~= "table" then
+					if addon and addon.Print then addon:Print(L["Source/target character data not available."]) end
+					return
+				end
+				local mode = addon._copyCharMode
+				if mode ~= "merge" and mode ~= "replace" then mode = "merge" end
+				local changed = false
+				if copySpellRules then
+					dst.spamControl = dst.spamControl or {}
+					dst.spamControl.spellRules = dst.spamControl.spellRules or {}
+					local srcRules = src.spamControl and src.spamControl.spellRules
+					if type(srcRules) == "table" then
+						if mode == "replace" then
+							replaceTable(dst.spamControl.spellRules, srcRules)
+						else
+							mergeMissing(dst.spamControl.spellRules, srcRules)
+						end
+						changed = true
+					end
+				end
+				if copyAuraRules then
+					dst.spamControl = dst.spamControl or {}
+					dst.spamControl.auraRules = dst.spamControl.auraRules or {}
+					local srcRules = src.spamControl and src.spamControl.auraRules
+					if type(srcRules) == "table" then
+						if mode == "replace" then
+							replaceTable(dst.spamControl.auraRules, srcRules)
+						else
+							mergeMissing(dst.spamControl.auraRules, srcRules)
+						end
+						changed = true
+					end
+				end
+				if copyTriggers then
+					dst.triggers = dst.triggers or { enabled = true, items = {} }
+					dst.triggers.items = dst.triggers.items or {}
+					local srcTrig = src.triggers
+					local srcItems = srcTrig and srcTrig.items
+					if type(srcItems) == "table" then
+						if mode == "replace" then
+							dst.triggers.enabled = (srcTrig and srcTrig.enabled ~= false) and true or false
+							dst.triggers.items = deepCopyTable(srcItems)
+						changed = true
+						else
+							local existing = {}
+							for _, t in ipairs(dst.triggers.items) do
+								if type(t) == "table" then
+									local id = t.id or t._key
+									if id ~= nil then existing[tostring(id)] = true end
+								end
+							end
+							for _, t in ipairs(srcItems) do
+								if type(t) == "table" then
+									local id = t.id or t._key
+									if id == nil or existing[tostring(id)] ~= true then
+										dst.triggers.items[#dst.triggers.items + 1] = deepCopyTable(t)
+										changed = true
+									end
+								end
+							end
+						end
+					end
+				end
+				if changed then
+					if copyTriggers and ZSBT and type(ZSBT.RefreshTriggersTab) == "function" then
+						pcall(ZSBT.RefreshTriggersTab)
+					end
+					local ACR2 = LibStub("AceConfigRegistry-3.0", true)
+					if ACR2 then
+						pcall(function() ACR2:NotifyChange("ZSBT_SpellRules") end)
+						pcall(function() ACR2:NotifyChange("ZSBT_BuffRules") end)
+						pcall(function() ACR2:NotifyChange("ZSBT") end)
+					end
+					if addon and addon.Print then addon:Print(L["Copied rules/triggers from "] .. tostring(fromKey) .. " (" .. tostring(mode) .. ").") end
+				end
+			end
+
+			profilesTable.args.zsbtPresetProfiles = {
+				type = "group",
+				name = L["Preset Profiles"],
+				order = 999,
+				inline = true,
+				args = {
+				desc = {
+					type = "description",
+					name = L["Restore shipped preset profiles (layouts) to their defaults. This only modifies the preset profile itself and does not change which profile you currently have selected."],
+					order = 1,
+					width = "full",
+				},
+				resetMelee = {
+					type = "execute",
+					name = L["Reset Preset: Melee"],
+					order = 2,
+					width = "full",
+					func = function()
+						if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
+							ZSBT.Presets.ResetPreset("Melee")
+							if addon and addon.Print then addon:Print(L["Reset preset: Melee"]) end
+						end
+					end,
+				},
+				resetRanged = {
+					type = "execute",
+					name = L["Reset Preset: Ranged"],
+					order = 3,
+					width = "full",
+					func = function()
+						if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
+							ZSBT.Presets.ResetPreset("Ranged")
+							if addon and addon.Print then addon:Print(L["Reset preset: Ranged"]) end
+						end
+					end,
+				},
+				resetTank = {
+					type = "execute",
+					name = L["Reset Preset: Tank"],
+					order = 4,
+					width = "full",
+					func = function()
+						if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
+							ZSBT.Presets.ResetPreset("Tank")
+							if addon and addon.Print then addon:Print(L["Reset preset: Tank"]) end
+						end
+					end,
+				},
+				resetHealer = {
+					type = "execute",
+					name = L["Reset Preset: Healer"],
+					order = 5,
+					width = "full",
+					func = function()
+						if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
+							ZSBT.Presets.ResetPreset("Healer")
+							if addon and addon.Print then addon:Print(L["Reset preset: Healer"]) end
+						end
+					end,
+				},
+				resetPetClass = {
+					type = "execute",
+					name = L["Reset Preset: Pet Class"],
+					order = 6,
+					width = "full",
+					func = function()
+						if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
+							ZSBT.Presets.ResetPreset("PetClass")
+							if addon and addon.Print then addon:Print(L["Reset preset: Pet Class"]) end
+						end
+					end,
+				},
+			},
+		}
+
+		profilesTable.args.zsbtCopyCharData = {
+			type = "group",
+			name = L["Copy Rules / Triggers"],
+			order = 998,
+			inline = true,
+			args = {
+				desc = {
+					type = "description",
+					name = L["Copy per-character Spell Rules, Buff Rules, and Triggers into your current character. Profiles do not include these items."],
+					order = 1,
+					width = "full",
+				},
+				fromChar = {
+					type = "select",
+					name = L["Copy From Character"],
+					order = 2,
+					width = "full",
+					values = function() return listCharKeys() end,
+					get = function() return addon._copyFromCharKey end,
+					set = function(_, v) addon._copyFromCharKey = tostring(v or "") end,
+				},
+				mode = {
+					type = "select",
+					name = L["Copy Mode"],
+					order = 3,
+					width = "full",
+					values = { merge = L["Merge (add missing)"], replace = "Replace" },
+					get = function() return addon._copyCharMode end,
+					set = function(_, v) addon._copyCharMode = tostring(v or "merge") end,
+				},
+				copySpellRules = {
+					type = "execute",
+					name = L["Copy Spell Rules"],
+					order = 10,
+					width = "full",
+					func = function() copyFromSelectedChar(true, false, false) end,
+				},
+				copyAuraRules = {
+					type = "execute",
+					name = L["Copy Buff Rules"],
+					order = 11,
+					width = "full",
+					func = function() copyFromSelectedChar(false, true, false) end,
+				},
+				copyTriggers = {
+					type = "execute",
+					name = L["Copy Triggers"],
+					order = 12,
+					width = "full",
+					func = function() copyFromSelectedChar(false, false, true) end,
+				},
+				copyAll = {
+					type = "execute",
+					name = L["Copy All (Rules + Triggers)"],
+					order = 13,
+					width = "full",
+					func = function() copyFromSelectedChar(true, true, true) end,
+				},
+			},
+		}
+
+		safeSetChooseArg(profilesTable)
+		safeRestrictDeleteDefault(profilesTable)
+		profilesTable.order = 100
+		profilesTable.name = L["|cFFFFD100DB Profiles|r"]
+		if options and options.args and options.args.profiles and options.args.profiles.args then
+			options.args.profiles.args.acedbProfiles = profilesTable
+		elseif options and options.args then
+			options.args.acedbProfiles = profilesTable
+		end
+	end
+	end
+end
+
 function Addon:OnInitialize()
     -- Initialize AceDB with our defaults and enable profiles
     self.db = LibStub("AceDB-3.0"):New("ZSBTDB", ZSBT.DEFAULTS, true)
@@ -1237,367 +1607,7 @@ function Addon:OnInitialize()
 	        local options = ZSBT.BuildOptionsTable()
 
 	        		-- Inject the AceDBOptions-3.0 profiles tab into the options tree
-			local AceDBOptions = LibStub("AceDBOptions-3.0", true)
-			if AceDBOptions then
-				local mainDb = self.db
-				local function deepCopyTable(src, seen)
-					if type(src) ~= "table" then return src end
-					-- IMPORTANT: Never deep-copy the AceDB database object.
-					-- If we clone it, the Profiles UI would operate on a detached copy and
-					-- newly created profiles would not persist to SavedVariables.
-					if src == mainDb then return src end
-					seen = seen or {}
-					if seen[src] then return seen[src] end
-					local dst = {}
-					seen[src] = dst
-					for k, v in pairs(src) do
-						dst[deepCopyTable(k, seen)] = deepCopyTable(v, seen)
-					end
-					local mt = getmetatable(src)
-					if mt ~= nil then
-						setmetatable(dst, mt)
-					end
-					return dst
-				end
-				local function wrapHandler(handler)
-					if type(handler) ~= "table" then return handler end
-					local h = {}
-					setmetatable(h, { __index = handler })
-					h.DeleteProfile = function(selfH, info, value)
-						if value == "Default" then
-							return
-						end
-						if type(handler.DeleteProfile) == "function" then
-							return handler.DeleteProfile(handler, info, value)
-						end
-					end
-					return h
-				end
-				local function cloneProfilesTable(t)
-					local copy = deepCopyTable(t)
-					if copy and copy.handler then
-						copy.handler = wrapHandler(copy.handler)
-					end
-					return copy
-				end
-				local function safeGetProfilesTable(db)
-					local ok, t = pcall(AceDBOptions.GetOptionsTable, AceDBOptions, db, true)
-					if not ok then return nil end
-					return cloneProfilesTable(t)
-				end
-				local function safeListProfiles(handler, info)
-					if not handler or type(handler.ListProfiles) ~= "function" then return nil end
-					local ok, t = pcall(handler.ListProfiles, handler, info)
-					if ok and type(t) == "table" then return t end
-					return nil
-				end
-				local function safeSetChooseArg(tbl)
-					local chooseOpt = tbl and tbl.args and tbl.args.choose
-					if chooseOpt then
-						chooseOpt.arg = "nocurrent"
-					end
-				end
-				local function safeRestrictDeleteDefault(tbl)
-					local deleteOpt = tbl and tbl.args and tbl.args.delete
-					if deleteOpt then
-						deleteOpt.values = function(info)
-							local profiles = safeListProfiles(info and info.handler, info)
-							if type(profiles) == "table" then
-								profiles["Default"] = nil
-							end
-							return profiles
-						end
-						deleteOpt.disabled = function(info)
-							local profiles = info and info.option and info.option.values and info.option.values(info)
-							return (type(profiles) ~= "table") or (not next(profiles))
-						end
-					end
-				end
-				-- Request the profiles options table without AceDBOptions' built-in
-				-- "common" suggestions (realm/class/char/Default). We only want to show
-				-- real saved profiles the user has actually created.
-				local profilesTable = safeGetProfilesTable(self.db)
-				if profilesTable and profilesTable.handler and profilesTable.args then
-					local addon = self
-					local function getCharKey()
-						local name = UnitName and UnitName("player")
-						local realm = (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName and GetRealmName())
-						if type(name) ~= "string" or name == "" then return nil end
-						if type(realm) ~= "string" or realm == "" then realm = "UnknownRealm" end
-						return name .. "-" .. realm
-					end
-					addon._copyFromCharKey = addon._copyFromCharKey or ""
-					addon._copyCharMode = addon._copyCharMode or "merge"
-					local function getSvCharTable()
-						local sv = mainDb and mainDb.sv
-						local ch = sv and sv.char
-						if type(ch) == "table" then return ch end
-						return nil
-					end
-					local function listCharKeys()
-						local out = {}
-						local ch = getSvCharTable()
-						local cur = getCharKey()
-						if type(ch) ~= "table" then
-							return out
-						end
-						for k in pairs(ch) do
-							if type(k) == "string" and k ~= "" and k ~= cur then
-								out[k] = k
-							end
-						end
-						return out
-					end
-					local function mergeMissing(dst, src)
-						if type(dst) ~= "table" or type(src) ~= "table" then return end
-						for k, v in pairs(src) do
-							if dst[k] == nil then
-								dst[k] = deepCopyTable(v)
-							end
-						end
-					end
-					local function replaceTable(dst, src)
-						if type(dst) ~= "table" or type(src) ~= "table" then return end
-						for k in pairs(dst) do
-							dst[k] = nil
-						end
-						for k, v in pairs(src) do
-							dst[k] = deepCopyTable(v)
-						end
-					end
-					local function copyFromSelectedChar(copySpellRules, copyAuraRules, copyTriggers)
-						local fromKey = addon._copyFromCharKey
-						if type(fromKey) ~= "string" or fromKey == "" then
-							if addon and addon.Print then addon:Print(L["Select a source character first."]) end
-							return
-						end
-						local ch = getSvCharTable()
-						local src = ch and ch[fromKey]
-						local dst = mainDb and mainDb.char
-						if type(src) ~= "table" or type(dst) ~= "table" then
-							if addon and addon.Print then addon:Print(L["Source/target character data not available."]) end
-							return
-						end
-						local mode = addon._copyCharMode
-						if mode ~= "merge" and mode ~= "replace" then mode = "merge" end
-						local changed = false
-						if copySpellRules then
-							dst.spamControl = dst.spamControl or {}
-							dst.spamControl.spellRules = dst.spamControl.spellRules or {}
-							local srcRules = src.spamControl and src.spamControl.spellRules
-							if type(srcRules) == "table" then
-								if mode == "replace" then
-									replaceTable(dst.spamControl.spellRules, srcRules)
-								else
-									mergeMissing(dst.spamControl.spellRules, srcRules)
-								end
-								changed = true
-							end
-						end
-						if copyAuraRules then
-							dst.spamControl = dst.spamControl or {}
-							dst.spamControl.auraRules = dst.spamControl.auraRules or {}
-							local srcRules = src.spamControl and src.spamControl.auraRules
-							if type(srcRules) == "table" then
-								if mode == "replace" then
-									replaceTable(dst.spamControl.auraRules, srcRules)
-								else
-									mergeMissing(dst.spamControl.auraRules, srcRules)
-								end
-								changed = true
-							end
-						end
-						if copyTriggers then
-							dst.triggers = dst.triggers or { enabled = true, items = {} }
-							dst.triggers.items = dst.triggers.items or {}
-							local srcTrig = src.triggers
-							local srcItems = srcTrig and srcTrig.items
-							if type(srcItems) == "table" then
-								if mode == "replace" then
-									dst.triggers.enabled = (srcTrig and srcTrig.enabled ~= false) and true or false
-									dst.triggers.items = deepCopyTable(srcItems)
-								changed = true
-								else
-									local existing = {}
-									for _, t in ipairs(dst.triggers.items) do
-										if type(t) == "table" then
-											local id = t.id or t._key
-											if id ~= nil then existing[tostring(id)] = true end
-										end
-									end
-									for _, t in ipairs(srcItems) do
-										if type(t) == "table" then
-											local id = t.id or t._key
-											if id == nil or existing[tostring(id)] ~= true then
-												dst.triggers.items[#dst.triggers.items + 1] = deepCopyTable(t)
-												changed = true
-											end
-										end
-									end
-								end
-							end
-						end
-						if changed then
-							if copyTriggers and ZSBT and type(ZSBT.RefreshTriggersTab) == "function" then
-								pcall(ZSBT.RefreshTriggersTab)
-							end
-							local ACR2 = LibStub("AceConfigRegistry-3.0", true)
-							if ACR2 then
-								pcall(function() ACR2:NotifyChange("ZSBT_SpellRules") end)
-								pcall(function() ACR2:NotifyChange("ZSBT_BuffRules") end)
-								pcall(function() ACR2:NotifyChange("ZSBT") end)
-							end
-							if addon and addon.Print then addon:Print(L["Copied rules/triggers from "] .. tostring(fromKey) .. " (" .. tostring(mode) .. ").") end
-						end
-					end
-
-					profilesTable.args.zsbtPresetProfiles = {
-						type = "group",
-						name = L["Preset Profiles"],
-						order = 999,
-						inline = true,
-						args = {
-						desc = {
-							type = "description",
-							name = L["Restore shipped preset profiles (layouts) to their defaults. This only modifies the preset profile itself and does not change which profile you currently have selected."],
-							order = 1,
-							width = "full",
-						},
-						resetMelee = {
-							type = "execute",
-							name = L["Reset Preset: Melee"],
-							order = 2,
-							width = "full",
-							func = function()
-								if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
-									ZSBT.Presets.ResetPreset("Melee")
-									if addon and addon.Print then addon:Print(L["Reset preset: Melee"]) end
-								end
-							end,
-						},
-						resetRanged = {
-							type = "execute",
-							name = L["Reset Preset: Ranged"],
-							order = 3,
-							width = "full",
-							func = function()
-								if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
-									ZSBT.Presets.ResetPreset("Ranged")
-									if addon and addon.Print then addon:Print(L["Reset preset: Ranged"]) end
-								end
-							end,
-						},
-						resetTank = {
-							type = "execute",
-							name = L["Reset Preset: Tank"],
-							order = 4,
-							width = "full",
-							func = function()
-								if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
-									ZSBT.Presets.ResetPreset("Tank")
-									if addon and addon.Print then addon:Print(L["Reset preset: Tank"]) end
-								end
-							end,
-						},
-						resetHealer = {
-							type = "execute",
-							name = L["Reset Preset: Healer"],
-							order = 5,
-							width = "full",
-							func = function()
-								if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
-									ZSBT.Presets.ResetPreset("Healer")
-									if addon and addon.Print then addon:Print(L["Reset preset: Healer"]) end
-								end
-							end,
-						},
-						resetPetClass = {
-							type = "execute",
-							name = L["Reset Preset: Pet Class"],
-							order = 6,
-							width = "full",
-							func = function()
-								if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
-									ZSBT.Presets.ResetPreset("PetClass")
-									if addon and addon.Print then addon:Print(L["Reset preset: Pet Class"]) end
-								end
-							end,
-						},
-					},
-				}
-
-				profilesTable.args.zsbtCopyCharData = {
-					type = "group",
-					name = L["Copy Rules / Triggers"],
-					order = 998,
-					inline = true,
-					args = {
-						desc = {
-							type = "description",
-							name = L["Copy per-character Spell Rules, Buff Rules, and Triggers into your current character. Profiles do not include these items."],
-							order = 1,
-							width = "full",
-						},
-						fromChar = {
-							type = "select",
-							name = L["Copy From Character"],
-							order = 2,
-							width = "full",
-							values = function() return listCharKeys() end,
-							get = function() return addon._copyFromCharKey end,
-							set = function(_, v) addon._copyFromCharKey = tostring(v or "") end,
-						},
-						mode = {
-							type = "select",
-							name = L["Copy Mode"],
-							order = 3,
-							width = "full",
-							values = { merge = L["Merge (add missing)"], replace = "Replace" },
-							get = function() return addon._copyCharMode end,
-							set = function(_, v) addon._copyCharMode = tostring(v or "merge") end,
-						},
-						copySpellRules = {
-							type = "execute",
-							name = L["Copy Spell Rules"],
-							order = 10,
-							width = "full",
-							func = function() copyFromSelectedChar(true, false, false) end,
-						},
-						copyAuraRules = {
-							type = "execute",
-							name = L["Copy Buff Rules"],
-							order = 11,
-							width = "full",
-							func = function() copyFromSelectedChar(false, true, false) end,
-						},
-						copyTriggers = {
-							type = "execute",
-							name = L["Copy Triggers"],
-							order = 12,
-							width = "full",
-							func = function() copyFromSelectedChar(false, false, true) end,
-						},
-						copyAll = {
-							type = "execute",
-							name = L["Copy All (Rules + Triggers)"],
-							order = 13,
-							width = "full",
-							func = function() copyFromSelectedChar(true, true, true) end,
-						},
-					},
-				}
-
-				safeSetChooseArg(profilesTable)
-				safeRestrictDeleteDefault(profilesTable)
-				profilesTable.order = 100
-				profilesTable.name = L["|cFFFFD100DB Profiles|r"]
-				if options and options.args and options.args.profiles and options.args.profiles.args then
-					options.args.profiles.args.acedbProfiles = profilesTable
-				elseif options and options.args then
-					options.args.acedbProfiles = profilesTable
-				end
-			end
-		end
+		self:InjectDBProfilesOptions(options)
 		local ACR = LibStub("AceConfig-3.0", true)
 		local ACD = LibStub("AceConfigDialog-3.0", true)
 		if not ACR or not ACD then
@@ -2655,6 +2665,7 @@ function Addon:OpenConfig()
 	if ZSBT.BuildOptionsTable then
 		local ok, options = pcall(ZSBT.BuildOptionsTable)
 		if ok and type(options) == "table" then
+			self:InjectDBProfilesOptions(options)
 			local ACR = LibStub("AceConfigRegistry-3.0", true)
 			if ACR then
 				pcall(ACR.RegisterOptionsTable, ACR, "ZSBT", options, true)
