@@ -19,7 +19,7 @@ You are an expert World of Warcraft addon developer specializing in the modern R
 
 # Masterplan: Periodic Damage Tracker extraction (`Parser/Periodic_Tracker.lua`)
 
-Status: **planned — not started.** Current inline implementation works (verified on shaman/Flame Shock against a training dummy). Do not start until the current state has soaked for a few real sessions.
+Status: **implemented, then partially reverted in v3.7.0.** The tracker module exists and is the single home for periodic attribution, but the learned-signal layer this plan designed (learned school map, tick-interval prediction, `nextTickAt`, combat-log RGB line corroboration) was **removed** — `UNIT_COMBAT` has no reliable source attribution on secret-value clients, so learned/inferred signals produced confident-looking wrong spell IDs. Current state: deterministic matching only (aura freshness + cast memory + canonical `KNOWN_DOT_SCHOOLS` + fixed-window liveness). The combat-log filter module (`CombatLog_Lines.lua`) and off-target AoE tracker (`AoE_Damage.lua`) were also deleted; there are **no combat-log reads at all** now. Do not reintroduce learned attribution or combat-log inference without a fundamentally reliable source signal.
 
 ## Why
 
@@ -34,7 +34,7 @@ They have already drifted once; they will drift again. Consolidating is required
 ## Hard limits (unchanged by refactor)
 
 - `COMBAT_LOG_EVENT_UNFILTERED` is permanently off the table (protected → `ADDON_ACTION_FORBIDDEN`).
-- No combat-log *text* parsing — `COMBAT_LOG_MESSAGE` RGB values only.
+- No combat-log reads of any kind — `COMBAT_LOG_MESSAGE` RGB pairing was removed in v3.7.0 as unreliable.
 - `UNIT_COMBAT` carries no source unit on secret-value clients: cross-player DoT ambiguity on shared targets cannot be solved by any architecture. The restrict/group gates are the ceiling there.
 - Secret amounts flow through `rawPipe` untouched — pipeId allocation stays in the collector emit functions, verbatim.
 
