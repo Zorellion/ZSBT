@@ -2,16 +2,20 @@
 --
 -- Owns all per-DoT attribution state that used to be spread across
 -- Event_Collector: the periodic-aura name table, the throttled target aura
--- scan, cast-seeded candidates, and per-DoT records (apply time, staleness,
--- learned school, learned tick interval, predicted next tick).
+-- scan, cast-seeded candidates, and per-DoT records (apply time, staleness).
 --
 -- MatchHit() returns the best periodic candidate for an unattributed hit;
 -- confidence policy (pending casts, schools, quiet modes, class gates) stays
 -- at the call sites because each path's rules genuinely differ.
 --
+-- No learned signals: UNIT_COMBAT carries no spellId/source on secret-value
+-- clients, so learned tick intervals/schools/schedules were guesses that
+-- could misattribute foreign players' ticks. Matching is deterministic —
+-- aura presence, cast memory, canonical school table, recency.
+--
 -- Hard limits honoured here:
 --   * no COMBAT_LOG_EVENT_UNFILTERED (protected on secret-value clients)
---   * no combat-log text reads — CombatLog_Lines consumes RGB only
+--   * no combat-log reads at all — attribution is aura/cast evidence only
 --   * secret values never compared/concatenated; only safe numbers are stored
 
 local ADDON_NAME, ZSBT = ...
@@ -47,9 +51,7 @@ end
 local SCAN_INTERVAL    = 0.4   -- aura scan throttle (called per hit)
 local AURA_STALE_SEC   = 2.0   -- drop aura records not re-seen within this
 local CAST_WINDOW_SEC  = 30.0  -- cast/emit recency window for candidates
-local TICK_WINDOW_SEC  = 0.35  -- hit-vs-predicted-tick tolerance
-local MIN_INTERVAL_SEC = 0.4   -- plausible DoT tick spacing bounds
-local MAX_INTERVAL_SEC = 6.0
+local TICK_LIVE_SEC    = 10.0  -- fixed liveness window after last confirmed tick
 
 -- AuraData exposes no "periodic" flag or tick interval, so periodic effects
 -- are classified by name. Single table for ALL classes — matched against
@@ -81,8 +83,8 @@ local PERIODIC_AURA_NAMES = {
 	["Fire Breath"] = true,
 	-- Warrior
 	["Rend"] = true, ["Deep Wounds"] = true,
-	-- Ground-targeted AoE periodic effects (seeded by cast; matched by
-	-- AoE_Damage plate hits and combat-text ticks alike)
+	-- Ground-targeted periodic effects (seeded by cast; matched by aura
+	-- presence and combat-text ticks alike)
 	["Consecration"] = true, ["Blizzard"] = true, ["Hurricane"] = true,
 	["Rain of Fire"] = true, ["Volley"] = true, ["Hellfire"] = true,
 	["Death and Decay"] = true, ["Blistering Scythe"] = true,
@@ -192,12 +194,10 @@ end
 --   applyAt     true application time (expirationTime - duration), reset on
 --               refresh; scan-detection time when those fields are unsafe
 --   seenAt      last aura-scan sighting (staleness expiry)
---   recencyAt   last cast or confirmed-tick emit (cast-memory window)
+--   recencyAt   last cast timestamp (cast-memory window)
 --   name        aura/cast name when known (for name-based resolution)
---   school      learned from the first confirmed tick (no per-class tables)
---   interval    learned tick spacing (nil until >=2 confirmed ticks)
---   nextTickAt  predicted next tick (lastTickAt + interval)
---   lastTickAt  last confirmed tick emit
+--   knownSchool canonical school from KNOWN_DOT_SCHOOLS (fixed data only)
+--   lastTickAt  last confirmed tick emit (fixed-window liveness)
 --   seedSource  "cast" | "aura"
 PT._dots = {}
 PT._scanAt = 0
@@ -287,16 +287,11 @@ function PT:ScanTargetAuras(t)
 			AuraUtil.ForEachAura("target", "HARMFUL", 255, noteAura, true)
 		end)
 	end
-	-- Expire records that are neither aura-fresh nor cast-fresh.
+	-- Expire records that are neither aura-fresh nor cast/tick-fresh.
 	for sid, d in pairs(dots) do
 		local auraFresh = type(d.seenAt) == "number" and (t - d.seenAt) <= AURA_STALE_SEC
-		-- Alive while within cast memory OR still ticking on schedule
-		-- (lastTickAt within ~1.6x the learned interval, min 2s).
-		local tickLive = false
-		if type(d.lastTickAt) == "number" then
-			local tw = math.max(2.0, (type(d.interval) == "number" and d.interval or 2) * 1.6)
-			tickLive = (t - d.lastTickAt) <= tw
-		end
+		local tickLive = type(d.lastTickAt) == "number"
+			and (t - d.lastTickAt) <= TICK_LIVE_SEC
 		local castFresh = (type(d.recencyAt) == "number"
 			and (t - d.recencyAt) >= 0 and (t - d.recencyAt) <= CAST_WINDOW_SEC) or tickLive
 		if not (auraFresh or castFresh) then
@@ -320,8 +315,8 @@ end
 --   sid, auraBacked, dotAge
 -- auraBacked means the debuff is live on the target right now (ground truth).
 -- dotAge is seconds since the true application when known. Scoring prefers
--- aura-fresh records, then learned-school matches, then predicted-tick
--- alignment, then most recent application.
+-- aura-fresh records, then canonical-school matches, then most recent
+-- application.
 function PT:MatchHit(t, school)
 	self:ScanTargetAuras(t)
 	local schoolSafe = IsSafeNumber(school)
@@ -335,23 +330,15 @@ function PT:MatchHit(t, school)
 			-- skip
 		else
 		local auraFresh = type(d.seenAt) == "number" and (t - d.seenAt) <= AURA_STALE_SEC
-		-- Alive while within cast memory OR still ticking on schedule
-		-- (lastTickAt within ~1.6x the learned interval, min 2s).
-		local tickLive = false
-		if type(d.lastTickAt) == "number" then
-			local tw = math.max(2.0, (type(d.interval) == "number" and d.interval or 2) * 1.6)
-			tickLive = (t - d.lastTickAt) <= tw
-		end
+		local tickLive = type(d.lastTickAt) == "number"
+			and (t - d.lastTickAt) <= TICK_LIVE_SEC
 		local castFresh = (type(d.recencyAt) == "number"
 			and (t - d.recencyAt) >= 0 and (t - d.recencyAt) <= CAST_WINDOW_SEC) or tickLive
 		if auraFresh or castFresh then
 			candN = candN + 1
 			local score = auraFresh and 4 or 1
-			local dotSchool = d.knownSchool or d.school
+			local dotSchool = d.knownSchool
 			if schoolSafe and dotSchool ~= nil and school == dotSchool then
-				score = score + 2
-			end
-			if type(d.nextTickAt) == "number" and math.abs(t - d.nextTickAt) <= TICK_WINDOW_SEC then
 				score = score + 2
 			end
 			local ap = d.applyAt or 0
@@ -365,9 +352,9 @@ function PT:MatchHit(t, school)
 	local d = self._dots[bestId]
 	local dotAge = (type(d.applyAt) == "number") and (t - d.applyAt) or nil
 	if candN > 1 then
-		ptDbg(("PT_MATCH sid=%s score=%s aura=%s cand=%d sch=%s nextTick=%s")
+		ptDbg(("PT_MATCH sid=%s score=%s aura=%s cand=%d sch=%s")
 			:format(dbgSafe(bestId), dbgSafe(bestScore), dbgSafe(bestAura), candN,
-				dbgSafe(d.school), dbgSafe(d.nextTickAt and (d.nextTickAt - t) or nil)))
+				dbgSafe(d.knownSchool)))
 	end
 	return bestId, bestAura, dotAge, bestScore
 end
@@ -379,42 +366,21 @@ function PT:IsTracked(spellId)
 		and (now() - d.seenAt) <= AURA_STALE_SEC
 end
 
--- Record a confirmed periodic emit: refresh recency, learn the tick's school,
--- and update the learned interval / predicted next tick.
+-- Record a confirmed periodic emit: refresh tick liveness.
 function PT:NoteEmit(spellId, t, school)
 	if type(spellId) ~= "number" then return end
 	local d = dotRecord(self, spellId, "cast")
-	if type(d.lastTickAt) == "number" then
-		local dt = t - d.lastTickAt
-		if dt >= MIN_INTERVAL_SEC and dt <= MAX_INTERVAL_SEC then
-			-- Simple running estimate; converges fast for steady ticks.
-			local newIv = (type(d.interval) == "number")
-				and ((d.interval * 0.6) + (dt * 0.4)) or dt
-			if type(d.interval) ~= "number" or math.abs(newIv - d.interval) > 0.1 then
-				ptDbg(("PT_LEARN sid=%s interval=%.2f"):format(dbgSafe(spellId), newIv))
-			end
-			d.interval = newIv
-		end
-	end
 	d.lastTickAt = t
 	-- Do NOT refresh recencyAt here — emits refreshing cast-memory is what let
-	-- foreign hits keep a DoT record alive forever. Liveness comes from the
-	-- tick schedule (lastTickAt) instead.
-	if type(d.interval) == "number" then
-		d.nextTickAt = t + d.interval
-	end
-	-- First-write wins and only for unknown dots — foreign hits must not be
-	-- able to overwrite the school of a canonical (or already-learned) DoT.
-	if IsSafeNumber(school) and d.knownSchool == nil and d.school == nil then
-		d.school = school
-	end
+	-- foreign hits keep a DoT record alive forever. Liveness comes from
+	-- lastTickAt (fixed window) instead.
 end
 
--- Canonical or learned school for a spellId (nil if unknown).
+-- Canonical school for a spellId (nil if unknown). Fixed table only —
+-- nothing is learned from combat hits.
 function PT:SchoolFor(spellId)
 	if KNOWN_DOT_SCHOOLS[spellId] then return KNOWN_DOT_SCHOOLS[spellId] end
-	local d = type(spellId) == "number" and self._dots[spellId] or nil
-	return type(d) == "table" and (d.knownSchool or d.school) or nil
+	return nil
 end
 
 -- Normalized aura name for a tracked DoT, when known. Used by the display

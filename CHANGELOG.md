@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.7.0
+
+### Removed
+- **Learned spell attribution layer:** deleted the empirical spell→school and cast-delay profile system (`_spellSchoolProfile`, persisted `castProfiles` in SavedVariables, sampling, hydration, and learned acceptance/rejection). `UNIT_COMBAT` carries no reliable source/spell attribution on secret-value clients, so learned profiles could be poisoned by pet/collateral/foreign-player hits and produce confident-looking but wrong spell IDs. Attribution now uses only deterministic evidence: recent player casts, the fixed seeded school table, aura-backed periodic matching, and canonical DoT school data.
+- **Combat-log RGB filter module (`Parser/CombatLog_Lines.lua`):** removed the custom "ZSBT" `Blizzard_CombatLog_Filters` entry, `COMBAT_LOG_MESSAGE` handling, palette-line classification, and all pairing/`DamageLineNear`/`ClosestKind` corroboration gates. A one-time migration removes the filter from users' combat-log settings and restores a sane active filter.
+- **Off-target AoE damage tracking (`Parser/AoE_Damage.lua`):** removed nameplate health/`UNIT_COMBAT` off-target processing, `_processAoEDamage`, the `/zsbt aodiag` command, and the Debug UI "Toggle AoE Damage Diagnostics" button. Off-target hits are now ignored — they cannot be safely attributed.
+
+### Changed
+- **`Periodic_Tracker` stripped of learned signals:** removed learned tick interval, learned school, and predicted `nextTickAt` scoring. `MatchHit` now scores on aura freshness, the canonical `KNOWN_DOT_SCHOOLS` table, and recency only; record liveness uses a fixed window instead of a learned schedule.
+- **DoT tick color-veto logic removed:** `DOT_LINE_WAIT`/`DOT_LINE_WINDOW` deferral, `isTickColoredHit`, and all combat-log line-kind gates are gone — tick attribution relies on aura presence, cast memory, and canonical school checks.
+- **Honest anonymous output:** hits that can't be deterministically attributed display without a spell ID/icon instead of wearing a guessed one.
+
+### Fixed
+- **Foreign damage bleed in groups:** removing the learned-matching and off-target emit surfaces eliminates the paths that let other players' damage appear with your spell icons on shared targets (open world and instances).
+
 ## 3.6.2
 
 ### Changed

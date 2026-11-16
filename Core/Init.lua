@@ -723,6 +723,47 @@ function Addon:OnInitialize()
 	migrateGeneralDefaultsOnce()
 	migrateGeneralDefaults_v2()
 
+	-- One-time cleanup: earlier builds installed a "ZSBT" combat-log filter
+	-- into Blizzard_CombatLog_Filters and made it the active filter, which
+	-- silently restricted the user's whole combat log to self+pet damage.
+	-- The attribution module that needed it is gone — remove the filter and
+	-- restore a sane currentFilter so users' logs return to normal.
+	local function cleanupCombatLogFilter()
+		self.db.global = self.db.global or {}
+		self.db.global.migrations = self.db.global.migrations or {}
+		if self.db.global.migrations.combatLogFilterCleanup_v1 == true then return end
+
+		local saved = _G.Blizzard_CombatLog_Filters
+		if type(saved) == "table" and type(saved.filters) == "table" then
+			local removedIdx = nil
+			for i = #saved.filters, 1, -1 do
+				local f = saved.filters[i]
+				if type(f) == "table" and f.name == "ZSBT" then
+					table.remove(saved.filters, i)
+					removedIdx = i
+				end
+			end
+			if removedIdx then
+				local cur = tonumber(saved.currentFilter) or 1
+				if cur == removedIdx then
+					saved.currentFilter = math.max(1, math.min(cur, #saved.filters))
+				elseif cur > removedIdx then
+					saved.currentFilter = cur - 1
+				end
+			end
+		end
+
+		-- Drop persisted learned cast school/delay profiles — the learning
+		-- layer was removed; the data is dead weight.
+		if type(self.db.global.castProfiles) == "table" then
+			self.db.global.castProfiles = nil
+		end
+
+		self.db.global.migrations.combatLogFilterCleanup_v1 = true
+	end
+
+	cleanupCombatLogFilter()
+
 	-- Diagnostics migration: seed new channel-based debug settings from legacy fields.
 	local function migrateDiagnosticsDebugChannels_v1()
 		if not self.db then return end
@@ -2140,50 +2181,6 @@ function Addon:HandleSlashCommand(input)
 		return
     end
 
-    if cmd == "aodiag" then
-		-- Toggle verbose AoE damage tracing and print pipeline counters.
-		local aoe = ZSBT.AoEDamage
-		if not aoe then
-			self:Print("ZSBT aodiag: AoEDamage module not loaded")
-			return
-		end
-		aoe._verbose = not aoe._verbose
-		local s = aoe._stats
-		self:Print("ZSBT aodiag " .. (aoe._verbose and "ON" or "OFF")
-			.. " enabled=" .. tostring(aoe._enabled == true)
-			.. " | events=" .. tostring(s.events)
-			.. " dedup=" .. tostring(s.dedup)
-			.. " notAtk=" .. tostring(s.notAttackable)
-			.. " secret=" .. tostring(s.secret)
-			.. " noBase=" .. tostring(s.noBaseline)
-			.. " nonDmg=" .. tostring(s.nonDamage)
-			.. " clamped=" .. tostring(s.clamped)
-			.. " emitted=" .. tostring(s.emitted)
-			.. " ucEv=" .. tostring(s.ucEvents)
-			.. " ucEmit=" .. tostring(s.ucEmitted)
-			.. " ucHeal=" .. tostring(s.ucHeal)
-			.. " peIn=" .. tostring(s.peIn or 0)
-			.. " gStrict=" .. tostring(s.gateStrict or 0)
-			.. " gRestr=" .. tostring(s.gateRestrict or 0)
-			.. " gLine=" .. tostring(s.gateLine or 0)
-			.. " gClu=" .. tostring(s.gateCluster or 0))
-		local core = ZSBT.Core
-		local iaw = core and core.IsInstanceAwareOutgoingEnabled and core:IsInstanceAwareOutgoingEnabled() == true
-		local grp = core and core._inGroupInstance == true
-		local inInst, instType = false, "?"
-		if type(IsInInstance) == "function" then
-			local okI, ii, it = pcall(IsInInstance)
-			if okI then inInst, instType = ii == true, tostring(it) end
-		end
-		self:Print("ZSBT aodiag gates: iaw=" .. tostring(iaw)
-			.. " grp=" .. tostring(grp)
-			.. " inInst=" .. tostring(inInst) .. "/" .. instType)
-		if aoe._verbose then
-			self:Print("AODEBUG lines: emit=plate hit accepted, fire=attributed+scroll, drop=unattributed")
-		end
-		return
-    end
-
     if cmd == "icdiag" then
 		-- Toggle item-cooldown tracing: record -> cooldown read -> ready.
 		local ic = ZSBT.ItemCooldowns
@@ -2651,7 +2648,7 @@ function Addon:HandleSlashCommand(input)
     end
 
     self:Print(L["|cFF808C9EUnknown command:|r "] .. cmd)
-	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | attrib [on|off|clear] | reset | version | auratest | restorefct | dumpcvars | resdiag | sectest | aodiag | xpdiag | xpfind | findcvar <text> | textscan | ctinspect | xpwrap]"])
+	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | attrib [on|off|clear] | reset | version | auratest | restorefct | dumpcvars | resdiag | sectest | xpdiag | xpfind | findcvar <text> | textscan | ctinspect | xpwrap]"])
 end
 
 ------------------------------------------------------------------------
