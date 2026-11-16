@@ -3847,23 +3847,11 @@ function ZSBT.BuildDebugOptionsTable()
 				end
 			end,
 		},
-		aoeDiag = {
-			type = "execute",
-			name = L["Toggle AoE Damage Diagnostics"],
-			desc = L["Toggles verbose AoE damage attribution tracing (same as /zsbt aodiag)."],
-			order = 3.6,
-			width = "full",
-			func = function()
-				if ZSBT.Addon and ZSBT.Addon.HandleSlashCommand then
-					ZSBT.Addon:HandleSlashCommand("aodiag")
-				end
-			end,
-		},
 		icDiag = {
 			type = "execute",
 			name = L["Toggle Item Cooldown Diagnostics"],
 			desc = L["Toggles item cooldown tracing (same as /zsbt icdiag)."],
-			order = 3.7,
+			order = 3.6,
 			width = "full",
 			func = function()
 				if ZSBT.Addon and ZSBT.Addon.HandleSlashCommand then
@@ -3875,7 +3863,7 @@ function ZSBT.BuildDebugOptionsTable()
 			type = "execute",
 			name = L["Toggle XP Event Probe"],
 			desc = L["Toggles a live probe that prints XP-related events (same as /zsbt xpdiag)."],
-			order = 3.8,
+			order = 3.7,
 			width = "full",
 			func = function()
 				if ZSBT.Addon and ZSBT.Addon.HandleSlashCommand then
