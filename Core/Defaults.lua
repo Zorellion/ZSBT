@@ -340,6 +340,7 @@ ZSBT.DEFAULTS = {
         ------------------------------------------------------------------------
         pets = {
             enabled       = true,
+            casterMode    = false,
             scrollArea    = "Outgoing",
             aggregation   = "Generic (\"Pet Hit X\")",
             minThreshold  = 0,

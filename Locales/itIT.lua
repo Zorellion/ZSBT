@@ -1083,3 +1083,5 @@ L["Rampage!"] = "Furia!"
 L["Unstoppable!"] = "Inarrestabile!"
 
 L["|cFFFFD100Midnight 12.0 note:|r Multi-charge spells (charges) may not be reliably trackable because charge/recharge data can be hidden (\"secret\"). Cooldown ready notifications for charge spells may be delayed or unavailable."] = "|cFFFFD100Nota Midnight 12.0:|r Gli incantesimi a cariche multiple potrebbero non essere tracciabili in modo affidabile perché i dati di cariche/ricarica possono essere nascosti. Le notifiche di ricarica per incantesimi a cariche possono essere ritardate o non disponibili."
+L["Caster Mode"] = "Modalità caster"
+L["Treat unattributed melee hits as pet damage. Enable on caster specs with a pet — melee swings carry no spell ID, so your pet's auto-attacks would otherwise show as anonymous player hits. Leave off for melee specs."] = "Tratta i colpi in mischia non attribuiti come danni della mascotte. Abilita sugli spec da lanciatore con mascotte — i colpi in mischia non hanno ID incantesimo, quindi gli auto-attacchi della mascotte apparirebbero come colpi anonimi del giocatore. Lascia disattivato sugli spec da mischia."

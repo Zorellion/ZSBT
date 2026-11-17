@@ -1,5 +1,27 @@
 # Changelog
 
+## 4.0.0
+
+### Changed
+- **Combat core replaced with the ZCT framework:** the entire combat attribution/detection pipeline is now the Zore's Combat Text engine embedded inside ZSBT (`ZCT/`). It owns combat-log filtering, event normalization, cast attribution, periodic detection, strict/group gating, and spam merging; normalized events feed ZSBT's existing display pipeline through `ZCT/Core/Bridge.lua` (`Parser.Outgoing`/`Incoming.ProcessEvent` for player events, `PulseEngine` for pet events). ZSBT keeps its scroll areas, animations, fonts, crit routing, icons, cooldowns, triggers, rules, and notifications unchanged.
+- **Outgoing/incoming merge rollups are secret-safe:** merge buffers store secret amounts via the shared raw-pipe registry and render `(xN)` count badges without ever comparing or formatting secret values.
+- **Incoming speculative spell attribution removed:** incoming hits no longer wear guessed spell IDs/icons/names — only deterministic evidence (matched casts, aura-backed periodic records) supplies attribution.
+- **Caster Mode (Pets tab):** new opt-in toggle matching ZCT semantics — unattributed outgoing melee/ranged hits while your pet is out route through the pet display/aggregation path instead of appearing as anonymous hits. Only affects damage; incoming events and real spell IDs are never rerouted.
+
+### Fixed
+- **Merge-buffer flush leak:** events bypassing merge (crits, misses, different spell buckets) no longer orphan pending merge state — buffered hits flush correctly instead of being dropped or merged into the wrong bucket.
+- **Emote secret-string crash:** notification/emote paths that could receive secret strings no longer error on unsafe string operations.
+- **`emitPetHeal` spellId bug:** pet heal events now pass a proven-safe spellId instead of an undefined global.
+
+### Removed
+- **Legacy `Event_Collector` combat pipeline:** the UNIT_COMBAT/COMBAT_TEXT_UPDATE/UNIT_HEALTH collector (~4,500 lines) is retired to a minimal stub preserving only the raw-pipe registry and timestamp fields other modules still read. The old speculative attribution, learned-profile, and combat-text pairing paths are gone for good.
+- **All remaining MSBT references** scrubbed from comments and docs — no external addon names appear anywhere in files or UI.
+
+### Notes
+- Combat event *detection* now follows ZCT exactly: same filter, same pairing windows, same strict/group gating (`dots=auto`, `spells=strict`, `auto=block` defaults). Presentation remains 100% ZSBT.
+- `pets.casterMode` defaults to **off**; enable per-profile on pet classes only — on melee specs it would label your own white swings as pet damage.
+- One relog recommended after updating so the embedded combat-log filter state is clean.
+
 ## 3.7.0
 
 ### Removed

@@ -1083,3 +1083,5 @@ L["Rampage!"] = "Fúria!"
 L["Unstoppable!"] = "Imparável!"
 
 L["|cFFFFD100Midnight 12.0 note:|r Multi-charge spells (charges) may not be reliably trackable because charge/recharge data can be hidden (\"secret\"). Cooldown ready notifications for charge spells may be delayed or unavailable."] = "|cFFFFD100Nota do Midnight 12.0:|r Feitiços com múltiplas cargas podem não ser rastreáveis de forma confiável porque os dados de cargas/recarga podem estar ocultos. As notificações de recarga de feitiços com cargas podem atrasar ou não estar disponíveis."
+L["Caster Mode"] = "Modo de conjurador"
+L["Treat unattributed melee hits as pet damage. Enable on caster specs with a pet — melee swings carry no spell ID, so your pet's auto-attacks would otherwise show as anonymous player hits. Leave off for melee specs."] = "Trata golpes corpo a corpo não atribuídos como dano de pet. Ative em especializações de conjurador com pet — golpes corpo a corpo não carregam ID de feitiço, então os auto-ataques do seu pet apareceriam como golpes anônimos do jogador. Deixe desligado em specs corpo a corpo."

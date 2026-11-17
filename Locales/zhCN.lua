@@ -1086,3 +1086,5 @@ L["Rampage!"] = "狂暴！"
 L["Unstoppable!"] = "势不可挡！"
 
 L["|cFFFFD100Midnight 12.0 note:|r Multi-charge spells (charges) may not be reliably trackable because charge/recharge data can be hidden (\"secret\"). Cooldown ready notifications for charge spells may be delayed or unavailable."] = "|cFFFFD100午夜 12.0 说明：|r 多充能法术可能无法被可靠跟踪，因为充能/重充数据可能处于隐藏状态。充能法术的冷却就绪通知可能延迟或不可用。"
+L["Caster Mode"] = "施法者模式"
+L["Treat unattributed melee hits as pet damage. Enable on caster specs with a pet — melee swings carry no spell ID, so your pet's auto-attacks would otherwise show as anonymous player hits. Leave off for melee specs."] = "将未归因的近战攻击视为宠物伤害。在拥有宠物的施法专精上启用——近战挥击不携带法术ID，否则宠物的自动攻击会显示为匿名的玩家攻击。近战专精请保持关闭。"

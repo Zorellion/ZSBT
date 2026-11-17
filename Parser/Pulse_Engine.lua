@@ -107,7 +107,14 @@ local function canUseDamageMeterIncoming()
 		and Enum.DamageMeterType.DamageTaken
 end
 
+-- Damage-meter combat-text fallback: RETIRED by the ZCT combat-core
+-- transplant. It emitted unattributed numbers for the legacy
+-- restrict-mode pipeline; ZCT owns attribution now. Flip to true to
+-- re-enable the legacy polls.
+local DAMAGE_METER_COMBAT_TEXT_ENABLED = false
+
 local function shouldPollDamageMeterOutgoing()
+	if not DAMAGE_METER_COMBAT_TEXT_ENABLED then return false end
 	if not isDamageMeterOutgoingEnabled() then return false end
 	if not (ZSBT.Core and ZSBT.Core.ShouldRestrictOutgoingFallback and ZSBT.Core:ShouldRestrictOutgoingFallback()) then
 		return false
@@ -118,6 +125,7 @@ local function shouldPollDamageMeterOutgoing()
 end
 
 local function shouldPollDamageMeterIncoming()
+	if not DAMAGE_METER_COMBAT_TEXT_ENABLED then return false end
 	if not isDamageMeterIncomingEnabled() then return false end
 	if not (ZSBT.Core and ZSBT.Core.ShouldRestrictOutgoingFallback and ZSBT.Core:ShouldRestrictOutgoingFallback()) then
 		return false

@@ -1085,3 +1085,5 @@ L["Rampage!"] = "광란!"
 L["Unstoppable!"] = "저지 불가!"
 
 L["|cFFFFD100Midnight 12.0 note:|r Multi-charge spells (charges) may not be reliably trackable because charge/recharge data can be hidden (\"secret\"). Cooldown ready notifications for charge spells may be delayed or unavailable."] = "|cFFFFD100미드나잇 12.0 참고:|r 다중 충전 주문은 충전/재충전 데이터가 숨겨져 있을 수 있어 안정적으로 추적되지 않을 수 있습니다. 충전 주문의 쿨다운 완료 알림이 지연되거나 표시되지 않을 수 있습니다."
+L["Caster Mode"] = "시전형 모드"
+L["Treat unattributed melee hits as pet damage. Enable on caster specs with a pet — melee swings carry no spell ID, so your pet's auto-attacks would otherwise show as anonymous player hits. Leave off for melee specs."] = "귀속되지 않은 근접 공격을 펫 피해로 처리합니다. 펫이 있는 시전형 특성에서 활성화하세요 — 근접 스윕에는 주문 ID가 없어 펫의 자동 공격이 익명의 플레이어 공격으로 표시됩니다. 근접 특성에서는 꺼 두세요."

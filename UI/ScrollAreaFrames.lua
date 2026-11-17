@@ -696,6 +696,7 @@ local function AE_RecycleEvent(ev)
 	end
 	RecycleFontString(ev.fs)
 	RecycleIconFS(ev.iconFS)
+	RecycleIconFS(ev.countFS)
 	if ev.iconTex then
 		ev.iconTex:Hide()
 		ev.iconTex:SetParent(recyclingBin)
@@ -718,6 +719,7 @@ local function AE_UpdateEvent(ev, dt)
 			end
 		end
 		if ev.iconFS then ev.iconFS:SetAlpha(0) end
+		if ev.countFS then ev.countFS:SetAlpha(0) end
 		if ev.iconTex then ev.iconTex:SetAlpha(0) end
 		return false
 	end
@@ -1419,6 +1421,9 @@ local function AE_UpdateEvent(ev, dt)
 
 	if ev.iconFS then
 		ev.iconFS:SetAlpha(ev.fs:GetAlpha())
+	end
+	if ev.countFS then
+		ev.countFS:SetAlpha(ev.fs:GetAlpha())
 	end
 	if ev.iconTex then
 		ev.iconTex:SetAlpha(ev.fs:GetAlpha())
@@ -2958,6 +2963,21 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
         end
     end
 
+    -- Merge count badge: separate FontString so secret (raw pipe) amounts
+    -- are never concatenated with the count. Anchors to the text's right edge.
+    local countFS = nil
+    local badgeCount = meta and tonumber(meta.mergeBadgeCount)
+    if badgeCount and badgeCount > 1 then
+        countFS = AcquireIconFS(parent)
+        countFS:SetFont(fontFace, math.max(8, math.floor(effectiveFontSize * 0.7)), outlineFlag or "OUTLINE")
+        countFS:SetText("(x" .. badgeCount .. ")")
+        countFS:SetPoint("LEFT", fs, "RIGHT", 3, 0)
+        countFS:SetAlpha(fontAlpha or 1.0)
+        local bc = color or ZSBT.COLORS.ACCENT
+        if bc then countFS:SetTextColor(bc.r or 1, bc.g or 1, bc.b or 1, bc.a or 1.0) end
+        countFS:Show()
+    end
+
     -- Starting position with stagger offset
     local startAnchorV = (dirMult > 0) and "BOTTOM" or "TOP"
     local startPoint = startAnchorV
@@ -3084,6 +3104,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
 		-- Prevent first-frame anchor flash before the animation engine positions the event.
 		if fs then fs:SetAlpha(0) end
 		if iconFS then iconFS:SetAlpha(0) end
+		if countFS then countFS:SetAlpha(0) end
 		if iconTex then iconTex:SetAlpha(0) end
 
         local ev = {
@@ -3091,6 +3112,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             baseColor = color,
             fs = fs,
             iconFS = iconFS,
+            countFS = countFS,
             iconTex = iconTex,
             parent = parent,
             slotOffset = slotOffset,
@@ -3140,6 +3162,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
         if progress >= 1.0 then
             RecycleFontString(fs)
             RecycleIconFS(iconFS)
+            RecycleIconFS(countFS)
             if iconTex then iconTex:Hide(); iconTex:SetParent(recyclingBin) end
             RecycleAnimFrame(self)
 			if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
@@ -3447,6 +3470,11 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             iconFS:ClearAllPoints()
             iconFS:SetPoint("RIGHT", fs, "LEFT", -2, 0)
             iconFS:SetAlpha(fs:GetAlpha())
+        end
+        if countFS then
+            countFS:ClearAllPoints()
+            countFS:SetPoint("LEFT", fs, "RIGHT", 3, 0)
+            countFS:SetAlpha(fs:GetAlpha())
         end
     end)
 end

@@ -1083,3 +1083,5 @@ L["Rampage!"] = "Amoklauf!"
 L["Unstoppable!"] = "Unaufhaltsam!"
 
 L["|cFFFFD100Midnight 12.0 note:|r Multi-charge spells (charges) may not be reliably trackable because charge/recharge data can be hidden (\"secret\"). Cooldown ready notifications for charge spells may be delayed or unavailable."] = "|cFFFFD100Midnight-12.0-Hinweis:|r Spells mit mehreren Ladungen (Charges) sind möglicherweise nicht zuverlässig verfolgbar, da Ladungs-/Nachlade-Daten verborgen sein können. Bereit-Meldungen für Aufladungs-Spells können verzögert oder nicht verfügbar sein."
+L["Caster Mode"] = "Caster-Modus"
+L["Treat unattributed melee hits as pet damage. Enable on caster specs with a pet — melee swings carry no spell ID, so your pet's auto-attacks would otherwise show as anonymous player hits. Leave off for melee specs."] = "Behandle nicht zugeordnete Nahkampftreffer als Begleiterschaden. Aktiviere dies bei Caster-Specs mit einem Begleiter — Nahkampfschwünge tragen keine Zauber-ID, daher würden die Autoangriffe deines Begleiters sonst als anonyme Spieler-Treffer angezeigt. Bei Nahkampf-Specs deaktiviert lassen."

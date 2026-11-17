@@ -5,7 +5,7 @@
 -- links) and scrolls a notification when the item's cooldown finishes —
 -- the "Onyxia head is ready" style alert.
 --
--- Detection mirrors MSBT: hook the use APIs, record the itemID, then poll
+-- Detection hooks the use APIs, records the itemID, then polls
 -- C_Container.GetItemCooldown after a short delay. Cooldown values may be
 -- secret on modern clients; when unreadable we fall back to a countdown
 -- from the last known duration.

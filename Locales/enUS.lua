@@ -1105,3 +1105,5 @@ L["Rune Outline Color"] = true
 L["Hide when All Runes Are Ready"] = true
 L["Hide the tracker while every rune is ready."] = true
 L["Rune Timer Font"] = true
+L["Caster Mode"] = true
+L["Treat unattributed melee hits as pet damage. Enable on caster specs with a pet — melee swings carry no spell ID, so your pet's auto-attacks would otherwise show as anonymous player hits. Leave off for melee specs."] = true

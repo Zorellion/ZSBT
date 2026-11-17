@@ -4770,7 +4770,9 @@ function Core:InitEmoteTracking()
 		if not (ZSBT.IsSafeString and ZSBT.IsSafeString(msg) and ZSBT.IsSafeString(sourceName)) then return end
 		if type(UnitName) ~= "function" then return end
 		local okT, targetName = pcall(UnitName, "target")
-		if not (okT and type(targetName) == "string" and targetName ~= "") then return end
+		-- UnitName can return a secret string in group content; any
+		-- comparison against it errors, so bail when it isn't safe.
+		if not (okT and ZSBT.IsSafeString and ZSBT.IsSafeString(targetName) and targetName ~= "") then return end
 		if targetName ~= sourceName then return end
 		local text = msg:gsub("%%s", sourceName)
 		Core:EmitNotificationTemplate("emotes", "%e", { e = text }, { r = 0.8, g = 0.6, b = 1.0 })
