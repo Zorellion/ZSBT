@@ -118,6 +118,14 @@ function Filter:IsReady()
     if f.name ~= FILTER_NAME then
         return false, ("current filter is '%s', not '%s'"):format(tostring(f.name), FILTER_NAME)
     end
+    -- Cross-check what the UI actually applied: Blizzard_CombatLog keeps a
+    -- global pointing at the live filter settings. If it exists and names a
+    -- different filter, the saved-var index alone is lying to us.
+    local applied = _G.Blizzard_CombatLog_CurrentSettings
+    if type(applied) == "table" and type(applied.name) == "string"
+        and applied.name ~= f.name then
+        return false, ("applied filter is '%s', not '%s'"):format(applied.name, FILTER_NAME)
+    end
     local settings = f.settings
     if type(settings) ~= "table" or settings.lineColoring ~= true then
         return false, "line coloring off"
@@ -134,6 +142,36 @@ function Filter:IsPairingTrusted()
     return Filter._pairingTrusted == true
 end
 
+local function findOurIndex()
+    local saved = _G.Blizzard_CombatLog_Filters
+    if type(saved) ~= "table" or type(saved.filters) ~= "table" then return nil end
+    for i, f in ipairs(saved.filters) do
+        if type(f) == "table" and f.name == FILTER_NAME then return i end
+    end
+    return nil
+end
+
+-- Slow poll: the filter-change events don't fire reliably on every client,
+-- so detection can't depend on them. Verifies every tick (cheap) so the
+-- popup path always engages. NOTE: refocusing is impossible — the apply
+-- path (QuickButton_OnClick -> ApplyFilterSettings -> ClearEventFilters)
+-- is protected; only the user can switch the filter back.
+function Filter:Tick()
+    local now = GetTime and GetTime() or 0
+    if now - (Filter._tickAt or 0) < 1 then return end
+    Filter._tickAt = now
+
+    local idx = findOurIndex()
+    if not idx then return end -- not installed yet; written at logout
+    local saved = _G.Blizzard_CombatLog_Filters
+    if tonumber(saved.currentFilter) == idx then
+        Filter:Verify()
+        return
+    end
+
+    Filter:Verify() -- keep the warning/popup path live
+end
+
 -- Re-verify against live saved vars (called on login + filter-change events).
 local function say(msg)
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
@@ -148,11 +186,19 @@ function Filter:Verify()
     Filter._pairingTrusted = ok
     Filter._reason = why
     Filter._lastTrusted = ok
-    -- Tell the player on every change (and once at login if not ours):
-    -- ZCT can't switch the filter back itself without risking taint.
-    if ok and was == false then
-        say("|cff66aaff[ZCT]|r ZCT combat log filter is active again — outgoing text restored.")
-    elseif not ok and was ~= false then
+    -- Tell the player on every change, then re-remind every 30s while the
+    -- filter stays broken — the chat line alone gets missed. ZCT can't
+    -- switch the filter back itself (the apply path is protected), so the
+    -- popup is the only way to reach them.
+    local now = GetTime and GetTime() or 0
+    if ok then
+        Filter._popupAt = nil
+        Filter._lastWarnAt = nil
+        if was == false then
+            say(("|cff66aaff[ZSBT]|r The '%s' combat log filter is active again — outgoing text restored.")
+                :format(FILTER_NAME))
+        end
+    elseif was ~= false or (now - (Filter._lastWarnAt or 0)) >= 30 then
         local saved = _G.Blizzard_CombatLog_Filters
         local exists = false
         if type(saved) == "table" and type(saved.filters) == "table" then
@@ -160,19 +206,54 @@ function Filter:Verify()
                 if type(f) == "table" and f.name == FILTER_NAME then exists = true end
             end
         end
+        Filter._lastWarnAt = now
         if exists then
-            say(("|cffdd5555[ZCT]|r Outgoing text needs the ZCT combat log filter (%s). "
-                .. "Click the ZCT button at the top of the combat log.")
-                :format(tostring(why)))
+            local whyText = tostring(why)
+            say(("|cffdd5555[ZSBT]|r Outgoing text needs the '%s' combat log filter (%s). "
+                .. "Click the %s button at the top of the combat log.")
+                :format(FILTER_NAME, whyText, FILTER_NAME))
+            Filter:ShowLostPopup(whyText)
         else
-            say("|cffdd5555[ZCT]|r The ZCT combat log filter is installed when you log "
+            say(("|cffdd5555[ZSBT]|r The '%s' combat log filter is installed when you log "
                 .. "out. Log out and back in to enable outgoing text.")
+                :format(FILTER_NAME))
         end
     end
     if ZCT.Dbg and ZCT.Dbg.Enabled and ZCT.Dbg:Enabled("filter") then
         ZCT.Dbg:Info("filter", "verify: pairingTrusted=%s", tostring(Filter._pairingTrusted))
     end
     return Filter._pairingTrusted
+end
+
+-- Popup shown when the player switches the combat-log filter away from
+-- ours — the chat line alone gets missed. Throttled so a flapping filter
+-- doesn't stack popups.
+function Filter:ShowLostPopup(why)
+    local now = GetTime and GetTime() or 0
+    if Filter._popupAt and (now - Filter._popupAt) < 5 then return end
+    if type(StaticPopupDialogs) ~= "table" or type(StaticPopup_Show) ~= "function" then return end
+    Filter._popupAt = now
+
+    StaticPopupDialogs["ZSBT_COMBAT_LOG_FILTER"] = {
+        text = ("|cffdd5555ZSBT|r outgoing combat text is off.\n\n"
+            .. "The '%s' combat log filter is no longer selected (%s).\n\n"
+            .. "Click the %s button at the top of the combat log to turn it back on.")
+            :format(FILTER_NAME, tostring(why), FILTER_NAME),
+        button1 = "Open Combat Log",
+        button2 = "Later",
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        OnAccept = function()
+            local cl = _G.COMBATLOG
+            if type(cl) == "table" or type(cl) == "userdata" then
+                if cl.Show then cl:Show() end
+                if cl.SetAlpha then cl:SetAlpha(1) end
+            end
+        end,
+        OnCancel = function() end,
+    }
+    StaticPopup_Show("ZSBT_COMBAT_LOG_FILTER")
 end
 
 -- Write (or refresh) the "ZCT" filter. MUST run at PLAYER_LOGOUT — applying
@@ -326,4 +407,10 @@ if not Filter._frame then
             C_Timer.After(0.5, function() Filter:Verify() end)
         end
     end)
+end
+
+-- Detection can't rely on filter-change events alone (they don't fire on
+-- every client) — poll lightly so drift always surfaces.
+if C_Timer and C_Timer.NewTicker then
+    C_Timer.NewTicker(1, function() Filter:Tick() end)
 end

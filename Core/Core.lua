@@ -2401,42 +2401,8 @@ function Core:InitKillAnnouncer()
 		ZSBT.Addon:Print(msg)
 	end
 
-	local function FireUT(targetName)
-		local t = GetTime and GetTime() or 0
-		local perKillWindowSec = 12.0
-		local maxChainDurationSec = 30.0
-
-		local lastAt = Core._utKillLastAt or 0
-		local startAt = Core._utChainStartAt or 0
-		local withinRolling = (t - lastAt) <= perKillWindowSec
-		local withinCap = (startAt > 0) and ((t - startAt) <= maxChainDurationSec) or true
-
-		if withinRolling and withinCap then
-			Core._utKillChain = (Core._utKillChain or 0) + 1
-		else
-			Core._utKillChain = 1
-			Core._utChainStartAt = t
-		end
-		Core._utKillLastAt = t
-		if not Core._utChainStartAt or Core._utChainStartAt == 0 then
-			Core._utChainStartAt = t
-		end
-
-		local n = Core._utKillChain or 1
-		local tier = tonumber(n) or 1
-		if tier < 1 then tier = 1 end
-		if tier > 7 then tier = 7 end
-		local eventType = "UT_KILL_" .. tostring(tier)
-		local trg = ZSBT.Core and ZSBT.Core.Triggers
-		if trg and trg.FireEvent and type(eventType) == "string" then
-			trg:FireEvent(eventType, {
-				eventType = eventType,
-				event = eventType,
-				unit = "player",
-				value = targetName,
-				count = n,
-			})
-		end
+	local function FireUT(targetName, source)
+		Core:NoteKillCredit(targetName, source or "frame")
 	end
 
 	self._killAnnouncerFrame:SetScript("OnEvent", function(_, event, msg, ...)
@@ -2458,7 +2424,7 @@ function Core:InitKillAnnouncer()
 			if dl >= 4 then
 				SafePrint("|cFF00CC66[UT]|r ct PARTYKILL tn=" .. dbgSafe(tn or nil))
 			end
-			FireUT(tn or "Target")
+			FireUT(tn, "ct")
 			return
 		end
 		if event == "PLAYER_KILLING_BLOW" then
@@ -2473,7 +2439,7 @@ function Core:InitKillAnnouncer()
 			if dl >= 4 then
 				SafePrint("|cFF00CC66[UT]|r killingblow tn=" .. dbgSafe(tn or nil))
 			end
-			FireUT(tn or "Target")
+			FireUT(tn, "kb")
 			return
 		end
 		if event == "PLAYER_TARGET_CHANGED" then
@@ -2529,7 +2495,7 @@ function Core:InitKillAnnouncer()
 				and nameMatch
 				and outAge and outAge <= 0.90
 				and lastSeenAge and lastSeenAge <= 2.0 then
-				FireUT(tn)
+				FireUT(tn, "infer")
 			end
 			Core._utLastTargetDead = nil
 			Core._utLastTargetName = nil
@@ -2584,9 +2550,9 @@ function Core:InitKillAnnouncer()
 				-- 2) Fallback: if we cannot safely compare names (secret strings), rely on a recent outgoing hit.
 				if lastAt and age and age <= 1.5 then
 					if tnSafe and tn ~= "" and lastSafe and tn == lastName then
-						FireUT(tn)
+						FireUT(tn, "health")
 					elseif not lastSafe then
-						FireUT(tnSafe and tn or "Target")
+						FireUT(tnSafe and tn or nil, "health")
 					end
 				end
 			end
@@ -2621,8 +2587,94 @@ function Core:InitKillAnnouncer()
 
 		local target = extractTarget(msg)
 		if not target then return end
-		FireUT(target)
+		FireUT(target, "chat")
 	end)
+end
+
+-- Kill-credit notification shared by every detection channel:
+-- COMBAT_TEXT_UPDATE PARTYKILL ("ct"), PLAYER_KILLING_BLOW ("kb"),
+-- target-cleared/health-edge inference ("infer"/"health"), kill chat
+-- strings ("chat"), and the ZCT combat-log kill line ("zct").
+--
+-- `source` labels the channel for cross-channel dedup: the same kill
+-- credit can surface on several channels within a few hundred ms and
+-- must count once, while repeated signals from the SAME channel are
+-- real (multi-kill / AoE chains fire one line per victim).
+local KILL_CREDIT_DEDUP_SEC = 0.35
+
+function Core:NoteKillCredit(targetName, source)
+	if not self:IsMasterEnabled() then return end
+	local t = GetTime and GetTime() or 0
+
+	-- Victim name: explicit arg, else last seen target, else generic —
+	-- same fallback chain the chat path used.
+	if not (ZSBT.IsSafeString and ZSBT.IsSafeString(targetName) and targetName ~= "") then
+		targetName = (ZSBT.IsSafeString and ZSBT.IsSafeString(Core._utLastTargetName)
+			and Core._utLastTargetName ~= "") and Core._utLastTargetName or "Target"
+	end
+
+	-- Authoritative credit seen: suppress the inference fallbacks from
+	-- here on, same as the legacy credit events did.
+	Core._utKillCreditSeen = true
+	Core._utKillCreditOnly = true
+
+	Core._utKillSrcAt = Core._utKillSrcAt or {}
+	local srcAt = Core._utKillSrcAt
+	local src = type(source) == "string" and source or "event"
+
+	local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("notifications"))
+		or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
+	local function killDbg(msg)
+		if dl < 4 then return end
+		if not (ZSBT.Addon and ZSBT.Addon.Print) then return end
+		local tnTxt = (ZSBT.IsSafeString and ZSBT.IsSafeString(targetName)) and targetName or "<secret>"
+		ZSBT.Addon:Print("|cFF00CC66[UT]|r killcredit src=" .. tostring(src)
+			.. " tn=" .. tostring(tnTxt) .. " " .. msg)
+	end
+
+	for s, at in pairs(srcAt) do
+		if s ~= src and (t - at) <= KILL_CREDIT_DEDUP_SEC then
+			killDbg("DEDUPED by=" .. tostring(s))
+			return
+		end
+	end
+	srcAt[src] = t
+	killDbg("FIRED")
+
+	local perKillWindowSec = 12.0
+	local maxChainDurationSec = 30.0
+
+	local lastAt = Core._utKillLastAt or 0
+	local startAt = Core._utChainStartAt or 0
+	local withinRolling = (t - lastAt) <= perKillWindowSec
+	local withinCap = (startAt > 0) and ((t - startAt) <= maxChainDurationSec) or true
+
+	if withinRolling and withinCap then
+		Core._utKillChain = (Core._utKillChain or 0) + 1
+	else
+		Core._utKillChain = 1
+		Core._utChainStartAt = t
+	end
+	Core._utKillLastAt = t
+	if not Core._utChainStartAt or Core._utChainStartAt == 0 then
+		Core._utChainStartAt = t
+	end
+
+	local n = Core._utKillChain or 1
+	local tier = tonumber(n) or 1
+	if tier < 1 then tier = 1 end
+	if tier > 7 then tier = 7 end
+	local eventType = "UT_KILL_" .. tostring(tier)
+	local trg = ZSBT.Core and ZSBT.Core.Triggers
+	if trg and trg.FireEvent and type(eventType) == "string" then
+		trg:FireEvent(eventType, {
+			eventType = eventType,
+			event = eventType,
+			unit = "player",
+			value = targetName,
+			count = n,
+		})
+	end
 end
 
 function Core:IsNotificationCategoryEnabled(category)

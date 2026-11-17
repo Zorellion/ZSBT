@@ -45,7 +45,9 @@ ZCT.KIND_COLORS = {
     steal     = { 0.60, 0.80, 1.00 },  -- light blue
     dispelFailed = { 0.55, 0.72, 0.82 }, -- grey-blue
     broke     = { 1.00, 0.35, 0.35 },  -- red
-    kill      = { 1.00, 1.00, 1.00 },  -- white
+    kill      = { 0.80, 0.85, 1.00 },  -- pale blue (NOT white: default-colored
+                                        -- non-palette lines render ~white and
+                                        -- were misclassified as kill credit)
     extra     = { 0.15, 0.85, 0.85 },  -- cyan
 }
 

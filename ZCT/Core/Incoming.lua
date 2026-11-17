@@ -208,6 +208,8 @@ function Incoming:HandleUnitCombat(unit, action, descriptor, amount, school)
         pet = (unit == "pet"),
         action = action,
         unit = unit,
+        flagText = (type(descriptor) == "string" and descriptor ~= "")
+            and descriptor or nil,
     })
 
     if ZCT.Dbg and ZCT.Dbg:Enabled("incoming") then

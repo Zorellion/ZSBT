@@ -51,6 +51,8 @@ function Outgoing:ProcessEvent(info)
 		timestamp = info.timestamp,
 		confidence = info.confidence or "UNKNOWN",
 		isPeriodic = info.isPeriodic == true,
+		missType = info.missType,
+		flagText = info.flagText,
 	}
 
 	local probe = ZSBT.Core and ZSBT.Core.OutgoingProbe

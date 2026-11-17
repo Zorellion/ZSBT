@@ -99,6 +99,8 @@ function Incoming:ProcessEvent(info)
             isCrit = safeBool(info.isCrit),
             isPeriodic = info.isPeriodic == true,
             overheal = info.overheal,
+            missType = info.missType,
+            flagText = info.flagText,
             timestamp = info.timestamp,
             targetName = info.targetName,
             confidence = info.confidence,
@@ -111,6 +113,8 @@ function Incoming:ProcessEvent(info)
 		ev.spellID = safeNumOrNil(ev.spellID)
 		ev.spellIcon = safeNumOrNil(ev.spellIcon)
 		ev.schoolMask = safeNumOrNil(ev.schoolMask)
+		ev.missType = safeStrOrNil(ev.missType)
+		ev.flagText = safeStrOrNil(ev.flagText)
 
         if ev.targetName == nil then
             ev.targetName = UnitName("player")

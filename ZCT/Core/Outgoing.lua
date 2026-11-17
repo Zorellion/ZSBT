@@ -505,6 +505,8 @@ function Out:HandleUnitCombat(unit, action, descriptor, amount, school)
         school = ZCT.IsSafeNumber(school) and school or nil,
         crit = crit,
         action = action,
+        flagText = (type(descriptor) == "string" and descriptor ~= "")
+            and descriptor or nil,
         pet = (unit == "pet"),
         at = GetTime(),
     }
@@ -582,6 +584,7 @@ function Out:_Pair(c)
             -- meaningful for incoming).
             pet = (dir == "in") and (selfUnit == "pet") or (byPet == true),
             action = c.action,
+            flagText = c.flagText,
             unit = c.unit,
         })
         if ZCT.Dbg and ZCT.Dbg:Enabled("outgoing") then

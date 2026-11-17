@@ -425,9 +425,18 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
         if prof.damage and prof.damage.showMisses == false then
             return
         end
-        local area = (prof.damage and prof.damage.scrollArea) or "Incoming"
+        local m = prof.misses
+        local mt = ZSBT.NormalizeMissSubtype
+            and ZSBT.NormalizeMissSubtype(evt.missType) or nil
+        if mt and m and type(m.hidden) == "table" and m.hidden[mt] then
+            return
+        end
+        local area = (m and m.scrollArea)
+            or (prof.damage and prof.damage.scrollArea) or "Incoming"
         local missText = ZSBT.IsSafeString(evt.amountText) and evt.amountText or "Miss"
-        local color = {r = 0.70, g = 0.70, b = 0.70}  -- Gray for misses
+        local mc = m and m.color
+        local color = (type(mc) == "table") and mc
+            or {r = 0.70, g = 0.70, b = 0.70}  -- Gray for misses
         local sid = evt.spellID or evt.spellId
         local meta = {
             probe = true,

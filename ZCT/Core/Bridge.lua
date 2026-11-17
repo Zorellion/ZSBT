@@ -30,6 +30,22 @@ local MISS_WORDS = {
     IMMUNE = "Immune", REFLECT = "Reflect", DEFLECT = "Deflect",
 }
 
+------------------------------------------------------------------------
+-- UNIT_COMBAT arg3 (flagText) -> display word. Whitelist only: arg3 is
+-- documented as the crit/glance indicator but can also carry spell
+-- names, so unknown strings are dropped rather than displayed.
+-- CRITICAL is excluded — crits have their own styling pipeline.
+------------------------------------------------------------------------
+local FLAG_WORDS = {
+    CRUSHING = "Crushing",
+    GLANCING = "Glancing",
+}
+
+local function flagWord(flagText)
+    if not ZSBT.IsSafeString(flagText) or flagText == "" then return nil end
+    return FLAG_WORDS[flagText:upper()]
+end
+
 local function missWord(action)
     if type(action) ~= "string" then return "Miss" end
     local u = action:upper():gsub("MISSED$", "MISS")
@@ -183,9 +199,39 @@ function Bridge:Handle(evt)
     if type(evt) ~= "table" then return end
     maybeWipeRawPipe()
     local kind = evt.kind
-    if kind ~= "damage" and kind ~= "heal" and kind ~= "miss" then return end
     local dir = evt.direction
     if dir ~= "in" and dir ~= "out" then return end
+
+    -- Kill-credit utility lines feed the UT kill announcer chain. The
+    -- combat-log line carries no victim name; Core resolves it from the
+    -- last seen target, same as the other credit channels. All other
+    -- utility kinds stay display-only inside ZCT and are dropped here.
+    --
+    -- Kill lines replay on login AND on combat-log refilter (window
+    -- focus/tab switches re-emit recent entries), so _sawOutgoing alone
+    -- can't tell a replay from a real kill -- it stays true all session.
+    -- Gate on RECENT outgoing combat instead: a real credit lands right
+    -- after the killing blow; a replay arrives with stale combat state.
+    -- Same 1.5s window the UNIT_HEALTH inference path uses in Core.lua.
+    if kind == "utility" then
+        if dir == "out" and evt.lineKind == "kill" then
+            local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
+            local lastAt = ec and ec._lastOutgoingCombatAt
+            local age = lastAt and ((GetTime and GetTime() or 0) - lastAt) or nil
+            if Bridge._sawOutgoing and age and age <= 1.5 then
+                dbgBridge("utility kill credit")
+                local core = ZSBT.Core
+                if core and core.NoteKillCredit then
+                    core:NoteKillCredit(nil, "zct")
+                end
+            else
+                dbgBridge("utility kill credit dropped (stale replay)")
+            end
+        end
+        return
+    end
+
+    if kind ~= "damage" and kind ~= "heal" and kind ~= "miss" then return end
 
     dbgBridge("kind=%s dir=%s pet=%s line=%s action=%s spellId=%s crit=%s per=%s unit=%s",
         tostring(kind), tostring(dir), tostring(evt.pet),
@@ -205,6 +251,7 @@ function Bridge:Handle(evt)
             eng:_noteIncomingSignal(evt.at or GetTime())
         end
     end
+    if dir == "out" then Bridge._sawOutgoing = true end
 
     local amount = evt.amount
     local hasAmount = amount ~= nil
@@ -231,8 +278,11 @@ function Bridge:Handle(evt)
 
     local amountText = nil
     local dispAmount = nil
+    local missType = nil
     if kind == "miss" then
         amountText = missWord(evt.action)
+        missType = ZSBT.NormalizeMissSubtype
+            and ZSBT.NormalizeMissSubtype(evt.action) or nil
     elseif amountSafe then
         dispAmount = amount
         amountText = tostring(math.floor(amount + 0.5))
@@ -274,6 +324,8 @@ function Bridge:Handle(evt)
         isCrit = evt.crit == true,
         isPeriodic = evt.periodic == true,
         isAuto = isAuto,
+        missType = missType,
+        flagText = flagWord(evt.flagText),
         timestamp = evt.at,
         -- Incoming events must keep targetName nil so Incoming:ProcessEvent
         -- defaults it to the player name (a nameplate token would fail its

@@ -1,0 +1,420 @@
+------------------------------------------------------------------------
+-- Zore's Scrolling Battle Text - ZCT-style config shell
+-- Left-sidebar page navigation + focused page content, matching the
+-- standalone ZCT config flow while reusing ZSBT's AceConfig options.
+--
+-- Each nav page registers its own options table (ZSBT_pg_<id>) whose
+-- args are extracted from ZSBT.BuildOptionsTable(), then is rendered by
+-- AceConfigDialog:Open(appName, container) into an AceGUI "Frame"
+-- widget reparented inside the page frame. All get/set/hidden logic
+-- stays verbatim — this is presentation-only.
+--
+-- Opened via "/zsbt zctui". The classic AceConfig UI ("ZSBT" app) is
+-- untouched and remains the default for bare "/zsbt".
+------------------------------------------------------------------------
+
+local ADDON_NAME, ZSBT = ...
+
+local L = ZSBT.L
+
+local Shell = {}
+ZSBT.ConfigShell = Shell
+
+local ACD = LibStub("AceConfigDialog-3.0", true)
+local ACR = LibStub("AceConfigRegistry-3.0", true)
+local AceGUI = LibStub("AceGUI-3.0", true)
+
+------------------------------------------------------------------------
+-- Nav pages (ZCT flow order). getArgs resolves into BuildOptionsTable()
+-- output and must return a GROUP table (not bare args): AceConfig only
+-- adds a ScrollFrame for mixed leaf+group content one level below a
+-- tree node, so each page root holds exactly one group child — the
+-- same shape the classic UI's root tree produces.
+------------------------------------------------------------------------
+local function wrapGroup(label, args)
+	return { type = "group", name = label, order = 1, childGroups = "tree", args = args }
+end
+
+local NAV = {
+	{ id = "general",   label = L["|cFFFFD100General|r"],           order = 1,
+	  getArgs = function(a) return a.general end },
+	{ id = "profiles",  label = L["|cFFFFD100DB Profiles|r"],      order = 2,
+	  getArgs = function(a) return a.profiles end },
+	{ id = "combat",    label = L["|cFFFFD100Combat Text|r"],      order = 3,
+	  getArgs = function(a)
+		  local ct = a.combatText
+		  if not (ct and ct.args) then return nil end
+		  -- Spam Control lives on its own nav page; drop it here.
+		  local copy = {}
+		  for k, v in pairs(ct.args) do
+			  if k ~= "spamControl" then copy[k] = v end
+		  end
+		  return wrapGroup(L["|cFFFFD100Combat Text|r"], copy)
+	  end },
+	{ id = "crits",     label = L["|cFFFFD100Crits|r"],            order = 4,
+	  getArgs = function(a) return a.crits end },
+	{ id = "alerts",    label = L["|cFFFFD100Alerts|r"],           order = 5,
+	  getArgs = function(a) return a.alerts end },
+	{ id = "resources", label = L["|cFFFFD100Resources|r"],        order = 6,
+	  getArgs = function(a)
+		  local r = a.resources
+		  local rt = r and r.args and r.args.resourceTracker
+		  if not (rt and rt.args) then return nil end
+		  return wrapGroup(L["|cFFFFD100Resource Tracker|r"], rt.args)
+	  end },
+	{ id = "areas",     label = L["|cFFFFD100Scroll Areas|r"],     order = 7,
+	  getArgs = function(a) return a.scrollAreas end },
+	{ id = "spam",      label = L["|cFFFFD100Spam Control|r"],     order = 8,
+	  getArgs = function(a)
+		  local ct = a.combatText
+		  local sc = ct and ct.args and ct.args.spamControl
+		  if not (sc and sc.args) then return nil end
+		  return wrapGroup(L["|cFFFFD100Spam Control|r"], sc.args)
+	  end },
+	{ id = "help",      label = L["|cFFFFD100Help and Support|r"], order = 9,
+	  getArgs = function(a) return a.maintenance end },
+	{ id = "donate",    label = L["|cFFFFD100Donate|r"],           order = 10,
+	  customPage = true },
+}
+
+local DEFAULT_W, DEFAULT_H = ZSBT.CONFIG_WIDTH or 900, ZSBT.CONFIG_HEIGHT or 820
+local MIN_W, MIN_H = 640, 480
+local SIDE_W = 150
+
+local frame, content, sidebar
+local navButtons = {}
+local pageFrames = {}
+local pageWidgets = {}
+local pageFed = {}
+local activePage
+local registeredApps = {}
+
+------------------------------------------------------------------------
+-- NotifyChange fan-out: arg set() functions call NotifyChange("ZSBT"),
+-- but page widgets live under ZSBT_pg_* app names. Fan "ZSBT" out to
+-- every registered page app so hidden/disabled/order deps refresh.
+------------------------------------------------------------------------
+local function installNotifyFanout()
+	if not ACR or ACR._zsbtShellFanout then return end
+	ACR._zsbtShellFanout = true
+	local orig = ACR.NotifyChange
+	ACR.NotifyChange = function(self, appName, ...)
+		orig(self, appName, ...)
+		if appName == "ZSBT" then
+			for app in pairs(registeredApps) do
+				orig(self, app)
+			end
+		end
+	end
+end
+
+------------------------------------------------------------------------
+-- Shell chrome
+------------------------------------------------------------------------
+local COL = {
+	bg      = { 0.055, 0.065, 0.085, 0.97 },
+	sidebar = { 0.075, 0.09, 0.115, 1.0 },
+	track   = { 0.16, 0.19, 0.24, 1.0 },
+	accent  = { 1.00, 0.82, 0.00, 1.0 },   -- ZSBT gold
+	text    = { 0.92, 0.93, 0.95, 1.0 },
+}
+
+local function setBg(f, color, border)
+	f:SetBackdrop({
+		bgFile = "Interface\\Buttons\\WHITE8X8",
+		edgeFile = "Interface\\Buttons\\WHITE8X8",
+		tile = true, tileSize = 8, edgeSize = 1,
+		insets = { left = 1, right = 1, top = 1, bottom = 1 },
+	})
+	f:SetBackdropColor(color[1], color[2], color[3], color[4] or 1)
+	if border then f:SetBackdropBorderColor(border[1], border[2], border[3], border[4]) end
+end
+
+local function shellFont(parent, size, color, text)
+	local fs = parent:CreateFontString(nil, "OVERLAY")
+	fs:SetFont(GameFontNormal:GetFont())
+	fs:SetTextColor(color[1], color[2], color[3], color[4] or 1)
+	fs:SetText(text or "")
+	fs:SetHeight(size * 1.4)
+	return fs
+end
+
+local function getShellSize()
+	local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+	local s = g and g.configShellSize
+	local w = (type(s) == "table" and tonumber(s.width)) or DEFAULT_W
+	local h = (type(s) == "table" and tonumber(s.height)) or DEFAULT_H
+	return w, h
+end
+
+local function saveShellSize()
+	if not frame then return end
+	local w, h = frame:GetWidth(), frame:GetHeight()
+	ZSBT.db.profile.general = ZSBT.db.profile.general or {}
+	ZSBT.db.profile.general.configShellSize = { width = w, height = h }
+end
+
+local function buildShell()
+	if frame then return end
+	frame = CreateFrame("Frame", "ZSBT_ConfigShell", UIParent, "BackdropTemplate")
+	local w, h = getShellSize()
+	frame:SetSize(w, h)
+	frame:SetPoint("CENTER")
+	frame:SetMovable(true)
+	frame:EnableMouse(true)
+	frame:RegisterForDrag("LeftButton")
+	frame:SetScript("OnDragStart", frame.StartMoving)
+	frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+	frame:SetResizable(true)
+	frame:SetResizeBounds(MIN_W, MIN_H)
+	frame:SetFrameStrata("DIALOG")
+	frame:SetClampedToScreen(true)
+	setBg(frame, COL.bg, { 0.35, 0.55, 0.35, 1 })
+
+	-- Drag strip across the top
+	local drag = CreateFrame("Frame", nil, frame)
+	drag:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -4)
+	drag:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, -4)
+	drag:SetHeight(30)
+	drag:EnableMouse(true)
+	drag:RegisterForDrag("LeftButton")
+	drag:SetScript("OnDragStart", function() frame:StartMoving() end)
+	drag:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+
+	local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+	close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4)
+
+	-- Resize grip (bottom-right), persists size on release.
+	-- UIPanelResizeButtonTemplate does not exist on this client — custom grip.
+	local rs = CreateFrame("Button", nil, frame)
+	rs:SetSize(18, 18)
+	rs:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, 4)
+	rs:EnableMouse(true)
+	rs:RegisterForDrag("LeftButton")
+	rs:SetScript("OnMouseDown", function() frame:StartSizing("BOTTOMRIGHT") end)
+	rs:SetScript("OnMouseUp", function()
+		frame:StopMovingOrSizing()
+		saveShellSize()
+	end)
+	for i = 1, 2 do
+		local line = rs:CreateTexture(nil, "ARTWORK")
+		local sz = 14 - (i - 1) * 6
+		line:SetSize(sz, sz)
+		line:SetPoint("BOTTOMRIGHT", -4 + (i - 1) * 3, 4 - (i - 1) * 3)
+		line:SetTexture(137057) -- Interface\\Tooltips\\UI-Tooltip-Border
+		local x = 0.1 * sz / 17
+		line:SetTexCoord(0.05 - x, 0.5, 0.05, 0.5 + x, 0.05, 0.5 - x, 0.5 + x, 0.5)
+	end
+
+	sidebar = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+	sidebar:SetWidth(SIDE_W)
+	sidebar:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -8)
+	sidebar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 8, 8)
+	setBg(sidebar, COL.sidebar)
+
+	-- Title pinned to the bottom of the nav sidebar
+	local title = shellFont(sidebar, 12, COL.text,
+		"ZSBT  |cFF888888v" .. tostring(ZSBT.VERSION or "?"))
+	title:SetPoint("BOTTOM", sidebar, "BOTTOM", 0, 10)
+
+	content = CreateFrame("Frame", nil, frame)
+	content:SetPoint("TOPLEFT", frame, "TOPLEFT", SIDE_W + 18, -12)
+	content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 14)
+
+	navButtons, pageFrames, pageWidgets, pageFed = {}, {}, {}, {}
+	local navY = -14
+	for _, nav in ipairs(NAV) do
+		local b = CreateFrame("Button", nil, sidebar, "BackdropTemplate")
+		b:SetSize(SIDE_W - 16, 30)
+		b:SetPoint("TOP", sidebar, "TOP", 0, navY)
+		setBg(b, COL.sidebar, COL.track)
+		local t = shellFont(b, 14, COL.text, nav.label)
+		t:SetPoint("LEFT", b, "LEFT", 12, 0)
+		b._label = t
+		b:SetScript("OnClick", function() Shell:ShowPage(nav.id) end)
+		navButtons[nav.id] = b
+		navY = navY - 36
+	end
+end
+
+------------------------------------------------------------------------
+-- Donate page: custom content (no AceConfig options). WoW has no addon
+-- API for opening external URLs, so the Ko-fi link is shown in a
+-- selectable edit box for copy/paste.
+------------------------------------------------------------------------
+local function buildDonatePage(pf)
+	local title = shellFont(pf, 18, COL.accent,
+		L["|cFFFFD100Support Zore's Scrolling Battle Text|r"])
+	title:SetPoint("TOP", pf, "TOP", 0, -20)
+
+	local body = shellFont(pf, 13, COL.text,
+		L["Thank you for using ZSBT! Donations are appreciated but never required — they help keep development going.\n\nIf you'd like to support the project, you can donate on Ko-fi:"])
+	body:SetWidth(480)
+	body:SetJustifyH("CENTER")
+	body:SetPoint("TOP", title, "BOTTOM", 0, -20)
+
+	local eb = CreateFrame("EditBox", nil, pf, "InputBoxTemplate")
+	eb:SetSize(360, 24)
+	eb:SetPoint("TOP", body, "BOTTOM", 0, -24)
+	eb:SetText("https://ko-fi.com/zorellion")
+	eb:SetCursorPosition(0)
+
+	local hint = shellFont(pf, 11, COL.text,
+		L["Click the link above, press Ctrl+A then Ctrl+C, and paste it into your browser."])
+	hint:SetWidth(480)
+	hint:SetJustifyH("CENTER")
+	hint:SetPoint("TOP", eb, "BOTTOM", 0, -12)
+end
+
+------------------------------------------------------------------------
+-- Pages: lazy AceGUI "BlizOptionsGroup" container per page, fed by
+-- ACD:Open. This is the same chromeless container AceConfig uses for
+-- option groups — no window chrome, just a title label + content frame,
+-- so pages match the classic UI's look. FeedGroup wraps it in a
+-- ScrollFrame automatically (it is not InlineGroup/SimpleGroup).
+------------------------------------------------------------------------
+local function ensurePage(id)
+	local pf = pageFrames[id]
+	if not (pf and ACD and AceGUI) then return end
+	if pageFed[id] then return end
+	for _, nav in ipairs(NAV) do
+		if nav.id == id and nav.customPage then
+			pageFed[id] = true
+			return
+		end
+	end
+
+	-- Reuse the widget across re-opens: ACD:Open ReleaseChildren +
+	-- re-feeds it, which is exactly the refresh we want after a rebuild.
+	local w = pageWidgets[id]
+	if not w then
+		w = AceGUI:Create("BlizOptionsGroup")
+		pageWidgets[id] = w
+	end
+
+	local appName = "ZSBT_pg_" .. id
+	local ok, err = pcall(ACD.Open, ACD, appName, w)
+	if not ok then
+		ZSBT:Print("[ZSBT] config page '" .. id .. "' failed: " .. tostring(err))
+		return
+	end
+
+	w.frame:ClearAllPoints()
+	w.frame:SetParent(pf)
+	w.frame:SetAllPoints(pf)
+	w.frame:SetFrameStrata("DIALOG")
+	-- BlizOptionsGroup has no Show() method, so ACD:Open's `if f.Show`
+	-- skips it and the frame stays hidden from its constructor.
+	w.frame:Show()
+	pageFed[id] = true
+end
+
+function Shell:ShowPage(id)
+	if not frame then return end
+	if activePage == id then return end
+	activePage = id
+	for bid, btn in pairs(navButtons) do
+		local on = bid == id
+		if btn._label then
+			if on then
+				btn._label:SetTextColor(COL.accent[1], COL.accent[2], COL.accent[3], 1)
+			else
+				btn._label:SetTextColor(COL.text[1], COL.text[2], COL.text[3], 1)
+			end
+		end
+	end
+	for pid, pf in pairs(pageFrames) do
+		pf:SetShown(pid == id)
+	end
+	ensurePage(id)
+end
+
+------------------------------------------------------------------------
+-- Open / close
+------------------------------------------------------------------------
+function Shell:Open()
+	if not (ACD and ACR and AceGUI and ZSBT.BuildOptionsTable) then
+		ZSBT:Print(L["Config UI unavailable."])
+		return
+	end
+	installNotifyFanout()
+
+	-- Rebuild options so dynamic args (resource buttons per class etc.)
+	-- reflect the current character, same as OpenConfig does. _shellMode
+	-- tells the tab builders to harvest args into page buckets; the
+	-- legacy UI builds without it and keeps the original structure.
+	ZSBT._shellMode = true
+	local ok, options = pcall(ZSBT.BuildOptionsTable)
+	ZSBT._shellMode = nil
+	if not (ok and type(options) == "table" and options.args) then
+		ZSBT:Print("[ZSBT] config build failed: " .. tostring(options))
+		return
+	end
+
+	-- The AceDBOptions profiles table is injected into the options tree at
+	-- OnInitialize and again by OpenConfig on rebuild — the shell rebuilds
+	-- its own table every open, so it must inject too or DB Profiles is blank.
+	if ZSBT.Addon and ZSBT.Addon.InjectDBProfilesOptions then
+		pcall(ZSBT.Addon.InjectDBProfilesOptions, ZSBT.Addon, options)
+	end
+
+	-- (Re)register page option tables. Root holds exactly one group
+	-- child so AceConfig renders the same tree+scroll shape as the
+	-- classic UI's top-level tabs.
+	wipe(registeredApps)
+	for _, nav in ipairs(NAV) do
+		if not nav.customPage then
+		local group = nav.getArgs(options.args)
+		if type(group) == "table" and type(group.args) == "table" then
+			local appName = "ZSBT_pg_" .. nav.id
+			ACR:RegisterOptionsTable(appName, {
+				type = "group",
+				name = nav.label,
+				order = nav.order,
+				childGroups = "tree",
+				args = { [nav.id] = group },
+			}, true)
+			registeredApps[appName] = true
+		end
+		end
+	end
+
+	buildShell()
+
+	-- Page frames (created once, reused across opens)
+	for _, nav in ipairs(NAV) do
+		if not pageFrames[nav.id] then
+			local pf = CreateFrame("Frame", nil, content)
+			pf:SetAllPoints(content)
+			pf:Hide()
+			pageFrames[nav.id] = pf
+			if nav.id == "donate" then
+				buildDonatePage(pf)
+			end
+		end
+	end
+
+	-- Pages fed under a previous registration are stale — refed lazily
+	-- only if the app name changed is not a concern (same names), but
+	-- args were rebuilt, so drop fed flags to re-feed on next show.
+	for id in pairs(pageFed) do pageFed[id] = nil end
+
+	frame:Show()
+	if activePage and pageFrames[activePage] then
+		Shell:ShowPage(activePage)
+	else
+		Shell:ShowPage("general")
+	end
+end
+
+function Shell:Toggle()
+	if frame and frame:IsShown() then
+		frame:Hide()
+	else
+		Shell:Open()
+	end
+end
+
+function Shell:IsShown()
+	return frame ~= nil and frame:IsShown()
+end

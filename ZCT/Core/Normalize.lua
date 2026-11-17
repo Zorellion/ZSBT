@@ -38,6 +38,7 @@ function Normalize:New(kind)
     evt.pet = false
     evt.unit = nil
     evt.action = nil
+    evt.flagText = nil       -- UNIT_COMBAT arg3: CRITICAL/CRUSHING/GLANCING
     evt.lineKind = nil        -- palette kind when paired
     evt.at = GetTime()
     evt._text = nil           -- safe display string (no secrets)
