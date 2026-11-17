@@ -1927,13 +1927,29 @@ function Addon:HandleSlashCommand(input)
 	end
 
 	if not cmd or cmd == "" then
-		self:OpenConfig()
+		-- Bare /zsbt opens the ZCT-style shell; the classic AceConfig UI
+		-- stays reachable via "/zsbt classic".
+		if ZSBT.ConfigShell then
+			ZSBT.ConfigShell:Toggle()
+		else
+			self:OpenConfig()
+		end
 		return
 	end
 
     cmd = cmd:lower()
 
-    if cmd == "minimap" then
+    if cmd == "zctui" then
+        if self.ToggleZCTUI then
+            self:ToggleZCTUI()
+        elseif ZSBT.ConfigShell then
+            ZSBT.ConfigShell:Toggle()
+        end
+        return
+    elseif cmd == "classic" or cmd == "oldui" or cmd == "legacy" then
+        self:OpenConfig()
+        return
+    elseif cmd == "minimap" then
 		local mm = ZSBT.Core and ZSBT.Core.Minimap
 		if not (mm and (mm.SetHidden or mm.UpdateVisibility)) then
 			self:Print(L["Minimap button module not available."])
@@ -2671,6 +2687,14 @@ function Addon:OpenConfig()
 	end
 	if self.configDialog then
 		self.configDialog:Open("ZSBT")
+	end
+end
+
+-- ZCT-style config shell (left-nav pages). Separate command until the
+-- user approves cutover; "/zsbt" keeps opening the classic UI.
+function Addon:OpenZCTUI()
+	if ZSBT.ConfigShell then
+		ZSBT.ConfigShell:Open()
 	end
 end
 

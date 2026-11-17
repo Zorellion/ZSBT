@@ -1,5 +1,33 @@
 # Changelog
 
+## 4.1
+
+### Changed
+- **ZCT-style shell is now the default UI:** bare `/zsbt` opens the new navigation shell. The classic AceConfig UI is unchanged and still available via `/zsbt classic` as a fallback.
+- **Full settings reorganization in the shell:**
+  - General split into **System** (enable, UI mode, Quick Actions, Force Crits Inline), **Master Font** (font, crit font, crit animation), **Numbers** (number formatting), and **Media** (sounds, alerts media).
+  - Crit settings moved off Incoming/Outgoing onto a dedicated **Crits** page.
+  - **Donate** is now a normal navigation page.
+  - Combat Text, Crits, and Alerts pages got explanatory introductions, larger readable text, full-width layouts, and cleaner wrapping.
+  - General page ordering standardized: enable → scroll area → display toggles → threshold → colors → miscellaneous.
+- **DB Profiles page fixed in the shell:** the AceDB profile manager (choose/copy/create/delete/reset/character-copy) now renders correctly inside the shell's profiles page.
+- **Misses are now configurable per subtype:** dodge, parry, block, evade, miss, immune, and resist each get their own scroll-area, color, and visibility bucket under Incoming/Outgoing Misses. New locale strings across all 10 locales.
+- **Damage flags supported:** `UNIT_COMBAT` flag text (Crushing, Glancing) is carried through normalization → bridge → probes and displayed when enabled. New "Show Damage Flags" toggles on both damage buckets; unknown descriptors are discarded.
+- **Independent crit merging:** new "Merge Critical Hits" toggle under Spam Control (`spamControl.merging.mergeCrits`, default off). When enabled, crits merge under a separate key so they never combine with non-crit hits, keep crit styling on the rollup, and bypass the window only when disabled. Periodic crits still bypass merging.
+- **Combat-log filter loss now pops a dialog:** switching the combat-log filter away from ZSBT raises a `StaticPopup` naming the 'ZSBT' filter (with an "Open Combat Log" button) instead of only a chat line. Detection polls every second, warns instantly on switch-off, re-reminds every 30s while it stays broken, and re-arms on recovery. Filter verification now cross-checks the UI's actually-applied settings, not just saved vars.
+- **Filter messages name the real filter:** warnings previously hardcoded "ZCT" while the installed filter is named "ZSBT" — all messages now use the actual filter name and ZSBT branding.
+
+### Fixed
+- **Kill-credit announcer false fire on reload:** the `zct` credit channel no longer counts combat-log kill lines that replay during login before any outgoing combat — previously a stale kill line latched `killCreditOnly` and suppressed the UNIT_HEALTH inference path for the whole session.
+- **`Outgoing_Probe` sink crash:** a nil `safeDbg` call in the debug path errored mid-combat under `[ZCT sink error]`; the helper is now defined for both branches.
+- **Dead settings cleaned up:** Overheal controls removed from healing buckets (unavailable on secret combat data), and dead HoT-tick/healer-name toggles are hidden in shell mode.
+- **UT kill announcer firing on window alt-tabs:** combat-log refiltering (focusing/unfocusing windows) replays recent kill-colored lines, and the `zct` kill-credit channel treated them as new kills — each switch advanced the kill-chain tier. The channel now requires outgoing combat within the last 1.5s, matching the UNIT_HEALTH inference window; replays arrive with stale combat state and drop.
+- **`Blizzard_CombatLogProcessor` error spam:** an attempted programmatic filter refocus called the protected `ClearEventFilters()` (`ADDON_ACTION_FORBIDDEN`) and left the processor half-applied, producing repeated `GenerateMessage` errors. Auto-refocus removed — switching the filter is user-only on this client; detection + popup is the supported path.
+
+### Notes
+- Combat-log verification on Retail 12.1.5 confirmed dense periodic output is genuine multi-target DoT damage (e.g., Fiery Brand on several mobs), not display duplicates; periodic ticks intentionally remain unmerged.
+- One relog recommended so the embedded combat-log filter state is clean.
+
 ## 4.0.0
 
 ### Changed

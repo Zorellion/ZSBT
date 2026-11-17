@@ -113,7 +113,9 @@ function MM:Init()
             if not gg then return end
 
             if btn == "LeftButton" then
-                if Addon and Addon.OpenConfig then
+                if ZSBT.ConfigShell then
+                    ZSBT.ConfigShell:Toggle()
+                elseif Addon and Addon.OpenConfig then
                     Addon:OpenConfig()
                 end
                 return

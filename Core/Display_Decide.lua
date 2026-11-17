@@ -277,17 +277,21 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
 		return
 	end
 
-	-- Don't merge: crits, misses, notifications, periodic ticks. Ticks arrive
-	-- already spaced by the dot's interval; holding them for the merge window
-	-- just adds visible latency and collapses distinct ticks.
+	-- Don't merge: misses, notifications, periodic ticks — and crits
+	-- unless the user opted in via spamControl.merging.mergeCrits.
+	-- Ticks arrive already spaced by the dot's interval; holding them
+	-- for the merge window just adds visible latency and collapses
+	-- distinct ticks. When crit merging IS enabled, crits get their own
+	-- merge key (see below) so they never roll up with normal hits.
 	local isCrit = meta and meta.isCrit
 	local isMiss = meta and meta.kind == "miss"
 	local isNotification = meta and meta.kind == "notification"
 	local isPeriodic = meta and meta.isPeriodic == true
+	local mergeCrits = mergeConf.mergeCrits == true
 	if isPeriodic and ZSBT.Addon and ZSBT.Addon.Dbg then
 		ZSBT.Addon:Dbg("outgoing", 4, "MERGE_BYPASS_PERIODIC", tostring(meta and meta.spellId))
 	end
-	if isCrit or isMiss or isNotification or isPeriodic then
+	if (isCrit and not mergeCrits) or isMiss or isNotification or isPeriodic then
 		-- Bypassed events display immediately but must NOT flush pending
 		-- merges: unattributed ticks/hits interleave constantly under ZCT
 		-- and flushing here prevented same-spell hits from ever merging.
@@ -332,7 +336,10 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
 	end
 
 	-- Key by scroll area + spellId so we merge per spell per window.
+	-- Crits get their own bucket: under forceCritsInline they share the
+	-- normal area, and a crit rollup must never absorb non-crit hits.
 	local key = tostring(areaName) .. ":" .. tostring(spellId)
+		.. (isCrit and ":crit" or "")
 	local existing = mergeBuffer[key]
 	if existing then
 		local elapsed = GetTime() - existing.lastUpdate

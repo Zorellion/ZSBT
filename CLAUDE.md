@@ -132,7 +132,136 @@ Single-file revert of `Event_Collector.lua`; new module is additive until step 5
 
 # Masterplan: Config UI unification
 
-Status: **Phase 0 audit done; Phase 1 was implemented then REVERTED — user rejected the result ("too much to worry with"). Do not re-attempt Phase 1 changes without asking first.** Phase 2/3 on hold. Plan kept below for reference only.
+Status: **SUPERSEDED by "ZCT-style config shell" below (user-directed rebuild, side-by-side with old UI).** Phase 0 audit findings still valid reference.
+
+---
+
+# Masterplan: ZCT-style config shell ("zctui")
+
+Status: **P0+P1 implemented — awaiting in-game verification.** User directive: rebuild the config window to
+match standalone ZCT's *flow and structure* — left sidebar page nav, one
+focused page at a time — while keeping ZSBT's widgets, theme, and
+ZSBT-only features. Old AceConfig UI stays intact side-by-side; new UI opens
+via `/zsbt zctui`. Do NOT remove the old UI without explicit approval.
+
+## Verified technical facts (researched 2025-11)
+
+- `AceConfigDialog:Open(appName, container, ...)` accepts an **AceGUI widget
+  container**: it `ReleaseChildren()` + `FeedGroup()` renders the options
+  into it; non-InlineGroup containers auto-wrap in a ScrollFrame
+  (AceConfigDialog-3.0.lua ~L1639, ~L1853). This is the embedding mechanism.
+- ZSBT already bundles AceGUI-3.0 and uses it directly (ZSBT_InstantEditBox
+  widget ~UI/Config.lua:72, help popup ~3039).
+- ZCT shell reference: `ZCT/UI/Config.lua` — `buildShell()` (~L108-161):
+  900x640 frame, 150px sidebar, NAV buttons, content frame,
+  `pageFrames`/`pageHolders`, `ShowPage(id)` with per-page refresh
+  hooks (`Config._refresh`). Pages = titled InlineGroup + ScrollFrame, or
+  list+editor (combat categories, scroll areas).
+- ZSBT options pipeline: `UI/ConfigTabs.lua` builders →
+  `BuildOptionsTable()` (UI/Config.lua ~L3520) → `Addon:OpenConfig()`
+  rebuilds + `InjectDBProfilesOptions` + `ACR:RegisterOptionsTable("ZSBT")`
+  + `ACD:Open("ZSBT")` (Core/Init.lua ~L2657).
+- ~1000 lines of ACD integration in UI/Config.lua that assume ONE app:
+  theme/hooks (~L3927-4400), SelectGroup visibility (~L4541-4706),
+  cooldown + spellRules drag-drop overlays (~L4713, ~L5063), status
+  persistence, widget-tree walking.
+
+## Architecture
+
+New files only — `UI/Config.lua`, `UI/ConfigTabs.lua`, satellites, and all
+ACD hooks for "ZSBT" remain untouched:
+
+- `UI/ConfigShell.lua` — ZCT-style frame + sidebar + page host, styled with
+  ZSBT colors/fonts (NOT ZCT's palette — keep ZSBT look).
+- `UI/ConfigPages.lua` — NAV registry + per-page options-table builders
+  wrapping the existing `BuildTab_*` args.
+
+### Page mapping (ZCT nav order)
+
+| Nav page | Args source |
+|---|---|
+| General | `BuildTab_General().args` (now incl. Media) |
+| Profiles | `BuildTab_ProfilesRoot().args` |
+| Combat Text | `BuildTab_CombatText().args` (Incoming/Outgoing/Pets/Spam) |
+| Crits | `BuildTab_Crits().args` |
+| Alerts | `BuildTab_Alerts().args` (Notifications/Triggers/Cooldowns) |
+| Resources | `BuildTab_Resources().args` |
+| Scroll Areas | `BuildTab_ScrollAreas().args` |
+| Help | maintenance group's args (Help + Troubleshooting) |
+
+Each page registers its own options table
+`ZSBT_pg_<id>` = `{type="group", name, childGroups, args=<subargs>}` and
+opens via `ACD:Open("ZSBT_pg_<id>", containerWidget)` where the container
+is an AceGUI "Frame" widget inside the shell's content frame (one container
+per page, fed once, hidden/shown — NOT re-fed on nav).
+
+Sub-group presentation: `childGroups="select"` gives an in-page tab bar
+(preferred — closest to ZCT's focused pages); `"tree"` would need ACD's
+tree pane inside the page, which we don't want.
+
+## Required infrastructure
+
+1. **NotifyChange fan-out** — every arg `set()` calls
+   `ACR:NotifyChange("ZSBT")`. Wrap `ACR.NotifyChange` (or the ACD
+   equivalent) so "ZSBT" also notifies all `ZSBT_pg_*` apps, or
+   hidden/disabled/order-dependent widgets go stale. ~15 lines, one hook.
+   Satellite apps keep their own names — unaffected.
+2. **Rebuild-on-open** — `OpenConfig()` already rebuilds the "ZSBT" table
+   per open; extend to rebuild + re-register page tables (builders are pure).
+3. **Slash** — `/zsbt zctui` → `Addon:OpenZCTUI()`; bare `/zsbt` keeps
+   opening the old UI until cutover is approved.
+4. **TOC** — add `UI/ConfigShell.lua`, `UI/ConfigPages.lua`.
+
+## Port/generalize checklist (audit during build)
+
+- Theme/accent hooks (~L3927-4400): verify they fire for page-app widgets
+  (same ACD machinery — likely automatic; confirm tab/heading colors).
+- SelectGroup visibility hack (~L4541-4706): audit whether select-style
+  pages need it.
+- Drag-drop overlays (cooldowns ~L4713, spellRules ~L5063): anchor to main
+  ACD contentFrame today — re-anchor to page containers or generalize host
+  lookup.
+- `InjectDBProfilesOptions`: AceDB auto-injects only into "ZSBT" — the
+  Profiles page uses `BuildTab_ProfilesRoot` (custom); verify it is
+  self-contained, do NOT inject into page apps.
+- Scroll-area dropdown args rebuild on show — add `Config._refresh`-style
+  hooks per page like ZCT's.
+- Status/size: keep ZSBT 900x820 unless user prefers ZCT 900x640.
+
+## Phases
+
+- **P0** — shell frame + nav + General page only. Prove: open, widgets
+  set/get, NotifyChange refresh, theme applies.
+- **P1** — all 8 pages; nav switching; per-page scroll; refresh-on-show.
+- **P2** — parity pass: overlays/drag-drop, dynamic args (resource buttons
+  per class), Profiles page, satellite launch buttons from pages.
+- **P3** — cutover decision (user approval required): keep `/zsbt` on old
+  UI; optional `general.newUI` toggle; old UI removal only on approval.
+- **P4** (optional ZCT fidelity) — list+editor layouts for Scroll Areas /
+  Resources; promote Spam Control to its own nav page.
+
+## Risks
+
+- ACD container-embed edge cases (ReleaseChildren reuse, status tables,
+  OnClose) — mitigated by one container per page fed once.
+- NotifyChange fan-out completeness — every `ZSBT_pg_*` app must be
+  covered or dependent widgets stale.
+- Widget-tree-walking code (theme, overlays, status) assumes one app —
+  each site needs audit.
+- In-combat open constraints identical to today.
+
+## Decisions (locked with user 2025-11)
+
+- Window: default 900x820 (ZSBT size) but **resizable** like the existing
+  ACD window — add a resize grip; persist size across sessions.
+- Last page name: **Help and Support** (Help + Troubleshooting content).
+- Spam Control: **own nav page** — 9 pages total:
+  General, Profiles, Combat Text, Crits, Alerts, Resources,
+  Scroll Areas, Spam Control, Help and Support.
+- Cutover: TWO commands coexist — `/zsbt` stays old UI,
+  `/zsbt zctui` opens new shell. Only after user confirms does `/zsbt`
+  swap to the new UI.
+
 
 ## Phase 0 audit findings (2025-11)
 
@@ -173,6 +302,26 @@ If revisited, the only piece arguably worth re-applying alone is the QuickStart 
 
 ### Phase 3 — Nice-to-haves (not started)
 QuickStart presets/wizard polish; test buttons colocated with tested settings; profile import/export surfacing.
+
+## ZCT-flow restructure (2025-11, user-directed — DONE in dev tree)
+
+User approved a flow overhaul matching standalone ZCT section order while
+keeping ZSBT look/feel and nested groups. Implemented:
+
+- Quick Start tab REMOVED from tree (`BuildTab_QuickStart` left defined but unhooked).
+- New top-level tabs: `Crits` (order 4 — crit font block from General +
+  forceCritsInline/inlineCrit args + critFont.*Intensity sliders from
+  CombatText; intensity orders renumbered 23.x→33.x) and `Resources`
+  (order 6 — `resourceTracker` group extracted from Notifications;
+  `notifyRt` throttled-notify local moved with it).
+- Media group moved Display→General (order 17); Display wrapper removed,
+  `scrollAreas` is now its own top-level tab (order 7).
+- Final order: General(1) → Profiles(2) → Combat Text(3) → Crits(4) →
+  Alerts(5) → Resources(6) → Scroll Areas(7) → Help(9).
+- Tab-name locale keys `|cFFFFD100Crits|r` / `|cFFFFD100Resources|r`
+  added to all locale files.
+- `BuildTab_Display`/`BuildTab_QuickStart` remain defined but unused.
+- No db key paths touched; all get/set preserved verbatim.
 
 ## Files
 

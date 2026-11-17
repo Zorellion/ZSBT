@@ -1836,7 +1836,7 @@ function ZSBT.BuildTab_Display()
 	return {
 		type = "group",
 		name = L["|cFFFFD100Display|r"],
-		order = 0.7,
+		order = 5,
 		childGroups = "tree",
 		args = {
 			scrollAreas = sa or { type = "group", name = L["|cFFFFD100Scroll Areas|r"], order = 1, args = {} },
@@ -1869,9 +1869,16 @@ function ZSBT.BuildTab_Alerts()
 	return {
 		type = "group",
 		name = L["|cFFFFD100Alerts|r"],
-		order = 0.85,
+		order = 5,
 		childGroups = "tree",
 		args = {
+			alertsIntro = {
+				type  = "description",
+				name  = L["AlertsPageIntro"],
+                fontSize = "large",
+				width = "full",
+				order = 0.01,
+			},
 			notifications = notifications or { type = "group", name = L["|cFFFFD100Notifications|r"], order = 1, args = {} },
 			triggers = triggers or { type = "group", name = L["|cFFFFD100Triggers|r"], order = 2, args = {} },
 			cooldowns = cooldowns or { type = "group", name = L["|cFFFFD100Cooldowns|r"], order = 3, args = {} },
@@ -1888,416 +1895,210 @@ function ZSBT.BuildTab_CombatText()
 	local outgoing = ZSBT.BuildTab_Outgoing and ZSBT.BuildTab_Outgoing() or nil
 	local pets = ZSBT.BuildTab_Pets and ZSBT.BuildTab_Pets() or nil
 	local spamControl = ZSBT.BuildTab_SpamControl and ZSBT.BuildTab_SpamControl() or nil
-	if type(incoming) == "table" then
-		incoming.order = 1
-		incoming.name = "|cFFFFD100Incoming|r"
+
+	if ZSBT._shellMode ~= true then
+		-- Legacy UI: original Incoming/Outgoing/Pets group structure.
+		if type(incoming) == "table" then
+			incoming.order = 1
+			incoming.name = "|cFFFFD100Incoming|r"
+		end
+		if type(outgoing) == "table" then
+			outgoing.order = 2
+			outgoing.name = "|cFFFFD100Outgoing|r"
+		end
+		if type(pets) == "table" then
+			pets.order = 3
+			pets.name = "|cFFFFD100Pets|r"
+		end
+		if type(spamControl) == "table" then
+			spamControl.order = 4
+			spamControl.name = L["|cFFFFD100Spam Control|r"]
+		end
+		return {
+			type = "group",
+			name = L["|cFFFFD100Combat Text|r"],
+			order = 3,
+			childGroups = "tree",
+			args = {
+				incoming = incoming or { type = "group", name = L["|cFFFFD100Incoming|r"], order = 1, args = {} },
+				outgoing = outgoing or { type = "group", name = L["|cFFFFD100Outgoing|r"], order = 2, args = {} },
+				pets = pets or { type = "group", name = L["|cFFFFD100Pets|r"], order = 3, args = {} },
+				spamControl = spamControl or { type = "group", name = L["|cFFFFD100Spam Control|r"], order = 4, args = {} },
+			},
+		}
 	end
-	if type(outgoing) == "table" then
-		outgoing.order = 2
-		outgoing.name = "|cFFFFD100Outgoing|r"
-	end
-	if type(pets) == "table" then
-		pets.order = 3
-		pets.name = "|cFFFFD100Pets|r"
-	end
+
+	-- Shell UI: category buckets harvested from the builders above.
 	if type(spamControl) == "table" then
-		spamControl.order = 4
+		spamControl.order = 8
 		spamControl.name = L["|cFFFFD100Spam Control|r"]
 	end
+
+	local cb = ZSBT._combatBuckets or {}
+	local inB = cb.incoming or {}
+	local outB = cb.outgoing or {}
+	local petB = cb.pets or {}
+
+	-- Misses buckets: harvested "Show Misses / Avoids" toggle plus the
+	-- dedicated misses.* extras (scroll area, color, hidden types).
+	inB.miss = inB.miss or {}
+	for k, v in pairs(ZSBT._MissBucketExtras("incoming")) do inB.miss[k] = v end
+	outB.miss = outB.miss or {}
+	for k, v in pairs(ZSBT._MissBucketExtras("outgoing")) do outB.miss[k] = v end
+
+	-- Normalize every bucket to the canonical option flow.
+	ZSBT._orderBucket(inB.damage, ZSBT._BUCKET_ORDER.incomingDamage)
+	ZSBT._orderBucket(inB.heal, ZSBT._BUCKET_ORDER.incomingHealing)
+	ZSBT._orderBucket(inB.miss, ZSBT._BUCKET_ORDER.incomingMisses)
+	ZSBT._orderBucket(outB.damage, ZSBT._BUCKET_ORDER.outgoingDamage)
+	ZSBT._orderBucket(outB.heal, ZSBT._BUCKET_ORDER.outgoingHealing)
+	ZSBT._orderBucket(outB.miss, ZSBT._BUCKET_ORDER.outgoingMisses)
+	ZSBT._orderBucket(petB.incoming, ZSBT._BUCKET_ORDER.petIncomingDamage)
+	ZSBT._orderBucket(petB.healing, ZSBT._BUCKET_ORDER.petHealing)
+	ZSBT._orderBucket(petB.outgoing, ZSBT._BUCKET_ORDER.petOutgoingDamage)
 
 	return {
 		type = "group",
 		name = L["|cFFFFD100Combat Text|r"],
-		order = 0.9,
+		order = 3,
 		childGroups = "tree",
 		args = {
-			critInlineHeader = {
-				type  = "header",
-				name  = L["Critical Hits"],
-				order = 0.05,
-			},
-			forceCritsInlineHelp = {
+			combatTextIntro = {
 				type  = "description",
-				name  = L["Force Crits Inline keeps crits in the same scroll areas and timing lanes as normal hits/heals. This bypasses crit-specific routing and makes crits follow the scroll area's animation and font."],
-				order = 0.051,
+				name  = L["CombatTextPageIntro"],
+                fontSize = "large",
 				width = "full",
+				order = 0.01,
 			},
-			forceCritsInline = {
-				type  = "toggle",
-				name  = L["Force Crits Inline"],
-				desc  = L["Keep crits inline with normal incoming/outgoing damage/healing flow (no crit scroll-area routing)."],
-				order = 0.052,
-				width = "full",
-				get   = function() return ZSBT.db.profile.general.forceCritsInline == true end,
-				set   = function(_, v)
-					ZSBT.db.profile.general.forceCritsInline = v and true or false
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			inlineCritHeader = {
-				type  = "header",
-				name  = L["Inline Crit Style"],
-				order = 0.053,
-				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
-			},
-			inlineCritHelp = {
-				type  = "description",
-				name  = L["These options only apply when Force Crits Inline is enabled. They let you add impact (scale/duration + lightweight FX) while keeping crits in the normal scroll flow."],
-				order = 0.054,
-				width = "full",
-				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
-			},
-			inlineCritScale = {
-				type  = "range",
-				name  = L["Inline Crit Scale"],
-				desc  = L["Additional scale multiplier applied to crits while inline."],
-				order = 0.055,
-				min   = 0.8,
-				max   = 3.0,
-				step  = 0.05,
-				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
-				get   = function()
-					local ic = ZSBT.db.profile.general.inlineCrit
-					return (type(ic) == "table" and type(ic.scale) == "number") and ic.scale or 1.12
-				end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
-					ZSBT.db.profile.general.inlineCrit.scale = val
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			inlineCritDurationMult = {
-				type  = "range",
-				name  = L["Inline Crit Duration"],
-				desc  = L["Multiplier for how long inline crits stay on screen."],
-				order = 0.056,
-				min   = 0.5,
-				max   = 3.0,
-				step  = 0.05,
-				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
-				get   = function()
-					local ic = ZSBT.db.profile.general.inlineCrit
-					return (type(ic) == "table" and type(ic.durationMult) == "number") and ic.durationMult or 1.15
-				end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
-					ZSBT.db.profile.general.inlineCrit.durationMult = val
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			inlineCritFx = {
-				type   = "select",
-				name   = L["Inline Crit FX"],
-				desc   = L["Optional lightweight effect applied to inline crits (does not change placement)."],
-				order  = 0.057,
-				values = { None = "None", Shake = "Shake", Pulse = "Pulse", Chromatic = "Chromatic", Spin = "Spin" },
-				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
-				get    = function()
-					local ic = ZSBT.db.profile.general.inlineCrit
-					return (type(ic) == "table" and type(ic.fx) == "string" and ic.fx ~= "") and ic.fx or "None"
-				end,
-				set    = function(_, val)
-					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
-					ZSBT.db.profile.general.inlineCrit.fx = val
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			inlineCritFxIntensity = {
-				type  = "range",
-				name  = L["Inline Crit FX Intensity"],
-				order = 0.058,
-				min   = 0,
-				max   = 3.0,
-				step  = 0.1,
-				hidden = function()
-					if not (ZSBT.db.profile.general.forceCritsInline == true) then return true end
-					local ic = ZSBT.db.profile.general.inlineCrit
-					local fx = (type(ic) == "table" and ic.fx) or "None"
-					return fx == nil or fx == "" or fx == "None"
-				end,
-				get   = function()
-					local ic = ZSBT.db.profile.general.inlineCrit
-					return (type(ic) == "table" and type(ic.fxIntensity) == "number") and ic.fxIntensity or 1.0
-				end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
-					ZSBT.db.profile.general.inlineCrit.fxIntensity = val
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			inlineCritFontFace = {
-				type   = "select",
-				name   = L["Inline Crit Font Face"],
-				desc   = L["Font used for inline crits. Leave blank to use the scroll area's normal font."],
-				order  = 0.059,
-				values = function()
-					local fonts = ZSBT.BuildFontDropdown()
-					fonts["__use_area__"] = L["(Use Area Font)"]
-					return fonts
-				end,
-				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
-				get    = function()
-					local ic = ZSBT.db.profile.general.inlineCrit
-					local f = (type(ic) == "table") and ic.face or nil
-					return f or "__use_area__"
-				end,
-				set    = function(_, val)
-					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
-					if val == "__use_area__" then
-						ZSBT.db.profile.general.inlineCrit.face = nil
-					else
-						ZSBT.db.profile.general.inlineCrit.face = val
-					end
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			inlineCritFontOutline = {
-				type   = "select",
-				name   = L["Inline Crit Outline"],
-				desc   = L["Outline style for inline crits. Leave blank to use the scroll area's normal outline."],
-				order  = 0.060,
-				values = function()
-					local o = ZSBT.ValuesFromKeys(ZSBT.OUTLINE_STYLES)
-					o["__use_area__"] = L["(Use Area Outline)"]
-					return o
-				end,
-				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
-				get    = function()
-					local ic = ZSBT.db.profile.general.inlineCrit
-					local v = (type(ic) == "table") and ic.outline or nil
-					return v or "__use_area__"
-				end,
-				set    = function(_, val)
-					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
-					if val == "__use_area__" then
-						ZSBT.db.profile.general.inlineCrit.outline = nil
-					else
-						ZSBT.db.profile.general.inlineCrit.outline = val
-					end
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			inlineCritUseScale = {
-				type  = "toggle",
-				name  = L["Inline Crit Uses Scale"],
-				desc  = L["When enabled, inline crit size is derived from the area's normal font size using Inline Crit Scale. When disabled, Inline Crit Font Size is used."],
-				order = 0.061,
-				width = "full",
-				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
-				get   = function()
-					local ic = ZSBT.db.profile.general.inlineCrit
-					return not (type(ic) == "table") or ic.useScale ~= false
-				end,
-				set   = function(_, v)
-					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
-					ZSBT.db.profile.general.inlineCrit.useScale = v and true or false
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			inlineCritFontSize = {
-				type  = "range",
-				name  = L["Inline Crit Font Size"],
-				desc  = L["Fixed font size for inline crits (only used if Inline Crit Uses Scale is disabled)."],
-				order = 0.062,
-				min   = ZSBT.FONT_SIZE_MIN,
-				max   = 48,
-				step  = 1,
-				hidden = function()
-					if not (ZSBT.db.profile.general.forceCritsInline == true) then return true end
-					local ic = ZSBT.db.profile.general.inlineCrit
-					return not (type(ic) == "table") or ic.useScale ~= false
-				end,
-				get   = function()
-					local ic = ZSBT.db.profile.general.inlineCrit
-					return (type(ic) == "table" and type(ic.size) == "number") and ic.size or 28
-				end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
-					ZSBT.db.profile.general.inlineCrit.size = val
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			critShockwaveIntensity = {
-				type  = "range",
-				name  = L["Shockwave Intensity"],
-				order = 23.57,
-				min   = 0,
-				max   = 3.0,
-				step  = 0.1,
-				hidden = function()
-					local cf = ZSBT.db.profile.general.critFont
-					return not (type(cf) == "table" and cf.anim == "Shockwave")
-				end,
-				get   = function()
-					local cf = ZSBT.db.profile.general.critFont
-					return (type(cf) == "table" and type(cf.shockwaveIntensity) == "number") and cf.shockwaveIntensity or 1.0
-				end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
-					ZSBT.db.profile.general.critFont.shockwaveIntensity = val
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			critIgniteIntensity = {
-				type  = "range",
-				name  = L["Ignite Intensity"],
-				order = 23.58,
-				min   = 0,
-				max   = 3.0,
-				step  = 0.1,
-				hidden = function()
-					local cf = ZSBT.db.profile.general.critFont
-					return not (type(cf) == "table" and cf.anim == "Ignite")
-				end,
-				get   = function()
-					local cf = ZSBT.db.profile.general.critFont
-					return (type(cf) == "table" and type(cf.igniteIntensity) == "number") and cf.igniteIntensity or 1.0
-				end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
-					ZSBT.db.profile.general.critFont.igniteIntensity = val
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			critChromaticIntensity = {
-				type  = "range",
-				name  = L["Chromatic Intensity"],
-				order = 23.59,
-				min   = 0,
-				max   = 3.0,
-				step  = 0.1,
-				hidden = function()
-					local cf = ZSBT.db.profile.general.critFont
-					return not (type(cf) == "table" and cf.anim == "Chromatic")
-				end,
-				get   = function()
-					local cf = ZSBT.db.profile.general.critFont
-					return (type(cf) == "table" and type(cf.chromaticIntensity) == "number") and cf.chromaticIntensity or 1.0
-				end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
-					ZSBT.db.profile.general.critFont.chromaticIntensity = val
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			critStompIntensity = {
-				type  = "range",
-				name  = L["Stomp Intensity"],
-				order = 23.60,
-				min   = 0,
-				max   = 3.0,
-				step  = 0.1,
-				hidden = function()
-					local cf = ZSBT.db.profile.general.critFont
-					return not (type(cf) == "table" and cf.anim == "Stomp")
-				end,
-				get   = function()
-					local cf = ZSBT.db.profile.general.critFont
-					return (type(cf) == "table" and type(cf.stompIntensity) == "number") and cf.stompIntensity or 1.0
-				end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
-					ZSBT.db.profile.general.critFont.stompIntensity = val
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			critScreenPunchIntensity = {
-				type  = "range",
-				name  = L["ScreenPunch Intensity"],
-				order = 23.61,
-				min   = 0,
-				max   = 3.0,
-				step  = 0.1,
-				hidden = function()
-					local cf = ZSBT.db.profile.general.critFont
-					return not (type(cf) == "table" and cf.anim == "ScreenPunch")
-				end,
-				get   = function()
-					local cf = ZSBT.db.profile.general.critFont
-					return (type(cf) == "table" and type(cf.screenPunchIntensity) == "number") and cf.screenPunchIntensity or 1.0
-				end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
-					ZSBT.db.profile.general.critFont.screenPunchIntensity = val
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			critShatterIntensity = {
-				type  = "range",
-				name  = L["Shatter Intensity"],
-				order = 23.62,
-				min   = 0,
-				max   = 3.0,
-				step  = 0.1,
-				hidden = function()
-					local cf = ZSBT.db.profile.general.critFont
-					return not (type(cf) == "table" and cf.anim == "Shatter")
-				end,
-				get   = function()
-					local cf = ZSBT.db.profile.general.critFont
-					return (type(cf) == "table" and type(cf.shatterIntensity) == "number") and cf.shatterIntensity or 1.0
-				end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
-					ZSBT.db.profile.general.critFont.shatterIntensity = val
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			critAfterimageIntensity = {
-				type  = "range",
-				name  = L["Afterimage Intensity"],
-				order = 23.63,
-				min   = 0,
-				max   = 3.0,
-				step  = 0.1,
-				hidden = function()
-					local cf = ZSBT.db.profile.general.critFont
-					return not (type(cf) == "table" and cf.anim == "Afterimage")
-				end,
-				get   = function()
-					local cf = ZSBT.db.profile.general.critFont
-					return (type(cf) == "table" and type(cf.afterimageIntensity) == "number") and cf.afterimageIntensity or 1.0
-				end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
-					ZSBT.db.profile.general.critFont.afterimageIntensity = val
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			critRumbleIntensity = {
-				type  = "range",
-				name  = L["Rumble Intensity"],
-				order = 23.64,
-				min   = 0,
-				max   = 3.0,
-				step  = 0.1,
-				hidden = function()
-					local cf = ZSBT.db.profile.general.critFont
-					return not (type(cf) == "table" and cf.anim == "Rumble")
-				end,
-				get   = function()
-					local cf = ZSBT.db.profile.general.critFont
-					return (type(cf) == "table" and type(cf.rumbleIntensity) == "number") and cf.rumbleIntensity or 1.0
-				end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
-					ZSBT.db.profile.general.critFont.rumbleIntensity = val
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			incoming = incoming or { type = "group", name = L["|cFFFFD100Incoming|r"], order = 1, args = {} },
-			outgoing = outgoing or { type = "group", name = L["|cFFFFD100Outgoing|r"], order = 2, args = {} },
-			pets = pets or { type = "group", name = L["|cFFFFD100Pets|r"], order = 3, args = {} },
-			spamControl = spamControl or { type = "group", name = L["|cFFFFD100Spam Control|r"], order = 4, args = {} },
+			incomingDamage = ZSBT._BucketGroup(L["Incoming Damage"], inB.damage, 1),
+			incomingHealing = ZSBT._BucketGroup(L["Incoming Healing"], inB.heal, 2),
+			incomingMisses = ZSBT._BucketGroup(L["Incoming Misses"], inB.miss, 3),
+			outgoingDamage = ZSBT._BucketGroup(L["Outgoing Damage"], outB.damage, 4),
+			outgoingHealing = ZSBT._BucketGroup(L["Outgoing Healing"], outB.heal, 5),
+			outgoingMisses = ZSBT._BucketGroup(L["Outgoing Misses"], outB.miss, 6),
+			petIncomingDamage = ZSBT._BucketGroup(L["Incoming Pet Damage"], petB.incoming, 7),
+			petHealing = ZSBT._BucketGroup(L["Incoming Pet Healing"], petB.healing, 8),
+			petOutgoingDamage = ZSBT._BucketGroup(L["Outgoing Pet Damage"], petB.outgoing, 9),
+			spamControl = spamControl or { type = "group", name = L["|cFFFFD100Spam Control|r"], order = 10, args = {} },
 		},
+	}
+end
+function ZSBT.BuildTab_Crits()
+	return {
+		type = "group",
+		name = L["|cFFFFD100Crits|r"],
+		order = 4,
+		childGroups = "tree",
+		args = {
+            critsIntro = {
+                type  = "description",
+                name  = L["CritsPageIntro"],
+                fontSize = "large",
+                width = "full",
+                order = 0.01,
+            },
+            incomingCritDamage = ZSBT._shellMode and ZSBT._CritBucketGroup(L["Incoming Crit Damage"], ZSBT._critBuckets.incoming and ZSBT._critBuckets.incoming.damage, 40) or nil,
+            incomingCritHealing = ZSBT._shellMode and ZSBT._CritBucketGroup(L["Incoming Crit Heals"], ZSBT._critBuckets.incoming and ZSBT._critBuckets.incoming.heal, 41) or nil,
+            outgoingCritDamage = ZSBT._shellMode and ZSBT._CritBucketGroup(L["Outgoing Crit Damage"], ZSBT._critBuckets.outgoing and ZSBT._critBuckets.outgoing.damage, 42) or nil,
+            outgoingCritHealing = ZSBT._shellMode and ZSBT._CritBucketGroup(L["Outgoing Crit Heals"], ZSBT._critBuckets.outgoing and ZSBT._critBuckets.outgoing.heal, 43) or nil,
+            		},
 	}
 end
 
 ------------------------------------------------------------------------
--- TAB 2: PROFILES
--- Consolidated entry point for Import/Export + DB Profiles.
--- DB Profiles content is injected by Init.lua after DB creation.
+-- TAB: RESOURCES
+-- Resource counters + tracker (ZCT flow).
 ------------------------------------------------------------------------
+function ZSBT.BuildTab_Resources()
+		-- Throttled registry notify for the Resource Tracker setters: range/color
+	-- sliders fire set() every pixel while dragging, and a full NotifyChange
+	-- revalidates the whole options tree each tick (visible lag).
+	local _rtNotifyAt = 0
+	local function notifyRt()
+		local now = GetTime()
+		if now - _rtNotifyAt < 0.15 then return end
+		_rtNotifyAt = now
+		LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+	end
+
+return {
+		type = "group",
+		name = L["|cFFFFD100Resources|r"],
+		order = 6,
+		childGroups = "tree",
+		args = {
+resourceTracker = {
+				type = "group",
+				name = L["Resource Tracker"],
+				desc = L["Persistent on-screen resource counter (combo points, holy power, chi, etc.) with optional max-resource alert."],
+				order = 8.5,
+				args = (function() local rtArgs = {
+					rcHeader = { type = "header", name = L["Resource Counters"], order = 3 },
+					rcHint = {
+						type = "description",
+						name = L["Each button opens a separate config window for that resource's on-screen counter."],
+						order = 3.05,
+						fontSize = "small",
+					},
+					rtUnlock = {
+						type = "execute",
+						name = function()
+							if ZSBT and ZSBT.IsResourceCounterUnlocked and ZSBT.IsResourceCounterUnlocked() then
+								return L["Lock Resource Counters"]
+							end
+							return L["Unlock Resource Counters"]
+						end,
+						desc = L["Show the resource counter frames for dragging and resizing without unlocking scroll areas."],
+						order = 3.9,
+						width = "full",
+						func = function()
+							if ZSBT and ZSBT.ToggleResourceCounterUnlock then
+								ZSBT.ToggleResourceCounterUnlock()
+							end
+							notifyRt()
+						end,
+					},
+				}
+				-- One configure button per resource this class can use with
+				-- a real pool: class-token filtered AND requiring a safe
+				-- max > 0. Current value is NOT required — it can be a
+				-- secret in combat, but the max is static and still proves
+				-- the resource exists (warlock mana max=0 stays hidden).
+				for i = 0, 20 do
+					if ZSBT.CpPowerTypeAllowed and ZSBT.CpPowerTypeAllowed(i)
+						and not (ZSBT.PowerTypeSecret and ZSBT.PowerTypeSecret(i)) then
+						local mx = UnitPowerMax("player", i)
+						if ZSBT.IsSafeNumber(mx) and mx > 0 then
+							local pt = i
+							rtArgs["rc_" .. i] = {
+							type = "execute",
+							name = function()
+								local label = (ZSBT.PowerTypeName and ZSBT.PowerTypeName(pt)) or ("Power " .. pt)
+								local cfg = ZSBT.ResourceCounterConfig and ZSBT.ResourceCounterConfig(pt)
+								if cfg and cfg.enabled == true then
+									label = label .. "  |cFF66FF66•|r"
+								end
+								return label
+							end,
+							desc = L["Open the config window for this resource's on-screen counter."],
+							order = 3.1 + i * 0.01,
+							width = "full",
+							func = function()
+								if Addon and Addon.OpenResourceCounterConfig then
+									Addon:OpenResourceCounterConfig(pt)
+								end
+							end,
+						}
+						end
+					end
+				end
+				return rtArgs
+				end)(),
+			},
+					},
+	}
+end
+
 function ZSBT.BuildTab_ProfilesRoot()
 	local importExport = ZSBT.BuildTab_Profiles and ZSBT.BuildTab_Profiles() or nil
 	if type(importExport) == "table" then
@@ -2339,9 +2140,17 @@ function ZSBT.BuildTab_General()
     return {
         type  = "group",
 		name  = L["|cFFFFD100General|r"],
-        order = 0.6,
-        args  = {
+        order = 1,
+        childGroups = "tree",
+        args  = ZSBT._groupGeneralArgs({
             -- Branded header
+            generalIntro = {
+                type  = "description",
+                name  = L["GeneralPageIntro"],
+                fontSize = "large",
+                width = "full",
+                order = 0.01,
+            },
             brandHeader = {
                 type  = "description",
 				name  = L["|cFFFFD100Zore's|r |cFFEBF0F5Scrolling Battle Text|r\n"] ..
@@ -2708,6 +2517,427 @@ function ZSBT.BuildTab_General()
 				end,
 			},
 
+			headerQuickActions = {
+                type  = "header",
+                name  = L["Quick Actions"],
+                order = 40,
+            },
+            resetDefaults = {
+                type    = "execute",
+                name    = L["Reset to Defaults"],
+                desc    = L["Reset settings to defaults (tracked cooldown spells are preserved)."],
+                order   = 41,
+                confirm = true,
+                confirmText = L["Reset all settings to defaults?\n\nTracked cooldown spells will be preserved."],
+                func    = function()
+                    -- Preserve tracked cooldown spells.
+                    local preservedTracked = nil
+                    if ZSBT.db
+                        and ZSBT.db.char
+                        and ZSBT.db.char.cooldowns
+                        and ZSBT.db.char.cooldowns.tracked then
+
+                        preservedTracked = {}
+                        for k, v in pairs(ZSBT.db.char.cooldowns.tracked) do
+                            preservedTracked[k] = v
+                        end
+                    end
+
+                    ZSBT.db:ResetProfile()
+
+                    if preservedTracked then
+                        ZSBT.db.char = ZSBT.db.char or {}
+                        ZSBT.db.char.cooldowns = ZSBT.db.char.cooldowns or {}
+                        ZSBT.db.char.cooldowns.tracked = preservedTracked
+                    end
+
+                    Addon:Print(L["Settings reset to defaults."])
+                    LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+                end,
+            },
+            reloadUI = {
+                type    = "execute",
+                name    = L["Reload UI"],
+                desc    = L["Reload the World of Warcraft user interface."],
+                order   = 42,
+                confirm = true,
+                confirmText = L["Reload the UI now?"],
+                func    = function() ReloadUI() end,
+            },
+critInlineHeader = {
+				type  = "header",
+				name  = L["Critical Hits"],
+				order = 0.05,
+			},
+			forceCritsInlineHelp = {
+				type  = "description",
+				name  = L["Force Crits Inline keeps crits in the same scroll areas and timing lanes as normal hits/heals. This bypasses crit-specific routing and makes crits follow the scroll area's animation and font."],
+				order = 0.051,
+				width = "full",
+			},
+			forceCritsInline = {
+				type  = "toggle",
+				name  = L["Force Crits Inline"],
+				desc  = L["Keep crits inline with normal incoming/outgoing damage/healing flow (no crit scroll-area routing)."],
+				order = 0.052,
+				width = "full",
+				get   = function() return ZSBT.db.profile.general.forceCritsInline == true end,
+				set   = function(_, v)
+					ZSBT.db.profile.general.forceCritsInline = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			inlineCritHeader = {
+				type  = "header",
+				name  = L["Inline Crit Style"],
+				order = 0.053,
+				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
+			},
+			inlineCritHelp = {
+				type  = "description",
+				name  = L["These options only apply when Force Crits Inline is enabled. They let you add impact (scale/duration + lightweight FX) while keeping crits in the normal scroll flow."],
+				order = 0.054,
+				width = "full",
+				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
+			},
+			inlineCritScale = {
+				type  = "range",
+				name  = L["Inline Crit Scale"],
+				desc  = L["Additional scale multiplier applied to crits while inline."],
+				order = 0.055,
+				min   = 0.8,
+				max   = 3.0,
+				step  = 0.05,
+				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
+				get   = function()
+					local ic = ZSBT.db.profile.general.inlineCrit
+					return (type(ic) == "table" and type(ic.scale) == "number") and ic.scale or 1.12
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
+					ZSBT.db.profile.general.inlineCrit.scale = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			inlineCritDurationMult = {
+				type  = "range",
+				name  = L["Inline Crit Duration"],
+				desc  = L["Multiplier for how long inline crits stay on screen."],
+				order = 0.056,
+				min   = 0.5,
+				max   = 3.0,
+				step  = 0.05,
+				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
+				get   = function()
+					local ic = ZSBT.db.profile.general.inlineCrit
+					return (type(ic) == "table" and type(ic.durationMult) == "number") and ic.durationMult or 1.15
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
+					ZSBT.db.profile.general.inlineCrit.durationMult = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			inlineCritFx = {
+				type   = "select",
+				name   = L["Inline Crit FX"],
+				desc   = L["Optional lightweight effect applied to inline crits (does not change placement)."],
+				order  = 0.057,
+				values = { None = "None", Shake = "Shake", Pulse = "Pulse", Chromatic = "Chromatic", Spin = "Spin" },
+				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
+				get    = function()
+					local ic = ZSBT.db.profile.general.inlineCrit
+					return (type(ic) == "table" and type(ic.fx) == "string" and ic.fx ~= "") and ic.fx or "None"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
+					ZSBT.db.profile.general.inlineCrit.fx = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			inlineCritFxIntensity = {
+				type  = "range",
+				name  = L["Inline Crit FX Intensity"],
+				order = 0.058,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				hidden = function()
+					if not (ZSBT.db.profile.general.forceCritsInline == true) then return true end
+					local ic = ZSBT.db.profile.general.inlineCrit
+					local fx = (type(ic) == "table" and ic.fx) or "None"
+					return fx == nil or fx == "" or fx == "None"
+				end,
+				get   = function()
+					local ic = ZSBT.db.profile.general.inlineCrit
+					return (type(ic) == "table" and type(ic.fxIntensity) == "number") and ic.fxIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
+					ZSBT.db.profile.general.inlineCrit.fxIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			inlineCritFontFace = {
+				type   = "select",
+				name   = L["Inline Crit Font Face"],
+				desc   = L["Font used for inline crits. Leave blank to use the scroll area's normal font."],
+				order  = 0.059,
+				values = function()
+					local fonts = ZSBT.BuildFontDropdown()
+					fonts["__use_area__"] = L["(Use Area Font)"]
+					return fonts
+				end,
+				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
+				get    = function()
+					local ic = ZSBT.db.profile.general.inlineCrit
+					local f = (type(ic) == "table") and ic.face or nil
+					return f or "__use_area__"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
+					if val == "__use_area__" then
+						ZSBT.db.profile.general.inlineCrit.face = nil
+					else
+						ZSBT.db.profile.general.inlineCrit.face = val
+					end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			inlineCritFontOutline = {
+				type   = "select",
+				name   = L["Inline Crit Outline"],
+				desc   = L["Outline style for inline crits. Leave blank to use the scroll area's normal outline."],
+				order  = 0.060,
+				values = function()
+					local o = ZSBT.ValuesFromKeys(ZSBT.OUTLINE_STYLES)
+					o["__use_area__"] = L["(Use Area Outline)"]
+					return o
+				end,
+				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
+				get    = function()
+					local ic = ZSBT.db.profile.general.inlineCrit
+					local v = (type(ic) == "table") and ic.outline or nil
+					return v or "__use_area__"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
+					if val == "__use_area__" then
+						ZSBT.db.profile.general.inlineCrit.outline = nil
+					else
+						ZSBT.db.profile.general.inlineCrit.outline = val
+					end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			inlineCritUseScale = {
+				type  = "toggle",
+				name  = L["Inline Crit Uses Scale"],
+				desc  = L["When enabled, inline crit size is derived from the area's normal font size using Inline Crit Scale. When disabled, Inline Crit Font Size is used."],
+				order = 0.061,
+				width = "full",
+				hidden = function() return not (ZSBT.db.profile.general.forceCritsInline == true) end,
+				get   = function()
+					local ic = ZSBT.db.profile.general.inlineCrit
+					return not (type(ic) == "table") or ic.useScale ~= false
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
+					ZSBT.db.profile.general.inlineCrit.useScale = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			inlineCritFontSize = {
+				type  = "range",
+				name  = L["Inline Crit Font Size"],
+				desc  = L["Fixed font size for inline crits (only used if Inline Crit Uses Scale is disabled)."],
+				order = 0.062,
+				min   = ZSBT.FONT_SIZE_MIN,
+				max   = 48,
+				step  = 1,
+				hidden = function()
+					if not (ZSBT.db.profile.general.forceCritsInline == true) then return true end
+					local ic = ZSBT.db.profile.general.inlineCrit
+					return not (type(ic) == "table") or ic.useScale ~= false
+				end,
+				get   = function()
+					local ic = ZSBT.db.profile.general.inlineCrit
+					return (type(ic) == "table" and type(ic.size) == "number") and ic.size or 28
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.inlineCrit = ZSBT.db.profile.general.inlineCrit or {}
+					ZSBT.db.profile.general.inlineCrit.size = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critShockwaveIntensity = {
+				type  = "range",
+				name  = L["Shockwave Intensity"],
+				order = 33.57,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				hidden = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return not (type(cf) == "table" and cf.anim == "Shockwave")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return (type(cf) == "table" and type(cf.shockwaveIntensity) == "number") and cf.shockwaveIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
+					ZSBT.db.profile.general.critFont.shockwaveIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critIgniteIntensity = {
+				type  = "range",
+				name  = L["Ignite Intensity"],
+				order = 33.58,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				hidden = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return not (type(cf) == "table" and cf.anim == "Ignite")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return (type(cf) == "table" and type(cf.igniteIntensity) == "number") and cf.igniteIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
+					ZSBT.db.profile.general.critFont.igniteIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critChromaticIntensity = {
+				type  = "range",
+				name  = L["Chromatic Intensity"],
+				order = 33.59,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				hidden = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return not (type(cf) == "table" and cf.anim == "Chromatic")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return (type(cf) == "table" and type(cf.chromaticIntensity) == "number") and cf.chromaticIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
+					ZSBT.db.profile.general.critFont.chromaticIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critStompIntensity = {
+				type  = "range",
+				name  = L["Stomp Intensity"],
+				order = 33.60,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				hidden = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return not (type(cf) == "table" and cf.anim == "Stomp")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return (type(cf) == "table" and type(cf.stompIntensity) == "number") and cf.stompIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
+					ZSBT.db.profile.general.critFont.stompIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critScreenPunchIntensity = {
+				type  = "range",
+				name  = L["ScreenPunch Intensity"],
+				order = 33.61,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				hidden = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return not (type(cf) == "table" and cf.anim == "ScreenPunch")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return (type(cf) == "table" and type(cf.screenPunchIntensity) == "number") and cf.screenPunchIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
+					ZSBT.db.profile.general.critFont.screenPunchIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critShatterIntensity = {
+				type  = "range",
+				name  = L["Shatter Intensity"],
+				order = 33.62,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				hidden = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return not (type(cf) == "table" and cf.anim == "Shatter")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return (type(cf) == "table" and type(cf.shatterIntensity) == "number") and cf.shatterIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
+					ZSBT.db.profile.general.critFont.shatterIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critAfterimageIntensity = {
+				type  = "range",
+				name  = L["Afterimage Intensity"],
+				order = 33.63,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				hidden = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return not (type(cf) == "table" and cf.anim == "Afterimage")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return (type(cf) == "table" and type(cf.afterimageIntensity) == "number") and cf.afterimageIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
+					ZSBT.db.profile.general.critFont.afterimageIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			critRumbleIntensity = {
+				type  = "range",
+				name  = L["Rumble Intensity"],
+				order = 33.64,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				hidden = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return not (type(cf) == "table" and cf.anim == "Rumble")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.general.critFont
+					return (type(cf) == "table" and type(cf.rumbleIntensity) == "number") and cf.rumbleIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.critFont = ZSBT.db.profile.general.critFont or {}
+					ZSBT.db.profile.general.critFont.rumbleIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
 			-- Crit Font Settings
 			headerCritFont = {
 				type  = "header",
@@ -2839,54 +3069,8 @@ function ZSBT.BuildTab_General()
                     LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
                 end,
             },
-            headerQuickActions = {
-                type  = "header",
-                name  = L["Quick Actions"],
-                order = 40,
-            },
-            resetDefaults = {
-                type    = "execute",
-                name    = L["Reset to Defaults"],
-                desc    = L["Reset settings to defaults (tracked cooldown spells are preserved)."],
-                order   = 41,
-                confirm = true,
-                confirmText = L["Reset all settings to defaults?\n\nTracked cooldown spells will be preserved."],
-                func    = function()
-                    -- Preserve tracked cooldown spells.
-                    local preservedTracked = nil
-                    if ZSBT.db
-                        and ZSBT.db.char
-                        and ZSBT.db.char.cooldowns
-                        and ZSBT.db.char.cooldowns.tracked then
-
-                        preservedTracked = {}
-                        for k, v in pairs(ZSBT.db.char.cooldowns.tracked) do
-                            preservedTracked[k] = v
-                        end
-                    end
-
-                    ZSBT.db:ResetProfile()
-
-                    if preservedTracked then
-                        ZSBT.db.char = ZSBT.db.char or {}
-                        ZSBT.db.char.cooldowns = ZSBT.db.char.cooldowns or {}
-                        ZSBT.db.char.cooldowns.tracked = preservedTracked
-                    end
-
-                    Addon:Print(L["Settings reset to defaults."])
-                    LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-                end,
-            },
-            reloadUI = {
-                type    = "execute",
-                name    = L["Reload UI"],
-                desc    = L["Reload the World of Warcraft user interface."],
-                order   = 42,
-                confirm = true,
-                confirmText = L["Reload the UI now?"],
-                func    = function() ReloadUI() end,
-            },
-        },
+            media = ZSBT.BuildTab_Media(),
+        }),
     }
 end
 
@@ -2977,16 +3161,6 @@ function ZSBT.BuildTab_Notifications()
 		return v ~= false
 	end
 
-	-- Throttled registry notify for the Resource Tracker setters: range/color
-	-- sliders fire set() every pixel while dragging, and a full NotifyChange
-	-- revalidates the whole options tree each tick (visible lag).
-	local _rtNotifyAt = 0
-	local function notifyRt()
-		local now = GetTime()
-		if now - _rtNotifyAt < 0.15 then return end
-		_rtNotifyAt = now
-		LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-	end
 	local function setCat(key, val)
 		ZSBT.db.profile.notifications = ZSBT.db.profile.notifications or {}
 		ZSBT.db.profile.notifications[key] = val and true or false
@@ -3603,74 +3777,6 @@ function ZSBT.BuildTab_Notifications()
 						end,
 					},
 				},
-			},
-			resourceTracker = {
-				type = "group",
-				name = L["Resource Tracker"],
-				desc = L["Persistent on-screen resource counter (combo points, holy power, chi, etc.) with optional max-resource alert."],
-				order = 8.5,
-				args = (function() local rtArgs = {
-					rcHeader = { type = "header", name = L["Resource Counters"], order = 3 },
-					rcHint = {
-						type = "description",
-						name = L["Each button opens a separate config window for that resource's on-screen counter."],
-						order = 3.05,
-						fontSize = "small",
-					},
-					rtUnlock = {
-						type = "execute",
-						name = function()
-							if ZSBT and ZSBT.IsResourceCounterUnlocked and ZSBT.IsResourceCounterUnlocked() then
-								return L["Lock Resource Counters"]
-							end
-							return L["Unlock Resource Counters"]
-						end,
-						desc = L["Show the resource counter frames for dragging and resizing without unlocking scroll areas."],
-						order = 3.9,
-						width = "full",
-						func = function()
-							if ZSBT and ZSBT.ToggleResourceCounterUnlock then
-								ZSBT.ToggleResourceCounterUnlock()
-							end
-							notifyRt()
-						end,
-					},
-				}
-				-- One configure button per resource this class can use with
-				-- a real pool: class-token filtered AND requiring a safe
-				-- max > 0. Current value is NOT required — it can be a
-				-- secret in combat, but the max is static and still proves
-				-- the resource exists (warlock mana max=0 stays hidden).
-				for i = 0, 20 do
-					if ZSBT.CpPowerTypeAllowed and ZSBT.CpPowerTypeAllowed(i)
-						and not (ZSBT.PowerTypeSecret and ZSBT.PowerTypeSecret(i)) then
-						local mx = UnitPowerMax("player", i)
-						if ZSBT.IsSafeNumber(mx) and mx > 0 then
-							local pt = i
-							rtArgs["rc_" .. i] = {
-							type = "execute",
-							name = function()
-								local label = (ZSBT.PowerTypeName and ZSBT.PowerTypeName(pt)) or ("Power " .. pt)
-								local cfg = ZSBT.ResourceCounterConfig and ZSBT.ResourceCounterConfig(pt)
-								if cfg and cfg.enabled == true then
-									label = label .. "  |cFF66FF66•|r"
-								end
-								return label
-							end,
-							desc = L["Open the config window for this resource's on-screen counter."],
-							order = 3.1 + i * 0.01,
-							width = "full",
-							func = function()
-								if Addon and Addon.OpenResourceCounterConfig then
-									Addon:OpenResourceCounterConfig(pt)
-								end
-							end,
-						}
-						end
-					end
-				end
-				return rtArgs
-				end)(),
 			},
 			externalAddons = buildLeafGroup("externalAddons", 9),
 		},
@@ -4672,7 +4778,7 @@ function ZSBT.BuildTab_ScrollAreas()
     return {
         type  = "group",
 		name  = L["|cFFFFD100Scroll Areas|r"],
-        order = 2,
+        order = 7,
         args  = {
             ----------------------------------------------------------------
             -- Area Selection & Management
@@ -5452,6 +5558,378 @@ end
 -- TAB 3: INCOMING
 -- Incoming damage and healing configuration.
 ------------------------------------------------------------------------
+------------------------------------------------------------------------
+-- Config harvest: Incoming/Outgoing/Pets builders move their args into
+-- ZSBT._critBuckets / ZSBT._combatBuckets / ZSBT._diagArgs so the Crits
+-- and Combat Text pages can present them as category buckets, and the
+-- Debug window can host the probe controls. Arg get/set closures keep
+-- their builder-locals as upvalues, so moved args behave identically.
+-- header* keys are dropped — bucket group names replace them.
+------------------------------------------------------------------------
+ZSBT._critBuckets = ZSBT._critBuckets or {}
+ZSBT._combatBuckets = ZSBT._combatBuckets or {}
+ZSBT._diagArgs = ZSBT._diagArgs or { incoming = {}, outgoing = {} }
+
+-- Non-crit combat args -> bucket key spec, per direction.
+local COMBAT_BUCKET_KEYS = {
+	incoming = {
+		damage = {
+			damageEnabled=1, damageScrollArea=1, damageShowFlags=1,
+			damageMinThreshold=1, thresholdTip=1,
+			useSchoolColors=1, customDamageColor=1,
+			showSpellIcons=1, showSpellIconsResolved=1, showSpellIconsFallback=1,
+		},
+		heal = {
+			healingEnabled=1, healingScrollArea=1, healingShowHoTs=1,
+			healingShowHealerNames=1, healingMinThreshold=1,
+			customHealingColor=1,
+		},
+		miss = { damageShowMisses=1 },
+	},
+	outgoing = {
+		damage = {
+			damageEnabled=1, showSpellNames=1, showSpellIcons=1,
+			useSchoolColors=1, customDamageColor=1, damageScrollArea=1,
+			damageShowFlags=1, showTargets=1, autoAttackMode=1,
+			damageMinThreshold=1, thresholdTip=1,
+		},
+		heal = {
+			healingEnabled=1, healingScrollArea=1,
+			healingMinThreshold=1, customHealingColor=1,
+		},
+		miss = { damageShowMisses=1 },
+	},
+}
+
+-- Canonical option order inside each Combat Text bucket (ZCT editor
+-- flow): enable -> scroll area -> display toggles -> threshold ->
+-- colors -> misc. Applied at bucket build time; unmapped args keep
+-- their harvested order and sort after the ranked ones.
+ZSBT._BUCKET_ORDER = {
+	incomingDamage = {
+		"damageEnabled", "damageScrollArea", "damageShowFlags",
+		"showSpellIcons", "showSpellIconsResolved", "showSpellIconsFallback",
+		"damageMinThreshold", "thresholdTip",
+		"useSchoolColors", "customDamageColor",
+	},
+	incomingHealing = {
+		"healingEnabled", "healingScrollArea", "healingShowHoTs",
+		"healingShowHealerNames", "healingMinThreshold",
+		"customHealingColor",
+	},
+	incomingMisses = {
+		"damageShowMisses", "missScrollArea", "missColor",
+		"missHiddenHeader",
+		"missHide_DODGE", "missHide_MISS", "missHide_PARRY", "missHide_BLOCK",
+		"missHide_RESIST", "missHide_ABSORB", "missHide_EVADE",
+		"missHide_IMMUNE", "missHide_REFLECT", "missHide_DEFLECT",
+	},
+	outgoingDamage = {
+		"damageEnabled", "damageScrollArea", "damageShowFlags",
+		"showSpellNames", "showSpellIcons",
+		"showTargets", "autoAttackMode",
+		"damageMinThreshold", "thresholdTip",
+		"useSchoolColors", "customDamageColor",
+	},
+	outgoingHealing = {
+		"healingEnabled", "healingScrollArea",
+		"healingMinThreshold", "customHealingColor",
+	},
+	outgoingMisses = {
+		"damageShowMisses", "missScrollArea", "missColor",
+		"missHiddenHeader",
+		"missHide_DODGE", "missHide_MISS", "missHide_PARRY", "missHide_BLOCK",
+		"missHide_RESIST", "missHide_ABSORB", "missHide_EVADE",
+		"missHide_IMMUNE", "missHide_REFLECT", "missHide_DEFLECT",
+	},
+	petIncomingDamage = {
+		"showIncomingDamage", "incomingDamageScrollArea",
+		"incomingDamageMinThreshold",
+		"incomingDamageColor", "incomingDamageCritColor",
+		"spacer1", "instanceWarning",
+	},
+	petHealing = {
+		"showHealing", "healScrollArea", "healMinThreshold",
+		"incomingHealColor", "incomingHealCritColor",
+	},
+	petOutgoingDamage = {
+		"enabled", "scrollArea", "casterMode", "aggregation",
+		"minThreshold", "mergeWindowSec", "showCount",
+		"outgoingDamageColor", "outgoingCritColor",
+	},
+}
+
+function ZSBT._orderBucket(args, rank)
+	if type(args) ~= "table" or type(rank) ~= "table" then return end
+	for i, k in ipairs(rank) do
+		local v = args[k]
+		if type(v) == "table" then v.order = i * 10 end
+	end
+end
+
+local PET_BUCKET_KEYS = {
+	outgoing = {
+		enabled=1, casterMode=1, scrollArea=1, aggregation=1, minThreshold=1,
+		outgoingDamageColor=1, outgoingCritColor=1, mergeWindowSec=1,
+		showCount=1,
+	},
+	healing = {
+		showHealing=1, healScrollArea=1, healMinThreshold=1,
+		incomingHealColor=1, incomingHealCritColor=1,
+	},
+	incoming = {
+		showIncomingDamage=1, incomingDamageScrollArea=1,
+		incomingDamageMinThreshold=1, incomingDamageColor=1,
+		incomingDamageCritColor=1, spacer1=1, instanceWarning=1,
+	},
+}
+
+------------------------------------------------------------------------
+-- General page regroup: flat section args are distributed into tree
+-- child groups (System / Master Font / Numbers) at build time. Keys not
+-- listed stay on the General node itself (intro, brand header, media).
+------------------------------------------------------------------------
+local GENERAL_GROUP_KEYS = {
+	system = {
+		enabled=1, combatOnly=1, hideBlizzardFCT=1, hideBlizzardFCTOutgoing=1,
+		hideBlizzardFCTIncomingDamage=1, hideBlizzardFCTIncomingHealing=1,
+		hideBlizzardFCTReactives=1, hideBlizzardFCTXPRepHonor=1,
+		hideBlizzardFCTResourceGains=1, hideBlizzardFCTPet=1,
+		restoreBlizzardFCTNow=1,
+		quickControlBarEnabled=1, quickControlBarResetPos=1, minimapHide=1,
+		resetDefaults=1, reloadUI=1,
+		headerUI=1, headerQuickActions=1,
+		critInlineHeader=1, forceCritsInline=1, forceCritsInlineHelp=1,
+		inlineCritHeader=1, inlineCritHelp=1, inlineCritScale=1,
+		inlineCritDurationMult=1, inlineCritFx=1, inlineCritFxIntensity=1,
+		inlineCritFontFace=1, inlineCritFontOutline=1, inlineCritUseScale=1,
+		inlineCritFontSize=1,
+	},
+	masterFont = {
+		fontFace=1, fontSize=1, fontOutline=1, fontAlpha=1,
+		headerCritFont=1, critFontFace=1, critFontSize=1, critUseScale=1,
+		critAnim=1, critFontOutline=1, critFontScale=1,
+		critShockwaveIntensity=1, critIgniteIntensity=1,
+		critChromaticIntensity=1, critStompIntensity=1,
+		critScreenPunchIntensity=1, critShatterIntensity=1,
+		critAfterimageIntensity=1, critRumbleIntensity=1,
+	},
+	numbers = { numbersHelp=1, numberFormat=1 },
+}
+local GENERAL_DROP_KEYS = {
+	headerMaster=1, headerFont=1, headerNumbers=1,
+	brandHeader=1, brandSpacer=1,
+}
+
+-- Logical ordering inside the new tree children: core toggles first,
+-- then Blizzard FCT suppression, inline crits, UI, quick actions.
+local GENERAL_ORDER = {
+	enabled = 1, combatOnly = 2,
+	hideBlizzardFCT = 10,
+	hideBlizzardFCTOutgoing = 11, hideBlizzardFCTIncomingDamage = 12,
+	hideBlizzardFCTIncomingHealing = 13, hideBlizzardFCTReactives = 14,
+	hideBlizzardFCTXPRepHonor = 15, hideBlizzardFCTResourceGains = 16,
+	hideBlizzardFCTPet = 17, restoreBlizzardFCTNow = 18,
+	critInlineHeader = 20, forceCritsInline = 21, forceCritsInlineHelp = 22,
+	inlineCritHeader = 23, inlineCritHelp = 24, inlineCritScale = 25,
+	inlineCritDurationMult = 26, inlineCritFx = 27, inlineCritFxIntensity = 28,
+	inlineCritFontFace = 29, inlineCritFontOutline = 30, inlineCritUseScale = 31,
+	inlineCritFontSize = 32,
+	headerUI = 40, quickControlBarEnabled = 41, quickControlBarResetPos = 42,
+	minimapHide = 43,
+	headerQuickActions = 50, resetDefaults = 51, reloadUI = 52,
+	fontFace = 10, fontSize = 11, fontOutline = 12, fontAlpha = 13,
+	headerCritFont = 20, critFontFace = 21, critFontSize = 22, critUseScale = 23,
+	critAnim = 24, critFontOutline = 25, critFontScale = 26,
+	critShockwaveIntensity = 30, critIgniteIntensity = 31,
+	critChromaticIntensity = 32, critStompIntensity = 33,
+	critScreenPunchIntensity = 34, critShatterIntensity = 35,
+	critAfterimageIntensity = 36, critRumbleIntensity = 37,
+	numbersHelp = 1, numberFormat = 2,
+}
+
+function ZSBT._groupGeneralArgs(args)
+	local groups = { system = {}, masterFont = {}, numbers = {} }
+	for key, val in pairs(args) do
+		local g = GENERAL_GROUP_KEYS.system[key] and "system"
+			or GENERAL_GROUP_KEYS.masterFont[key] and "masterFont"
+			or GENERAL_GROUP_KEYS.numbers[key] and "numbers" or nil
+		if g then
+			if type(val) == "table" and GENERAL_ORDER[key] then
+				val.order = GENERAL_ORDER[key]
+			end
+			groups[g][key] = val
+			args[key] = nil
+		elseif GENERAL_DROP_KEYS[key] then
+			args[key] = nil
+		end
+	end
+	-- Section header inside System for the FCT suppression cluster.
+	groups.system._hdrFCT = {
+		type = "header", name = L["Blizzard Combat Text"], order = 5,
+	}
+	args.system = { type = "group", name = L["|cFFFFD100System|r"], order = 10, args = groups.system }
+	args.masterFont = { type = "group", name = L["|cFFFFD100Master Font|r"], order = 20, args = groups.masterFont }
+	args.numbers = { type = "group", name = L["|cFFFFD100Numbers|r"], order = 30, args = groups.numbers }
+	if type(args.media) == "table" then args.media.order = 40 end
+	return args
+end
+
+function ZSBT._harvestDirectionArgs(direction, args)
+	ZSBT._critBuckets[direction] = {}
+	ZSBT._combatBuckets[direction] = {}
+	ZSBT._diagArgs[direction] = {}
+	local critB = ZSBT._critBuckets[direction]
+	local buckets = ZSBT._combatBuckets[direction]
+	local diag = ZSBT._diagArgs[direction]
+	local spec = COMBAT_BUCKET_KEYS[direction] or {}
+	local pfx = (direction == "incoming") and "in" or "out"
+	local strip = ZSBT._shellMode == true
+	for key, val in pairs(args) do
+		local lk = key:lower()
+		if lk:sub(1, 6) == "header" then
+			if strip then args[key] = nil end
+		elseif lk:find("crit", 1, true) and not lk:find("headercritssplit", 1, true) then
+			local kind = lk:find("heal", 1, true) and "heal" or "damage"
+			local b = critB[kind]
+			if not b then b = {}; critB[kind] = b end
+			b[key] = val
+			if strip then args[key] = nil end
+		elseif lk:sub(1, 5) == "probe" then
+			diag[pfx .. key:sub(1, 1):upper() .. key:sub(2)] = val
+			if strip then args[key] = nil end
+		else
+			local kind = (spec.damage and spec.damage[key]) and "damage"
+				or (spec.heal and spec.heal[key]) and "heal"
+				or (spec.miss and spec.miss[key]) and "miss" or nil
+			if kind then
+				local b = buckets[kind]
+				if not b then b = {}; buckets[kind] = b end
+				b[key] = val
+				if strip then args[key] = nil end
+			end
+		end
+	end
+	return args
+end
+
+function ZSBT._harvestPetArgs(args)
+	ZSBT._combatBuckets.pets = {}
+	local buckets = ZSBT._combatBuckets.pets
+	local strip = ZSBT._shellMode == true
+	for key, val in pairs(args) do
+		local lk = key:lower()
+		if lk:sub(1, 6) == "header" then
+			if strip then args[key] = nil end
+		else
+			local kind = PET_BUCKET_KEYS.outgoing[key] and "outgoing"
+				or PET_BUCKET_KEYS.healing[key] and "healing"
+				or PET_BUCKET_KEYS.incoming[key] and "incoming" or nil
+			if kind then
+				local b = buckets[kind]
+				if not b then b = {}; buckets[kind] = b end
+				b[key] = val
+				if strip then args[key] = nil end
+			end
+		end
+	end
+	return args
+end
+
+function ZSBT._CritBucketGroup(label, bucket, order)
+	return {
+		type = "group",
+		name = label,
+		order = order,
+		childGroups = "tree",
+		args = (type(bucket) == "table") and bucket or {},
+	}
+end
+ZSBT._BucketGroup = ZSBT._CritBucketGroup
+
+------------------------------------------------------------------------
+-- Misses buckets (ZCT parity): the harvested "Show Misses / Avoids"
+-- toggle plus dedicated scroll-area, color, and per-subtype hide args
+-- bound to profile.<dir>.misses. Shell-only — never enters legacy UI.
+------------------------------------------------------------------------
+local MISS_HIDDEN_TYPES = { "DODGE", "MISS", "PARRY", "BLOCK", "RESIST",
+	"ABSORB", "EVADE", "IMMUNE", "REFLECT", "DEFLECT" }
+local MISS_TYPE_LABELS = {
+	DODGE = "Dodge", MISS = "Miss", PARRY = "Parry", BLOCK = "Block",
+	RESIST = "Resist", ABSORB = "Absorb", EVADE = "Evade",
+	IMMUNE = "Immune", REFLECT = "Reflect", DEFLECT = "Deflect",
+}
+
+function ZSBT._MissBucketExtras(direction)
+	local prof = (direction == "incoming") and "incoming" or "outgoing"
+	local defArea = (direction == "incoming") and "Incoming" or "Outgoing"
+	local args = {
+		missScrollArea = {
+			type   = "select",
+			name   = L["Scroll Area"],
+			desc   = L["Which scroll area displays misses and avoids."],
+			order  = 5,
+			values = function() return ZSBT.GetScrollAreaNames() end,
+			get    = function()
+				local p = ZSBT.db.profile[prof]
+				local m = p and p.misses
+				local d = p and p.damage
+				return (m and m.scrollArea) or (d and d.scrollArea) or defArea
+			end,
+			set    = function(_, val)
+				local p = ZSBT.db.profile[prof]
+				p.misses = p.misses or {}
+				p.misses.scrollArea = val
+			end,
+		},
+		missColor = {
+			type  = "color",
+			name  = L["Miss Color"],
+			desc  = L["Color for miss and avoid text."],
+			order = 6,
+			get   = function()
+				local p = ZSBT.db.profile[prof]
+				local c = p and p.misses and p.misses.color
+					or { r = 0.70, g = 0.70, b = 0.70 }
+				return c.r, c.g, c.b
+			end,
+			set   = function(_, r, g, b)
+				local p = ZSBT.db.profile[prof]
+				p.misses = p.misses or {}
+				p.misses.color = { r = r, g = g, b = b }
+			end,
+		},
+		missHiddenHeader = {
+			type  = "header",
+			name  = L["Hidden Types"],
+			order = 7,
+		},
+	}
+	for i, sub in ipairs(MISS_HIDDEN_TYPES) do
+		args["missHide_" .. sub] = {
+			type   = "toggle",
+			name   = L[MISS_TYPE_LABELS[sub]],
+			desc   = L["Never display this type of miss or avoid."],
+			width  = "full",
+			order  = 8 + i,
+			get    = function()
+				local p = ZSBT.db.profile[prof]
+				local h = p and p.misses and p.misses.hidden
+				return type(h) == "table" and h[sub] == true
+			end,
+			set    = function(_, val)
+				local p = ZSBT.db.profile[prof]
+				p.misses = p.misses or {}
+				p.misses.hidden = type(p.misses.hidden) == "table"
+					and p.misses.hidden or {}
+				if val then p.misses.hidden[sub] = true
+				else p.misses.hidden[sub] = nil end
+			end,
+		}
+	end
+	return args
+end
+
 function ZSBT.BuildTab_Incoming()
     local function cap()
         return ZSBT.Core and ZSBT.Core.IncomingProbe and ZSBT.Core.IncomingProbe.cap
@@ -5471,7 +5949,7 @@ function ZSBT.BuildTab_Incoming()
         type  = "group",
 		name  = L["|cFFFFD100Incoming|r"],
         order = 4,
-        args  = {
+        args  = ZSBT._harvestDirectionArgs("incoming", {
             ----------------------------------------------------------------
             -- Incoming Damage
             ----------------------------------------------------------------
@@ -6171,31 +6649,24 @@ function ZSBT.BuildTab_Incoming()
 				end,
 			},
             healingShowHoTs = {
-                type  = "toggle",
-                name  = L["Show HoT Ticks Separately"],
-                desc  = L["Display each Heal-over-Time tick as its own number. (Requires periodic classification from the live source.)"],
-                width = "full",
-                order = 13,
-                get   = function() return ZSBT.db.profile.incoming.healing.showHoTTicks end,
-                set   = function(_, val) ZSBT.db.profile.incoming.healing.showHoTTicks = val end,
-            },
-            showOverheal = {
-                type  = "toggle",
-                name  = L["Show Overhealing (may be limited)"],
-                desc  = L["Display overheal amount next to heals (e.g. 5000 (OH 1200)). On modern WoW, overheal data may be unavailable for some events."],
-                width = "full",
-                order = 13.5,
-                get   = function() return ZSBT.db.profile.incoming.healing.showOverheal end,
-                set   = function(_, val) ZSBT.db.profile.incoming.healing.showOverheal = val end,
+                type   = "toggle",
+                name   = L["Show HoT Ticks Separately"],
+                desc   = L["Display each Heal-over-Time tick as its own number. (Requires periodic classification from the live source.)"],
+                width  = "full",
+                order  = 13,
+                hidden = function() return ZSBT._shellMode end,
+                get    = function() return ZSBT.db.profile.incoming.healing.showHoTTicks end,
+                set    = function(_, val) ZSBT.db.profile.incoming.healing.showHoTTicks = val end,
             },
             healingShowHealerNames = {
-                type  = "toggle",
-                name  = L["Show Healer Names"],
-                desc  = L["Display the healer's name on incoming healing numbers. Some clients include the name in the combat text payload; when disabled, ZSBT uses the numeric heal event instead so only the amount shows."],
-                width = "full",
-                order = 13.6,
-                get   = function() return ZSBT.db.profile.incoming.healing.showHealerNames ~= false end,
-                set   = function(_, val) ZSBT.db.profile.incoming.healing.showHealerNames = val and true or false end,
+                type   = "toggle",
+                name   = L["Show Healer Names"],
+                desc   = L["Display the healer's name on incoming healing numbers. Some clients include the name in the combat text payload; when disabled, ZSBT uses the numeric heal event instead so only the amount shows."],
+                width  = "full",
+                order  = 13.5,
+                hidden = function() return ZSBT._shellMode end,
+                get    = function() return ZSBT.db.profile.incoming.healing.showHealerNames ~= false end,
+                set    = function(_, val) ZSBT.db.profile.incoming.healing.showHealerNames = val and true or false end,
             },
             healingMinThreshold = {
                 type    = "range",
@@ -6877,7 +7348,7 @@ function ZSBT.BuildTab_Incoming()
                     if p and p.PrintCapabilityReport then p:PrintCapabilityReport() end
                 end,
             },
-        },
+        }),
     }
 end
 
@@ -6907,7 +7378,7 @@ function ZSBT.BuildTab_Outgoing()
         type  = "group",
 		name  = L["|cFFFFD100Outgoing|r"],
         order = 5,
-        args  = {
+        args  = ZSBT._harvestDirectionArgs("outgoing", {
             ----------------------------------------------------------------
             -- Outgoing Damage
             ----------------------------------------------------------------
@@ -6990,6 +7461,15 @@ function ZSBT.BuildTab_Outgoing()
                 values = function() return ZSBT.GetScrollAreaNames() end,
                 get    = function() return ZSBT.db.profile.outgoing.damage.scrollArea end,
                 set    = function(_, val) ZSBT.db.profile.outgoing.damage.scrollArea = val end,
+            },
+            damageShowFlags = {
+                type  = "toggle",
+                name  = L["Show Damage Flags"],
+                desc  = L["Display flags like Crushing, Glancing, Absorb, Block, Resist."],
+                width = "full",
+                order = 4.5,
+                get   = function() return ZSBT.db.profile.outgoing.damage.showFlags end,
+                set   = function(_, val) ZSBT.db.profile.outgoing.damage.showFlags = val end,
             },
             showTargets = {
                 type  = "toggle",
@@ -7658,15 +8138,6 @@ function ZSBT.BuildTab_Outgoing()
                 values = function() return ZSBT.GetScrollAreaNames() end,
                 get    = function() return ZSBT.db.profile.outgoing.healing.scrollArea end,
                 set    = function(_, val) ZSBT.db.profile.outgoing.healing.scrollArea = val end,
-            },
-            showOverheal = {
-                type  = "toggle",
-                name  = L["Show Overhealing (may be limited)"],
-                desc  = L["Display overhealing amounts. On modern WoW, overheal data may be unavailable for some events."],
-                width = "full",
-                order = 13,
-                get   = function() return ZSBT.db.profile.outgoing.healing.showOverheal end,
-                set   = function(_, val) ZSBT.db.profile.outgoing.healing.showOverheal = val end,
             },
             healingMinThreshold = {
                 type    = "range",
@@ -8338,7 +8809,7 @@ function ZSBT.BuildTab_Outgoing()
                     if p and p.StopReplay then p:StopReplay(false) end
                 end,
             },
-        },
+        }),
     }
 end
 
@@ -8351,7 +8822,7 @@ function ZSBT.BuildTab_Pets()
         type  = "group",
 		name  = L["Pets"],
         order = 6,
-        args  = {
+        args  = ZSBT._harvestPetArgs({
             headerPets = {
                 type  = "header",
                 name  = L["Outgoing Pet Damage"],
@@ -8606,7 +9077,7 @@ function ZSBT.BuildTab_Pets()
                 order    = 21,
                 fontSize = "medium",
             },
-        },
+        }),
     }
 end
 
@@ -8665,6 +9136,16 @@ function ZSBT.BuildTab_SpamControl()
                 disabled = function() return not ZSBT.db.profile.spamControl.merging.enabled end,
                 get      = function() return ZSBT.db.profile.spamControl.merging.showCount end,
                 set      = function(_, val) ZSBT.db.profile.spamControl.merging.showCount = val end,
+            },
+            mergeCrits = {
+                type     = "toggle",
+                name     = L["Merge Critical Hits"],
+                desc     = L["Include critical hits in spell merging. Crits merge separately from normal hits and still show crit styling."],
+                width    = "full",
+                order    = 5.5,
+                disabled = function() return not ZSBT.db.profile.spamControl.merging.enabled end,
+                get      = function() return ZSBT.db.profile.spamControl.merging.mergeCrits == true end,
+                set      = function(_, val) ZSBT.db.profile.spamControl.merging.mergeCrits = val and true or false end,
             },
 
             ----------------------------------------------------------------
@@ -9887,7 +10368,7 @@ function ZSBT.BuildTab_Media()
     return {
         type  = "group",
 		name  = L["|cFFFFD100Media|r"],
-        order = 9,
+        order = 17,
         args  = {
             ----------------------------------------------------------------
             -- Sound Events
