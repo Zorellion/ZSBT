@@ -94,7 +94,14 @@ local function FlushIncomingMerge(key)
             end
             text = sumText .. " x" .. tostring(e.count)
         elseif e.mode == "secret" then
-            text = ((e.kind == "heal") and "Heals" or "Hits") .. " x" .. tostring(e.count)
+            if ZSBT.IsSafeString(text) then
+                text = text .. " x" .. tostring(e.count)
+            else
+                -- Secret raw amount: pass through untouched for SetText; the
+                -- count renders as a separate badge FontString (outgoing-style).
+                if type(e.meta) ~= "table" then e.meta = {} end
+                e.meta.mergeBadgeCount = e.count
+            end
         elseif ZSBT.IsSafeString(text) then
             text = text .. " x" .. tostring(e.count)
         end

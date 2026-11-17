@@ -3,7 +3,7 @@
 ## Title: Zore's Scrolling Battle Text
 ## Notes: Zore's Scrolling Battle Text (ZSBT) for WoW Retail 12.x
 ## Author: Zorellion
-## Version: 3.7.0
+## Version: 4.0.0
 ## SavedVariables: ZSBTDB
 ## OptionalDeps: Ace3, LibSharedMedia-3.0
 
@@ -58,6 +58,24 @@ Core\Triggers.lua
 Core\Combat_Decide.lua
 
 # Parser (Detection) - Skeletons
+# ZCT combat core (transplanted from Zore's Combat Text) - namespaced
+# under ZSBT.ZCT; feeds the Normalize sink bus that Stage 2 bridges
+# into the existing parser/display pipeline
+ZCT\Core\Constants.lua
+ZCT\Core\Safety.lua
+ZCT\Core\Debug.lua
+ZCT\Core\Probe.lua
+ZCT\Core\CombatLogFilter.lua
+ZCT\Core\LogLines.lua
+ZCT\Core\Collector.lua
+ZCT\Core\Normalize.lua
+ZCT\Core\Context.lua
+ZCT\Core\Incoming.lua
+ZCT\Core\Outgoing.lua
+ZCT\Core\Decide.lua
+ZCT\Core\Bridge.lua
+ZCT\Core\Init.lua
+
 Parser\Normalize.lua
 Parser\CombatLog_Detect.lua
 Parser\Cooldowns_Detect.lua

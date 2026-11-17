@@ -6,6 +6,22 @@ You are an expert World of Warcraft addon developer specializing in the modern R
 - **Garbage Collection (GC) Mitigation**: Prioritize table recycling pools (`Wipe` / object pooling) for high-frequency events (`COMBAT_LOG_EVENT_UNFILTERED`).
 - **Secure Frames**: Ensure all UI frame rendering adheres to modern anchoring and secure frame templates. Do not trigger interface taints during combat lockdown.
 
+## ZCT combat core transplant (in progress, unreleased)
+
+The combat attribution/display-detection core is being replaced by a transplant of **Zore's Combat Text (ZCT)**, namespaced under `ZSBT.ZCT` (`ZCT/Core/*.lua`, TOC lines ~61-77). ZCT's own `Display/`, `UI/`, `FCT`, `Notify`, `Interrupts`, `Loot`, `Auras`, `Minimap`, `ResourceCounter` modules were deliberately NOT ported — ZSBT keeps its own display/rules/fonts/animations.
+
+Pipeline: `ZCT.Collector` (whitelisted events) → `ZCT.LogLines` (COMBAT_LOG_MESSAGE RGB classify) + `ZCT.Incoming`/`ZCT.Outgoing` (pairing + attribution) → `ZCT.Normalize` (pooled CombatEvents, sink bus) → sinks: `ZCT.Decide` (no-op without Display) and **`ZCT.Bridge`** (`ZCT/Core/Bridge.lua`).
+
+`ZCT.Bridge` translates CombatEvents into the legacy `info` contract and calls `ZSBT.Parser.Outgoing:ProcessEvent` / `Incoming:ProcessEvent` directly; pet events go to `PulseEngine:collect("PET_*")`. Secret amounts ride `EventCollector._rawPipe` (rawPipeId). The bridge also notes `_noteOutgoingSignal`/`_noteIncomingSignal` (damage-meter fallback suppression) and maintains `ec._lastOutgoingCombatAt/_lastOutgoingCombatTargetName` (kill inference).
+
+Retired: `Parser.CombatLog:Enable` no longer wires `EventCollector -> PulseEngine` and never calls `collector:Enable()` — the collector's frame never registers events. `PulseEngine` stays enabled ONLY for pet-merge + damage-meter fallback sinks. `Event_Collector.lua` remains in the TOC solely to own the `_rawPipe` registry and legacy state fields.
+
+Persistence: ZCT settings live at `ZSBTDB.ZCT` (bound in `ZCT/Core/Init.lua` OnLogin — SavedVariables are nil at file load). Filter name is `"ZSBT"` (`ZCT.FILTER_NAME`); written at PLAYER_LOGOUT, verified at PEW. The v3.7.0 `combatLogFilterCleanup_v1` migration only removes the OLD-palette filter and is one-time — it cannot delete the new filter (it runs before the new filter is ever written, and the flag is already set for 3.7.0 users).
+
+Legacy attribution toggles REMOVED (ZCT Context/groupPolicy/contention handles strictness automatically): the Dungeon/Raid, PvP, and Open-World tuning sections were cut from `UI/ConfigTabs.lua`, the Instance/Open World/PvP dropdowns were cut from `UI/QuickControlBar.lua` (bar is now label+Unlock only), the `IsPvPStrictActive` auto-suppression was removed from `Parser/Outgoing_Detect.lua`, and the damage-meter combat-text fallback polls were disabled in `Parser/Pulse_Engine.lua` (`shouldPollDamageMeter*` return false — they emitted unattributed numbers). Saved db keys remain but have no UI and no live consumers outside dead code paths.
+
+NOT yet verified in-game. Stage 3 (optional): delete dead combat paths inside `Event_Collector.lua`/`Pulse_Engine.lua` and the now-dead Core gating helpers once the bridge proves out.
+
 ## Development & Release Workflow
 
 - **Authoritative source**: All code work happens ONLY in this folder (`_retail_\Interface\AddOns\ZSBT`). Retail is the DEV copy. Never edit `_classic_beta_`, `_forever_`, or `_ptr_` copies directly; they are synced from here only when the user explicitly asks (e.g. for testing on that client).

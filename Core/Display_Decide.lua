@@ -237,11 +237,14 @@ local function FlushMergeByKey(key)
             end
         elseif showCount then
             -- Secret/tainted or non-numeric text: count-only (no math).
-            -- Keep the base label text and append count.
+            -- Safe strings get an inline suffix; secret text cannot be
+            -- concatenated, so the count rides as a separate badge
+            -- FontString (ZCT-style) via meta.mergeBadgeCount.
             if ZSBT.IsSafeString(text) then
                 text = text .. L[" (x"] .. entry.count .. ")"
             else
-                text = L["Hits (x"] .. entry.count .. ")"
+                if type(entry.meta) ~= "table" then entry.meta = {} end
+                entry.meta.mergeBadgeCount = entry.count
             end
         end
     end
@@ -285,7 +288,9 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
 		ZSBT.Addon:Dbg("outgoing", 4, "MERGE_BYPASS_PERIODIC", tostring(meta and meta.spellId))
 	end
 	if isCrit or isMiss or isNotification or isPeriodic then
-		FlushMergesForArea(areaName)
+		-- Bypassed events display immediately but must NOT flush pending
+		-- merges: unattributed ticks/hits interleave constantly under ZCT
+		-- and flushing here prevented same-spell hits from ever merging.
 		ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
 			fontAlpha, anchorH, dirMult, duration, color, meta)
 		if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
@@ -304,7 +309,6 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
 	end
 	if not canSpellMerge then
 		-- Avoid merging unrelated events: if we can't key by spellId, do not merge.
-		FlushMergesForArea(areaName)
 		ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
 			fontAlpha, anchorH, dirMult, duration, color, meta)
 		if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
@@ -316,8 +320,8 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
 	local maxMerge = 8  -- never hold more than 8 hits
 
 	-- Tainted/secret text cannot be inspected (text:match would error); it
-	-- merges count-only via mode "secret" and FlushMergeByKey renders
-	-- "Hits (xN)" without touching the raw value.
+	-- merges via mode "secret" and FlushMergeByKey renders the raw value
+	-- plus an (xN) badge without touching the secret.
 	local numVal = nil
 	local mode = "secret"
 	if ZSBT.IsSafeString and ZSBT.IsSafeString(text) then

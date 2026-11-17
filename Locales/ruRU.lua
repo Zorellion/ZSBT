@@ -1083,3 +1083,5 @@ L["Rampage!"] = "Бешенство!"
 L["Unstoppable!"] = "Неостановимый!"
 
 L["|cFFFFD100Midnight 12.0 note:|r Multi-charge spells (charges) may not be reliably trackable because charge/recharge data can be hidden (\"secret\"). Cooldown ready notifications for charge spells may be delayed or unavailable."] = "|cFFFFD100Примечание Midnight 12.0:|r Заклинания с несколькими зарядами могут отслеживаться неточно, так как данные о зарядах/перезарядке могут быть скрыты. Уведомления о готовности заклинаний с зарядами могут задерживаться или быть недоступны."
+L["Caster Mode"] = "Режим заклинателя"
+L["Treat unattributed melee hits as pet damage. Enable on caster specs with a pet — melee swings carry no spell ID, so your pet's auto-attacks would otherwise show as anonymous player hits. Leave off for melee specs."] = "Считать неатрибутированные удары в ближнем бою уроном питомца. Включайте на спецах-заклинателях с питомцем — удары ближнего боя не несут ID заклинания, поэтому автоатаки питомца иначе отображались бы как анонимные удары игрока. Для боевых спек оставляйте выключенным."

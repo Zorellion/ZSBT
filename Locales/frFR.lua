@@ -1083,3 +1083,5 @@ L["Rampage!"] = "Folie !"
 L["Unstoppable!"] = "Inarrêtable !"
 
 L["|cFFFFD100Midnight 12.0 note:|r Multi-charge spells (charges) may not be reliably trackable because charge/recharge data can be hidden (\"secret\"). Cooldown ready notifications for charge spells may be delayed or unavailable."] = "|cFFFFD100Note Midnight 12.0 :|r Les sorts à charges multiples peuvent ne pas être suivis de façon fiable car les données de charges/recharge peuvent être masquées. Les notifications de recharge des sorts à charges peuvent être retardées ou indisponibles."
+L["Caster Mode"] = "Mode lanceur"
+L["Treat unattributed melee hits as pet damage. Enable on caster specs with a pet — melee swings carry no spell ID, so your pet's auto-attacks would otherwise show as anonymous player hits. Leave off for melee specs."] = "Traite les coups de mêblée non attribués comme des dégâts de familier. À activer sur les spécialisations de lanceur avec familier — les frappes en mêblée ne portent pas d’ID de sort ; les attaques automatiques de votre familier s’afficheraient sinon comme des coups anonymes du joueur. À laisser désactivé pour les specs mêblée."

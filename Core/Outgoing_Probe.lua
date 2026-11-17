@@ -111,6 +111,18 @@ local function aggShowCountFromRule(rule)
 	return true
 end
 
+-- ZCT-style default aggregation: the transplanted combat core emits
+-- every attributed hit individually, but ZCT's Decide layer merged repeats
+-- within a 0.6s window. ZSBT's spell-rule aggregation engine already does
+-- exactly that ("(xN)" rollups, crit/non-crit split) -- it just required a
+-- per-spell rule. This synthetic rule gives every attributed spell the
+-- same default merge window; an explicit spell rule with
+-- aggregate.enabled == false still opts out.
+local DEFAULT_SPELL_AGG_RULE = {
+	enabled = true,
+	aggregate = { enabled = true, windowSec = 0.6, showCount = true },
+}
+
 local function startOrPushSpellAgg(self, spellId, rule, evt, amountNumber)
 	if not (self and type(spellId) == "number" and type(rule) == "table" and type(evt) == "table") then return false end
 	local win = aggWindowFromRule(rule)
@@ -571,6 +583,12 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				ruleArea = (type(rule.scrollArea) == "string" and rule.scrollArea ~= "") and rule.scrollArea or nil
 			end
 		end
+		-- No explicit rule: apply the default merge window so repeated
+		-- attributed hits roll up like ZCT's spam.merge instead of
+		-- flooding one line per hit.
+		if rule == nil and type(resolvedSpellID) == "number" and not spellIdWeak then
+			rule = DEFAULT_SPELL_AGG_RULE
+		end
 		if evt and evt._zsbtAggSkip ~= true and type(resolvedSpellID) == "number" and type(rule) == "table" and rule.enabled ~= false then
 			local wwRuleExists = (sr and (type(sr[1680]) == "table" or type(sr[190411]) == "table")) and true or false
 			if not (wwRuleExists and isWhirlwindSpellId(resolvedSpellID)) then
@@ -668,6 +686,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			or evt.amountSource == "UNIT_COMBAT_BEST"
 			or evt.amountSource == "UNIT_COMBAT_PHYSICAL"
 			or evt.amountSource == "UNIT_COMBAT_AUTO_FALLBACK"
+			or evt.amountSource == "ZCT"
 		))
 		if rawPipeValue == nil and prof.showSpellNames and evt.isAuto ~= true and trustedForSpellLabel and not spellIdWeak then
 			local cleanName = ZSBT.CleanSpellName(evt.spellId)
