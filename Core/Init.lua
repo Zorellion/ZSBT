@@ -1651,6 +1651,7 @@ function Addon:OnInitialize()
 			return
 		end
 		ACR:RegisterOptionsTable("ZSBT", options)
+		ZSBT._mainOptions = options
 		self.configDialog = ACD
 
         -- Set the default size for the config dialog
@@ -1696,6 +1697,13 @@ function Addon:OnInitialize()
 				return ZSBT.BuildTriggerEditorOptionsTable()
 			end)
 			self.configDialog:SetDefaultSize("ZSBT_TriggerEditor", 560, 520)
+		end
+
+		if ZSBT.BuildResourceCounterOptionsTable then
+			ACR:RegisterOptionsTable("ZSBT_ResourceCounter", function()
+				return ZSBT.BuildResourceCounterOptionsTable()
+			end)
+			self.configDialog:SetDefaultSize("ZSBT_ResourceCounter", 560, 620)
 		end
 
 		if ZSBT.BuildDebugOptionsTable then
@@ -2024,6 +2032,32 @@ end
 -- Open Configuration Window
 ------------------------------------------------------------------------
 function Addon:OpenConfig()
+	-- The options tree is built once in OnInitialize, before unit power
+	-- data is readable — resource buttons (and anything else gated on live
+	-- UnitPower/UnitClass state) would be missing for the whole session.
+	-- Rebuild on open so dynamic args reflect the current character.
+	if ZSBT.BuildOptionsTable then
+		local ok, options = pcall(ZSBT.BuildOptionsTable)
+		if ok and type(options) == "table" then
+			-- Carry over the AceDB profiles tab injected in OnInitialize.
+			local prev = ZSBT._mainOptions
+			local prevArgs = prev and prev.args
+			if prevArgs and options.args then
+				if prevArgs.profiles and prevArgs.profiles.args
+					and prevArgs.profiles.args.acedbProfiles
+					and options.args.profiles and options.args.profiles.args then
+					options.args.profiles.args.acedbProfiles = prevArgs.profiles.args.acedbProfiles
+				elseif prevArgs.acedbProfiles then
+					options.args.acedbProfiles = prevArgs.acedbProfiles
+				end
+			end
+			ZSBT._mainOptions = options
+			local ACR = LibStub("AceConfigRegistry-3.0", true)
+			if ACR then
+				pcall(ACR.RegisterOptionsTable, ACR, "ZSBT", options, true)
+			end
+		end
+	end
 	if self.configDialog then
 		self.configDialog:Open("ZSBT")
 	end
@@ -2039,6 +2073,15 @@ function Addon:OpenBuffRulesManager()
     if self.configDialog then
         self.configDialog:Open("ZSBT_BuffRules")
     end
+end
+
+function Addon:OpenResourceCounterConfig(powerType)
+	powerType = tonumber(powerType)
+	if not powerType then return end
+	ZSBT._editingResourcePowerType = powerType
+	if self.configDialog then
+		self.configDialog:Open("ZSBT_ResourceCounter")
+	end
 end
 
 function Addon:OpenDebugConfig()
