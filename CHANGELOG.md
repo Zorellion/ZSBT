@@ -1,5 +1,10 @@
 # Changelog
 
+## 4.1.2
+
+### Fixed
+- **Outgoing candidates evicted under raid-scale combat:** the pending-pair buffer capped at 48, and foreign `UNIT_COMBAT` floods in raid content filled it constantly — new candidates (including your own hits) were dropped before they could pair (`capped` counter showed thousands of losses per session). Cap raised to 1024, the match scan now skips classes with no pending candidates, and it early-breaks on timestamp order so the larger buffer stays cheap.
+
 ## 4.1.1
 
 ### Added
