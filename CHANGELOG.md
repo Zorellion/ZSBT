@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Aura notifications no longer go silent in combat on secret-value clients: `SPELL_AURA_*` combat-text notices now act as a fallback when `UNIT_AURA` payloads are unreadable, deduplicated against readable aura updates.
+- Buff refresh re-notification: recasting a buff that keeps the same aura instance now re-shows its gain when `expirationTime` jumps forward.
+- Recast pairing: a cast of a known self-buff within 0.5s of an unreadable aura update re-shows the buff's cached name/icon.
+- `C_Secrets` per-index/per-instance predicates refine secret-aura gating (skips individual secret auras instead of all-or-nothing where the client supports it).
+- Name-keyed aura rules (`"name:X"` in `auraRules`) match every rank of an aura by name when no spellID rule exists.
+- Aura notifications can carry spell icons via `meta.spellIcon`.
+
+### Fixed
+- Duplicate aura gain notifications: recast pairing, watched-presence rules, and refresh re-notifies now stamp the aura-read timestamp so the combat-text fallback can't double-emit (e.g. two `+Buff` for one cast).
+- Crash (`attempted to index a table that cannot be indexed with secret keys`) when auras report secret `auraInstanceID` (e.g. toys like Essence of Yu'lon). Such auras are now skipped in `ScanPlayerAuras`.
+
 ## 3.3.3
 
 ### Fixed
