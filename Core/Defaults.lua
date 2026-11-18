@@ -287,6 +287,11 @@ ZSBT.DEFAULTS = {
             customDamageColor  = { r = 1, g = 1, b = 1 },
             customHealingColor = { r = 1, g = 1, b = 1 },
             customColor     = { r = 1, g = 1, b = 1 },
+            misses = {
+                scrollArea = nil,  -- nil -> damage.scrollArea
+                color      = { r = 0.70, g = 0.70, b = 0.70 },
+                hidden     = {},   -- { DODGE=true, ... } per-subtype hides
+            },
         },
 
         ------------------------------------------------------------------------
@@ -322,6 +327,11 @@ ZSBT.DEFAULTS = {
             useSchoolColors = true,
             customDamageColor  = { r = 1, g = 1, b = 1 },
             customHealingColor = { r = 1, g = 1, b = 1 },
+            misses = {
+                scrollArea = nil,  -- nil -> damage.scrollArea
+                color      = { r = 0.70, g = 0.70, b = 0.70 },
+                hidden     = {},   -- { DODGE=true, ... } per-subtype hides
+            },
         },
 
         ------------------------------------------------------------------------
@@ -356,6 +366,7 @@ ZSBT.DEFAULTS = {
                 enabled     = false,
                 window      = 1.5,
                 showCount   = true,
+                mergeCrits  = false,
             },
             whirlwindAggregate = {
                 enabled = false,

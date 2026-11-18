@@ -203,8 +203,8 @@ end
 -- AoE Merge Buffer
 -- Accumulates rapid-fire events in the same scroll area and combines
 -- them into a single display line with count (e.g., "4,271 (x3)").
--- Only merges clean (non-tainted) numeric text. Crits and misses
--- always display individually.
+-- Only merges clean (non-tainted) numeric text. Misses always display
+-- individually; crits only merge when spamControl.merging.mergeCrits is on.
 ------------------------------------------------------------------------
 local mergeBuffer = {}
 
@@ -274,11 +274,14 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
 		return
 	end
 
-	-- Don't merge: crits, misses, notifications
+	-- Don't merge: misses, notifications, and crits unless the user opted in
+	-- via spamControl.merging.mergeCrits. When crit merging is on, crits get
+	-- their own merge key (below) so they never roll up with normal hits.
 	local isCrit = meta and meta.isCrit
 	local isMiss = meta and meta.kind == "miss"
 	local isNotification = meta and meta.kind == "notification"
-	if isCrit or isMiss or isNotification then
+	local mergeCrits = mergeConf.mergeCrits == true
+	if (isCrit and not mergeCrits) or isMiss or isNotification then
 		FlushMergesForArea(areaName)
 		ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
 			fontAlpha, anchorH, dirMult, duration, color, meta)
@@ -322,7 +325,10 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
 	end
 
 	-- Key by scroll area + spellId so we merge per spell per window.
+	-- Crits get their own bucket: under forceCritsInline they share the
+	-- normal area, and a crit rollup must never absorb non-crit hits.
 	local key = tostring(areaName) .. ":" .. tostring(spellId)
+		.. (isCrit and ":crit" or "")
 	local existing = mergeBuffer[key]
 	if existing then
 		local elapsed = GetTime() - existing.lastUpdate

@@ -496,16 +496,24 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 		end
 	end
 
-    -- Miss events: display immediately with gray color
+    -- Miss events: display immediately, gated by the dedicated misses
+    -- config (ZCT parity — independent of the damage toggle).
     if kind == "miss" then
         if prof.damage and prof.damage.showMisses == false then
             return
         end
-        local conf = prof.damage
-        if not conf or not conf.enabled then return end
-        local area = conf.scrollArea or "Outgoing"
+        local m = prof.misses
+        local mt = ZSBT.NormalizeMissSubtype
+            and ZSBT.NormalizeMissSubtype(evt.missType) or nil
+        if mt and m and type(m.hidden) == "table" and m.hidden[mt] then
+            return
+        end
+        local area = (m and m.scrollArea)
+            or (prof.damage and prof.damage.scrollArea) or "Outgoing"
         local missText = ZSBT.IsSafeString(evt.amountText) and evt.amountText or "Miss"
-        local color = {r = 0.70, g = 0.70, b = 0.70}
+        local mc = m and m.color
+        local color = (type(mc) == "table") and mc
+            or {r = 0.70, g = 0.70, b = 0.70}
         local meta = { probe = true, kind = kind }
         if ZSBT.DisplayText then
             ZSBT.DisplayText(area, missText, color, meta)
@@ -1052,17 +1060,17 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
             ZSBT.Core.Display:Emit(areaToUse, text, color, meta)
         end
 
+		local function safeDbg(v)
+			if v == nil then return "nil" end
+			if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
+			if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
+			return "<secret>"
+		end
 		local dbg3 = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("outgoing"))
 			or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0)
 		if dbg3 >= 3 and Addon and Addon.Dbg then
 			Addon:Dbg("outgoing", 3, safeDbg(areaToUse), safeDbg(evt.spellId), safeDbg(text))
 		elseif dbg3 >= 3 and Addon and Addon.Print then
-			local function safeDbg(v)
-				if v == nil then return "nil" end
-				if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
-				if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
-				return "<secret>"
-			end
 			Addon:Print("|cFF00CC66[OUT]|r " .. safeDbg(areaToUse) .. " " .. safeDbg(evt.spellId) .. " " .. safeDbg(text))
 		end
     end

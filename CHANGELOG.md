@@ -18,15 +18,20 @@
 - **XP CVar coverage:** `floatingCombatTextXPChanges`/`_v2` added to the Blizzard FCT suppression lists so Retail's XP-change text follows the XP suppression toggle.
 - **XP chat filter:** a `CHAT_MSG_COMBAT_XP_GAIN` chat filter hides the XP line (and, on clients where the popup is spawned by that display path, the popup) while XP suppression is on. ZSBT's own XP notification still fires.
 
+### Changed
+- **New navigation shell is now the default UI (from 4.1):** bare `/zsbt` and the minimap button open a left-sidebar shell. The classic AceConfig UI is unchanged and still available via `/zsbt classic`.
+- **Settings reorganization in the shell:** General is split into System, Master Font, Numbers and Media; crit settings moved onto a dedicated Crits page; Resources and Scroll Areas get their own pages; Combat Text and Alerts pages have introductions. The Dungeon/Raid, PvP and Open-World tuning options remain on the General page.
+- **DB Profiles in the shell and on rebuild:** the AceDB profile manager is re-attached whenever the options tree is rebuilt, so it renders in the shell and after reopening the classic window.
+- **Misses are configurable per subtype:** dodge, parry, block, evade, miss, immune, resist (plus absorb, reflect, deflect) can be hidden individually, with their own scroll area and color under Incoming/Outgoing Misses.
+- **Merge Critical Hits:** new toggle under Spam Control (`spamControl.merging.mergeCrits`, default off). When enabled, crits merge under a separate key so they never combine with non-crit hits and keep crit styling on the rollup.
+- **World-text suppression:** when all Blizzard text categories are hidden, ZSBT now inflates `WorldTextScale`/`_v2` to `1000` (flinging world text off-screen) instead of shrinking it. Values still snapshot/restore with the FCT backup.
+
 ### Fixed
 - Outgoing misses, immunes, dodges, parries, blocks, absorbs, deflects, reflects and evades now display when "Show Misses" is enabled. The `UNIT_COMBAT(target)` path returned for every non-hit action; it now emits the dedicated `OUTGOING_MISS_COMBAT` event (from 3.4.4/3.5.5), which routes to the miss kind and the configured Outgoing scroll area. In restricted mode a miss still needs a recent cast of yours to show.
 - Duplicate aura gain notifications: recast pairing, watched-presence rules, and refresh re-notifies now stamp the aura-read timestamp so the combat-text fallback can't double-emit (e.g. two `+Buff` for one cast).
 - Crash (`attempted to index a table that cannot be indexed with secret keys`) when auras report secret `auraInstanceID` (e.g. toys like Essence of Yu'lon). Such auras are now skipped in `ScanPlayerAuras`.
 
 - **Resource counters after login/logout:** delayed refreshes now run at 0.5s, 2s, and 5s after initialization instead of a single early read, so counters recover on their own when power/max-power data isn't ready at first pass.
-
-### Changed
-- **World-text suppression:** when all Blizzard text categories are hidden, ZSBT now inflates `WorldTextScale`/`_v2` to `1000` (flinging world text off-screen) instead of shrinking it. Values still snapshot/restore with the FCT backup.
 
 ### Removed
 - **RESOURCE_THRESHOLD trigger:** removed from the Event Type dropdown and in-addon help. The event path was never wired up and every offered resource is secret on Retail 12.x, so it could never fire. Existing saved triggers of this type remain but are inert.

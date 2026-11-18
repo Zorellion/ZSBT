@@ -555,3 +555,25 @@ function ZSBT.IsTrainingDummy(unit)
     _dummyCache.isDummy = result
     return result
 end
+
+------------------------------------------------------------------------
+-- Miss subtype normalization (ZCT parity). evt.action / missType arrive
+-- as UNIT_COMBAT tokens (DODGE, SPELL_MISS, SWING_DODGED...) or display
+-- words ("Dodge"). Reduce to the canonical subtype used by the
+-- misses.hidden config table; nil = unknown (never hidden — fail open).
+------------------------------------------------------------------------
+ZSBT.MISS_SUBTYPES = { "DODGE", "MISS", "PARRY", "BLOCK", "RESIST",
+    "ABSORB", "EVADE", "IMMUNE", "REFLECT", "DEFLECT" }
+
+function ZSBT.NormalizeMissSubtype(s)
+    if type(s) ~= "string" or s == "" then return nil end
+    local u = s:upper():gsub("MISSED$", "MISS")
+        :gsub("DODGED$", "DODGE"):gsub("PARRIED$", "PARRY")
+    for _, k in ipairs(ZSBT.MISS_SUBTYPES) do
+        local n = #k
+        if u == k or (u:sub(-n) == k and u:sub(-n - 1, -n - 1) == "_") then
+            return k
+        end
+    end
+    return nil
+end
