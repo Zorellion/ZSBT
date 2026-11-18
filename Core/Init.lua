@@ -353,6 +353,50 @@ function Addon:OnInitialize()
 	migrateGeneralDefaultsOnce()
 	migrateGeneralDefaults_v2()
 
+	-- Legacy combat-log filters: ZSBT 3.4-3.6 and 4.x installed a "ZSBT"
+	-- filter (and the embedded ZCT a "ZCT" filter) into
+	-- Blizzard_CombatLog_Filters and made it the active one, which silently
+	-- restricts the whole combat log to self+pet lines. This version creates
+	-- neither, so strip them for users coming back from a newer build. The
+	-- "ZCT" filter is left alone while the standalone ZCT addon is loaded.
+	-- Idempotent and cheap, so it runs on every login.
+	function ZSBT.RemoveLegacyCombatLogFilters(includeZCT)
+		local saved = _G.Blizzard_CombatLog_Filters
+		if type(saved) ~= "table" or type(saved.filters) ~= "table" then return 0 end
+		local filters = saved.filters
+		local cur = tonumber(saved.currentFilter) or 1
+		local removed = 0
+		for i = #filters, 1, -1 do
+			local f = filters[i]
+			local name = type(f) == "table" and f.name or nil
+			if name == "ZSBT" or (includeZCT and name == "ZCT") then
+				table.remove(filters, i)
+				removed = removed + 1
+				if cur == i then
+					cur = 1
+				elseif cur > i then
+					cur = cur - 1
+				end
+			end
+		end
+		if removed > 0 then
+			saved.currentFilter = math.max(1, math.min(cur, #filters))
+		end
+		return removed
+	end
+
+	pcall(ZSBT.RemoveLegacyCombatLogFilters, false)
+	do
+		local cleanupFrame = CreateFrame("Frame")
+		cleanupFrame:RegisterEvent("PLAYER_LOGIN")
+		cleanupFrame:SetScript("OnEvent", function(frame)
+			frame:UnregisterEvent("PLAYER_LOGIN")
+			local zctLoaded = C_AddOns and C_AddOns.IsAddOnLoaded
+				and C_AddOns.IsAddOnLoaded("ZCT")
+			pcall(ZSBT.RemoveLegacyCombatLogFilters, not zctLoaded)
+		end)
+	end
+
 	-- Diagnostics migration: seed new channel-based debug settings from legacy fields.
 	local function migrateDiagnosticsDebugChannels_v1()
 		if not self.db then return end

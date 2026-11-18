@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.3.3
+
+### Fixed
+- Cleans up combat-log filters left behind by newer builds. ZSBT 3.4-3.6 and 4.x installed a "ZSBT" filter, and the embedded ZCT a "ZCT" filter, into `Blizzard_CombatLog_Filters` and made it active, which restricted the combat log to self and pet lines. On login this version removes both and resets the active filter if it pointed at one of them. The "ZCT" filter is left alone while the standalone ZCT addon is loaded.
+
 ## 3.3.2
 
 ### Added
