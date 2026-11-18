@@ -348,6 +348,50 @@ local WARLOCK_NUKE_SPELL_IDS = {
 	[27243] = true,   -- Seed of Corruption
 }
 
+-- Spell IDs differ between clients (Retail uses modern IDs like 686; Forever
+-- still reports classic rank IDs such as 705 for Shadow Bolt). Resolve names
+-- once per spellId and cache the verdict so WOUND hot paths stay cheap.
+local WARLOCK_NUKE_SPELL_NAMES = {
+	["Shadow Bolt"] = true,
+	["Incinerate"] = true,
+	["Chaos Bolt"] = true,
+	["Shadowburn"] = true,
+	["Haunt"] = true,
+	["Darkglare"] = true,
+}
+
+local _spellBaseNameCache = {}
+
+local function spellBaseName(spellId)
+	if type(spellId) ~= "number" then return nil end
+	local cached = _spellBaseNameCache[spellId]
+	if cached ~= nil then return cached end
+	local base = false
+	local name = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or nil
+	if type(name) == "string" and name ~= "" then
+		-- Strip rank/tooltip suffixes: "Shadow Bolt (Rank 3)" -> "Shadow Bolt"
+		base = name:gsub("%s*%(.*%)%s*$", "")
+	end
+	_spellBaseNameCache[spellId] = base
+	return base
+end
+
+local function spellNameMatches(spellId, names)
+	local base = spellBaseName(spellId)
+	return type(base) == "string" and names[base] == true
+end
+
+local function isWarlockNukeSpellId(spellId)
+	if type(spellId) ~= "number" then return false end
+	if WARLOCK_NUKE_SPELL_IDS[spellId] then return true end
+	return spellNameMatches(spellId, WARLOCK_NUKE_SPELL_NAMES)
+end
+
+local function isShadowBoltSpellId(spellId)
+	if spellId == 686 then return true end
+	return spellNameMatches(spellId, { ["Shadow Bolt"] = true })
+end
+
 local function isKnownPeriodicSpellId(spellId)
 	if type(spellId) ~= "number" then return false end
 	-- Warlock DoTs (name-based fallback handles spellId variants)
@@ -524,7 +568,7 @@ local function isLikelyPetSchoolHitGivenRecentPlayerSpell(self, school, lastPlay
 	-- Warlock: Imp damage is typically fire; avoid stealing it for recent shadow casts.
 	if isWarlockPlayer() then
 		if school == 4 then
-			if lastPlayerSpellId == 172 or lastPlayerSpellId == 980 or lastPlayerSpellId == 30108 or lastPlayerSpellId == 686 then
+			if isWarlockDotSpellId(lastPlayerSpellId) or isShadowBoltSpellId(lastPlayerSpellId) then
 				return true
 			end
 		end
@@ -2406,7 +2450,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- was a known warlock nuke — those landings are the player's.
 					if recentPlayerCast and isWarlockPlayer() and (ZSBT.IsSafeNumber(school) and school == 32) then
 						local sid = self._lastPlayerSpellId
-						if not (type(sid) == "number" and WARLOCK_NUKE_SPELL_IDS[sid]) then
+						if not isWarlockNukeSpellId(sid) then
 							recentPlayerCast = false
 						end
 					end
@@ -3349,7 +3393,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					if type(lastAt) == "number" and type(lastId) == "number" then
 						local age = t - lastAt
 						local maxAge = castWindow
-						if lastId == 686 then
+						if isShadowBoltSpellId(lastId) then
 							maxAge = math.max(maxAge, 2.50)
 						elseif not isPhysical then
 							maxAge = math.max(maxAge, 1.25)
@@ -3373,7 +3417,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						local lastId = self._lastPlayerSpellId
 						if type(lastId) == "number" then
 							local maxAge = 1.25
-							if lastId == 686 then
+							if isShadowBoltSpellId(lastId) then
 								maxAge = 2.50
 							end
 							if age >= 0 and age <= maxAge then

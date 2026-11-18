@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- Warlock nukes misattributed to pet damage on clients that report classic rank spell IDs (e.g. Forever's Shadow Bolt = 705): the pet-fallback nuke exemption, the Imp-fire exception, and the Shadow Bolt travel-time windows now match spells by name (via `CleanSpellName`, rank suffixes stripped) with the modern IDs kept as a fast path, instead of hardcoding spellId 686.
+
 ## 3.3.4
 
 ### Added
