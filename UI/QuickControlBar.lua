@@ -59,6 +59,23 @@ local function updateUnlockButtonText()
 	end
 end
 
+local function strictOutgoingOn()
+	local g = getGeneral()
+	return g and g.strictOutgoingAlways == true
+end
+
+local function updateStrictButton()
+	local btn = QuickBar._btnStrict
+	if not btn then return end
+	local fs = btn.Text or btn.GetFontString and btn:GetFontString()
+	if not fs then return end
+	if strictOutgoingOn() then
+		fs:SetTextColor(0.2, 1.0, 0.2)
+	else
+		fs:SetTextColor(0.8, 0.8, 0.8)
+	end
+end
+
 function QuickBar:ResetPosition()
 	local g = getGeneral()
 	if not g then return end
@@ -83,11 +100,12 @@ function QuickBar:Init()
 	if self._frame then
 		self:RefreshVisibility()
 		updateUnlockButtonText()
+		updateStrictButton()
 		return
 	end
 
 	local f = CreateFrame("Frame", "ZSBT_QuickControlBar", UIParent, "BackdropTemplate")
-	f:SetSize(120, 28)
+	f:SetSize(185, 28)
 	f:SetFrameStrata("DIALOG")
 	f:SetFrameLevel(50)
 	f:SetBackdrop({
@@ -165,8 +183,28 @@ function QuickBar:Init()
 	end)
 	btnUnlock:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
+	local btnStrict = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+	btnStrict:SetSize(60, 22)
+	btnStrict:SetPoint("LEFT", btnUnlock, "RIGHT", 6, 0)
+	btnStrict:SetText(L["Strict"])
+	btnStrict:SetScript("OnClick", function()
+		local g = getGeneral()
+		if not g then return end
+		g.strictOutgoingAlways = not strictOutgoingOn()
+		updateStrictButton()
+		notifyConfig()
+	end)
+	btnStrict:SetScript("OnEnter", function()
+		GameTooltip:SetOwner(btnStrict, "ANCHOR_TOP")
+		GameTooltip:SetText(L["Strict Outgoing Detection"])
+		GameTooltip:AddLine(L["Require proof before showing outgoing damage, even outside groups. Reduces foreign damage leaking into your scroll areas; may hide some of your own hits."], 0.8, 0.8, 0.8, true)
+		GameTooltip:Show()
+	end)
+	btnStrict:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+
 	self._frame = f
 	self._btnUnlock = btnUnlock
+	self._btnStrict = btnStrict
 	self._label = label
 
 	local g = getGeneral()
@@ -175,5 +213,6 @@ function QuickBar:Init()
 	end
 	applyPosition(f)
 	updateUnlockButtonText()
+	updateStrictButton()
 	self:RefreshVisibility()
 end
