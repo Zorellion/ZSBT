@@ -6,6 +6,8 @@
 ------------------------------------------------------------------------
 
 local ADDON_NAME, ZSBT = ...
+
+local L = ZSBT.L
 local Addon = ZSBT.Addon
 
 ------------------------------------------------------------------------
@@ -1803,7 +1805,7 @@ local function ResolveFontForArea(areaName)
         useGlobal = false
     end
 
-    local faceKey    = (not useGlobal and areaFont and areaFont.face)    or general.face or "Friz Quadrata TT"
+    local faceKey    = (not useGlobal and areaFont and areaFont.face)    or general.face or L["Friz Quadrata TT"]
     local sizeVal    = (not useGlobal and areaFont and areaFont.size)    or general.size or 18
     local outlineKey = (not useGlobal and areaFont and areaFont.outline) or general.outline or "Thin"
     local alphaVal   = (not useGlobal and areaFont and areaFont.alpha)   or general.alpha or 1.0
@@ -1865,7 +1867,7 @@ local function CreateAreaFrame(areaName, areaData, colorIdx)
     local offsetLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     offsetLabel:SetPoint("TOP", label, "BOTTOM", 0, -4)
     offsetLabel:SetTextColor(0.8, 0.8, 0.8, 0.8)
-    offsetLabel:SetText(string.format("X: %d  Y: %d", areaData.xOffset, areaData.yOffset))
+    offsetLabel:SetText(string.format(L["X: %d  Y: %d"], areaData.xOffset, areaData.yOffset))
     frame.offsetLabel = offsetLabel
 
     -- Make the frame draggable
@@ -1930,7 +1932,7 @@ local function CreateAreaFrame(areaName, areaData, colorIdx)
 
         -- Update the offset readout label immediately
         if self.offsetLabel then
-            self.offsetLabel:SetText(string.format("X: %d  Y: %d",
+            self.offsetLabel:SetText(string.format(L["X: %d  Y: %d"],
                 newXOffset, newYOffset))
         end
 
@@ -2003,7 +2005,7 @@ function ZSBT.ShowScrollAreaFrames()
 	if not lockButton then
 		lockButton = CreateFrame("Button", "ZSBT_LockScrollAreasButton", UIParent, "UIPanelButtonTemplate")
 		lockButton:SetSize(160, 28)
-		lockButton:SetText("Lock Scroll Areas")
+		lockButton:SetText(L["Lock Scroll Areas"])
 		lockButton:SetPoint("TOP", UIParent, "TOP", 0, -120)
 		lockButton:SetFrameStrata("FULLSCREEN_DIALOG")
 		lockButton:SetFrameLevel(1100)
@@ -2020,7 +2022,7 @@ function ZSBT.ShowScrollAreaFrames()
 	lockButton:Show()
 
     isUnlocked = true
-    Addon:Print("Scroll areas unlocked. Drag to reposition.")
+    Addon:Print(L["Scroll areas unlocked. Drag to reposition."])
 end
 
 ------------------------------------------------------------------------
@@ -2079,7 +2081,7 @@ function ZSBT.UpdateScrollAreaFrames()
             
             -- Update offset label
             if frame.offsetLabel then
-                frame.offsetLabel:SetText(string.format("X: %d  Y: %d",
+                frame.offsetLabel:SetText(string.format(L["X: %d  Y: %d"],
                     areaData.xOffset, areaData.yOffset))
             end
         end
@@ -2132,13 +2134,13 @@ end
 ------------------------------------------------------------------------
 function ZSBT.TestScrollArea(areaName)
     if not areaName then
-        Addon:Print("No scroll area selected for test.")
+        Addon:Print(L["No scroll area selected for test."])
         return
     end
 
     -- Require scroll areas to be unlocked
     if not isUnlocked then
-        Addon:Print("Scroll areas must be unlocked to test. Click 'Unlock Scroll Areas' first.")
+        Addon:Print(L["Scroll areas must be unlocked to test. Click 'Unlock Scroll Areas' first."])
         return
     end
 
@@ -2146,7 +2148,7 @@ function ZSBT.TestScrollArea(areaName)
                   and ZSBT.db.profile.scrollAreas
                   and ZSBT.db.profile.scrollAreas[areaName]
     if not area then
-        Addon:Print("Scroll area '" .. areaName .. "' not found.")
+        Addon:Print(L["Scroll area '"] .. areaName .. L["' not found."])
         return
     end
 
@@ -2169,9 +2171,9 @@ function ZSBT.TestScrollArea(areaName)
 
     -- Mock event templates (same variety as continuous test)
     local mockEvents = {
-        "Fireball 1523",
-        "Pyroblast 2841",
-        "Heal +842",
+        L["Fireball 1523"],
+        L["Pyroblast 2841"],
+        L["Heal +842"],
     }
 
     for i, text in ipairs(mockEvents) do
@@ -2190,12 +2192,12 @@ end
 ------------------------------------------------------------------------
 function ZSBT.TestScrollAreaCrit(areaName)
     if not areaName then
-        Addon:Print("No scroll area selected for crit test.")
+        Addon:Print(L["No scroll area selected for crit test."])
         return
     end
 
     if not isUnlocked then
-        Addon:Print("Scroll areas must be unlocked to test. Click 'Unlock Scroll Areas' first.")
+        Addon:Print(L["Scroll areas must be unlocked to test. Click 'Unlock Scroll Areas' first."])
         return
     end
 
@@ -2203,7 +2205,7 @@ function ZSBT.TestScrollAreaCrit(areaName)
                   and ZSBT.db.profile.scrollAreas
                   and ZSBT.db.profile.scrollAreas[areaName]
     if not area then
-        Addon:Print("Scroll area '" .. areaName .. "' not found.")
+        Addon:Print(L["Scroll area '"] .. areaName .. L["' not found."])
         return
     end
 
@@ -2218,7 +2220,7 @@ function ZSBT.TestScrollAreaCrit(areaName)
     if profile and profile.general and profile.general.critFont then
         local critConf = profile.general.critFont
         local general = (profile.general and profile.general.font) or {}
-        local faceKey = critConf.face or general.face or "Friz Quadrata TT"
+        local faceKey = critConf.face or general.face or L["Friz Quadrata TT"]
         local LSM = LibStub("LibSharedMedia-3.0", true)
         if LSM and faceKey then
             local fetched = LSM:Fetch("font", faceKey)
@@ -2278,7 +2280,7 @@ local function BuildCritMeta(stream)
 	end
 
 	if critConf then
-		local faceKey = critConf.face or masterFont.face or "Friz Quadrata TT"
+		local faceKey = critConf.face or masterFont.face or L["Friz Quadrata TT"]
 		local LSM = LibStub("LibSharedMedia-3.0", true)
 		if LSM and faceKey then
 			local fetched = LSM:Fetch("font", faceKey)
@@ -2337,7 +2339,7 @@ end
 
 function ZSBT.TestIncomingHealCrit()
 	if not isUnlocked then
-		Addon:Print("Scroll areas must be unlocked to test. Click 'Unlock Scroll Areas' first.")
+		Addon:Print(L["Scroll areas must be unlocked to test. Click 'Unlock Scroll Areas' first."])
 		return
 	end
 	local prof = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.incoming
@@ -2346,7 +2348,7 @@ function ZSBT.TestIncomingHealCrit()
 	if type(areaName) ~= "string" or areaName == "" then areaName = "Incoming" end
 	local area = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.scrollAreas and ZSBT.db.profile.scrollAreas[areaName]
 	if not area then
-		Addon:Print("Scroll area '" .. tostring(areaName) .. "' not found.")
+		Addon:Print(L["Scroll area '"] .. tostring(areaName) .. L["' not found."])
 		return
 	end
 	local fontFace, fontSize, outlineFlag, fontAlpha = ResolveFontForArea(areaName)
@@ -2360,7 +2362,7 @@ end
 
 function ZSBT.TestIncomingDamageCrit()
 	if not isUnlocked then
-		Addon:Print("Scroll areas must be unlocked to test. Click 'Unlock Scroll Areas' first.")
+		Addon:Print(L["Scroll areas must be unlocked to test. Click 'Unlock Scroll Areas' first."])
 		return
 	end
 	local prof = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.incoming
@@ -2369,7 +2371,7 @@ function ZSBT.TestIncomingDamageCrit()
 	if type(areaName) ~= "string" or areaName == "" then areaName = "Incoming" end
 	local area = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.scrollAreas and ZSBT.db.profile.scrollAreas[areaName]
 	if not area then
-		Addon:Print("Scroll area '" .. tostring(areaName) .. "' not found.")
+		Addon:Print(L["Scroll area '"] .. tostring(areaName) .. L["' not found."])
 		return
 	end
 	local fontFace, fontSize, outlineFlag, fontAlpha = ResolveFontForArea(areaName)
@@ -2392,11 +2394,11 @@ end
 local function FireAllAreasOnce()
     -- Mock event templates (mix of damage, healing, notifications)
     local mockEvents = {
-        { text = "Fireball 1523",      type = "damage" },
-        { text = "Heal +842",           type = "healing" },
-        { text = "Wind Shear Ready!",   type = "notification" },
-        { text = "Pyroblast 2841",      type = "damage" },
-        { text = "Rejuvenation +234",   type = "healing" },
+        { text = L["Fireball 1523"],      type = "damage" },
+        { text = L["Heal +842"],           type = "healing" },
+        { text = L["Wind Shear Ready!"],   type = "notification" },
+        { text = L["Pyroblast 2841"],      type = "damage" },
+        { text = L["Rejuvenation +234"],   type = "healing" },
     }
 
     -- Fire test events into each unlocked area
@@ -2448,7 +2450,7 @@ function ZSBT.StartContinuousTesting()
     end
 
     if not hasUnlockedAreas then
-        Addon:Print("No scroll areas are unlocked. Use 'Unlock Scroll Areas' first.")
+        Addon:Print(L["No scroll areas are unlocked. Use 'Unlock Scroll Areas' first."])
         return
     end
 
@@ -2458,7 +2460,7 @@ function ZSBT.StartContinuousTesting()
     end
 
     isContinuousTesting = true
-    Addon:Print("Continuous testing started. Animations will repeat every 3 seconds.")
+    Addon:Print(L["Continuous testing started. Animations will repeat every 3 seconds."])
 
     -- Fire immediately
     FireAllAreasOnce()
@@ -2497,7 +2499,7 @@ function ZSBT.StopContinuousTesting()
         continuousTestTimer = nil
     end
 
-    Addon:Print("Continuous testing stopped.")
+    Addon:Print(L["Continuous testing stopped."])
     
     -- Notify AceConfig to update button name
     LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
@@ -2795,7 +2797,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
         else
             if ZSBT.IsSafeString(text) then
                 -- Clean text: inline icon escape
-                local iconStr = "|T" .. meta.spellIcon .. ":" .. iconSize .. ":" .. iconSize .. "|t "
+                local iconStr = "|T" .. meta.spellIcon .. ":" .. iconSize .. ":" .. iconSize .. L["|t "]
                 fs:SetText(iconStr .. text)
                 hasInlineIcon = true
             else
