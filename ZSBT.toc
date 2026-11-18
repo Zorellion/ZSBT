@@ -65,6 +65,20 @@ Parser\Incoming_Detect.lua
 Parser\Outgoing_Detect.lua
 Parser\State_Manager.lua
 Parser\Correlation_Logic.lua
+Classes\Registry.lua
+Classes\Warlock.lua
+Classes\Warrior.lua
+Classes\DeathKnight.lua
+Classes\Mage.lua
+Classes\Shaman.lua
+Classes\Hunter.lua
+Classes\Priest.lua
+Classes\Rogue.lua
+Classes\Druid.lua
+Classes\Paladin.lua
+Classes\Monk.lua
+Classes\DemonHunter.lua
+Classes\Evoker.lua
 Parser\Event_Collector.lua
 Parser\Pulse_Engine.lua
 
