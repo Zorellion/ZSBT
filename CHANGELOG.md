@@ -1,9 +1,12 @@
 # Changelog
 
-## Unreleased
+## 3.3.5
 
 ### Changed
 - **Warlock pet-attribution rules reverted:** the 3.3 additions that kept shadow-school (32) hits attributed to the player unless the last cast was a hardcoded warlock nuke/DoT ID list, plus the warlock physical-hit auto-attack exception, are removed. `UNIT_COMBAT` has no source attribution on Midnight, and the ID-list approach broke on clients reporting classic rank spell IDs (e.g. Forever's Shadow Bolt = 705) — nukes were claimed by the pet fallback and hidden. Warlock pet signatures are back to Imp-fire (4) only; the generic pet-eligibility gate, `petMayOwnHit` auto-attack fix, and all dedup/hardening from 3.3 remain.
+
+### Fixed
+- Missing locale strings: 57 `L[]` keys used by the config shell, miss-subtype toggles, and resource tracker had no definition in any locale (enUS included) and displayed as raw English keys. Added enUS entries plus translations for deDE, esES, frFR, itIT, koKR, ptBR, and ruRU; zhCN falls back to English pending translation. Also filled the 15 DK rune-tracker keys that only existed in enUS.
 
 ## 3.3.4
 
