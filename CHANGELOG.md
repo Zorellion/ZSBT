@@ -15,6 +15,7 @@
 - Aura notifications can carry spell icons via `meta.spellIcon`.
 
 ### Fixed
+- Outgoing misses, immunes, dodges, parries, blocks, absorbs, deflects, reflects and evades now display when "Show Misses" is enabled. The `UNIT_COMBAT(target)` path returned for every non-hit action; it now emits the dedicated `OUTGOING_MISS_COMBAT` event (from 3.4.4/3.5.5), which routes to the miss kind and the configured Outgoing scroll area. In restricted mode a miss still needs a recent cast of yours to show.
 - Duplicate aura gain notifications: recast pairing, watched-presence rules, and refresh re-notifies now stamp the aura-read timestamp so the combat-text fallback can't double-emit (e.g. two `+Buff` for one cast).
 - Crash (`attempted to index a table that cannot be indexed with secret keys`) when auras report secret `auraInstanceID` (e.g. toys like Essence of Yu'lon). Such auras are now skipped in `ScanPlayerAuras`.
 
