@@ -17,13 +17,12 @@ local function Debug(level, ...)
 end
 
 -- ============================================================
--- Incoming Spell Attribution
--- ZCT owns incoming attribution now: bridge events arrive with
--- spellId already resolved (nil when unattributed). The old
--- hostile-cast correlation queue was removed — it recorded the
--- player's OWN casts on nameplates as "hostile" and stamped wrong
--- spellIds/icons onto incoming events.
+-- Incoming Spell Attribution State
 -- ============================================================
+local SPELL_EXPIRE = 2.0
+local MAX_PENDING_SPELLS = 5
+local pendingSpells = {}
+local incomingFrame = CreateFrame("Frame")
 
 local function safeBool(v)
     if type(v) ~= "boolean" then return false end
@@ -50,6 +49,86 @@ local function safeNumOrNil(v)
 	return nil
 end
 
+-- ============================================================
+-- Pending Queue Helpers
+-- ============================================================
+local function PrunePendingSpells(now)
+    -- Remove stale entries outside the spell correlation window.
+    local i = 1
+    while i <= #pendingSpells do
+        local entry = pendingSpells[i]
+        if (now - entry.time) > SPELL_EXPIRE then
+            table.remove(pendingSpells, i)
+        else
+            i = i + 1
+        end
+    end
+end
+
+local function PushPendingSpell(spellID)
+    local spellInfo = C_Spell.GetSpellInfo(spellID)
+    if not spellInfo then return end
+
+    -- Store spell cast metadata for upcoming UNIT_COMBAT damage correlation.
+    pendingSpells[#pendingSpells + 1] = {
+        spellID = spellID,
+        name = spellInfo.name,
+        icon = spellInfo.iconID,
+        time = GetTime(),
+    }
+
+    -- Keep queue bounded to avoid memory bloat.
+    while #pendingSpells > MAX_PENDING_SPELLS do
+        table.remove(pendingSpells, 1)
+    end
+end
+
+local function AttachPendingSpell(ev, now)
+    local bestIndex
+    local bestDelta
+
+    -- Find the closest recent spell cast inside the attribution window.
+    for i = #pendingSpells, 1, -1 do
+        local entry = pendingSpells[i]
+        local delta = now - entry.time
+        if delta >= 0 and delta <= SPELL_EXPIRE then
+            if not bestDelta or delta < bestDelta then
+                bestDelta = delta
+                bestIndex = i
+            end
+        end
+    end
+
+    if not bestIndex then return end
+
+    local match = pendingSpells[bestIndex]
+    ev.spellID = match.spellID
+    ev.spellName = match.name
+    ev.spellIcon = match.icon
+    table.remove(pendingSpells, bestIndex)
+end
+
+-- ============================================================
+-- UNIT_SPELLCAST_SUCCEEDED Listener (hostile casts only)
+-- NOTE: Event_Collector also listens for UNIT_SPELLCAST_SUCCEEDED
+-- but only for unit=="player" (outgoing correlation). This handler
+-- captures hostile casts from target/nameplates for incoming spell
+-- attribution. They are complementary, not duplicated.
+-- ============================================================
+incomingFrame:SetScript("OnEvent", function(_, event, unit, _, spellID)
+    if event ~= "UNIT_SPELLCAST_SUCCEEDED" then return end
+    if not Incoming._enabled then return end
+
+    -- Capture hostile casts from target and nameplates only.
+    if unit ~= "target" and not (unit and unit:match("^nameplate")) then return end
+    if not UnitCanAttack("player", unit) then return end
+    if not spellID then return end
+
+    -- Prune old entries on every cast before inserting fresh metadata.
+    local now = GetTime()
+    PrunePendingSpells(now)
+    PushPendingSpell(spellID)
+end)
 ------------------------------------------------------------------------
 -- WoW 12.0 Midnight Compliance: Named Key Access Only
 ------------------------------------------------------------------------
@@ -99,8 +178,6 @@ function Incoming:ProcessEvent(info)
             isCrit = safeBool(info.isCrit),
             isPeriodic = info.isPeriodic == true,
             overheal = info.overheal,
-            missType = info.missType,
-            flagText = info.flagText,
             timestamp = info.timestamp,
             targetName = info.targetName,
             confidence = info.confidence,
@@ -113,8 +190,6 @@ function Incoming:ProcessEvent(info)
 		ev.spellID = safeNumOrNil(ev.spellID)
 		ev.spellIcon = safeNumOrNil(ev.spellIcon)
 		ev.schoolMask = safeNumOrNil(ev.schoolMask)
-		ev.missType = safeStrOrNil(ev.missType)
-		ev.flagText = safeStrOrNil(ev.flagText)
 
         if ev.targetName == nil then
             ev.targetName = UnitName("player")
@@ -177,6 +252,11 @@ function Incoming:ProcessEvent(info)
         end
     end
 
+    -- Correlate recent hostile casts to incoming direct damage events.
+    if ev.kind == "damage" then
+        AttachPendingSpell(ev, GetTime())
+    end
+
     local probe = ZSBT.Core and ZSBT.Core.IncomingProbe
     if probe and probe.OnIncomingDetected then
         probe:OnIncomingDetected(ev)
@@ -185,8 +265,10 @@ end
 -- Incoming is now managed by CombatLog_Detect.lua
 function Incoming:Enable()
     self._enabled = true
+    incomingFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 end
 
 function Incoming:Disable()
     self._enabled = false
+    incomingFrame:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 end

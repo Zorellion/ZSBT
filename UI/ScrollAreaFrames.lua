@@ -6,8 +6,6 @@
 ------------------------------------------------------------------------
 
 local ADDON_NAME, ZSBT = ...
-
-local L = ZSBT.L
 local Addon = ZSBT.Addon
 
 ------------------------------------------------------------------------
@@ -37,7 +35,7 @@ local RecycleAnimFrame
 local AcquireFontString
 
 ------------------------------------------------------------------------
--- Central Animation Engine
+-- Central Animation Engine (MSBT-style)
 -- Single OnUpdate, per-scroll-area active event lists, and spawn-time
 -- re-timing to prevent overlap.
 ------------------------------------------------------------------------
@@ -49,26 +47,26 @@ AnimEngine._enabled = AnimEngine._enabled or true
 AnimEngine._frame = AnimEngine._frame or CreateFrame("Frame")
 AnimEngine._areas = AnimEngine._areas or {} -- [areaKey] = { events = {}, staticLanes = {} }
 
-local AE_MOVEMENT_SPEED = (3 / 260)
-local AE_MIN_VERTICAL_SPACING = 8
-local AE_DEFAULT_FADE_PERCENT = 0.8
-local AE_ANIMATION_DELAY = 0.015
+local MSBT_MOVEMENT_SPEED = (3 / 260)
+local MSBT_MIN_VERTICAL_SPACING = 8
+local MSBT_DEFAULT_FADE_PERCENT = 0.8
+local MSBT_ANIMATION_DELAY = 0.015
 
-local AE_POW_FADE_IN_TIME = 0.17
-local AE_POW_DISPLAY_TIME = 1.5
-local AE_POW_FADE_OUT_TIME = 0.5
-local AE_POW_TEXT_DELTA = 0.7
-local AE_JIGGLE_DELAY_TIME = 0.05
+local MSBT_POW_FADE_IN_TIME = 0.17
+local MSBT_POW_DISPLAY_TIME = 1.5
+local MSBT_POW_FADE_OUT_TIME = 0.5
+local MSBT_POW_TEXT_DELTA = 0.7
+local MSBT_JIGGLE_DELAY_TIME = 0.05
 
-local AE_POW_TEXT_DELTA_STICKY = 0.95
-local AE_JIGGLE_DELAY_TIME_STICKY = 0.035
-local AE_JIGGLE_RANGE_STICKY = 2
+local MSBT_POW_TEXT_DELTA_STICKY = 0.95
+local MSBT_JIGGLE_DELAY_TIME_STICKY = 0.035
+local MSBT_JIGGLE_RANGE_STICKY = 2
 
 local function AE_Now()
 	return (GetTime and GetTime()) or 0
 end
 
-local function AE_InitShockwave(newDisplayEvent)
+local function AE_MSBT_InitShockwave(newDisplayEvent)
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
 	local scrollTime = (0.16 + (0.70 / animationSpeed) + 0.55)
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
@@ -82,7 +80,7 @@ local function AE_InitShockwave(newDisplayEvent)
 	newDisplayEvent._zsbtShockwaveTheta = math.random() * (math.pi * 2.0)
 end
 
-local function AE_InitIgnite(newDisplayEvent)
+local function AE_MSBT_InitIgnite(newDisplayEvent)
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
 	local scrollTime = (0.12 + (0.90 / animationSpeed) + 0.70)
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
@@ -95,7 +93,7 @@ local function AE_InitIgnite(newDisplayEvent)
 	newDisplayEvent.positionY = newDisplayEvent.positionY + ry
 end
 
-local function AE_InitChromatic(newDisplayEvent)
+local function AE_MSBT_InitChromatic(newDisplayEvent)
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
 	local scrollTime = (0.10 + (0.95 / animationSpeed) + 0.65)
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
@@ -109,7 +107,7 @@ local function AE_InitChromatic(newDisplayEvent)
 	newDisplayEvent._zsbtChromPhase = math.random() * 10.0
 end
 
-local function AE_InitStomp(newDisplayEvent)
+local function AE_MSBT_InitStomp(newDisplayEvent)
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
 	local scrollTime = (0.14 + (0.60 / animationSpeed) + 0.55)
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
@@ -122,7 +120,7 @@ local function AE_InitStomp(newDisplayEvent)
 	newDisplayEvent.positionY = newDisplayEvent.positionY + ry
 end
 
-local function AE_InitScreenPunch(newDisplayEvent)
+local function AE_MSBT_InitScreenPunch(newDisplayEvent)
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
 	local scrollTime = (0.12 + (0.52 / animationSpeed) + 0.45)
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
@@ -136,7 +134,7 @@ local function AE_InitScreenPunch(newDisplayEvent)
 	newDisplayEvent._zsbtPunchTheta = math.random() * (math.pi * 2.0)
 end
 
-local function AE_InitShatter(newDisplayEvent)
+local function AE_MSBT_InitShatter(newDisplayEvent)
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
 	local scrollTime = (0.10 + (0.75 / animationSpeed) + 0.60)
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
@@ -149,7 +147,7 @@ local function AE_InitShatter(newDisplayEvent)
 	newDisplayEvent.positionY = newDisplayEvent.positionY + ry
 end
 
-local function AE_InitAfterimage(newDisplayEvent)
+local function AE_MSBT_InitAfterimage(newDisplayEvent)
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
 	local scrollTime = (0.12 + (0.85 / animationSpeed) + 0.70)
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
@@ -162,7 +160,7 @@ local function AE_InitAfterimage(newDisplayEvent)
 	newDisplayEvent.positionY = newDisplayEvent.positionY + ry
 end
 
-local function AE_InitRumble(newDisplayEvent)
+local function AE_MSBT_InitRumble(newDisplayEvent)
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
 	local scrollTime = (0.14 + (0.65 / animationSpeed) + 0.55)
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
@@ -177,7 +175,7 @@ local function AE_InitRumble(newDisplayEvent)
 end
 
 local function AE_InitWaterfallSpacing(newDisplayEvent, activeDisplayEvents, direction)
-	-- Time-domain spacing like Straight/Parabola, but using Waterfall's scrollTime.
+	-- Time-domain spacing like MSBT Straight/Parabola, but using Waterfall's scrollTime.
 	-- This keeps waterfall variants unique (wave math stays in update), while preventing spawn-edge overlap.
 	local scrollTime = newDisplayEvent.scrollTime
 	local scrollHeight = newDisplayEvent.scrollHeight
@@ -193,7 +191,7 @@ local function AE_InitWaterfallSpacing(newDisplayEvent, activeDisplayEvents, dir
 		local current = newDisplayEvent
 		for x = numActive, 1, -1 do
 			local prev = activeDisplayEvents[x]
-			local topTimeCurrent = current.elapsedTime + (current.fontSize + AE_MIN_VERTICAL_SPACING) * perPixelTime
+			local topTimeCurrent = current.elapsedTime + (current.fontSize + MSBT_MIN_VERTICAL_SPACING) * perPixelTime
 			if prev.elapsedTime < topTimeCurrent then
 				prev.elapsedTime = topTimeCurrent
 			else
@@ -205,9 +203,9 @@ local function AE_InitWaterfallSpacing(newDisplayEvent, activeDisplayEvents, dir
 		local current = newDisplayEvent
 		for x = numActive, 1, -1 do
 			local prev = activeDisplayEvents[x]
-			local topTimePrev = prev.elapsedTime + (prev.fontSize + AE_MIN_VERTICAL_SPACING) * perPixelTime
+			local topTimePrev = prev.elapsedTime + (prev.fontSize + MSBT_MIN_VERTICAL_SPACING) * perPixelTime
 			if topTimePrev < current.elapsedTime then
-				prev.elapsedTime = current.elapsedTime + (prev.fontSize + AE_MIN_VERTICAL_SPACING) * perPixelTime
+				prev.elapsedTime = current.elapsedTime + (prev.fontSize + MSBT_MIN_VERTICAL_SPACING) * perPixelTime
 			else
 				break
 			end
@@ -238,8 +236,8 @@ local function AE_SecondsPerPixel(ev)
 end
 
 local function AE_MinSeparationSeconds(ev)
-	-- Approximate spacing: (fontSize + MIN_VERTICAL_SPACING) worth of travel time.
-	-- Movement speed is derived from duration/height.
+	-- Approximate MSBT: (fontSize + MIN_VERTICAL_SPACING) worth of travel time.
+	-- We don't have MSBT's MOVEMENT_SPEED, so we use duration/height.
 	local fontSize = ev.effectiveFontSize or ev.fontSize or 18
 	local spacing = 2
 	local secondsPerPixel = AE_SecondsPerPixel(ev)
@@ -285,7 +283,7 @@ local function AE_ResolveStyleId(ev)
 	return "Straight"
 end
 
-local function AE_InitSlam(newDisplayEvent)
+local function AE_MSBT_InitSlam(newDisplayEvent)
 	-- Slam is a centered, impact-style crit animation.
 	-- Use a short, fixed scrollTime similar to Pow but slightly punchier.
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
@@ -342,96 +340,7 @@ local function AE_ReRollCenteredPosition(newDisplayEvent, events)
 	end
 end
 
--- Centered crit styles all spawn near the middle of the area. Random re-rolls
--- only have a handful of non-colliding spots in a small crits window, so dense
--- bursts still land on top of each other. Assign explicit vertical lanes
--- (oldest->newest, newest entering at the scroll-direction edge) instead.
-local CRIT_CENTERED_STYLES = {
-	Pow = true, Slam = true, Shockwave = true, Ignite = true, Chromatic = true,
-	Stomp = true, ScreenPunch = true, Shatter = true, Afterimage = true, Rumble = true,
-}
-
-local function AE_SpaceCenteredCrits(newDisplayEvent, events)
-	local crits = {}
-	for i = 1, #events do
-		local e = events[i]
-		if e and CRIT_CENTERED_STYLES[e.styleId] then
-			crits[#crits + 1] = e
-		end
-	end
-	crits[#crits + 1] = newDisplayEvent
-	local n = #crits
-	if n <= 1 then return end
-
-	local function fs(e)
-		return e.effectiveFontSize or e.fontSize or 18
-	end
-
-	local h = newDisplayEvent.scrollHeight or newDisplayEvent.areaH or 0
-	if h <= 0 then return end
-	local centerY = h / 2
-
-	local sumFs = 0
-	local maxFs = 0
-	for i = 1, n do
-		local f = fs(crits[i])
-		sumFs = sumFs + f
-		if f > maxFs then maxFs = f end
-	end
-
-	local spacing = AE_MIN_VERTICAL_SPACING
-	local avail = math.max(maxFs + 8, h - maxFs - 4)
-	local effSpacing = spacing
-	local needed = sumFs + (n - 1) * spacing
-	if needed > avail and n > 1 then
-		-- Compress gaps (never below 15% of normal) so oversized bursts stay
-		-- inside the area instead of overflowing off-screen.
-		effSpacing = math.max(spacing * 0.15, (avail - sumFs) / (n - 1))
-	end
-
-	local totalH = sumFs + (n - 1) * effSpacing
-	local stackTop = centerY + (totalH / 2)
-
-	-- Y jitter stays well inside the gap between lanes so crits keep a random
-	-- feel without ever overlapping their neighbors.
-	local yJitter = math.min(effSpacing * 0.45, 8)
-	local w = newDisplayEvent.scrollWidth or newDisplayEvent.areaW or 0
-	local xCenter = w / 2
-	local xSpread = math.max(0, w * 0.42 - (maxFs * 0.5))
-
-	-- Lane order top->bottom. "Up" scroll puts the newest crit at the bottom;
-	-- "Down" puts it at the top. crits[] is already oldest->newest.
-	local dirDown = (newDisplayEvent.dirMult and newDisplayEvent.dirMult < 0)
-	local cursor = stackTop
-	for k = 1, n do
-		local idx = dirDown and (n - k + 1) or k
-		local e = crits[idx]
-		local f = fs(e)
-		cursor = cursor - (f / 2)
-		-- Cached jitter keeps each crit's offset stable when the stack re-lanes
-		-- on the next spawn instead of making existing crits jump around.
-		if e._laneJx == nil then
-			e._laneJx = (math.random() * 2.0 - 1.0)
-			e._laneJy = (math.random() * 2.0 - 1.0)
-		end
-		local y = cursor + (e._laneJy * yJitter)
-		-- Clamp inside the area so jitter can't push text off-frame.
-		local yMin = (f / 2) + 1
-		local yMax = h - (f / 2) - 1
-		if y < yMin then y = yMin elseif y > yMax then y = yMax end
-		cursor = cursor - (f / 2) - effSpacing
-		e.positionY = y
-		if w > 0 then
-			e.positionX = xCenter + (e._laneJx * xSpread)
-		end
-		if e.styleId == "Pow" then
-			e.originalPositionY = y
-			e.originalPositionX = e.positionX
-		end
-	end
-end
-
-local function AE_AnchorPoint(ev)
+local function AE_MSBT_AnchorPoint(ev)
 	local v = (ev.dirMult and ev.dirMult < 0) and "TOP" or "BOTTOM"
 	if ev.anchorH == "LEFT" then
 		return v .. "LEFT"
@@ -441,40 +350,40 @@ local function AE_AnchorPoint(ev)
 	return v
 end
 
-local function AE_ScrollUp(displayEvent, animationProgress)
+local function AE_MSBT_ScrollUp(displayEvent, animationProgress)
 	displayEvent.positionY = displayEvent.scrollHeight * animationProgress
 end
 
-local function AE_ScrollDown(displayEvent, animationProgress)
+local function AE_MSBT_ScrollDown(displayEvent, animationProgress)
 	displayEvent.positionY = displayEvent.scrollHeight - displayEvent.scrollHeight * animationProgress
 end
 
-local function AE_ScrollLeftParabolaUp(displayEvent, animationProgress)
-	AE_ScrollUp(displayEvent, animationProgress)
+local function AE_MSBT_ScrollLeftParabolaUp(displayEvent, animationProgress)
+	AE_MSBT_ScrollUp(displayEvent, animationProgress)
 	local y = displayEvent.positionY - displayEvent.midPoint
 	displayEvent.positionX = (y * y) / displayEvent.fourA
 end
 
-local function AE_ScrollLeftParabolaDown(displayEvent, animationProgress)
-	AE_ScrollDown(displayEvent, animationProgress)
+local function AE_MSBT_ScrollLeftParabolaDown(displayEvent, animationProgress)
+	AE_MSBT_ScrollDown(displayEvent, animationProgress)
 	local y = displayEvent.positionY - displayEvent.midPoint
 	displayEvent.positionX = (y * y) / displayEvent.fourA
 end
 
-local function AE_ScrollRightParabolaUp(displayEvent, animationProgress)
-	AE_ScrollUp(displayEvent, animationProgress)
+local function AE_MSBT_ScrollRightParabolaUp(displayEvent, animationProgress)
+	AE_MSBT_ScrollUp(displayEvent, animationProgress)
 	local y = displayEvent.positionY - displayEvent.midPoint
 	displayEvent.positionX = displayEvent.scrollWidth - ((y * y) / displayEvent.fourA)
 end
 
-local function AE_ScrollRightParabolaDown(displayEvent, animationProgress)
-	AE_ScrollDown(displayEvent, animationProgress)
+local function AE_MSBT_ScrollRightParabolaDown(displayEvent, animationProgress)
+	AE_MSBT_ScrollDown(displayEvent, animationProgress)
 	local y = displayEvent.positionY - displayEvent.midPoint
 	displayEvent.positionX = displayEvent.scrollWidth - ((y * y) / displayEvent.fourA)
 end
 
-local function AE_InitStraight(newDisplayEvent, activeDisplayEvents, direction)
-	newDisplayEvent.scrollTime = newDisplayEvent.scrollHeight * AE_MOVEMENT_SPEED
+local function AE_MSBT_InitStraight(newDisplayEvent, activeDisplayEvents, direction)
+	newDisplayEvent.scrollTime = newDisplayEvent.scrollHeight * MSBT_MOVEMENT_SPEED
 
 	local anchorPoint = newDisplayEvent.anchorPoint
 	if anchorPoint == "BOTTOMLEFT" then
@@ -487,15 +396,15 @@ local function AE_InitStraight(newDisplayEvent, activeDisplayEvents, direction)
 
 	local numActiveAnimations = #activeDisplayEvents
 	if direction == "Down" then
-		newDisplayEvent.animationHandler = AE_ScrollDown
+		newDisplayEvent.animationHandler = AE_MSBT_ScrollDown
 		if numActiveAnimations == 0 then return end
 
-		local perPixelTime = AE_MOVEMENT_SPEED / newDisplayEvent.animationSpeed
+		local perPixelTime = MSBT_MOVEMENT_SPEED / newDisplayEvent.animationSpeed
 		local currentDisplayEvent = newDisplayEvent
 		local prevDisplayEvent, topTimeCurrent
 		for x = numActiveAnimations, 1, -1 do
 			prevDisplayEvent = activeDisplayEvents[x]
-			topTimeCurrent = currentDisplayEvent.elapsedTime + (currentDisplayEvent.fontSize + AE_MIN_VERTICAL_SPACING) * perPixelTime
+			topTimeCurrent = currentDisplayEvent.elapsedTime + (currentDisplayEvent.fontSize + MSBT_MIN_VERTICAL_SPACING) * perPixelTime
 			if prevDisplayEvent.elapsedTime < topTimeCurrent then
 				prevDisplayEvent.elapsedTime = topTimeCurrent
 			else
@@ -504,17 +413,17 @@ local function AE_InitStraight(newDisplayEvent, activeDisplayEvents, direction)
 			currentDisplayEvent = prevDisplayEvent
 		end
 	else
-		newDisplayEvent.animationHandler = AE_ScrollUp
+		newDisplayEvent.animationHandler = AE_MSBT_ScrollUp
 		if numActiveAnimations == 0 then return end
 
-		local perPixelTime = AE_MOVEMENT_SPEED / newDisplayEvent.animationSpeed
+		local perPixelTime = MSBT_MOVEMENT_SPEED / newDisplayEvent.animationSpeed
 		local currentDisplayEvent = newDisplayEvent
 		local prevDisplayEvent, topTimePrev
 		for x = numActiveAnimations, 1, -1 do
 			prevDisplayEvent = activeDisplayEvents[x]
-			topTimePrev = prevDisplayEvent.elapsedTime - (prevDisplayEvent.fontSize + AE_MIN_VERTICAL_SPACING) * perPixelTime
+			topTimePrev = prevDisplayEvent.elapsedTime - (prevDisplayEvent.fontSize + MSBT_MIN_VERTICAL_SPACING) * perPixelTime
 			if topTimePrev < currentDisplayEvent.elapsedTime then
-				prevDisplayEvent.elapsedTime = currentDisplayEvent.elapsedTime + (prevDisplayEvent.fontSize + AE_MIN_VERTICAL_SPACING) * perPixelTime
+				prevDisplayEvent.elapsedTime = currentDisplayEvent.elapsedTime + (prevDisplayEvent.fontSize + MSBT_MIN_VERTICAL_SPACING) * perPixelTime
 			else
 				return
 			end
@@ -523,11 +432,11 @@ local function AE_InitStraight(newDisplayEvent, activeDisplayEvents, direction)
 	end
 end
 
-local function AE_AnimatePowJiggle(displayEvent, animationProgress)
-	local fadeInPercent = AE_POW_FADE_IN_TIME / displayEvent.scrollTime
+local function AE_MSBT_AnimatePowJiggle(displayEvent, animationProgress)
+	local fadeInPercent = MSBT_POW_FADE_IN_TIME / displayEvent.scrollTime
 	if animationProgress <= fadeInPercent then
 		local isSticky = (displayEvent.meta and (displayEvent.meta.stickyCrit == true or displayEvent.meta.sticky == true))
-		local d = isSticky and AE_POW_TEXT_DELTA_STICKY or AE_POW_TEXT_DELTA
+		local d = isSticky and MSBT_POW_TEXT_DELTA_STICKY or MSBT_POW_TEXT_DELTA
 		local t = (fadeInPercent > 0) and (animationProgress / fadeInPercent) or 1
 		local k = 1 - t
 		local slam = isSticky and 1.35 or 1.0
@@ -535,11 +444,11 @@ local function AE_AnimatePowJiggle(displayEvent, animationProgress)
 		return
 	end
 
-	if animationProgress <= (displayEvent.fadePercent or AE_DEFAULT_FADE_PERCENT) then
+	if animationProgress <= (displayEvent.fadePercent or MSBT_DEFAULT_FADE_PERCENT) then
 		local elapsedTime = displayEvent.elapsedTime or 0
 		local last = displayEvent.timeLastJiggled or 0
-		local delay = (displayEvent.meta and (displayEvent.meta.stickyCrit == true or displayEvent.meta.sticky == true)) and AE_JIGGLE_DELAY_TIME_STICKY or AE_JIGGLE_DELAY_TIME
-		local range = (displayEvent.meta and (displayEvent.meta.stickyCrit == true or displayEvent.meta.sticky == true)) and AE_JIGGLE_RANGE_STICKY or 1
+		local delay = (displayEvent.meta and (displayEvent.meta.stickyCrit == true or displayEvent.meta.sticky == true)) and MSBT_JIGGLE_DELAY_TIME_STICKY or MSBT_JIGGLE_DELAY_TIME
+		local range = (displayEvent.meta and (displayEvent.meta.stickyCrit == true or displayEvent.meta.sticky == true)) and MSBT_JIGGLE_RANGE_STICKY or 1
 		if (elapsedTime - last) > delay then
 			displayEvent.positionX = (displayEvent.originalPositionX or 0) + math.random(-range, range)
 			displayEvent.positionY = (displayEvent.originalPositionY or 0) + math.random(-range, range)
@@ -554,12 +463,12 @@ local function AE_AnimatePowJiggle(displayEvent, animationProgress)
 	end
 end
 
-local function AE_InitParabola(newDisplayEvent, activeDisplayEvents, direction, behavior)
-	AE_InitStraight(newDisplayEvent, activeDisplayEvents, direction)
+local function AE_MSBT_InitParabola(newDisplayEvent, activeDisplayEvents, direction, behavior)
+	AE_MSBT_InitStraight(newDisplayEvent, activeDisplayEvents, direction)
 	if direction == "Down" then
-		newDisplayEvent.animationHandler = (behavior == "CurvedRight") and AE_ScrollRightParabolaDown or AE_ScrollLeftParabolaDown
+		newDisplayEvent.animationHandler = (behavior == "CurvedRight") and AE_MSBT_ScrollRightParabolaDown or AE_MSBT_ScrollLeftParabolaDown
 	else
-		newDisplayEvent.animationHandler = (behavior == "CurvedRight") and AE_ScrollRightParabolaUp or AE_ScrollLeftParabolaUp
+		newDisplayEvent.animationHandler = (behavior == "CurvedRight") and AE_MSBT_ScrollRightParabolaUp or AE_MSBT_ScrollLeftParabolaUp
 	end
 	local midPoint = newDisplayEvent.scrollHeight / 2
 	newDisplayEvent.midPoint = midPoint
@@ -569,11 +478,11 @@ local function AE_InitParabola(newDisplayEvent, activeDisplayEvents, direction, 
 	newDisplayEvent.fourA = ((midPoint * midPoint) / newDisplayEvent.scrollWidth) / inten
 end
 
-local function AE_AnimatePowNormal(displayEvent, animationProgress)
-	local fadeInPercent = AE_POW_FADE_IN_TIME / displayEvent.scrollTime
+local function AE_MSBT_AnimatePowNormal(displayEvent, animationProgress)
+	local fadeInPercent = MSBT_POW_FADE_IN_TIME / displayEvent.scrollTime
 	if animationProgress <= fadeInPercent then
 		local isSticky = (displayEvent.meta and (displayEvent.meta.stickyCrit == true or displayEvent.meta.sticky == true))
-		local d = isSticky and AE_POW_TEXT_DELTA_STICKY or AE_POW_TEXT_DELTA
+		local d = isSticky and MSBT_POW_TEXT_DELTA_STICKY or MSBT_POW_TEXT_DELTA
 		local t = (fadeInPercent > 0) and (animationProgress / fadeInPercent) or 1
 		local k = 1 - t
 		local slam = isSticky and 1.35 or 1.0
@@ -587,15 +496,15 @@ local function AE_AnimatePowNormal(displayEvent, animationProgress)
 	end
 end
 
-local function AE_InitPow(newDisplayEvent, activeDisplayEvents, direction)
+local function AE_MSBT_InitPow(newDisplayEvent, activeDisplayEvents, direction)
 	local animationSpeed = newDisplayEvent.animationSpeed
-	local scrollTime = AE_POW_FADE_IN_TIME + (AE_POW_DISPLAY_TIME / animationSpeed) + AE_POW_FADE_OUT_TIME
+	local scrollTime = MSBT_POW_FADE_IN_TIME + (MSBT_POW_DISPLAY_TIME / animationSpeed) + MSBT_POW_FADE_OUT_TIME
 	newDisplayEvent.scrollTime = scrollTime * animationSpeed
-	newDisplayEvent.fadePercent = (AE_POW_FADE_IN_TIME + (AE_POW_DISPLAY_TIME / animationSpeed)) / scrollTime
+	newDisplayEvent.fadePercent = (MSBT_POW_FADE_IN_TIME + (MSBT_POW_DISPLAY_TIME / animationSpeed)) / scrollTime
 	local wantJiggle = (newDisplayEvent.meta
 		and (newDisplayEvent.meta.stickyCrit == true or newDisplayEvent.meta.sticky == true)
 		and newDisplayEvent.meta.stickyJiggle ~= false)
-	newDisplayEvent.animationHandler = wantJiggle and AE_AnimatePowJiggle or AE_AnimatePowNormal
+	newDisplayEvent.animationHandler = wantJiggle and AE_MSBT_AnimatePowJiggle or AE_MSBT_AnimatePowNormal
 
 	local anchorPoint = newDisplayEvent.anchorPoint
 	if anchorPoint == "BOTTOMLEFT" then
@@ -608,7 +517,7 @@ local function AE_InitPow(newDisplayEvent, activeDisplayEvents, direction)
 	newDisplayEvent.positionY = newDisplayEvent.scrollHeight / 2
 
 	-- Randomized seed inside the area to reduce overlap (requested behavior).
-	-- Keep the range conservative so it still "feels" like Pow.
+	-- Keep the range conservative so it still "feels" like MSBT Pow.
 	local rx = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollWidth * 0.25)
 	local ry = (math.random() * 2.0 - 1.0) * (newDisplayEvent.scrollHeight * 0.20)
 	newDisplayEvent.positionX = newDisplayEvent.positionX + rx
@@ -621,34 +530,34 @@ local function AE_InitPow(newDisplayEvent, activeDisplayEvents, direction)
 	local numActiveAnimations = #activeDisplayEvents
 	if (numActiveAnimations == 0) then return end
 
-	-- Anti-overlap: re-stack existing Pow events vertically around a middle reference.
+	-- MSBT anti-overlap: re-stack existing Pow events vertically around a middle reference.
 	if direction == "Down" then
 		local middleSticky = math.floor((numActiveAnimations + 2) / 2)
 		activeDisplayEvents[middleSticky].originalPositionY = newDisplayEvent.scrollHeight / 2
 		activeDisplayEvents[middleSticky].positionY = activeDisplayEvents[middleSticky].originalPositionY
 		for x = middleSticky - 1, 1, -1 do
-			activeDisplayEvents[x].originalPositionY = activeDisplayEvents[x + 1].originalPositionY - activeDisplayEvents[x].fontSize - AE_MIN_VERTICAL_SPACING
+			activeDisplayEvents[x].originalPositionY = activeDisplayEvents[x + 1].originalPositionY - activeDisplayEvents[x].fontSize - MSBT_MIN_VERTICAL_SPACING
 			activeDisplayEvents[x].positionY = activeDisplayEvents[x].originalPositionY
 		end
 		for x = middleSticky + 1, numActiveAnimations do
-			activeDisplayEvents[x].originalPositionY = activeDisplayEvents[x - 1].originalPositionY + activeDisplayEvents[x - 1].fontSize + AE_MIN_VERTICAL_SPACING
+			activeDisplayEvents[x].originalPositionY = activeDisplayEvents[x - 1].originalPositionY + activeDisplayEvents[x - 1].fontSize + MSBT_MIN_VERTICAL_SPACING
 			activeDisplayEvents[x].positionY = activeDisplayEvents[x].originalPositionY
 		end
-		newDisplayEvent.originalPositionY = activeDisplayEvents[numActiveAnimations].originalPositionY + activeDisplayEvents[numActiveAnimations].fontSize + AE_MIN_VERTICAL_SPACING
+		newDisplayEvent.originalPositionY = activeDisplayEvents[numActiveAnimations].originalPositionY + activeDisplayEvents[numActiveAnimations].fontSize + MSBT_MIN_VERTICAL_SPACING
 		newDisplayEvent.positionY = newDisplayEvent.originalPositionY
 	else
 		local middleSticky = math.ceil(numActiveAnimations / 2)
 		activeDisplayEvents[middleSticky].originalPositionY = newDisplayEvent.scrollHeight / 2
 		activeDisplayEvents[middleSticky].positionY = activeDisplayEvents[middleSticky].originalPositionY
 		for x = middleSticky - 1, 1, -1 do
-			activeDisplayEvents[x].originalPositionY = activeDisplayEvents[x + 1].originalPositionY + activeDisplayEvents[x + 1].fontSize + AE_MIN_VERTICAL_SPACING
+			activeDisplayEvents[x].originalPositionY = activeDisplayEvents[x + 1].originalPositionY + activeDisplayEvents[x + 1].fontSize + MSBT_MIN_VERTICAL_SPACING
 			activeDisplayEvents[x].positionY = activeDisplayEvents[x].originalPositionY
 		end
 		for x = middleSticky + 1, numActiveAnimations do
-			activeDisplayEvents[x].originalPositionY = activeDisplayEvents[x - 1].originalPositionY - activeDisplayEvents[x].fontSize - AE_MIN_VERTICAL_SPACING
+			activeDisplayEvents[x].originalPositionY = activeDisplayEvents[x - 1].originalPositionY - activeDisplayEvents[x].fontSize - MSBT_MIN_VERTICAL_SPACING
 			activeDisplayEvents[x].positionY = activeDisplayEvents[x].originalPositionY
 		end
-		newDisplayEvent.originalPositionY = activeDisplayEvents[numActiveAnimations].originalPositionY - activeDisplayEvents[numActiveAnimations].fontSize - AE_MIN_VERTICAL_SPACING
+		newDisplayEvent.originalPositionY = activeDisplayEvents[numActiveAnimations].originalPositionY - activeDisplayEvents[numActiveAnimations].fontSize - MSBT_MIN_VERTICAL_SPACING
 		newDisplayEvent.positionY = newDisplayEvent.originalPositionY
 	end
 end
@@ -676,8 +585,6 @@ local function AE_RecycleEvent(ev)
 	ev._zsbtSpinStart = nil
 	ev._zsbtSpinElapsed = nil
 	ev._zsbtSpinDoneOnce = nil
-	ev._laneJx = nil
-	ev._laneJy = nil
 	if ev._zsbtAfterimageFS1 then
 		RecycleFontString(ev._zsbtAfterimageFS1)
 		ev._zsbtAfterimageFS1 = nil
@@ -696,7 +603,6 @@ local function AE_RecycleEvent(ev)
 	end
 	RecycleFontString(ev.fs)
 	RecycleIconFS(ev.iconFS)
-	RecycleIconFS(ev.countFS)
 	if ev.iconTex then
 		ev.iconTex:Hide()
 		ev.iconTex:SetParent(recyclingBin)
@@ -707,7 +613,7 @@ local function AE_UpdateEvent(ev, dt)
 	if not ev then return true end
 	local tNow = AE_Now()
 	if ev.startAt and tNow < ev.startAt then
-		-- Queued events should not be visible until they start.
+		-- MSBT-like behavior: queued events should not be visible until they start.
 		-- Without this, repeated tests create a cluttered pile at the spawn anchor.
 		if ev.fs then ev.fs:SetAlpha(0) end
 		if ev._zsbtAfterimageFS1 then ev._zsbtAfterimageFS1:SetAlpha(0) end
@@ -719,14 +625,13 @@ local function AE_UpdateEvent(ev, dt)
 			end
 		end
 		if ev.iconFS then ev.iconFS:SetAlpha(0) end
-		if ev.countFS then ev.countFS:SetAlpha(0) end
 		if ev.iconTex then ev.iconTex:SetAlpha(0) end
 		return false
 	end
 
-	-- Updates are throttled to ~66Hz using ANIMATION_DELAY.
+	-- MSBT throttles updates to ~66Hz using ANIMATION_DELAY.
 	ev.timeSinceLastUpdate = (ev.timeSinceLastUpdate or 0) + dt
-	if ev.timeSinceLastUpdate < AE_ANIMATION_DELAY then
+	if ev.timeSinceLastUpdate < MSBT_ANIMATION_DELAY then
 		return false
 	end
 	local step = ev.timeSinceLastUpdate
@@ -765,7 +670,7 @@ local function AE_UpdateEvent(ev, dt)
 	end
 
 	if styleId == "Pow" then
-		-- Pow: uses SetTextHeight during fade-in and restores font once.
+		-- MSBT Pow: uses SetTextHeight during fade-in and restores font once.
 		if ev.animationHandler then
 			ev.animationHandler(ev, progress)
 		end
@@ -786,7 +691,7 @@ local function AE_UpdateEvent(ev, dt)
 				if yOff2 > maxY then yOff2 = maxY end
 			end
 		end
-		local fadePercent = ev.fadePercent or AE_DEFAULT_FADE_PERCENT
+		local fadePercent = ev.fadePercent or MSBT_DEFAULT_FADE_PERCENT
 		if progress >= fadePercent then
 			ev.alpha = (1 - progress) / (1 - fadePercent)
 		else
@@ -1150,7 +1055,7 @@ local function AE_UpdateEvent(ev, dt)
 		ev.fs:SetAlpha(math.max(0, alpha))
 
 	elseif styleId == "Static" then
-		-- Static: no movement, late fade only. Placement happens via lane.
+		-- MSBT-like static: no movement, late fade only. Placement happens via lane.
 		xOff2, yOff2 = 0, 0
 		local fadeStart = 0.80
 		if progress >= fadeStart then
@@ -1159,7 +1064,7 @@ local function AE_UpdateEvent(ev, dt)
 		ev.fs:SetAlpha(math.max(0, alpha))
 
 	elseif styleId == "Parabola" then
-		-- Parabola uses the animationHandler set during init.
+		-- MSBT exact parabola uses animationHandler set during init.
 		if ev.animationHandler then
 			ev.animationHandler(ev, progress)
 			xOff2 = (ev.positionX or 0) - AnchorOriginX()
@@ -1171,7 +1076,7 @@ local function AE_UpdateEvent(ev, dt)
 			fadeInPercent = fadeInTime / ev.scrollTime
 			if fadeInPercent > 0.90 then fadeInPercent = 0.90 end
 		end
-		local fadePercent = ev.fadePercent or AE_DEFAULT_FADE_PERCENT
+		local fadePercent = ev.fadePercent or MSBT_DEFAULT_FADE_PERCENT
 		if fadeInPercent > 0 and progress <= fadeInPercent then
 			ev.alpha = progress / fadeInPercent
 		elseif progress >= fadePercent then
@@ -1267,13 +1172,13 @@ local function AE_UpdateEvent(ev, dt)
 		ev.fs:SetAlpha(math.max(0, alpha))
 
 	else
-		-- Straight
+		-- Straight (MSBT exact)
 		if ev.animationHandler then
 			ev.animationHandler(ev, progress)
 			xOff2 = (ev.positionX or 0) - AnchorOriginX()
 			yOff2 = ev.positionY or 0
 		end
-		local fadePercent = ev.fadePercent or AE_DEFAULT_FADE_PERCENT
+		local fadePercent = ev.fadePercent or MSBT_DEFAULT_FADE_PERCENT
 		if progress >= fadePercent then
 			ev.alpha = (1 - progress) / (1 - fadePercent)
 		else
@@ -1282,27 +1187,8 @@ local function AE_UpdateEvent(ev, dt)
 		ev.fs:SetAlpha(math.max(0, (ev.fontAlpha or 1) * (ev.alpha or 1)))
 	end
 
-	-- One-shot latency probe: first frame a periodic tick becomes visible.
-	if ev.meta and ev.meta.isPeriodic == true and not ev._dbgPerShown then
-		local a = 0
-		if ev.fs and ev.fs.GetAlpha then
-			local okA, va = pcall(ev.fs.GetAlpha, ev.fs)
-			if okA and type(va) == "number" then a = va end
-		end
-		if a > 0.3 then
-			ev._dbgPerShown = true
-			local Addon = ZSBT and ZSBT.Addon
-			if Addon and Addon.Dbg then
-				Addon:Dbg("outgoing", 4,
-					("PER_VISIBLE t=%.2f elapsed=%.2f style=%s scrollTime=%.2f")
-						:format(AE_Now(), ev.elapsedTime or ev.elapsed or 0,
-							tostring(ev.styleId), tonumber(ev.scrollTime) or -1))
-			end
-		end
-	end
-
 	-- Placement (match existing semantics)
-	-- Do not ClearAllPoints each tick; doing so can cause flicker.
+	-- MSBT does not ClearAllPoints each tick; doing so can cause flicker.
 	if styleId ~= "Straight" and styleId ~= "Parabola" and styleId ~= "Pow" and styleId ~= "Slam" then
 		ev.fs:ClearAllPoints()
 	end
@@ -1393,12 +1279,12 @@ local function AE_UpdateEvent(ev, dt)
 	if styleId == "Static" and ev.staticPoint and ev.staticSlotY ~= nil then
 		ev.fs:SetPoint(ev.staticPoint, ev.parent, ev.staticPoint, 0, ev.staticSlotY)
 	elseif styleId == "Pow" or styleId == "Slam" or styleId == "Shockwave" or styleId == "Ignite" or styleId == "Chromatic" or styleId == "Stomp" or styleId == "ScreenPunch" or styleId == "Shatter" or styleId == "Afterimage" or styleId == "Rumble" then
-		-- Pow uses the scroll area's anchorPoint.
+		-- MSBT Pow uses the scroll area's anchorPoint.
 		ev.fs:SetPoint(point, ev.parent, point, xOff2, yOff2)
 	else
 		local yPlaced = laneOff + yOff2
 		-- When anchored to TOP* for Down scrolling, positive y offsets move ABOVE the frame.
-		-- Convert [0..scrollHeight] offsets into downward-negative offsets.
+		-- Convert MSBT-style [0..scrollHeight] offsets into downward-negative offsets.
 		if type(point) == "string" and point:sub(1, 3) == "TOP" then
 			local sh = ev.scrollHeight or ev.areaH or 0
 			yPlaced = laneOff - (sh - (yOff2 or 0))
@@ -1406,7 +1292,7 @@ local function AE_UpdateEvent(ev, dt)
 		ev.fs:SetPoint(point, ev.parent, point, xOff2, yPlaced)
 	end
 	-- Edge fade (keep your existing edge behavior)
-	-- Straight/Parabola doesn't apply extra post-fade; it can cause visible jitter.
+	-- MSBT Straight/Parabola doesn't apply extra post-fade; it can cause visible jitter.
 	if styleId ~= "Straight" and styleId ~= "Parabola" and styleId ~= "Pow" and styleId ~= "Slam" then
 		local currentAlpha = ev.fs:GetAlpha()
 		local absY = math.abs(laneOff + yOff2)
@@ -1421,9 +1307,6 @@ local function AE_UpdateEvent(ev, dt)
 
 	if ev.iconFS then
 		ev.iconFS:SetAlpha(ev.fs:GetAlpha())
-	end
-	if ev.countFS then
-		ev.countFS:SetAlpha(ev.fs:GetAlpha())
 	end
 	if ev.iconTex then
 		ev.iconTex:SetAlpha(ev.fs:GetAlpha())
@@ -1470,16 +1353,16 @@ function AnimEngine:Enqueue(areaKey, ev)
 	local st = AE_GetAreaState(areaKey)
 	local events = st.events
 
-	-- Initialization for Straight/Parabola.
+	-- MSBT-exact initialization for Straight/Parabola.
 	if ev.styleId == "Straight" or ev.styleId == "Parabola" then
 		ev.startAt = nil
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_AnchorPoint(ev)
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
 		ev.animationSpeed = (type(ev.animationSpeed) == "number" and ev.animationSpeed > 0) and ev.animationSpeed or 1
 		ev.masterAlpha = ev.fontAlpha or 1
-		ev.fadePercent = AE_DEFAULT_FADE_PERCENT
+		ev.fadePercent = MSBT_DEFAULT_FADE_PERCENT
 		ev.alpha = 1
 		ev.fontSize = ev.effectiveFontSize or ev.fontSize or 18
 		-- Keep the baseline inside the area so large/crit text doesn't spawn above the frame.
@@ -1499,7 +1382,7 @@ function AnimEngine:Enqueue(areaKey, ev)
 
 		if ev.styleId == "Parabola" then
 			local behavior = (ev.paraDir and ev.paraDir > 0) and "CurvedRight" or "CurvedLeft"
-			AE_InitParabola(ev, active, direction, behavior)
+			AE_MSBT_InitParabola(ev, active, direction, behavior)
 			-- Prevent first-frame lateral snap: seed position on the curve at progress=0.
 			if ev.animationHandler then
 				ev.animationHandler(ev, 0)
@@ -1507,9 +1390,9 @@ function AnimEngine:Enqueue(areaKey, ev)
 			ev.alpha = 0
 			if ev.fs then ev.fs:SetAlpha(0) end
 		else
-			AE_InitStraight(ev, active, direction)
+			AE_MSBT_InitStraight(ev, active, direction)
 		end
-		-- Speed is applied after init.
+		-- MSBT applies speed after init.
 		ev.scrollTime = (ev.scrollTime or 0) / ev.animationSpeed
 	end
 
@@ -1519,8 +1402,8 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_AnchorPoint(ev)
-		AE_InitSlam(ev)
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		AE_MSBT_InitSlam(ev)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
 	end
@@ -1530,8 +1413,8 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_AnchorPoint(ev)
-		AE_InitShockwave(ev)
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		AE_MSBT_InitShockwave(ev)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
 	end
@@ -1541,8 +1424,8 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_AnchorPoint(ev)
-		AE_InitIgnite(ev)
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		AE_MSBT_InitIgnite(ev)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
 	end
@@ -1552,8 +1435,8 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_AnchorPoint(ev)
-		AE_InitChromatic(ev)
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		AE_MSBT_InitChromatic(ev)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
 	end
@@ -1563,8 +1446,8 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_AnchorPoint(ev)
-		AE_InitStomp(ev)
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		AE_MSBT_InitStomp(ev)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
 	end
@@ -1574,8 +1457,8 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_AnchorPoint(ev)
-		AE_InitScreenPunch(ev)
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		AE_MSBT_InitScreenPunch(ev)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
 	end
@@ -1585,8 +1468,8 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_AnchorPoint(ev)
-		AE_InitShatter(ev)
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		AE_MSBT_InitShatter(ev)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
 	end
@@ -1596,8 +1479,8 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_AnchorPoint(ev)
-		AE_InitAfterimage(ev)
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		AE_MSBT_InitAfterimage(ev)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
 	end
@@ -1607,14 +1490,14 @@ function AnimEngine:Enqueue(areaKey, ev)
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_AnchorPoint(ev)
-		AE_InitRumble(ev)
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
+		AE_MSBT_InitRumble(ev)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
 	end
 
 
-	-- Waterfall: keep unique wave motion, but use retiming to prevent overlap.
+	-- Waterfall: keep unique wave motion, but use MSBT-style retiming to prevent overlap.
 	if ev.styleId == "Waterfall" then
 		ev.startAt = nil
 		ev.elapsedTime = 0
@@ -1641,16 +1524,16 @@ function AnimEngine:Enqueue(areaKey, ev)
 		AE_InitWaterfallSpacing(ev, active, direction)
 	end
 
-	-- Initialization for Pow (sticky crits).
+	-- MSBT-exact initialization for Pow (sticky crits).
 	if ev.styleId == "Pow" then
 		ev.startAt = nil
 		ev.elapsedTime = 0
 		ev.scrollHeight = ev.areaH
 		ev.scrollWidth = ev.areaW
-		ev.anchorPoint = AE_AnchorPoint(ev)
+		ev.anchorPoint = AE_MSBT_AnchorPoint(ev)
 		ev.animationSpeed = (type(ev.animationSpeed) == "number" and ev.animationSpeed > 0) and ev.animationSpeed or 1
 		ev.masterAlpha = ev.fontAlpha or 1
-		ev.fadePercent = AE_DEFAULT_FADE_PERCENT
+		ev.fadePercent = MSBT_DEFAULT_FADE_PERCENT
 		ev.alpha = 1
 		ev.fontSize = ev.effectiveFontSize or ev.fontSize or 18
 		-- Keep the baseline inside the area so large/crit text doesn't spawn above the frame.
@@ -1667,7 +1550,7 @@ function AnimEngine:Enqueue(areaKey, ev)
 				active[#active + 1] = e
 			end
 		end
-		AE_InitPow(ev, active, direction)
+		AE_MSBT_InitPow(ev, active, direction)
 		AE_ReRollCenteredPosition(ev, events)
 		ev.scrollTime = (ev.scrollTime or 0) / ev.animationSpeed
 	end
@@ -1725,11 +1608,6 @@ function AnimEngine:Enqueue(areaKey, ev)
 		-- Tiny stagger to separate dense bursts (keeps cadence, reduces overlap).
 		local stagger = (s % 3) * 0.02
 		ev.startAt = (ev.startAt or AE_Now()) + stagger
-	end
-
-	-- Lane-separate centered crit events so bursts don't stack on each other.
-	if CRIT_CENTERED_STYLES[ev.styleId] then
-		AE_SpaceCenteredCrits(ev, events)
 	end
 
 	events[#events + 1] = ev
@@ -1925,7 +1803,7 @@ local function ResolveFontForArea(areaName)
         useGlobal = false
     end
 
-    local faceKey    = (not useGlobal and areaFont and areaFont.face)    or general.face or L["Friz Quadrata TT"]
+    local faceKey    = (not useGlobal and areaFont and areaFont.face)    or general.face or "Friz Quadrata TT"
     local sizeVal    = (not useGlobal and areaFont and areaFont.size)    or general.size or 18
     local outlineKey = (not useGlobal and areaFont and areaFont.outline) or general.outline or "Thin"
     local alphaVal   = (not useGlobal and areaFont and areaFont.alpha)   or general.alpha or 1.0
@@ -1987,7 +1865,7 @@ local function CreateAreaFrame(areaName, areaData, colorIdx)
     local offsetLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     offsetLabel:SetPoint("TOP", label, "BOTTOM", 0, -4)
     offsetLabel:SetTextColor(0.8, 0.8, 0.8, 0.8)
-    offsetLabel:SetText(string.format(L["X: %d  Y: %d"], areaData.xOffset, areaData.yOffset))
+    offsetLabel:SetText(string.format("X: %d  Y: %d", areaData.xOffset, areaData.yOffset))
     frame.offsetLabel = offsetLabel
 
     -- Make the frame draggable
@@ -2052,7 +1930,7 @@ local function CreateAreaFrame(areaName, areaData, colorIdx)
 
         -- Update the offset readout label immediately
         if self.offsetLabel then
-            self.offsetLabel:SetText(string.format(L["X: %d  Y: %d"],
+            self.offsetLabel:SetText(string.format("X: %d  Y: %d",
                 newXOffset, newYOffset))
         end
 
@@ -2125,7 +2003,7 @@ function ZSBT.ShowScrollAreaFrames()
 	if not lockButton then
 		lockButton = CreateFrame("Button", "ZSBT_LockScrollAreasButton", UIParent, "UIPanelButtonTemplate")
 		lockButton:SetSize(160, 28)
-		lockButton:SetText(L["Lock Scroll Areas"])
+		lockButton:SetText("Lock Scroll Areas")
 		lockButton:SetPoint("TOP", UIParent, "TOP", 0, -120)
 		lockButton:SetFrameStrata("FULLSCREEN_DIALOG")
 		lockButton:SetFrameLevel(1100)
@@ -2142,7 +2020,7 @@ function ZSBT.ShowScrollAreaFrames()
 	lockButton:Show()
 
     isUnlocked = true
-    Addon:Print(L["Scroll areas unlocked. Drag to reposition."])
+    Addon:Print("Scroll areas unlocked. Drag to reposition.")
 end
 
 ------------------------------------------------------------------------
@@ -2201,7 +2079,7 @@ function ZSBT.UpdateScrollAreaFrames()
             
             -- Update offset label
             if frame.offsetLabel then
-                frame.offsetLabel:SetText(string.format(L["X: %d  Y: %d"],
+                frame.offsetLabel:SetText(string.format("X: %d  Y: %d",
                     areaData.xOffset, areaData.yOffset))
             end
         end
@@ -2254,13 +2132,13 @@ end
 ------------------------------------------------------------------------
 function ZSBT.TestScrollArea(areaName)
     if not areaName then
-        Addon:Print(L["No scroll area selected for test."])
+        Addon:Print("No scroll area selected for test.")
         return
     end
 
     -- Require scroll areas to be unlocked
     if not isUnlocked then
-        Addon:Print(L["Scroll areas must be unlocked to test. Click 'Unlock Scroll Areas' first."])
+        Addon:Print("Scroll areas must be unlocked to test. Click 'Unlock Scroll Areas' first.")
         return
     end
 
@@ -2268,7 +2146,7 @@ function ZSBT.TestScrollArea(areaName)
                   and ZSBT.db.profile.scrollAreas
                   and ZSBT.db.profile.scrollAreas[areaName]
     if not area then
-        Addon:Print(L["Scroll area '"] .. areaName .. L["' not found."])
+        Addon:Print("Scroll area '" .. areaName .. "' not found.")
         return
     end
 
@@ -2291,9 +2169,9 @@ function ZSBT.TestScrollArea(areaName)
 
     -- Mock event templates (same variety as continuous test)
     local mockEvents = {
-        L["Fireball 1523"],
-        L["Pyroblast 2841"],
-        L["Heal +842"],
+        "Fireball 1523",
+        "Pyroblast 2841",
+        "Heal +842",
     }
 
     for i, text in ipairs(mockEvents) do
@@ -2312,12 +2190,12 @@ end
 ------------------------------------------------------------------------
 function ZSBT.TestScrollAreaCrit(areaName)
     if not areaName then
-        Addon:Print(L["No scroll area selected for crit test."])
+        Addon:Print("No scroll area selected for crit test.")
         return
     end
 
     if not isUnlocked then
-        Addon:Print(L["Scroll areas must be unlocked to test. Click 'Unlock Scroll Areas' first."])
+        Addon:Print("Scroll areas must be unlocked to test. Click 'Unlock Scroll Areas' first.")
         return
     end
 
@@ -2325,7 +2203,7 @@ function ZSBT.TestScrollAreaCrit(areaName)
                   and ZSBT.db.profile.scrollAreas
                   and ZSBT.db.profile.scrollAreas[areaName]
     if not area then
-        Addon:Print(L["Scroll area '"] .. areaName .. L["' not found."])
+        Addon:Print("Scroll area '" .. areaName .. "' not found.")
         return
     end
 
@@ -2340,7 +2218,7 @@ function ZSBT.TestScrollAreaCrit(areaName)
     if profile and profile.general and profile.general.critFont then
         local critConf = profile.general.critFont
         local general = (profile.general and profile.general.font) or {}
-        local faceKey = critConf.face or general.face or L["Friz Quadrata TT"]
+        local faceKey = critConf.face or general.face or "Friz Quadrata TT"
         local LSM = LibStub("LibSharedMedia-3.0", true)
         if LSM and faceKey then
             local fetched = LSM:Fetch("font", faceKey)
@@ -2400,7 +2278,7 @@ local function BuildCritMeta(stream)
 	end
 
 	if critConf then
-		local faceKey = critConf.face or masterFont.face or L["Friz Quadrata TT"]
+		local faceKey = critConf.face or masterFont.face or "Friz Quadrata TT"
 		local LSM = LibStub("LibSharedMedia-3.0", true)
 		if LSM and faceKey then
 			local fetched = LSM:Fetch("font", faceKey)
@@ -2459,7 +2337,7 @@ end
 
 function ZSBT.TestIncomingHealCrit()
 	if not isUnlocked then
-		Addon:Print(L["Scroll areas must be unlocked to test. Click 'Unlock Scroll Areas' first."])
+		Addon:Print("Scroll areas must be unlocked to test. Click 'Unlock Scroll Areas' first.")
 		return
 	end
 	local prof = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.incoming
@@ -2468,7 +2346,7 @@ function ZSBT.TestIncomingHealCrit()
 	if type(areaName) ~= "string" or areaName == "" then areaName = "Incoming" end
 	local area = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.scrollAreas and ZSBT.db.profile.scrollAreas[areaName]
 	if not area then
-		Addon:Print(L["Scroll area '"] .. tostring(areaName) .. L["' not found."])
+		Addon:Print("Scroll area '" .. tostring(areaName) .. "' not found.")
 		return
 	end
 	local fontFace, fontSize, outlineFlag, fontAlpha = ResolveFontForArea(areaName)
@@ -2482,7 +2360,7 @@ end
 
 function ZSBT.TestIncomingDamageCrit()
 	if not isUnlocked then
-		Addon:Print(L["Scroll areas must be unlocked to test. Click 'Unlock Scroll Areas' first."])
+		Addon:Print("Scroll areas must be unlocked to test. Click 'Unlock Scroll Areas' first.")
 		return
 	end
 	local prof = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.incoming
@@ -2491,7 +2369,7 @@ function ZSBT.TestIncomingDamageCrit()
 	if type(areaName) ~= "string" or areaName == "" then areaName = "Incoming" end
 	local area = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.scrollAreas and ZSBT.db.profile.scrollAreas[areaName]
 	if not area then
-		Addon:Print(L["Scroll area '"] .. tostring(areaName) .. L["' not found."])
+		Addon:Print("Scroll area '" .. tostring(areaName) .. "' not found.")
 		return
 	end
 	local fontFace, fontSize, outlineFlag, fontAlpha = ResolveFontForArea(areaName)
@@ -2514,11 +2392,11 @@ end
 local function FireAllAreasOnce()
     -- Mock event templates (mix of damage, healing, notifications)
     local mockEvents = {
-        { text = L["Fireball 1523"],      type = "damage" },
-        { text = L["Heal +842"],           type = "healing" },
-        { text = L["Wind Shear Ready!"],   type = "notification" },
-        { text = L["Pyroblast 2841"],      type = "damage" },
-        { text = L["Rejuvenation +234"],   type = "healing" },
+        { text = "Fireball 1523",      type = "damage" },
+        { text = "Heal +842",           type = "healing" },
+        { text = "Wind Shear Ready!",   type = "notification" },
+        { text = "Pyroblast 2841",      type = "damage" },
+        { text = "Rejuvenation +234",   type = "healing" },
     }
 
     -- Fire test events into each unlocked area
@@ -2570,7 +2448,7 @@ function ZSBT.StartContinuousTesting()
     end
 
     if not hasUnlockedAreas then
-        Addon:Print(L["No scroll areas are unlocked. Use 'Unlock Scroll Areas' first."])
+        Addon:Print("No scroll areas are unlocked. Use 'Unlock Scroll Areas' first.")
         return
     end
 
@@ -2580,7 +2458,7 @@ function ZSBT.StartContinuousTesting()
     end
 
     isContinuousTesting = true
-    Addon:Print(L["Continuous testing started. Animations will repeat every 3 seconds."])
+    Addon:Print("Continuous testing started. Animations will repeat every 3 seconds.")
 
     -- Fire immediately
     FireAllAreasOnce()
@@ -2619,7 +2497,7 @@ function ZSBT.StopContinuousTesting()
         continuousTestTimer = nil
     end
 
-    Addon:Print(L["Continuous testing stopped."])
+    Addon:Print("Continuous testing stopped.")
     
     -- Notify AceConfig to update button name
     LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
@@ -2652,14 +2530,6 @@ end
 function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
                            fontAlpha, anchorH, dirMult, duration, color, meta)
 	local tok = ZSBT.Addon and ZSBT.Addon.PerfBegin and ZSBT.Addon:PerfBegin("UI.FireText")
-	if meta and meta.isPeriodic == true and ZSBT.Addon and ZSBT.Addon.Dbg then
-		ZSBT.Addon:Dbg("outgoing", 4, ("PER_FIRE t=%.2f"):format(GetTime()))
-	end
-	if meta and meta.stream == "outgoing" and meta.kind == "damage" and ZSBT.Addon and ZSBT.Addon.Dbg then
-		local sname = (meta.spellId and ZSBT.CleanSpellName and ZSBT.CleanSpellName(meta.spellId)) or "?"
-		ZSBT.Addon:Dbg("outgoing", 4, ("FIRE_DMG t=%.2f spellId=%s name=%s per=%s crit=%s")
-			:format(GetTime(), tostring(meta.spellId), tostring(sname), tostring(meta.isPeriodic == true), tostring(meta.isCrit == true)))
-	end
     -- Validate area data with safe defaults
     local xOff = (type(area.xOffset) == "number") and area.xOffset or 0
     local yOff = (type(area.yOffset) == "number") and area.yOffset or 0
@@ -2803,7 +2673,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             end
         end
     end
-    -- Lane spacing. Static uses very tight spacing (fontSize + small padding).
+    -- Lane spacing. Static in MSBT uses very tight spacing (fontSize + small padding).
     -- Using too much padding makes Static run out of lanes and wrap early.
     local lineHeight = effectiveFontSize + 6
     if isStaticStyle then
@@ -2850,7 +2720,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
                 slotOffset = (pickedSlot - center) * lineHeight
             end
         elseif animStyle == "Static" or animStyle == "static" then
-            -- Static stacks in fixed lanes in a bottom-anchored coordinate space.
+            -- MSBT Static stacks in fixed lanes in a bottom-anchored coordinate space.
             -- Up: start at bottom (0) and go up. Down: start at top (areaH) and go down.
             if dirMult > 0 then
                 staticSlotY = pickedSlot * lineHeight
@@ -2863,7 +2733,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             slotOffset = pickedSlot * lineHeight * dirMult
         end
         -- Mark this lane as occupied long enough for the text to clear.
-        -- Static should occupy the lane for the full duration.
+        -- Static should occupy the lane for the full duration (MSBT-like).
         local occupyFor = duration
         if isStaticStyle then
             occupyFor = duration
@@ -2925,7 +2795,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
         else
             if ZSBT.IsSafeString(text) then
                 -- Clean text: inline icon escape
-                local iconStr = "|T" .. meta.spellIcon .. ":" .. iconSize .. ":" .. iconSize .. L["|t "]
+                local iconStr = "|T" .. meta.spellIcon .. ":" .. iconSize .. ":" .. iconSize .. "|t "
                 fs:SetText(iconStr .. text)
                 hasInlineIcon = true
             else
@@ -2961,21 +2831,6 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
 			if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
             return
         end
-    end
-
-    -- Merge count badge: separate FontString so secret (raw pipe) amounts
-    -- are never concatenated with the count. Anchors to the text's right edge.
-    local countFS = nil
-    local badgeCount = meta and tonumber(meta.mergeBadgeCount)
-    if badgeCount and badgeCount > 1 then
-        countFS = AcquireIconFS(parent)
-        countFS:SetFont(fontFace, math.max(8, math.floor(effectiveFontSize * 0.7)), outlineFlag or "OUTLINE")
-        countFS:SetText("(x" .. badgeCount .. ")")
-        countFS:SetPoint("LEFT", fs, "RIGHT", 3, 0)
-        countFS:SetAlpha(fontAlpha or 1.0)
-        local bc = color or ZSBT.COLORS.ACCENT
-        if bc then countFS:SetTextColor(bc.r or 1, bc.g or 1, bc.b or 1, bc.a or 1.0) end
-        countFS:Show()
     end
 
     -- Starting position with stagger offset
@@ -3096,7 +2951,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
     -- Keep the legacy per-event OnUpdate path as a fallback.
     if AnimEngine and AnimEngine.Enqueue and AnimEngine._enabled then
         local startPointEngine = startPoint
-        -- Parabola uses a left-origin coordinate space.
+        -- Parabola in MSBT uses a left-origin coordinate space.
         if isParabola then
             startPointEngine = (dirMult > 0) and "BOTTOMLEFT" or "TOPLEFT"
         end
@@ -3104,7 +2959,6 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
 		-- Prevent first-frame anchor flash before the animation engine positions the event.
 		if fs then fs:SetAlpha(0) end
 		if iconFS then iconFS:SetAlpha(0) end
-		if countFS then countFS:SetAlpha(0) end
 		if iconTex then iconTex:SetAlpha(0) end
 
         local ev = {
@@ -3112,7 +2966,6 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             baseColor = color,
             fs = fs,
             iconFS = iconFS,
-            countFS = countFS,
             iconTex = iconTex,
             parent = parent,
             slotOffset = slotOffset,
@@ -3162,7 +3015,6 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
         if progress >= 1.0 then
             RecycleFontString(fs)
             RecycleIconFS(iconFS)
-            RecycleIconFS(countFS)
             if iconTex then iconTex:Hide(); iconTex:SetParent(recyclingBin) end
             RecycleAnimFrame(self)
 			if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
@@ -3234,7 +3086,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             --------------------------------------------------------
             -- STATIC — fade in, hold, fade out (notifications)
             --------------------------------------------------------
-            -- Static: no movement; alpha stays full until late fade.
+            -- MSBT Static: no movement; alpha stays full until late fade.
             xOff2 = 0
             yOff2 = 0
             local alpha = fontAlpha
@@ -3248,7 +3100,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             --------------------------------------------------------
             -- PARABOLA — deep half-moon arc
             --------------------------------------------------------
-            -- Match the Parabola math:
+            -- Match MSBT's Parabola math:
             -- ScrollUp:  positionY = scrollHeight * progress
             -- ScrollDown:positionY = scrollHeight - scrollHeight * progress
             -- x = (y-mid)^2 / fourA, where fourA = (mid^2)/scrollWidth
@@ -3280,7 +3132,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
                 positionX = x
             end
 
-            -- Parabola always operates in a left-origin coordinate space.
+            -- MSBT's parabola always operates in a left-origin coordinate space.
             -- To match CurvedLeft/CurvedRight semantics, we treat positionX as
             -- the literal offset from the LEFT edge and ignore the area's alignment.
             xOff2 = positionX
@@ -3427,13 +3279,13 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
         if usePow then
             fs:SetPoint("CENTER", parent, "CENTER", xOff2, yOff2)
         else
-            -- Parabola anchors to the left edge (BottomLeft/TopLeft) regardless
+            -- MSBT parabola anchors to the left edge (BottomLeft/TopLeft) regardless
             -- of the scroll area's alignment setting.
             local point = startPoint
             if isParabola then
                 point = (dirMult > 0) and "BOTTOMLEFT" or "TOPLEFT"
             end
-            -- Static uses bottom-anchored Y coordinates for stacking.
+            -- MSBT Static uses bottom-anchored Y coordinates for stacking.
             if staticSlotY ~= nil then
                 if anchorH == "LEFT" then
                     point = "BOTTOMLEFT"
@@ -3470,11 +3322,6 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             iconFS:ClearAllPoints()
             iconFS:SetPoint("RIGHT", fs, "LEFT", -2, 0)
             iconFS:SetAlpha(fs:GetAlpha())
-        end
-        if countFS then
-            countFS:ClearAllPoints()
-            countFS:SetPoint("LEFT", fs, "RIGHT", 3, 0)
-            countFS:SetAlpha(fs:GetAlpha())
         end
     end)
 end

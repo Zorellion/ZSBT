@@ -111,18 +111,6 @@ local function aggShowCountFromRule(rule)
 	return true
 end
 
--- ZCT-style default aggregation: the transplanted combat core emits
--- every attributed hit individually, but ZCT's Decide layer merged repeats
--- within a 0.6s window. ZSBT's spell-rule aggregation engine already does
--- exactly that ("(xN)" rollups, crit/non-crit split) -- it just required a
--- per-spell rule. This synthetic rule gives every attributed spell the
--- same default merge window; an explicit spell rule with
--- aggregate.enabled == false still opts out.
-local DEFAULT_SPELL_AGG_RULE = {
-	enabled = true,
-	aggregate = { enabled = true, windowSec = 0.6, showCount = true },
-}
-
 local function startOrPushSpellAgg(self, spellId, rule, evt, amountNumber)
 	if not (self and type(spellId) == "number" and type(rule) == "table" and type(evt) == "table") then return false end
 	local win = aggWindowFromRule(rule)
@@ -420,18 +408,6 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 		local mode = tostring(critConf.instanceSoundMode or "Only when amount is known")
 		if mode == "Any Crit" then
 			ZSBT.PlayLSMSound(soundKey)
-			return
-		end
-		-- Secret amount (Midnight): the value can't be read as a number, but the
-		-- minimum can still be evaluated visually so "Only when amount is
-		-- known" doesn't go permanently silent.
-		local secretAmt = rawPipeValue
-		if secretAmt == nil and isTainted then secretAmt = evt.amount end
-		if secretAmt ~= nil and not ZSBT.IsSafeNumber(secretAmt) and ZSBT.EvaluateSecretThreshold then
-			local okEv, res = pcall(ZSBT.EvaluateSecretThreshold, secretAmt, minAmt)
-			if okEv and type(res) == "number" and res > 0 then
-				ZSBT.PlayLSMSound(soundKey)
-			end
 		end
 	end
     local kind = evt.kind
@@ -462,20 +438,12 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 		end
 	end
 
-	-- Weak attributions (collector recency-window guesses, not pending-cast
-	-- matches) keep the line visible but must never trigger spell-rule
-	-- presentation: no rule match, no rule icon/font/color/sound, no merge key.
-	local spellIdWeak = (evt and evt.spellIdWeak == true) or false
-
-	local probeName = (resolvedSpellID and ZSBT.CleanSpellName and ZSBT.CleanSpellName(resolvedSpellID)) or "?"
-	Dbg4("|cFFCC66FF[OUTDBG]|r", ("Probe kind=%s amt=%s rawPipeId=%s evtSpellId=%s name=%s weak=%s resolved=%s source=%s lastAge=%s target=%s crit=%s auto=%s secret=%s empty=%s")
+	Dbg4("|cFFCC66FF[OUTDBG]|r", ("Probe kind=%s amt=%s rawPipeId=%s evtSpellId=%s resolved=%s source=%s lastAge=%s target=%s crit=%s auto=%s secret=%s empty=%s")
 		:format(
 			tostring(kind),
 			tostring(evt and (evt.amountText or evt.amount)),
 			tostring(evt and evt.rawPipeId),
 			tostring(evt and evt.spellId),
-			tostring(probeName),
-			tostring(evt and evt.spellIdWeak == true),
 			tostring(resolvedSpellID),
 			tostring(spellSource),
 			tostring(lastAge),
@@ -485,21 +453,14 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			tostring(isSecret),
 			tostring(isEmpty)
 		))
-	Dbg5("|cFFCC66FF[OUTDBG]|r", ("CORR Probe dbgChatId=%s src=%s evtSpellId=%s weak=%s resolved=%s spellSource=%s")
+	Dbg5("|cFFCC66FF[OUTDBG]|r", ("CORR Probe dbgChatId=%s src=%s evtSpellId=%s resolved=%s spellSource=%s")
 		:format(
 			tostring(evt and evt.dbgChatId),
 			tostring(evt and evt.amountSource),
 			tostring(evt and evt.spellId),
-			tostring(evt and evt.spellIdWeak == true),
 			tostring(resolvedSpellID),
 			tostring(spellSource)
 		))
-
-	-- Attribution debug panel: record every resolved outgoing event,
-	-- including secret/empty skips, before the early-out below.
-	if ZSBT.AttribPanel and ZSBT.AttribPanel.RecordOutgoing then
-		ZSBT.AttribPanel:RecordOutgoing(evt, resolvedSpellID, spellSource)
-	end
 
 	-- Secret/empty events are used for correlation diagnostics only; they should
 	-- not consume throttle budgets or be attributed to "last cast".
@@ -535,24 +496,16 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 		end
 	end
 
-    -- Miss events: display immediately, gated by the dedicated misses
-    -- config (ZCT parity — independent of the damage toggle).
+    -- Miss events: display immediately with gray color
     if kind == "miss" then
         if prof.damage and prof.damage.showMisses == false then
             return
         end
-        local m = prof.misses
-        local mt = ZSBT.NormalizeMissSubtype
-            and ZSBT.NormalizeMissSubtype(evt.missType) or nil
-        if mt and m and type(m.hidden) == "table" and m.hidden[mt] then
-            return
-        end
-        local area = (m and m.scrollArea)
-            or (prof.damage and prof.damage.scrollArea) or "Outgoing"
+        local conf = prof.damage
+        if not conf or not conf.enabled then return end
+        local area = conf.scrollArea or "Outgoing"
         local missText = ZSBT.IsSafeString(evt.amountText) and evt.amountText or "Miss"
-        local mc = m and m.color
-        local color = (type(mc) == "table") and mc
-            or {r = 0.70, g = 0.70, b = 0.70}
+        local color = {r = 0.70, g = 0.70, b = 0.70}
         local meta = { probe = true, kind = kind }
         if ZSBT.DisplayText then
             ZSBT.DisplayText(area, missText, color, meta)
@@ -570,33 +523,27 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
         ec._rawPipe[evt.rawPipeId] = nil  -- consume it
     end
 
-    	-- Suppress training dummy damage if enabled (damage only — heals and
-    	-- other kinds on dummies must still display).
+    	-- Suppress training dummy damage if enabled
 	local spam = ZSBT.db.profile.spamControl
-	if kind == "damage" and spam and spam.suppressDummyDamage and ZSBT.IsTrainingDummy("target") then
+	if spam and spam.suppressDummyDamage and ZSBT.IsTrainingDummy("target") then
 		return
 	end
 
 		local sr = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl and ZSBT.db.char.spamControl.spellRules
 		local routing = spam and spam.routing
 		local defaultRuleArea = nil
-		if type(resolvedSpellID) == "number" and not spellIdWeak and sr and next(sr) ~= nil and routing and type(routing.spellRulesDefaultArea) == "string" and routing.spellRulesDefaultArea ~= "" then
+		if type(resolvedSpellID) == "number" and sr and next(sr) ~= nil and routing and type(routing.spellRulesDefaultArea) == "string" and routing.spellRulesDefaultArea ~= "" then
 			defaultRuleArea = routing.spellRulesDefaultArea
 		end
 		local ruleArea = nil
 		local rule = nil
-		if sr and type(resolvedSpellID) == "number" and not spellIdWeak then
+		if sr and type(resolvedSpellID) == "number" then
 			rule = sr[resolvedSpellID]
 			if type(rule) == "table" and rule.enabled ~= false then
 				ruleArea = (type(rule.scrollArea) == "string" and rule.scrollArea ~= "") and rule.scrollArea or nil
 			end
 		end
-		-- No explicit rule: apply the default merge window so repeated
-		-- attributed hits roll up like ZCT's spam.merge instead of
-		-- flooding one line per hit.
-		if rule == nil and type(resolvedSpellID) == "number" and not spellIdWeak then
-			rule = DEFAULT_SPELL_AGG_RULE
-		end
+
 		if evt and evt._zsbtAggSkip ~= true and type(resolvedSpellID) == "number" and type(rule) == "table" and rule.enabled ~= false then
 			local wwRuleExists = (sr and (type(sr[1680]) == "table" or type(sr[190411]) == "table")) and true or false
 			if not (wwRuleExists and isWhirlwindSpellId(resolvedSpellID)) then
@@ -694,18 +641,12 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			or evt.amountSource == "UNIT_COMBAT_BEST"
 			or evt.amountSource == "UNIT_COMBAT_PHYSICAL"
 			or evt.amountSource == "UNIT_COMBAT_AUTO_FALLBACK"
-			or evt.amountSource == "ZCT"
 		))
-		if rawPipeValue == nil and prof.showSpellNames and evt.isAuto ~= true and trustedForSpellLabel and not spellIdWeak then
+		if rawPipeValue == nil and prof.showSpellNames and evt.isAuto ~= true and trustedForSpellLabel then
 			local cleanName = ZSBT.CleanSpellName(evt.spellId)
 			if cleanName and ZSBT.IsSafeString(text) then
 				text = text .. " " .. cleanName
 			end
-		end
-
-		-- UNIT_COMBAT flag text (Crushing/Glancing) — whitelisted upstream.
-		if prof.damage and prof.damage.showFlags and ZSBT.IsSafeString(evt.flagText) and evt.flagText ~= "" and ZSBT.IsSafeString(text) then
-			text = text .. " " .. evt.flagText
 		end
 
 		-- Whirlwind burst aggregation (UNIT_COMBAT fallback): append count marker.
@@ -797,23 +738,8 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				critConf = profOut.critDamage
 			end
 		end
-		-- Below critConf.minDisplayAmount a crit is demoted to a normal hit:
-		-- still displayed, but no crit color/routing/sticky presentation.
-		local dispIsCrit = evt.isCrit == true
-			and ZSBT.CritMeetsDisplayMin(critConf, rawPipeValue, isTainted, evt.amount)
-		if evt.isCrit == true then
-			local csrc = "crits"
-			if profOut and critConf == profOut.critDamage then csrc = "critDamage"
-			elseif profOut and critConf == profOut.critHealing then csrc = "critHealing" end
-			local amtShown = "secret"
-			if rawPipeValue ~= nil and ZSBT.IsSafeNumber(rawPipeValue) then amtShown = tostring(rawPipeValue)
-			elseif ZSBT.IsSafeNumber(evt.amount) then amtShown = tostring(evt.amount) end
-			Dbg4("|cFFCC66FF[OUTDBG]|r", ("CRIT_MIN kind=%s src=%s min=%s amt=%s tainted=%s dispIsCrit=%s")
-				:format(tostring(kind), csrc, tostring(critConf and critConf.minDisplayAmount),
-					amtShown, tostring(isTainted), tostring(dispIsCrit)))
-		end
 		-- Crit color: apply configured crit color whenever set (routing is optional)
-		if dispIsCrit then
+		if evt.isCrit then
 			local cc = critConf and critConf.color
 			if type(cc) == "table" and type(cc.r) == "number" and type(cc.g) == "number" and type(cc.b) == "number" then
 				color = { r = cc.r, g = cc.g, b = cc.b }
@@ -829,12 +755,11 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			stream = "outgoing",
 			kind = kind,
 			isAuto = evt.isAuto == true,
-			isCrit = dispIsCrit,
-			isPeriodic = evt.isPeriodic == true,
+			isCrit = evt.isCrit == true,
 			school = evt.schoolMask,
 		}
 		local forceInline = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general and ZSBT.db.profile.general.forceCritsInline == true
-		if type(resolvedSpellID) == "number" and not spellIdWeak then
+		if type(resolvedSpellID) == "number" then
 			meta.spellId = resolvedSpellID
 		end
 
@@ -898,19 +823,13 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 						or evt.amountSource == "UNIT_COMBAT_BEST"
 						or evt.amountSource == "UNIT_COMBAT_PHYSICAL"
 				)) or (evt and evt.isPeriodic == true)
-		local iconAllowed = prof.showSpellIcons and trustedForSpellIcon
-		-- Hard rule: no resolved spellId -> no spell icon. A carried-over
-		-- spellName (cast-matched or otherwise) must never put an ability
-		-- icon on unattributed damage.
-		if iconAllowed and type(resolvedSpellID) == "number"
-			and not spellIdWeak
-			and evt.isAuto ~= true and evt.suppressSpellIcon ~= true then
+		if prof.showSpellIcons and evt.isAuto ~= true and type(resolvedSpellID) == "number" and trustedForSpellIcon then
 			local tex = ZSBT.CleanSpellIcon(resolvedSpellID)
 			if tex then meta.spellIcon = tex end
 		end
 
         local areaToUse = ruleArea or conf.scrollArea or defaultRuleArea or "Outgoing"
-        if (not forceInline) and dispIsCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
+        if (not forceInline) and evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
             areaToUse = critConf.scrollArea
             meta.critRouted = true
             if critConf.sticky ~= false then
@@ -919,7 +838,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
                 meta.stickyScale = 1.12
                 meta.stickyDurationMult = 1.25
             end
-        elseif dispIsCrit and critConf and critConf.sticky ~= false then
+        elseif evt.isCrit and critConf and critConf.sticky ~= false then
             -- Even without routing, allow sticky styling when enabled.
             meta.stickyCrit = true
             meta.stickyJiggle = (critConf.stickyJiggle ~= false)
@@ -936,8 +855,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
 				return "<secret>"
 			end
-			local sname = (evt.spellId and ZSBT.CleanSpellName and ZSBT.CleanSpellName(evt.spellId)) or "?"
-			Addon:Dbg("outgoing", 3, ("t=%.2f"):format(GetTime()), safeDbg(areaToUse), safeDbg(evt.spellId), safeDbg(sname), safeDbg(text))
+			Addon:Dbg("outgoing", 3, safeDbg(areaToUse), safeDbg(evt.spellId), safeDbg(text))
 		elseif dbg >= 3 and Addon and Addon.Print then
 			local function safeDbg(v)
 				if v == nil then return "nil" end
@@ -945,8 +863,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
 				return "<secret>"
 			end
-			local sname = (evt.spellId and ZSBT.CleanSpellName and ZSBT.CleanSpellName(evt.spellId)) or "?"
-			Addon:Print(("|cFF00CC66[OUT]|r t=%.2f "):format(GetTime()) .. safeDbg(areaToUse) .. " " .. safeDbg(evt.spellId) .. " " .. safeDbg(sname) .. " " .. safeDbg(text))
+			Addon:Print("|cFF00CC66[OUT]|r " .. safeDbg(areaToUse) .. " " .. safeDbg(evt.spellId) .. " " .. safeDbg(text))
 		end
 
 		if ZSBT.DisplayText then
@@ -1065,21 +982,8 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				critConf = profOut.critDamage
 			end
 		end
-		local dispIsCrit = evt.isCrit == true
-			and ZSBT.CritMeetsDisplayMin(critConf, rawPipeValue, isTainted, evt.amount)
-		if evt.isCrit == true then
-			local csrc = "crits"
-			if profOut and critConf == profOut.critDamage then csrc = "critDamage"
-			elseif profOut and critConf == profOut.critHealing then csrc = "critHealing" end
-			local amtShown = "secret"
-			if rawPipeValue ~= nil and ZSBT.IsSafeNumber(rawPipeValue) then amtShown = tostring(rawPipeValue)
-			elseif ZSBT.IsSafeNumber(evt.amount) then amtShown = tostring(evt.amount) end
-			Dbg4("|cFFCC66FF[OUTDBG]|r", ("CRIT_MIN kind=%s src=%s min=%s amt=%s tainted=%s dispIsCrit=%s")
-				:format(tostring(kind), csrc, tostring(critConf and critConf.minDisplayAmount),
-					amtShown, tostring(isTainted), tostring(dispIsCrit)))
-		end
 		-- Crit color: apply configured crit color whenever set (routing is optional)
-		if dispIsCrit then
+		if evt.isCrit then
 			local cc = critConf and critConf.color
 			if type(cc) == "table" and type(cc.r) == "number" and type(cc.g) == "number" and type(cc.b) == "number" then
 				color = { r = cc.r, g = cc.g, b = cc.b }
@@ -1093,18 +997,18 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
             replay = isReplay == true,
             stream = "outgoing",
             kind = kind,
-            isCrit = dispIsCrit,
+            isCrit = evt.isCrit == true,
             school = evt.schoolMask,
         }
 		local forceInline = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general and ZSBT.db.profile.general.forceCritsInline == true
-		if type(resolvedSpellID) == "number" and not spellIdWeak then
+		if type(resolvedSpellID) == "number" then
 			meta.spellId = resolvedSpellID
 		end
 
 		maybePlayCritSound(critConf, rawPipeValue, isTainted)
 
 		local areaToUse = ruleArea or conf.scrollArea or defaultRuleArea or "Outgoing"
-		if (not forceInline) and dispIsCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
+		if (not forceInline) and evt.isCrit and critConf and critConf.enabled == true and type(critConf.scrollArea) == "string" and critConf.scrollArea ~= "" then
 			areaToUse = critConf.scrollArea
 			meta.critRouted = true
 			if critConf.sticky ~= false then
@@ -1113,14 +1017,14 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				meta.stickyScale = 1.12
 				meta.stickyDurationMult = 1.25
 			end
-		elseif dispIsCrit and critConf and critConf.sticky ~= false then
+		elseif evt.isCrit and critConf and critConf.sticky ~= false then
 			-- Even without routing, allow sticky styling when enabled.
 			meta.stickyCrit = true
 			meta.stickyJiggle = (critConf.stickyJiggle ~= false)
 			meta.stickyScale = 1.12
 			meta.stickyDurationMult = 1.25
 		end
-		if forceInline and dispIsCrit then
+		if forceInline and evt.isCrit then
 			meta.critAnim = "Area"
 		end
 
@@ -1136,11 +1040,9 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
             end
         end
 
-        -- Attach spell icon if enabled (global toggle only).
-        -- Requires the vetted resolvedSpellID — raw evt.spellId can carry
-        -- unsafe/secret values or bypass the attribution checks above.
-        if prof.showSpellIcons and type(resolvedSpellID) == "number" and not spellIdWeak then
-            local tex = ZSBT.CleanSpellIcon(resolvedSpellID)
+        -- Attach spell icon if enabled
+        if prof.showSpellIcons and evt.spellId then
+            local tex = ZSBT.CleanSpellIcon(evt.spellId)
             if tex then meta.spellIcon = tex end
         end
 
@@ -1150,17 +1052,17 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
             ZSBT.Core.Display:Emit(areaToUse, text, color, meta)
         end
 
-		local function safeDbg(v)
-			if v == nil then return "nil" end
-			if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
-			if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
-			return "<secret>"
-		end
 		local dbg3 = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("outgoing"))
 			or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and ZSBT.db.profile.diagnostics.debugLevel or 0)
 		if dbg3 >= 3 and Addon and Addon.Dbg then
 			Addon:Dbg("outgoing", 3, safeDbg(areaToUse), safeDbg(evt.spellId), safeDbg(text))
 		elseif dbg3 >= 3 and Addon and Addon.Print then
+			local function safeDbg(v)
+				if v == nil then return "nil" end
+				if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
+				if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
+				return "<secret>"
+			end
 			Addon:Print("|cFF00CC66[OUT]|r " .. safeDbg(areaToUse) .. " " .. safeDbg(evt.spellId) .. " " .. safeDbg(text))
 		end
     end

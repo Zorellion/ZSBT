@@ -13,6 +13,14 @@ function Outgoing:ProcessEvent(info)
 	if not info or type(info) ~= "table" then return end
 	if not self._enabled then return end
 
+	-- PvP Strict Mode: battlegrounds/arenas are high-risk for misattribution.
+	-- Always suppress auto-attacks while active.
+	if ZSBT and ZSBT.Core and ZSBT.Core.IsPvPStrictActive and ZSBT.Core:IsPvPStrictActive() == true then
+		if info.isAuto == true then
+			return
+		end
+	end
+
 	local db = ZSBT.db and ZSBT.db.profile
 	if not db or not db.outgoing then return end
 
@@ -51,8 +59,6 @@ function Outgoing:ProcessEvent(info)
 		timestamp = info.timestamp,
 		confidence = info.confidence or "UNKNOWN",
 		isPeriodic = info.isPeriodic == true,
-		missType = info.missType,
-		flagText = info.flagText,
 	}
 
 	local probe = ZSBT.Core and ZSBT.Core.OutgoingProbe

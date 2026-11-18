@@ -3,8 +3,6 @@
 ------------------------------------------------------------------------
 local ADDON_NAME, ZSBT = ...
 
-local L = ZSBT.L
-
 ZSBT.Core = ZSBT.Core or {}
 local Core  = ZSBT.Core
 local Addon = ZSBT.Addon
@@ -38,33 +36,6 @@ function Core:IsAurasSecretContext(updateInfo)
 		end
 	end
 
-	return false
-end
-
--- C_Secrets predicates (SecretPredicateAPIDocumentation): per-index and
--- per-instance answers let us skip individual secret auras instead of
--- abandoning the whole scan. All feature-detected; absent on older clients.
-function Core:AuraSecretGlobal()
-	if C_Secrets and C_Secrets.ShouldAurasBeSecret then
-		local ok, res = pcall(C_Secrets.ShouldAurasBeSecret)
-		if ok and type(res) == "boolean" then return res end
-	end
-	return nil
-end
-
-function Core:AuraIndexSecret(index, filter)
-	if C_Secrets and C_Secrets.ShouldUnitAuraIndexBeSecret then
-		local ok, res = pcall(C_Secrets.ShouldUnitAuraIndexBeSecret, "player", index, filter)
-		if ok then return res == true end
-	end
-	return false
-end
-
-function Core:AuraInstanceSecret(instanceId)
-	if C_Secrets and C_Secrets.ShouldUnitAuraInstanceBeSecret then
-		local ok, res = pcall(C_Secrets.ShouldUnitAuraInstanceBeSecret, "player", instanceId)
-		if ok then return res == true end
-	end
 	return false
 end
 
@@ -104,41 +75,6 @@ function Core:RecordRecentBuff(spellID)
 	end
 end
 
--- Name -> spellID resolution for secret aura contexts. Combat-text aura
--- notices carry a readable name but no spellID; C_Spell/GetSpellInfo accept a
--- name and return the ID even when the aura payload itself is secret.
-local _spellIdByNameCache = {}
-local SPELL_ID_NAME_CACHE_MAX = 512
-local function ResolveSpellIdByName(name)
-	if type(name) ~= "string" then return nil end
-	if ZSBT.IsSafeString and not ZSBT.IsSafeString(name) then return nil end
-	local okEmpty, isEmpty = pcall(function() return name == "" end)
-	if not okEmpty or isEmpty == true then return nil end
-	local cached = _spellIdByNameCache[name]
-	if type(cached) == "number" and cached > 0 then return cached end
-	local sid = nil
-	if C_Spell and C_Spell.GetSpellInfo then
-		local ok, info = pcall(C_Spell.GetSpellInfo, name)
-		sid = ok and info and (info.spellID or info.spellId) or nil
-	end
-	if not (type(sid) == "number" and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid)) and GetSpellInfo then
-		local ok, _, _, _, _, _, _, spellId = pcall(GetSpellInfo, name)
-		if ok and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(spellId) then
-			sid = spellId
-		else
-			sid = nil
-		end
-	end
-	if type(sid) == "number" and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid) then
-		local n = 0
-		for _ in pairs(_spellIdByNameCache) do n = n + 1 end
-		if n >= SPELL_ID_NAME_CACHE_MAX then _spellIdByNameCache = {} end
-		_spellIdByNameCache[name] = sid
-		return sid
-	end
-	return nil
-end
-
 local function getAuraRuleForSpell(spellID)
 	local sc = ZSBT and ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
 	local rules = sc and sc.auraRules
@@ -149,7 +85,7 @@ local function getAuraRuleForSpell(spellID)
 	return rule
 end
 
-function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride, auraName, trusted)
+function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride)
 	local isHarmful = (isHarmfulOverride == true)
 	if isHarmfulOverride == nil and type(spellID) == "number" then
 		if type(AuraUtil) == "table" and type(AuraUtil.FindAuraBySpellId) == "function" then
@@ -158,33 +94,11 @@ function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride, auraName, 
 		end
 	end
 	local rule = getAuraRuleForSpell(spellID)
-	local ruleKey = nil
-	if rule ~= nil then
-		ruleKey = (type(spellID) == "number") and spellID or nil
-	end
-	-- Name-keyed rules ("name:X") match every rank of an aura by name; only
-	-- consulted when no spellID rule exists and the name is readable.
-	if rule == nil and type(auraName) == "string"
-		and ZSBT.IsSafeString and ZSBT.IsSafeString(auraName) then
-		local scn = ZSBT and ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-		local rules = scn and scn.auraRules
-		local nkey = "name:" .. auraName
-		local nr = type(rules) == "table" and rules[nkey] or nil
-		if type(nr) == "table" then
-			rule = (nr.enabled == false) and { disabled = true } or nr
-			ruleKey = nkey
-		elseif nr == false then
-			rule = { disabled = true }
-			ruleKey = nkey
-		end
-	end
 	local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("core"))
 		or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 	if not rule then
 		-- 12.1+ combat/secret context: do not emit unconfigured aura gains/fades.
-		-- Trusted sources (combat-text notices, recast pairing) are reliable
-		-- Blizzard UI signals and bypass this blanket suppression.
-		if trusted ~= true and self.IsAurasSecretContext and self:IsAurasSecretContext() == true then
+		if self.IsAurasSecretContext and self:IsAurasSecretContext() == true then
 			return false
 		end
 		local sc = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
@@ -235,7 +149,7 @@ function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride, auraName, 
 		end
 		return true
 	end
-	if ruleKey == nil then
+	if type(spellID) ~= "number" then
 		return true
 	end
 	if rule.disabled then 
@@ -277,10 +191,10 @@ function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride, auraName, 
 	if throttle <= 0 then return true end
 
 	if not self._auraRuleLastShown then self._auraRuleLastShown = {} end
-	local state = self._auraRuleLastShown[ruleKey]
+	local state = self._auraRuleLastShown[spellID]
 	if type(state) ~= "table" then
 		state = { gain = 0, fade = 0 }
-		self._auraRuleLastShown[ruleKey] = state
+		self._auraRuleLastShown[spellID] = state
 	end
 	local now = GetTime and GetTime() or 0
 	local key = isGain and "gain" or "fade"
@@ -512,10 +426,6 @@ local BLIZZARD_FCT_CVARS = {
     "fctCombatXP",
     "fctCombatXP_v2",
 
-    -- Midnight-era XP gain gate (used by MidnightXP; present on 12.x clients)
-    "floatingCombatTextXPChanges",
-    "floatingCombatTextXPChanges_v2",
-
     -- Midnight 12.0 _v2 CVars (override the legacy ones for crits/procs)
     "floatingCombatTextCombatDamage_v2",
     "floatingCombatTextCombatHealing_v2",
@@ -577,8 +487,6 @@ local BLIZZARD_FCT_XP_REP_HONOR_CVARS = {
 	"floatingCombatTextCombatXP_v2",
 	"fctCombatXP",
 	"fctCombatXP_v2",
-	"floatingCombatTextXPChanges",
-	"floatingCombatTextXPChanges_v2",
 	"floatingCombatTextRepChanges",
 	"floatingCombatTextHonorGains",
 }
@@ -595,46 +503,6 @@ local BLIZZARD_FCT_PET_CVARS = {
 	"floatingCombatTextPetSpellDamage",
 	"floatingCombatTextPetSpellDamage_v2",
 }
-
--- World text CVars gate the C++-side floating text that has no Lua hook
--- (XP gains, honor/rep toasts, etc.). There is no guaranteed off switch,
--- so when ZSBT suppresses every Blizzard text category we additionally
--- inflate world text far off-screen as a last-resort mitigation (same
--- approach as MidnightXP). These are snapshotted with the FCT backup and
--- restored with it; only applied while ALL categories are hidden.
-local BLIZZARD_WORLDTEXT_SCALE_CVARS = {
-	"WorldTextScale",
-	"WorldTextScale_v2",
-}
-local BLIZZARD_WORLDTEXT_Y_CVARS = {
-	"WorldTextScreenY",
-	"WorldTextScreenY_v2",
-}
-local BLIZZARD_WORLDTEXT_CVARS = {}
-for _, cvar in ipairs(BLIZZARD_WORLDTEXT_SCALE_CVARS) do
-	BLIZZARD_WORLDTEXT_CVARS[#BLIZZARD_WORLDTEXT_CVARS + 1] = cvar
-end
-for _, cvar in ipairs(BLIZZARD_WORLDTEXT_Y_CVARS) do
-	BLIZZARD_WORLDTEXT_CVARS[#BLIZZARD_WORLDTEXT_CVARS + 1] = cvar
-end
-
--- Stable filter function for CHAT_MSG_COMBAT_XP_GAIN. On some clients the
--- floating XP popup is spawned by the chat-event display path, so filtering
--- the chat message can suppress it. Filters only gate chat-frame display;
--- other addons' event handlers (including ours) still receive the event.
-local XP_GAIN_CHAT_FILTER = function() return true end
-
-local function setXPGainChatFilter(enabled)
-	if enabled then
-		if ChatFrame_AddMessageEventFilter then
-			ChatFrame_AddMessageEventFilter("CHAT_MSG_COMBAT_XP_GAIN", XP_GAIN_CHAT_FILTER)
-		end
-	else
-		if ChatFrame_RemoveMessageEventFilter then
-			ChatFrame_RemoveMessageEventFilter("CHAT_MSG_COMBAT_XP_GAIN", XP_GAIN_CHAT_FILTER)
-		end
-	end
-end
 
 local function trySetCVarGroup(cvars, value)
 	if type(cvars) ~= "table" then return end
@@ -662,9 +530,6 @@ local function snapshotBlizzardFCTCVarsOnce()
 
     local backup = {}
     for _, cvar in ipairs(BLIZZARD_FCT_CVARS) do
-        backup[cvar] = tryGetCVar(cvar)
-    end
-    for _, cvar in ipairs(BLIZZARD_WORLDTEXT_CVARS) do
         backup[cvar] = tryGetCVar(cvar)
     end
 
@@ -698,7 +563,6 @@ local function clearBlizzardFCTBackup()
     st.hasBackup = false
     st.suppressedByZSBT = false
     st.combatText = nil
-    st.worldTextMinimized = false
 end
 
 local function snapshotCombatTextFramesOnce()
@@ -855,21 +719,9 @@ function Core:SuppressBlizzardFCT()
     -- Additional fallback: some clients route XP/rep/honor through CombatText_AddMessage* paths
     -- even when COMBAT_TEXT_UPDATE isn't exposed. Null them out while suppression is active.
     suppressCombatTextAddFns()
-
-    -- Last-resort world text mitigation (same as the hideAll path in
-    -- ApplyBlizzardFCTCVars); values restored via the FCT backup.
-    for _, cvar in ipairs(BLIZZARD_WORLDTEXT_SCALE_CVARS) do
-        trySetCVar(cvar, "1000")
-    end
-    for _, cvar in ipairs(BLIZZARD_WORLDTEXT_Y_CVARS) do
-        trySetCVar(cvar, "0")
-    end
-    local st = getFCTStateTable()
-    if st then st.worldTextMinimized = true end
 end
 
 function Core:RestoreBlizzardFCT()
-    setXPGainChatFilter(false)
     if restoreBlizzardFCTFromBackup() then
         restoreCombatTextFrames()
         restoreCombatTextAddFns()
@@ -910,9 +762,9 @@ function Core:MaybePromptRestoreBlizzardFCT()
     if not cvarsLookSuppressed() then return end
 
     StaticPopupDialogs["ZSBT_RESTORE_BLIZZARD_FCT"] = {
-        text = L["ZSBT detected Blizzard Floating Combat Text is currently disabled.\n\nRestore your previous Blizzard combat text settings?"],
-        button1 = L["Restore"],
-        button2 = L["Not Now"],
+        text = "ZSBT detected Blizzard Floating Combat Text is currently disabled.\n\nRestore your previous Blizzard combat text settings?",
+        button1 = "Restore",
+        button2 = "Not Now",
         timeout = 0,
         whileDead = true,
         hideOnEscape = true,
@@ -966,7 +818,6 @@ function Core:ApplyBlizzardFCTCVars()
     trySetCVar("CombatHealing", "1")
 
 	if g.hideBlizzardFCT ~= true then
-		setXPGainChatFilter(false)
 		self:RestoreBlizzardFCT()
 		return
 	end
@@ -996,11 +847,6 @@ function Core:ApplyBlizzardFCTCVars()
 	trySetCVarGroup(BLIZZARD_FCT_RESOURCE_GAINS_CVARS, hideRes and "0" or "1")
 	trySetCVarGroup(BLIZZARD_FCT_PET_CVARS, hidePet and "0" or "1")
 
-	-- Chat-event filter for XP gain: suppresses the chat line and, on clients
-	-- where the floating XP popup is spawned by that display path, the popup
-	-- too. ZSBT's own XP notification still fires (filters don't block events).
-	setXPGainChatFilter(hideXP == true)
-
 	if hideAll then
 		suppressCombatTextFrames()
 		suppressCombatTextAddFns()
@@ -1018,29 +864,6 @@ function Core:ApplyBlizzardFCTCVars()
 			restoreCombatTextFrames()
 			restoreCombatTextAddFns()
 		end
-	end
-
-	-- World text mitigation: only when every text category is hidden do we
-	-- inflate world text off-screen, since it affects ALL floating text
-	-- (including kinds ZSBT doesn't cover). Values chosen to match
-	-- MidnightXP's approach.
-	local st = getFCTStateTable()
-	if hideAll then
-		for _, cvar in ipairs(BLIZZARD_WORLDTEXT_SCALE_CVARS) do
-			trySetCVar(cvar, "1000")
-		end
-		for _, cvar in ipairs(BLIZZARD_WORLDTEXT_Y_CVARS) do
-			trySetCVar(cvar, "0")
-		end
-		if st then st.worldTextMinimized = true end
-	elseif st and st.worldTextMinimized == true then
-		for _, cvar in ipairs(BLIZZARD_WORLDTEXT_CVARS) do
-			local backup = st.backup and st.backup[cvar]
-			if backup ~= nil then
-				trySetCVar(cvar, backup)
-			end
-		end
-		st.worldTextMinimized = false
 	end
 
     -- Option C: if ZSBT previously suppressed and the CVars still look off,
@@ -1194,7 +1017,7 @@ function Core:InitLibSinkOutput()
 				text = tostring(text or "")
 			end
 			if type(icon) == "string" and icon ~= "" then
-				text = "|T" .. icon .. L[":15:15:0:0:64:64:4:60:4:60|t "] .. text
+				text = "|T" .. icon .. ":15:15:0:0:64:64:4:60:4:60|t " .. text
 			end
 			local area = resolveAreaForExternal(addonObj, libSink)
 			local color = { r = type(r) == "number" and r or 1, g = type(g) == "number" and g or 1, b = type(b) == "number" and b or 1 }
@@ -1213,7 +1036,7 @@ function Core:InitLibSinkOutput()
 			libSink:RegisterSink(
 				"ZSBT",
 				"ZSBT",
-				L["Route output to Zore's Scrolling Battle Text."],
+				"Route output to Zore's Scrolling Battle Text.",
 				sinkHandler,
 				getScrollAreasList,
 				true
@@ -1242,7 +1065,7 @@ function Core:InitLibSinkOutput()
 				sinkConfig.args.ZSBT = {
 					type = "toggle",
 					name = "ZSBT",
-					desc = L["Route output through ZSBT."],
+					desc = "Route output through ZSBT.",
 				}
 			end)
 
@@ -1293,29 +1116,21 @@ function Core:Enable()
     self:InitBuffTracking()
     self:InitKillAnnouncer()
     self:InitLootTracking()
-    self:InitEmoteTracking()
     self:InitTradeSkillTracking()
 	self:InitInterruptTracking()
     self:InitPowerTracking()
-    self:InitComboPoints()
     self:InitProgressTracking()
 end
 
 function Core:Disable()
     if not self._enabled then return end
     self._enabled = false
-    self._pendingCVarApply = false
 
     if Addon and Addon.Dbg then
 		Addon:Dbg("core", 3, "Core:Disable()")
 	elseif Addon and Addon.DebugPrint then
 		Addon:DebugPrint(1, "Core:Disable()")
 	end
-
-    -- Restore Blizzard combat text: suppression cvars are SAVED, so
-    -- leaving them off would keep the user's default damage display
-    -- dead even with ZSBT fully off.
-    self:RestoreBlizzardFCT()
 
     if self.Combat and self.Combat.Disable then self.Combat:Disable() end
     if self.Cooldowns and self.Cooldowns.Disable then self.Cooldowns:Disable() end
@@ -1352,7 +1167,7 @@ end
 
 ------------------------------------------------------------------------
 -- Trade Skill Notifications
--- Skill ups and learned recipes/spells routed via Notifications.
+-- Skill ups and learned recipes/spells (MSBT-style) routed via Notifications.
 ------------------------------------------------------------------------
 function Core:InitTradeSkillTracking()
 	if self._tradeSkillFrame then return end
@@ -1441,7 +1256,7 @@ function Core:InitTradeSkillTracking()
 			if not learned or learned == "" then
 				return
 			end
-			local tpl = getTemplate("tradeskillLearned", L["Learned: %e"])
+			local tpl = getTemplate("tradeskillLearned", "Learned: %e")
 			local out = applyTemplate(tpl, { e = learned })
 			if out and out ~= "" then
 				Core:EmitNotification(out, { r = 0.2, g = 0.8, b = 1.0 }, "tradeskillLearned")
@@ -1637,67 +1452,67 @@ function Core:InitInterruptTracking()
 	local _spellLabelCache = {}
 	local STOPPER_NAMES = {
 		-- Interrupts
-		[1766] = L["Kick"],
-		[57994] = L["Wind Shear"],
-		[183752] = L["Disrupt"],
-		[47528] = L["Mind Freeze"],
-		[187707] = L["Muzzle"],
-		[31935] = L["Avenger's Shield"],
-		[6552] = L["Pummel"],
-		[96231] = L["Rebuke"],
-		[116705] = L["Spear Hand Strike"],
-		[106839] = L["Skull Bash"],
-		[2139] = L["Counterspell"],
-		[19647] = L["Spell Lock"],
-		[89766] = L["Axe Toss"],
-		[347008] = L["Axe Toss"],
-		[15487] = L["Silence"],
-		[147362] = L["Counter Shot"],
-		[351338] = L["Quell"],
-		[28730] = L["Arcane Torrent"],
+		[1766] = "Kick",
+		[57994] = "Wind Shear",
+		[183752] = "Disrupt",
+		[47528] = "Mind Freeze",
+		[187707] = "Muzzle",
+		[31935] = "Avenger's Shield",
+		[6552] = "Pummel",
+		[96231] = "Rebuke",
+		[116705] = "Spear Hand Strike",
+		[106839] = "Skull Bash",
+		[2139] = "Counterspell",
+		[19647] = "Spell Lock",
+		[89766] = "Axe Toss",
+		[347008] = "Axe Toss",
+		[15487] = "Silence",
+		[147362] = "Counter Shot",
+		[351338] = "Quell",
+		[28730] = "Arcane Torrent",
 		-- Cast-stops (stuns/CC)
-		[107570] = L["Storm Bolt"],
-		[46968] = L["Shockwave"],
-		[132168] = L["Shockwave"],
-		[5246] = L["Intimidating Shout"],
-		[179057] = L["Chaos Nova"],
-		[205630] = L["Illidan's Grasp"],
-		[221562] = L["Asphyxiate"],
-		[108194] = L["Asphyxiate"],
-		[91800] = L["Gnaw"],
-		[47481] = L["Gnaw"],
-		[30283] = L["Shadowfury"],
-		[6789] = L["Mortal Coil"],
-		[6358] = L["Seduction"],
-		[5782] = L["Fear"],
-		[261589] = L["Seduction"],
-		[192058] = L["Capacitor Totem"],
-		[51514] = L["Hex"],
-		[118905] = L["Static Charge"],
-		[19577] = L["Intimidation"],
-		[186387] = L["Bursting Shot"],
-		[213691] = L["Scatter Shot"],
-		[187650] = L["Freezing Trap"],
-		[853] = L["Hammer of Justice"],
-		[20066] = L["Repentance"],
-		[408] = L["Kidney Shot"],
-		[1833] = L["Cheap Shot"],
-		[6770] = L["Sap"],
-		[2094] = L["Blind"],
-		[1776] = L["Gouge"],
-		[119381] = L["Leg Sweep"],
-		[5211] = L["Mighty Bash"],
-		[115078] = L["Paralysis"],
-		[33786] = L["Cyclone"],
-		[339] = L["Entangling Roots"],
-		[118] = L["Polymorph"],
-		[82691] = L["Ring of Frost"],
-		[157981] = L["Blizzard"],
-		[8122] = L["Psychic Scream"],
-		[9484] = L["Shackle Undead"],
-		[605] = L["Mind Control"],
-		[374348] = L["Land Slide"],
-		[370565] = L["Terrorize"],
+		[107570] = "Storm Bolt",
+		[46968] = "Shockwave",
+		[132168] = "Shockwave",
+		[5246] = "Intimidating Shout",
+		[179057] = "Chaos Nova",
+		[205630] = "Illidan's Grasp",
+		[221562] = "Asphyxiate",
+		[108194] = "Asphyxiate",
+		[91800] = "Gnaw",
+		[47481] = "Gnaw",
+		[30283] = "Shadowfury",
+		[6789] = "Mortal Coil",
+		[6358] = "Seduction",
+		[5782] = "Fear",
+		[261589] = "Seduction",
+		[192058] = "Capacitor Totem",
+		[51514] = "Hex",
+		[118905] = "Static Charge",
+		[19577] = "Intimidation",
+		[186387] = "Bursting Shot",
+		[213691] = "Scatter Shot",
+		[187650] = "Freezing Trap",
+		[853] = "Hammer of Justice",
+		[20066] = "Repentance",
+		[408] = "Kidney Shot",
+		[1833] = "Cheap Shot",
+		[6770] = "Sap",
+		[2094] = "Blind",
+		[1776] = "Gouge",
+		[119381] = "Leg Sweep",
+		[5211] = "Mighty Bash",
+		[115078] = "Paralysis",
+		[33786] = "Cyclone",
+		[339] = "Entangling Roots",
+		[118] = "Polymorph",
+		[82691] = "Ring of Frost",
+		[157981] = "Blizzard",
+		[8122] = "Psychic Scream",
+		[9484] = "Shackle Undead",
+		[605] = "Mind Control",
+		[374348] = "Land Slide",
+		[370565] = "Terrorize",
 	}
 	for id, nm in pairs(STOPPER_NAMES) do
 		_spellLabelCache[id] = nm
@@ -2091,7 +1906,7 @@ function Core:InitInterruptTracking()
 							if dl2 >= 5 then
 								SafeDbgPrint("[CastStop Emit] target=" .. safeStr(tn) .. " spellId=" .. tostring(castSpellId) .. " spellName=" .. safeStr(sn))
 							end
-							local tpl = getTemplate("caststops", L["Stopped: %e (%t)"])
+							local tpl = getTemplate("caststops", "Stopped: %e (%t)")
 							local out = applyTemplate(tpl, { e = sn, t = tn })
 							if out and out ~= "" then
 								Core._lastCastStopEmittedAt = GetTime()
@@ -2295,7 +2110,7 @@ function Core:InitInterruptTracking()
 				stopperLabel = Core._lastInterruptSpellName or safeSpellLabel(Core._lastStopperSpellId)
 			end
 			local playerName = UnitName and UnitName("player") or ""
-			local tpl = getTemplate(templateKey or emitCategory, L["%t Interrupted!"])
+			local tpl = getTemplate(templateKey or emitCategory, "%t Interrupted!")
 			local out = applyTemplate(tpl, { e = "", p = playerName, s = stopperLabel, t = targetName })
 			if out and out ~= "" then
 				if emitCategory == "caststops" then
@@ -2338,7 +2153,7 @@ function Core:InitInterruptTracking()
 			end
 
 			if not spellName then
-				local a, b = msg:match(L["You interrupt (.+)'s (.+)%.?"])
+				local a, b = msg:match("You interrupt (.+)'s (.+)%.?")
 				if a and b then
 					b = b:gsub("%s+$", "")
 					b = b:gsub("%.$", "")
@@ -2364,7 +2179,7 @@ function Core:InitInterruptTracking()
 		Core._lastNotifAt = t
 
 		emitCategory = "interrupts"
-		local tpl = getTemplate("interrupts", L["Interrupted: %e"])
+		local tpl = getTemplate("interrupts", "Interrupted: %e")
 		local out = applyTemplate(tpl, { e = spellName, t = targetName })
 		if out and out ~= "" then
 			Core:EmitNotification(out, { r = 1.0, g = 0.6, b = 0.0 }, emitCategory)
@@ -2407,8 +2222,42 @@ function Core:InitKillAnnouncer()
 		ZSBT.Addon:Print(msg)
 	end
 
-	local function FireUT(targetName, source)
-		Core:NoteKillCredit(targetName, source or "frame")
+	local function FireUT(targetName)
+		local t = GetTime and GetTime() or 0
+		local perKillWindowSec = 12.0
+		local maxChainDurationSec = 30.0
+
+		local lastAt = Core._utKillLastAt or 0
+		local startAt = Core._utChainStartAt or 0
+		local withinRolling = (t - lastAt) <= perKillWindowSec
+		local withinCap = (startAt > 0) and ((t - startAt) <= maxChainDurationSec) or true
+
+		if withinRolling and withinCap then
+			Core._utKillChain = (Core._utKillChain or 0) + 1
+		else
+			Core._utKillChain = 1
+			Core._utChainStartAt = t
+		end
+		Core._utKillLastAt = t
+		if not Core._utChainStartAt or Core._utChainStartAt == 0 then
+			Core._utChainStartAt = t
+		end
+
+		local n = Core._utKillChain or 1
+		local tier = tonumber(n) or 1
+		if tier < 1 then tier = 1 end
+		if tier > 7 then tier = 7 end
+		local eventType = "UT_KILL_" .. tostring(tier)
+		local trg = ZSBT.Core and ZSBT.Core.Triggers
+		if trg and trg.FireEvent and type(eventType) == "string" then
+			trg:FireEvent(eventType, {
+				eventType = eventType,
+				event = eventType,
+				unit = "player",
+				value = targetName,
+				count = n,
+			})
+		end
 	end
 
 	self._killAnnouncerFrame:SetScript("OnEvent", function(_, event, msg, ...)
@@ -2430,7 +2279,7 @@ function Core:InitKillAnnouncer()
 			if dl >= 4 then
 				SafePrint("|cFF00CC66[UT]|r ct PARTYKILL tn=" .. dbgSafe(tn or nil))
 			end
-			FireUT(tn, "ct")
+			FireUT(tn or "Target")
 			return
 		end
 		if event == "PLAYER_KILLING_BLOW" then
@@ -2445,7 +2294,7 @@ function Core:InitKillAnnouncer()
 			if dl >= 4 then
 				SafePrint("|cFF00CC66[UT]|r killingblow tn=" .. dbgSafe(tn or nil))
 			end
-			FireUT(tn, "kb")
+			FireUT(tn or "Target")
 			return
 		end
 		if event == "PLAYER_TARGET_CHANGED" then
@@ -2501,7 +2350,7 @@ function Core:InitKillAnnouncer()
 				and nameMatch
 				and outAge and outAge <= 0.90
 				and lastSeenAge and lastSeenAge <= 2.0 then
-				FireUT(tn, "infer")
+				FireUT(tn)
 			end
 			Core._utLastTargetDead = nil
 			Core._utLastTargetName = nil
@@ -2512,7 +2361,7 @@ function Core:InitKillAnnouncer()
 		if event == "UNIT_HEALTH" or event == "UNIT_HEALTH_FREQUENT" then
 			if Core._utKillCreditOnly and Core._utKillCreditSeen then
 				if dl >= 4 then
-					SafePrint(L["|cFF00CC66[UT]|r suppress UNIT_HEALTH (killCreditOnly=true)"])
+					SafePrint("|cFF00CC66[UT]|r suppress UNIT_HEALTH (killCreditOnly=true)")
 				end
 				return
 			end
@@ -2545,7 +2394,7 @@ function Core:InitKillAnnouncer()
 				local tnSafe = (ZSBT.IsSafeString and ZSBT.IsSafeString(tn))
 				local lastSafe = (ZSBT.IsSafeString and ZSBT.IsSafeString(lastName))
 				if dl >= 4 then
-					SafePrint(L["|cFF00CC66[UT]|r killcheck deadEdge=true"]
+					SafePrint("|cFF00CC66[UT]|r killcheck deadEdge=true"
 						.. " age=" .. dbgSafe(age)
 						.. " tn=" .. dbgSafe(tnSafe and tn or nil)
 						.. " last=" .. dbgSafe(lastSafe and lastName or nil))
@@ -2556,9 +2405,9 @@ function Core:InitKillAnnouncer()
 				-- 2) Fallback: if we cannot safely compare names (secret strings), rely on a recent outgoing hit.
 				if lastAt and age and age <= 1.5 then
 					if tnSafe and tn ~= "" and lastSafe and tn == lastName then
-						FireUT(tn, "health")
+						FireUT(tn)
 					elseif not lastSafe then
-						FireUT(tnSafe and tn or nil, "health")
+						FireUT(tnSafe and tn or "Target")
 					end
 				end
 			end
@@ -2578,12 +2427,12 @@ function Core:InitKillAnnouncer()
 
 		local function extractTarget(m)
 			if type(m) ~= "string" then return nil end
-			local t = m:match(L["You have slain (.+)"])
+			local t = m:match("You have slain (.+)")
 			if t then
 				t = t:gsub("[!.]+$", "")
 				return t
 			end
-			t = m:match(L["You have killed (.+)"])
+			t = m:match("You have killed (.+)")
 			if t then
 				t = t:gsub("[!.]+$", "")
 				return t
@@ -2593,94 +2442,8 @@ function Core:InitKillAnnouncer()
 
 		local target = extractTarget(msg)
 		if not target then return end
-		FireUT(target, "chat")
+		FireUT(target)
 	end)
-end
-
--- Kill-credit notification shared by every detection channel:
--- COMBAT_TEXT_UPDATE PARTYKILL ("ct"), PLAYER_KILLING_BLOW ("kb"),
--- target-cleared/health-edge inference ("infer"/"health"), kill chat
--- strings ("chat"), and the ZCT combat-log kill line ("zct").
---
--- `source` labels the channel for cross-channel dedup: the same kill
--- credit can surface on several channels within a few hundred ms and
--- must count once, while repeated signals from the SAME channel are
--- real (multi-kill / AoE chains fire one line per victim).
-local KILL_CREDIT_DEDUP_SEC = 0.35
-
-function Core:NoteKillCredit(targetName, source)
-	if not self:IsMasterEnabled() then return end
-	local t = GetTime and GetTime() or 0
-
-	-- Victim name: explicit arg, else last seen target, else generic —
-	-- same fallback chain the chat path used.
-	if not (ZSBT.IsSafeString and ZSBT.IsSafeString(targetName) and targetName ~= "") then
-		targetName = (ZSBT.IsSafeString and ZSBT.IsSafeString(Core._utLastTargetName)
-			and Core._utLastTargetName ~= "") and Core._utLastTargetName or "Target"
-	end
-
-	-- Authoritative credit seen: suppress the inference fallbacks from
-	-- here on, same as the legacy credit events did.
-	Core._utKillCreditSeen = true
-	Core._utKillCreditOnly = true
-
-	Core._utKillSrcAt = Core._utKillSrcAt or {}
-	local srcAt = Core._utKillSrcAt
-	local src = type(source) == "string" and source or "event"
-
-	local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("notifications"))
-		or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
-	local function killDbg(msg)
-		if dl < 4 then return end
-		if not (ZSBT.Addon and ZSBT.Addon.Print) then return end
-		local tnTxt = (ZSBT.IsSafeString and ZSBT.IsSafeString(targetName)) and targetName or "<secret>"
-		ZSBT.Addon:Print("|cFF00CC66[UT]|r killcredit src=" .. tostring(src)
-			.. " tn=" .. tostring(tnTxt) .. " " .. msg)
-	end
-
-	for s, at in pairs(srcAt) do
-		if s ~= src and (t - at) <= KILL_CREDIT_DEDUP_SEC then
-			killDbg("DEDUPED by=" .. tostring(s))
-			return
-		end
-	end
-	srcAt[src] = t
-	killDbg("FIRED")
-
-	local perKillWindowSec = 12.0
-	local maxChainDurationSec = 30.0
-
-	local lastAt = Core._utKillLastAt or 0
-	local startAt = Core._utChainStartAt or 0
-	local withinRolling = (t - lastAt) <= perKillWindowSec
-	local withinCap = (startAt > 0) and ((t - startAt) <= maxChainDurationSec) or true
-
-	if withinRolling and withinCap then
-		Core._utKillChain = (Core._utKillChain or 0) + 1
-	else
-		Core._utKillChain = 1
-		Core._utChainStartAt = t
-	end
-	Core._utKillLastAt = t
-	if not Core._utChainStartAt or Core._utChainStartAt == 0 then
-		Core._utChainStartAt = t
-	end
-
-	local n = Core._utKillChain or 1
-	local tier = tonumber(n) or 1
-	if tier < 1 then tier = 1 end
-	if tier > 7 then tier = 7 end
-	local eventType = "UT_KILL_" .. tostring(tier)
-	local trg = ZSBT.Core and ZSBT.Core.Triggers
-	if trg and trg.FireEvent and type(eventType) == "string" then
-		trg:FireEvent(eventType, {
-			eventType = eventType,
-			event = eventType,
-			unit = "player",
-			value = targetName,
-			count = n,
-		})
-	end
 end
 
 function Core:IsNotificationCategoryEnabled(category)
@@ -2825,7 +2588,7 @@ function Core:GetNotificationPerTypeConfig(category)
 	return type(conf) == "table" and conf or nil
 end
 
-function Core:EmitNotification(text, color, category, extraMeta)
+function Core:EmitNotification(text, color, category)
 	if category and not self:IsNotificationCategoryEnabled(category) then
 		return
 	end
@@ -2834,14 +2597,10 @@ function Core:EmitNotification(text, color, category, extraMeta)
 		if type(category) == "string" and category ~= "" and self.GetNotificationScrollArea then
 			area = self:GetNotificationScrollArea(category)
 		end
-		local imeta = { kind = "notification", category = category }
-		if type(extraMeta) == "table" then
-			for k, v in pairs(extraMeta) do imeta[k] = v end
-		end
 		if ZSBT.DisplayText then
-			ZSBT.DisplayText(area, text, color, imeta)
+			ZSBT.DisplayText(area, text, color, { kind = "notification", category = category })
 		elseif self.Display and self.Display.Emit then
-			self.Display:Emit(area, text, color, imeta)
+			self.Display:Emit(area, text, color, { kind = "notification", category = category })
 		end
 		return
 	end
@@ -2876,9 +2635,6 @@ function Core:EmitNotification(text, color, category, extraMeta)
 			end
 		end
 	end
-	if type(extraMeta) == "table" then
-		for k, v in pairs(extraMeta) do meta[k] = v end
-	end
 	if ZSBT.DisplayText then
 		ZSBT.DisplayText(area, text, finalColor, meta)
 	elseif self.Display and self.Display.Emit then
@@ -2886,7 +2642,7 @@ function Core:EmitNotification(text, color, category, extraMeta)
 	end
 end
 
-function Core:EmitBuffNotification(spellID, text, color, category, extraMeta, isFade)
+function Core:EmitBuffNotification(spellID, text, color, category)
 	if category and not self:IsNotificationCategoryEnabled(category) then
 		return
 	end
@@ -2903,14 +2659,10 @@ function Core:EmitBuffNotification(spellID, text, color, category, extraMeta, is
 				area = rule.scrollArea
 			end
 		end
-		local bmeta = { kind = "notification" }
-		if type(extraMeta) == "table" then
-			for k, v in pairs(extraMeta) do bmeta[k] = v end
-		end
 		if ZSBT.DisplayText then
-			ZSBT.DisplayText(area, text, color, bmeta)
+			ZSBT.DisplayText(area, text, color, { kind = "notification" })
 		elseif self.Display and self.Display.Emit then
-			self.Display:Emit(area, text, color, bmeta)
+			self.Display:Emit(area, text, color, { kind = "notification" })
 		end
 		return
 	end
@@ -2918,12 +2670,10 @@ function Core:EmitBuffNotification(spellID, text, color, category, extraMeta, is
 	if type(category) == "string" and category ~= "" and self.GetNotificationScrollArea then
 		area = self:GetNotificationScrollArea(category)
 	end
-	local rule = nil
 	if type(spellID) == "number" then
 		local csc = ZSBT and ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
 		local rules = csc and csc.auraRules
-		rule = rules and rules[spellID]
-		if type(rule) ~= "table" or rule.enabled == false then rule = nil end
+		local rule = rules and rules[spellID]
 		if type(rule) == "table" and type(rule.scrollArea) == "string" and rule.scrollArea ~= "" then
 			area = rule.scrollArea
 		end
@@ -2932,21 +2682,6 @@ function Core:EmitBuffNotification(spellID, text, color, category, extraMeta, is
 	local meta = { kind = "notification" }
 	local finalColor = color
 	local conf = type(category) == "string" and category ~= "" and self.GetNotificationPerTypeConfig and self:GetNotificationPerTypeConfig(category) or nil
-	-- Per-rule sound overrides the category sound when the rule defines one.
-	-- Rules may define separate gain/fade sounds; an unset key falls back to
-	-- the legacy shared soundKey so older configs keep working.
-	local soundConf = conf and conf.sound
-	local ruleSoundKey = nil
-	if type(rule) == "table" and type(rule.sound) == "table" then
-		soundConf = rule.sound
-		if soundConf.enabled == true then
-			if isFade == true then
-				ruleSoundKey = soundConf.fadeKey or soundConf.soundKey
-			else
-				ruleSoundKey = soundConf.gainKey or soundConf.soundKey
-			end
-		end
-	end
 	if conf then
 		local style = conf.style
 		if type(style) == "table" then
@@ -2960,53 +2695,11 @@ function Core:EmitBuffNotification(spellID, text, color, category, extraMeta, is
 				meta.spellFontSize = tonumber(style.fontSize)
 			end
 		end
-	end
-	if type(soundConf) == "table" and soundConf.enabled == true and ZSBT.PlayLSMSound then
-		local soundKey = ruleSoundKey or soundConf.soundKey
-		if type(soundKey) == "string" and soundKey ~= "" and soundKey ~= "None" then
-			ZSBT.PlayLSMSound(soundKey)
-		end
-	end
-	if type(extraMeta) == "table" then
-		for k, v in pairs(extraMeta) do meta[k] = v end
-	end
-	-- Per-rule presentation overrides (all opt-in; absent fields keep the
-	-- category/default appearance). Mirrors the spellRules rule.style schema.
-	if type(rule) == "table" then
-		-- A configured rule owns the icon decision: strip inherited icons
-		-- (cast-match/cache) unless the rule opts in via showIcon.
-		if rule.showIcon ~= true then
-			meta.spellIcon = nil
-		end
-		if rule.showIcon == true and meta.spellIcon == nil and type(spellID) == "number" then
-			local tex = nil
-			if C_Spell and C_Spell.GetSpellTexture then
-				local okT, resT = pcall(C_Spell.GetSpellTexture, spellID)
-				if okT and type(resT) == "number" then tex = resT end
-			end
-			if tex == nil and GetSpellTexture then
-				local okT2, resT2 = pcall(GetSpellTexture, spellID)
-				if okT2 and type(resT2) == "number" then tex = resT2 end
-			end
-			if tex ~= nil then meta.spellIcon = tex end
-		end
-		local style = rule.style
-		if type(style) == "table" and style.fontOverride == true then
-			local sc = tonumber(style.fontScale)
-			local face = style.fontFace
-			local outline = style.fontOutline
-			local sz = tonumber(style.fontSize)
-			if (type(face) == "string" and face ~= "") or (type(outline) == "string" and outline ~= "")
-				or (type(sz) == "number" and sz > 0) or (type(sc) == "number" and sc > 0) then
-				meta.spellFontOverride = true
-				meta.spellFontFace = face
-				meta.spellFontOutline = outline
-				meta.spellFontSize = sz
-				meta.spellFontScale = sc
-			end
-			local c = style.color
-			if type(c) == "table" and type(c.r) == "number" and type(c.g) == "number" and type(c.b) == "number" then
-				finalColor = { r = c.r, g = c.g, b = c.b }
+		local sconf = conf.sound
+		if type(sconf) == "table" and sconf.enabled == true and ZSBT.PlayLSMSound then
+			local soundKey = sconf.soundKey
+			if type(soundKey) == "string" and soundKey ~= "" and soundKey ~= "None" then
+				ZSBT.PlayLSMSound(soundKey)
 			end
 		end
 	end
@@ -3016,7 +2709,6 @@ function Core:EmitBuffNotification(spellID, text, color, category, extraMeta, is
 		self.Display:Emit(area, text, finalColor, meta)
 	end
 end
-
 ------------------------------------------------------------------------
 -- Buff / Debuff Tracking
 -- Watches UNIT_AURA on "player" for buff gains and fades.
@@ -3030,15 +2722,6 @@ Core._auraInstanceHarmfulSpellIDs = {} -- [auraInstanceID] = spellID (harmful au
 Core._auraInstanceIsHarmful = {} -- [auraInstanceID] = boolean
 Core._auraRuleLastShown = nil  -- [spellID] = { gain=ts, fade=ts }
 Core._recentBuffStats = nil -- runtime-only: [spellID] = { count=N, lastSeen=ts }
-Core._auraReadAt = nil          -- last readable UNIT_AURA payload (combat-text dedup)
-Core._lastUnreadAuraAt = nil    -- last secret/unreadable UNIT_AURA payload (recast pairing)
-Core._pairedAuraActive = nil   -- [spellID] = gain timestamp for cast-paired secret buffs
-Core._auraInstanceExpires = Core._auraInstanceExpires or {} -- [instanceID] = expirationTime
-Core._buffSpellCache = Core._buffSpellCache or {}           -- [spellID] = { name=, icon= }
-Core._pendingBuffCast = nil     -- { spell=, at= } awaiting an unreadable aura update
-Core._lastCastNotifySpellId = nil -- spellID whose notifyOnCast already fired
-Core._lastCastSpellId = nil
-Core._lastCastAt = nil
 
 function Core:InitBuffTracking()
     if self._buffFrame then return end
@@ -3049,12 +2732,6 @@ function Core:InitBuffTracking()
     self._buffFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
     self._buffFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
     self._buffFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    -- COMBAT_TEXT_UPDATE carries SPELL_AURA_* notices that remain visible
-    -- when UNIT_AURA payloads go secret in combat. Not present on all clients.
-    pcall(function()
-        if C_EventUtils and C_EventUtils.IsEventValid and not C_EventUtils.IsEventValid("COMBAT_TEXT_UPDATE") then return end
-        self._buffFrame:RegisterEvent("COMBAT_TEXT_UPDATE")
-    end)
     self._buffFrame:SetScript("OnEvent", function(_, event, unit, ...)
         local info = ...
 		if event == "PLAYER_ENTERING_WORLD" then
@@ -3096,7 +2773,7 @@ function Core:InitBuffTracking()
 						else
 							local ZSBTAddon = ZSBT and ZSBT.Addon
 							if ZSBTAddon and ZSBTAddon.Print then
-								ZSBTAddon:Print("[AURA] Deferred scan complete, tracked auras: " .. tostring(count) .. L[" sampleIDs: "] .. table.concat(ids, ", "))
+								ZSBTAddon:Print("[AURA] Deferred scan complete, tracked auras: " .. tostring(count) .. " sampleIDs: " .. table.concat(ids, ", "))
 							end
 						end
 					end
@@ -3140,7 +2817,6 @@ function Core:InitBuffTracking()
 			Core._auraInstanceSpellIDs = {}
 			Core._auraInstanceHarmfulSpellIDs = {}
 			Core._auraInstanceIsHarmful = {}
-			Core._auraInstanceExpires = {}
 			Core._auraRuleLastShown = {}
 			Core._auraInitSeq = (tonumber(Core._auraInitSeq) or 0) + 1
 			local auraInitSeq = Core._auraInitSeq
@@ -3208,11 +2884,6 @@ function Core:InitBuffTracking()
             end
             return
         end
-        if event == "COMBAT_TEXT_UPDATE" then
-			-- For this event the first payload arg lands in `unit`.
-			Core:OnCombatTextAura(unit)
-			return
-		end
         if event == "UNIT_SPELLCAST_SUCCEEDED" then
 			if unit ~= "player" then return end
 			if not Core:IsMasterEnabled() then return end
@@ -3220,83 +2891,6 @@ function Core:InitBuffTracking()
 			local trg = ZSBT.Core and ZSBT.Core.Triggers
 			if trg and trg.OnSpellcastSucceeded then
 				pcall(function() trg:OnSpellcastSucceeded(unit, spellId) end)
-			end
-			-- Track the last player cast for aura icon attribution and buff
-			-- recast pairing (secret aura contexts can't see the refresh).
-			Core._lastCastSpellId = spellId
-			Core._lastCastAt = GetTime and GetTime() or 0
-			if type(spellId) == "number" then
-				-- Helpful self-casts seed the buff cache + pending pairing so
-				-- secret UNIT_AURA updates can be attributed by spellID. This is
-				-- the only reliable ID source on Midnight: aura names/payloads
-				-- are secret, but the cast event carries a readable spellID.
-				local helpful = false
-				if C_Spell and C_Spell.IsSpellHelpful then
-					local okH, resH = pcall(C_Spell.IsSpellHelpful, spellId)
-					helpful = okH and resH == true
-				end
-				if helpful then
-					-- A cast on a friendly target is theirs, not a self-buff recast.
-					local exists = UnitExists and UnitExists("target")
-					local assist = exists and UnitCanAssist and UnitCanAssist("player", "target")
-					local isSelf = exists and UnitIsUnit and UnitIsUnit("target", "player")
-					if not (assist and not isSelf) then
-						Core._buffSpellCache = Core._buffSpellCache or {}
-						local centry = Core._buffSpellCache[spellId]
-						if type(centry) ~= "table" then centry = {}; Core._buffSpellCache[spellId] = centry end
-						centry.fromCast = true
-						if centry.name == nil then
-							local cname = nil
-							if C_Spell and C_Spell.GetSpellName then
-								local okN, resN = pcall(C_Spell.GetSpellName, spellId)
-								if okN then cname = resN end
-							end
-							if type(cname) ~= "string" and GetSpellInfo then
-								local okI, resI = pcall(GetSpellInfo, spellId)
-								if okI then cname = resI end
-							end
-							if type(cname) == "string" and cname ~= "" then centry.name = cname end
-						end
-						if centry.icon == nil then
-							local icon = nil
-							if C_Spell and C_Spell.GetSpellTexture then
-								local okI, resI = pcall(C_Spell.GetSpellTexture, spellId)
-								if okI and type(resI) == "number" then icon = resI end
-							end
-							if icon == nil and GetSpellTexture then
-								local okI2, resI2 = pcall(GetSpellTexture, spellId)
-								if okI2 and type(resI2) == "number" then icon = resI2 end
-							end
-							if icon ~= nil then centry.icon = icon end
-						end
-						Core._pendingBuffCast = { spell = spellId, at = Core._lastCastAt }
-						Core:TryRecastBuffMatch()
-					end
-				end
-			end
-			-- Optional per-rule "notify on cast": fires for aura-tracked spells
-			-- when the player actually casts them. Non-castable spells never
-			-- produce UNIT_SPELLCAST_SUCCEEDED, so the option is inert for them.
-			local ar = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl and ZSBT.db.char.spamControl.auraRules
-			local arule = (type(spellId) == "number" and type(ar) == "table") and ar[spellId] or nil
-			if type(arule) == "table" and arule.notifyOnCast == true and arule.enabled ~= false then
-				local cname = nil
-				if C_Spell and C_Spell.GetSpellName then
-					local okN, resN = pcall(C_Spell.GetSpellName, spellId)
-					if okN then cname = resN end
-				end
-				if type(cname) ~= "string" and GetSpellInfo then
-					local okI, resI = pcall(GetSpellInfo, spellId)
-					if okI then cname = resI end
-				end
-				if type(cname) == "string" and cname ~= "" then
-					-- Stamp _auraReadAt so the aura gain arriving moments later
-					-- doesn't double-notify for the same application.
-					Core._auraReadAt = Core._lastCastAt
-					Core._lastCastNotifySpellId = spellId
-					Core:EmitBuffNotification(spellId, BuildAuraNotifText("+", cname),
-						{r = 0.5, g = 0.8, b = 1.0}, "auras")
-				end
 			end
 			return
 		end
@@ -3365,19 +2959,19 @@ end
 function Core:RunAuraTest()
     if not self.IsMasterEnabled or not self:IsMasterEnabled() then
         if Addon and Addon.Print then
-            Addon:Print(L["AuraTest: ZSBT is disabled."])
+            Addon:Print("AuraTest: ZSBT is disabled.")
         end
         return
     end
     self._auraInstanceMap = {}
-    self:EmitNotification(L["AuraTest: scanning..."], {r = 1.0, g = 1.0, b = 0.2})
+    self:EmitNotification("AuraTest: scanning...", {r = 1.0, g = 1.0, b = 0.2})
     self:ScanPlayerAuras(nil)
 
     local count = 0
     for _ in pairs(self._auraInstanceMap or {}) do
         count = count + 1
     end
-    self:EmitNotification(L["AuraTest: found "] .. tostring(count), {r = 1.0, g = 1.0, b = 0.2})
+    self:EmitNotification("AuraTest: found " .. tostring(count), {r = 1.0, g = 1.0, b = 0.2})
 end
 
  local function BuildAuraNotifText(prefix, auraName)
@@ -3469,7 +3063,6 @@ local function extractAuraInfo(auraData)
 end
 
 local function GetPlayerAuraByIndex(index, filter)
-    if Core.AuraIndexSecret and Core:AuraIndexSecret(index, filter) then return nil end
     if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
         local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, "player", index, filter)
         if ok then return aura end
@@ -3526,43 +3119,13 @@ function Core:ScanAuraRulesWatchedPresence(silent)
 
 			local was = cache[sid]
 			local wasPresent = type(was) == "table" and was.present == true
-			-- Throttled diagnostic: shows whether presence detection can see
-			-- this aura in secret contexts (FindAuraBySpellId vs fallbacks).
-			local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("core")) or 0
-			if dl >= 4 then
-				local lastLog = type(was) == "table" and tonumber(was.dbgAt) or 0
-				local nowL = GetTime and GetTime() or 0
-				if nowL - lastLog >= 2.0 then
-					cache[sid] = cache[sid] or {}
-					cache[sid].dbgAt = nowL
-					if Addon and Addon.Dbg then
-						local diagStr = ""
-						local trgD = ZSBT.Core and ZSBT.Core.Triggers
-						local dg = trgD and trgD._presenceDiag and trgD._presenceDiag[sid]
-						if type(dg) == "table" then
-							diagStr = (" sec=%s find=%s enum=%s/%s")
-								:format(tostring(dg.sec), tostring(dg.findHit),
-									tostring(dg.enumRan), tostring(dg.enumHit))
-						end
-						Addon:Dbg("core", 4, ("[AURA-PRESENCE] sid=%s present=%s was=%s silent=%s%s")
-							:format(tostring(sid), tostring(present), tostring(wasPresent),
-								tostring(silent ~= nil and silent == true), diagStr))
-					end
-				end
-			end
 			if present and not wasPresent then
 				local harmful = isHarmfulSpellId(sid)
 				cache[sid] = { present = true, harmful = harmful }
 				if not silent then
-					local name = (ZSBT and ZSBT.CleanSpellName and ZSBT.CleanSpellName(sid)) or (GetSpellInfo and GetSpellInfo(sid)) or (L["Spell #"] .. tostring(sid))
-					-- Cast-pairing may have just announced this gain; don't double it.
-					local stamped = self._auraReadAt
-					local justAnnounced = type(stamped) == "number"
-						and ((GetTime and GetTime() or 0) - stamped) < 0.2
-					local okToShow = (not justAnnounced) and self:ShouldEmitBuffNotif(sid, true, harmful, name) or false
+					local name = (ZSBT and ZSBT.CleanSpellName and ZSBT.CleanSpellName(sid)) or (GetSpellInfo and GetSpellInfo(sid)) or ("Spell #" .. tostring(sid))
+					local okToShow = self:ShouldEmitBuffNotif(sid, true, harmful)
 					if okToShow then
-						-- Mark handled so the combat-text fallback doesn't double it.
-						self._auraReadAt = GetTime and GetTime() or 0
 						local color = harmful and { r = 1.0, g = 0.4, b = 0.4 } or { r = 0.5, g = 0.8, b = 1.0 }
 						if harmful then
 							self:EmitNotification(BuildAuraNotifText("+", name), color, "auras")
@@ -3575,19 +3138,14 @@ function Core:ScanAuraRulesWatchedPresence(silent)
 				local harmful = type(was) == "table" and was.harmful == true
 				cache[sid] = { present = false, harmful = harmful }
 				if not silent then
-					local name = (ZSBT and ZSBT.CleanSpellName and ZSBT.CleanSpellName(sid)) or (GetSpellInfo and GetSpellInfo(sid)) or (L["Spell #"] .. tostring(sid))
-					local stamped = self._auraReadAt
-					local justAnnounced = type(stamped) == "number"
-						and ((GetTime and GetTime() or 0) - stamped) < 0.2
-					local okToShow = (not justAnnounced) and self:ShouldEmitBuffNotif(sid, false, harmful, name) or false
+					local name = (ZSBT and ZSBT.CleanSpellName and ZSBT.CleanSpellName(sid)) or (GetSpellInfo and GetSpellInfo(sid)) or ("Spell #" .. tostring(sid))
+					local okToShow = self:ShouldEmitBuffNotif(sid, false, harmful)
 					if okToShow then
-						-- Mark handled so the combat-text fallback doesn't double it.
-						self._auraReadAt = GetTime and GetTime() or 0
 						local color = { r = 0.6, g = 0.6, b = 0.6 }
 						if harmful then
 							self:EmitNotification(BuildAuraNotifText("-", name), color, "auras")
 						else
-							self:EmitBuffNotification(sid, BuildAuraNotifText("-", name), color, "auras", nil, true)
+							self:EmitBuffNotification(sid, BuildAuraNotifText("-", name), color, "auras")
 						end
 					end
 				end
@@ -3602,26 +3160,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 
 	-- 12.1+ secret aura contexts: do not parse UNIT_AURA delta payloads.
 	-- Maintain configured auraRules via watched spellID presence checks only.
-	-- C_Secrets.ShouldAurasBeSecret gives an authoritative answer when the
-	-- client provides it; the combat/arena heuristics remain as fallback and
-	-- a genuinely secret payload always wins over an explicit "not secret".
-	local secretCtx = self.IsAurasSecretContext and self:IsAurasSecretContext(updateInfo) == true or false
-	local payloadSecret = false
-	if updateInfo ~= nil and HasSecretValues then
-		local okP, resP = pcall(HasSecretValues, updateInfo)
-		payloadSecret = okP and resP == true
-	end
-	local auraSecret = self:AuraSecretGlobal()
-	if auraSecret == true then
-		secretCtx = true
-	elseif auraSecret == false and not payloadSecret then
-		secretCtx = false
-	end
-	if secretCtx then
-		if updateInfo ~= nil then
-			self._lastUnreadAuraAt = GetTime and GetTime() or 0
-			self:TryRecastBuffMatch()
-		end
+	if self.IsAurasSecretContext and self:IsAurasSecretContext(updateInfo) == true then
 		self:ScanAuraRulesWatchedPresence(silent)
 		return
 	end
@@ -3668,6 +3207,27 @@ function Core:ScanPlayerAuras(updateInfo, silent)
         end
     end
 
+	local function ResolveSpellIdByName(name)
+		if type(name) ~= "string" then return nil end
+		if ZSBT.IsSafeString and not ZSBT.IsSafeString(name) then return nil end
+		local okEmpty, isEmpty = pcall(function() return name == "" end)
+		if not okEmpty or isEmpty == true then return nil end
+		if C_Spell and C_Spell.GetSpellInfo then
+			local ok, info = pcall(C_Spell.GetSpellInfo, name)
+			local sid = ok and info and (info.spellID or info.spellId) or nil
+			if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid) then
+				return sid
+			end
+		end
+		if GetSpellInfo then
+			local ok, _, _, _, _, _, _, spellId = pcall(GetSpellInfo, name)
+			if ok and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(spellId) then
+				return spellId
+			end
+		end
+		return nil
+	end
+
     -- Full scan: rebuild everything from scratch
     local isFullUpdate = false
     if not updateInfo then
@@ -3693,16 +3253,6 @@ function Core:ScanPlayerAuras(updateInfo, silent)
             if not auraData then return end
             local instanceId = auraData.auraInstanceID
             if not instanceId then return end
-            -- Secret values (toys, some client builds) can't be used as table
-            -- keys — skip auras whose instanceId isn't a usable number.
-            if ZSBT.IsSafeNumber and not ZSBT.IsSafeNumber(instanceId) then return end
-
-            -- Track expirationTime for refresh detection (updated auras whose
-            -- time left jumped were recast).
-            local auraExp = auraData.expirationTime
-            if type(auraExp) == "number" and not isSecret(auraExp) then
-                if self._auraInstanceExpires then self._auraInstanceExpires[instanceId] = auraExp end
-            end
 
             local sid = ResolveSafeAuraSpellID(auraData)
             local name = extractAuraInfo(auraData)
@@ -3716,15 +3266,6 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                 end
                 if isHelpful and type(sid) == "number" then
                     self:RecordRecentBuff(sid)
-                    -- Cache helpful auras by spell for recast pairing and icon
-                    -- attribution when UNIT_AURA payloads go secret.
-                    if self._buffSpellCache then
-                        local centry = self._buffSpellCache[sid]
-                        if type(centry) ~= "table" then centry = {}; self._buffSpellCache[sid] = centry end
-                        if name then centry.name = name end
-                        local icon = auraData.icon
-                        if icon ~= nil and not isSecret(icon) and (type(icon) == "string" or type(icon) == "number") then centry.icon = icon end
-                    end
                 end
                 if type(sid) == "number" then
                     if isHelpful and self._auraInstanceSpellIDs then
@@ -3744,7 +3285,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                 -- Skip notification during grace period after aura removal (prevents instance ID refresh spam)
                 local inGracePeriod = self._auraGracePeriodUntil and (GetTime and GetTime() or 0) < self._auraGracePeriodUntil
                 if not silent and not seenDuringInit and not inGracePeriod then
-                    local okToShow = self:ShouldEmitBuffNotif(sid, true, isHelpful ~= true, name)
+                    local okToShow = self:ShouldEmitBuffNotif(sid, true, isHelpful ~= true)
                     if okToShow then
                         if sid and type(sid) == "number" then
                             self:EmitBuffNotification(sid, BuildAuraNotifText("+", newInstances[instanceId]), gainColor, "auras")
@@ -3854,10 +3395,10 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                     if isHarmful and (not sid) then
                         sid = self._auraInstanceHarmfulSpellIDs and self._auraInstanceHarmfulSpellIDs[oldInstanceId]
                     end
-                    local okToShow = self:ShouldEmitBuffNotif(sid, false, isHarmful, oldName)
+                    local okToShow = self:ShouldEmitBuffNotif(sid, false, isHarmful)
                     if okToShow then
                         if sid and type(sid) == "number" then
-                            self:EmitBuffNotification(sid, BuildAuraNotifText("-", oldName or "Aura"), {r = 0.6, g = 0.6, b = 0.6}, "auras", nil, true)
+                            self:EmitBuffNotification(sid, BuildAuraNotifText("-", oldName or "Aura"), {r = 0.6, g = 0.6, b = 0.6}, "auras")
                         else
                             self:EmitNotification(BuildAuraNotifText("-", oldName or "Aura"), {r = 0.6, g = 0.6, b = 0.6}, "auras")
                         end
@@ -3880,14 +3421,10 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                 if self._auraInstanceSpellIDs then self._auraInstanceSpellIDs[oldInstanceId] = nil end
                 if self._auraInstanceHarmfulSpellIDs then self._auraInstanceHarmfulSpellIDs[oldInstanceId] = nil end
                 if self._auraInstanceIsHarmful then self._auraInstanceIsHarmful[oldInstanceId] = nil end
-                if self._auraInstanceExpires then self._auraInstanceExpires[oldInstanceId] = nil end
             end
         end
 
         self._auraInstanceMap = newInstances
-        if updateInfo ~= nil then
-            self._auraReadAt = GetTime and GetTime() or 0
-        end
         return
     end
 
@@ -3916,13 +3453,6 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                 -- Some combat updates can omit instance IDs; fall back to full rescan.
                 needsRescan = true
             else
-                if updateInfo ~= nil then
-                    self._auraReadAt = GetTime and GetTime() or 0
-                end
-                local auraExp = aura.expirationTime
-                if type(auraExp) == "number" and not isSecret(auraExp) then
-                    if self._auraInstanceExpires then self._auraInstanceExpires[instanceId] = auraExp end
-                end
                 if not self._auraInstanceMap[instanceId] then
                     self._auraInstanceMap[instanceId] = name or "Aura"
                     local color = {r = 0.5, g = 0.8, b = 1.0}  -- buff blue
@@ -3931,13 +3461,6 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                     end
                     if isHarmful ~= true and type(sid) == "number" then
                         self:RecordRecentBuff(sid)
-                        if self._buffSpellCache then
-                            local centry = self._buffSpellCache[sid]
-                            if type(centry) ~= "table" then centry = {}; self._buffSpellCache[sid] = centry end
-                            if name then centry.name = name end
-                            local icon = aura.icon
-                            if icon ~= nil and not isSecret(icon) and (type(icon) == "string" or type(icon) == "number") then centry.icon = icon end
-                        end
                     end
                     if type(self._auraInstanceIsHarmful) == "table" then
                         self._auraInstanceIsHarmful[instanceId] = isHarmful == true
@@ -3954,7 +3477,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                         self._aurasSeenDuringInit[sid] = true
                     end
                     if not silent then
-                        local okToShow = self:ShouldEmitBuffNotif(sid, true, isHarmful, name)
+                        local okToShow = self:ShouldEmitBuffNotif(sid, true, isHarmful)
                         if okToShow then
 							if isHarmful then
 								self:EmitNotification(BuildAuraNotifText("+", self._auraInstanceMap[instanceId]), color, "auras")
@@ -4003,7 +3526,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 	if updatedAuraInstanceIDs then
 		local needsRescan = false
 		for _, instanceId in safeIpairs(updatedAuraInstanceIDs) do
-			if instanceId and not self:AuraInstanceSecret(instanceId) then
+			if instanceId then
 				local auraData = nil
 				if C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
 					-- In some builds, this can throw when payloads are secret.
@@ -4013,20 +3536,10 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 				end
 
 				if auraData then
-					if updateInfo ~= nil then
-						self._auraReadAt = GetTime and GetTime() or 0
-					end
 					local name, isHarmful = extractAuraInfo(auraData)
 					local sid = ResolveSafeAuraSpellID(auraData)
 					if type(sid) == "number" and isHarmful ~= true then
 						self:RecordRecentBuff(sid)
-						if self._buffSpellCache then
-							local centry = self._buffSpellCache[sid]
-							if type(centry) ~= "table" then centry = {}; self._buffSpellCache[sid] = centry end
-							if name then centry.name = name end
-							local icon = auraData.icon
-							if icon ~= nil and not isSecret(icon) and (type(icon) == "string" or type(icon) == "number") then centry.icon = icon end
-						end
 					end
 					if type(self._auraInstanceIsHarmful) == "table" then
 						self._auraInstanceIsHarmful[instanceId] = isHarmful == true
@@ -4036,34 +3549,6 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 							self._auraInstanceHarmfulSpellIDs[instanceId] = sid
 						elseif isHarmful ~= true and self._auraInstanceSpellIDs then
 							self._auraInstanceSpellIDs[instanceId] = sid
-						end
-					end
-					-- Refresh detection: a recast keeps the same instanceID but
-					-- jumps expirationTime forward. Re-notify like a fresh gain.
-					local newExp = auraData.expirationTime
-					if self._auraInstanceExpires then
-						local oldExp = self._auraInstanceExpires[instanceId]
-						if type(oldExp) == "number" and oldExp > 0
-							and type(newExp) == "number" and not isSecret(newExp)
-							and newExp > oldExp + 2.0 and silent ~= true then
-							local rname = name or self._auraInstanceMap[instanceId]
-							local rsid = (type(sid) == "number") and sid
-								or (self._auraInstanceSpellIDs and self._auraInstanceSpellIDs[instanceId])
-							local isHarmfulAura = (isHarmful == true)
-								or (self._auraInstanceIsHarmful and self._auraInstanceIsHarmful[instanceId] == true)
-							local okToShow = self:ShouldEmitBuffNotif(rsid, true, isHarmfulAura, rname)
-							if okToShow then
-								local rtext = BuildAuraNotifText("+", rname or "Aura")
-								local rcolor = isHarmfulAura and {r = 1.0, g = 0.4, b = 0.4} or {r = 0.5, g = 0.8, b = 1.0}
-								if type(rsid) == "number" and not isHarmfulAura then
-									self:EmitBuffNotification(rsid, rtext, rcolor, "auras")
-								else
-									self:EmitNotification(rtext, rcolor, "auras")
-								end
-							end
-						end
-						if type(newExp) == "number" and not isSecret(newExp) then
-							self._auraInstanceExpires[instanceId] = newExp
 						end
 					end
 					if instanceId and name then
@@ -4106,8 +3591,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 				sid = self._auraInstanceHarmfulSpellIDs and self._auraInstanceHarmfulSpellIDs[instanceId]
 			end
             -- Fallback: if not in cache, try to resolve from game API
-            if not name and not self:AuraInstanceSecret(instanceId)
-                and C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
+            if not name and C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
                 local ok, auraData = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, "player", instanceId)
                 if ok and auraData then
                     name = extractAuraInfo(auraData)
@@ -4154,9 +3638,6 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 				end
 			end
 			if name then
-				if updateInfo ~= nil then
-					self._auraReadAt = GetTime and GetTime() or 0
-				end
 				self._auraInstanceMap[instanceId] = nil
 				-- Skip fade notifications during init (instance IDs are unstable after reload)
 				local inInitWindow = Core._auraInitInProgress
@@ -4191,7 +3672,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 					end
 				end
 				if silent ~= true and not inInitWindow then
-					local okToShow = self:ShouldEmitBuffNotif(sid, false, isHarmful, name)
+					local okToShow = self:ShouldEmitBuffNotif(sid, false, isHarmful)
 					if dl >= 4 then
 						if Addon and Addon.Dbg then
 							Addon:Dbg("core", 4, "[AURA] FADE okToShow=" .. tostring(okToShow))
@@ -4214,7 +3695,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 									end
 								end
 							end
-							self:EmitBuffNotification(sid, BuildAuraNotifText("-", name), {r = 0.6, g = 0.6, b = 0.6}, "auras", nil, true)
+							self:EmitBuffNotification(sid, BuildAuraNotifText("-", name), {r = 0.6, g = 0.6, b = 0.6}, "auras")
 						else
 							if dl >= 4 then
 								if Addon and Addon.Dbg then
@@ -4270,7 +3751,6 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 				if self._auraInstanceSpellIDs then self._auraInstanceSpellIDs[instanceId] = nil end
 				if self._auraInstanceHarmfulSpellIDs then self._auraInstanceHarmfulSpellIDs[instanceId] = nil end
 				if self._auraInstanceIsHarmful then self._auraInstanceIsHarmful[instanceId] = nil end
-				if self._auraInstanceExpires then self._auraInstanceExpires[instanceId] = nil end
 			end
 		end
 		if needsRescan then
@@ -4331,230 +3811,6 @@ function Core:ScanPlayerAuras(updateInfo, silent)
             self:ScanPlayerAuras(nil)
         end
     end
-end
-
-------------------------------------------------------------------------
--- Combat-text aura fallback
--- SPELL_AURA_* combat-text notices still fire when UNIT_AURA payloads go
--- secret in combat. Deduped against _auraReadAt so readable UNIT_AURA
--- updates always win.
-------------------------------------------------------------------------
-function Core:OnCombatTextAura(kind)
-	if type(kind) ~= "string" then return end
-	local gained = kind == "SPELL_AURA_START" or kind == "SPELL_AURA_START_HARMFUL"
-	local faded  = kind == "SPELL_AURA_END" or kind == "SPELL_AURA_END_HARMFUL"
-	if not (gained or faded) then return end
-	if not (C_CombatText and C_CombatText.GetCurrentEventInfo) then return end
-	local name = C_CombatText.GetCurrentEventInfo()
-	if name == nil then return end
-	local harmful = kind:find("HARMFUL", 1, true) ~= nil
-	local at = GetTime and GetTime() or 0
-	C_Timer.After(0.15, function()
-		if not (Core.IsMasterEnabled and Core:IsMasterEnabled()) then return end
-		if self._auraReadAt and self._auraReadAt >= at - 0.2 then return end
-		-- Respect the same anti-spam windows the UNIT_AURA path uses.
-		local now = GetTime and GetTime() or 0
-		if self._auraInitInProgress or (self._suppressAurasUntil and now < self._suppressAurasUntil) then return end
-		local safeName = (ZSBT.IsSafeString and ZSBT.IsSafeString(name)) and name or nil
-		-- Secret aura fade attribution: the END event carries no readable name,
-		-- but if exactly one cast-paired buff is active it is almost certainly
-		-- the one fading. Ambiguous cases (0 or 2+ active) fall through to the
-		-- normal toggle-gated path.
-		if faded and not harmful and safeName == nil then
-			local active = self._pairedAuraActive
-			if type(active) == "table" then
-				local onlySid = nil
-				local count = 0
-				local nowA = GetTime and GetTime() or 0
-				for sid, ts in pairs(active) do
-					if type(sid) == "number" and type(ts) == "number" and (nowA - ts) <= 300 then
-						count = count + 1
-						onlySid = sid
-					else
-						active[sid] = nil
-					end
-				end
-				if count == 1 and type(onlySid) == "number" then
-					-- Presence polling may have already announced this fade.
-					local stamped = self._auraReadAt
-					local justAnnounced = type(stamped) == "number"
-						and ((GetTime and GetTime() or 0) - stamped) < 0.3
-					local entry = self._buffSpellCache and self._buffSpellCache[onlySid]
-					local dname = type(entry) == "table" and entry.name or nil
-					local okFade = (not justAnnounced) and self:ShouldEmitBuffNotif(onlySid, false, false, dname, true) or false
-					if okFade then
-						active[onlySid] = nil
-						self._auraReadAt = GetTime and GetTime() or 0
-						self:EmitBuffNotification(onlySid, BuildAuraNotifText("-", dname or "Aura"),
-							{r = 0.6, g = 0.6, b = 0.6}, "auras", nil, true)
-						return
-					end
-				end
-			end
-		end
-		-- Resolve the readable aura name back to a spellID so numeric auraRules,
-		-- recent-buff tracking, and the recast/icon caches all work in secret
-		-- contexts where UNIT_AURA never exposes the ID.
-		local resolvedSid = safeName and ResolveSpellIdByName(safeName) or nil
-		if gained and not harmful and type(resolvedSid) == "number" then
-			self:RecordRecentBuff(resolvedSid)
-			if self._buffSpellCache then
-				local centry = self._buffSpellCache[resolvedSid]
-				if type(centry) ~= "table" then centry = {}; self._buffSpellCache[resolvedSid] = centry end
-				centry.name = safeName
-				local icon = nil
-				if C_Spell and C_Spell.GetSpellTexture then
-					local okI, resI = pcall(C_Spell.GetSpellTexture, resolvedSid)
-					if okI and type(resI) == "number" then icon = resI end
-				end
-				if icon == nil and GetSpellTexture then
-					local okI2, resI2 = pcall(GetSpellTexture, resolvedSid)
-					if okI2 and type(resI2) == "number" then icon = resI2 end
-				end
-				if icon ~= nil then centry.icon = icon end
-			end
-		end
-		local okToShow = self:ShouldEmitBuffNotif(resolvedSid, gained, harmful, safeName, true)
-		if not okToShow then return end
-		local prefix = gained and "+" or "-"
-		local color
-		if gained then
-			color = harmful and {r = 1.0, g = 0.4, b = 0.4} or {r = 0.5, g = 0.8, b = 1.0}
-		else
-			color = {r = 0.6, g = 0.6, b = 0.6}
-		end
-		-- Attribute the buff's icon only when the aura name positively matches
-		-- the same-frame helpful cast — same-frame alone misattributes icons
-		-- to unrelated procs/buffs landing in the same frame.
-		local extraMeta = nil
-		if gained and not harmful and safeName and self._lastCastSpellId
-			and math.abs((self._lastCastAt or 0) - at) <= 0.005 then
-			local spell = self._lastCastSpellId
-			local spellName = nil
-			if C_Spell and C_Spell.GetSpellName then
-				local okN, resN = pcall(C_Spell.GetSpellName, spell)
-				if okN then spellName = resN end
-			end
-			if type(spellName) ~= "string" and GetSpellInfo then
-				local okI, resI = pcall(GetSpellInfo, spell)
-				if okI then spellName = resI end
-			end
-			if type(spellName) == "string" and spellName ~= ""
-				and spellName:lower() == safeName:lower() then
-				local tex = nil
-				if C_Spell and C_Spell.GetSpellTexture then
-					local okT, resT = pcall(C_Spell.GetSpellTexture, spell)
-					if okT and type(resT) == "number" then tex = resT end
-				end
-				if not tex and GetSpellTexture then
-					local okT2, resT2 = pcall(GetSpellTexture, spell)
-					if okT2 and type(resT2) == "number" then tex = resT2 end
-				end
-				if tex then extraMeta = { spellIcon = tex } end
-			end
-		end
-		if type(resolvedSid) == "number" then
-			self:EmitBuffNotification(resolvedSid, BuildAuraNotifText(prefix, name), color, "auras", extraMeta, gained ~= true)
-		else
-			self:EmitNotification(BuildAuraNotifText(prefix, name), color, "auras", extraMeta)
-		end
-	end)
-end
-
-------------------------------------------------------------------------
--- Buff recast pairing
--- Recasting a buff you already have refreshes it: no aura is added, and in
--- secret contexts the UNIT_AURA payload can't be read at all. A cast of a
--- spell we've previously seen as our own buff, within 0.5s of an unreadable
--- aura update, re-shows that buff's cached name/icon.
-------------------------------------------------------------------------
-function Core:TryRecastBuffMatch()
-	local cast = self._pendingBuffCast
-	if type(cast) ~= "table" then return end
-	local now = GetTime and GetTime() or 0
-	if now - (cast.at or 0) > 2.0 then
-		self._pendingBuffCast = nil
-		return
-	end
-	local unread = self._lastUnreadAuraAt
-	if type(unread) ~= "number" or math.abs(cast.at - unread) > 0.5 then return end
-	self._pendingBuffCast = nil
-	local entry = self._buffSpellCache and self._buffSpellCache[cast.spell]
-	if type(entry) ~= "table" then return end
-	-- A secret aura update coincided with this cast: record it as a seen buff
-	-- so the Buff Rules "Recent Buffs" list populates in secret contexts.
-	self:RecordRecentBuff(cast.spell)
-	local now2 = GetTime and GetTime() or 0
-	-- If notifyOnCast already announced this application, skip the gain emit
-	-- but still track the pairing for fade attribution.
-	local castNotified = self._lastCastNotifySpellId == cast.spell
-		and type(cast.at) == "number" and (now2 - cast.at) <= 1.0
-	if castNotified then
-		self._pairedAuraActive = self._pairedAuraActive or {}
-		self._pairedAuraActive[cast.spell] = now2
-		self._pendingBuffCast = nil
-		return
-	end
-	if self._auraInitInProgress or (self._suppressAurasUntil and now2 < self._suppressAurasUntil) then return end
-	local okToShow = self:ShouldEmitBuffNotif(cast.spell, true, false, entry.name, true)
-	if not okToShow then return end
-	-- Mark the aura as handled so the combat-text fallback doesn't double it.
-	self._auraReadAt = now2
-	local extraMeta = nil
-	if entry.icon ~= nil and (type(entry.icon) == "string" or type(entry.icon) == "number") then
-		extraMeta = { spellIcon = entry.icon }
-	end
-	self:EmitBuffNotification(cast.spell, BuildAuraNotifText("+", entry.name or "Aura"),
-		{r = 0.5, g = 0.8, b = 1.0}, "auras", extraMeta)
-	-- Track the pairing so a later secret SPELL_AURA_END can be attributed
-	-- back to this buff when it's the only active candidate.
-	self._pairedAuraActive = self._pairedAuraActive or {}
-	self._pairedAuraActive[cast.spell] = now2
-end
-
--- Debug helper: dump the player's helpful auras (cache + live scan) so absorb
--- sources can be identified. Secret values are never inspected; names print
--- as <secret> when unreadable, spellIDs print when they are safe numbers.
-function Core:DebugDumpPlayerAuras(tag)
-	local Addon = ZSBT and ZSBT.Addon
-	if not (Addon and Addon.Dbg) then return end
-	if (Addon:GetDebugLevel("incoming") or 0) < 4 then return end
-	tag = tag or "AURA_DUMP"
-	local function sstr(v)
-		if v == nil then return "nil" end
-		if type(v) == "number" then return tostring(v) end
-		if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then return v end
-		local ok, s = pcall(tostring, v)
-		if ok and type(s) == "string" and #s > 0 and #s < 80 then return s end
-		return "<secret>"
-	end
-	local map = self._auraInstanceMap or {}
-	local sids = self._auraInstanceSpellIDs or {}
-	local n = 0
-	for id, name in pairs(map) do
-		n = n + 1
-		if n > 40 then break end
-		Addon:Dbg("incoming", 4, ("[%s] cache inst=%s sid=%s name=%s")
-			:format(tag, tostring(id), tostring(sids[id]), sstr(name)))
-	end
-	if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-		for i = 1, 40 do
-			local ok, d = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
-			if not ok or type(d) ~= "table" then break end
-			local okF, sid, nm, inst = pcall(function()
-				return (d.spellId or d.spellID), d.name, d.auraInstanceID
-			end)
-			if not okF then
-				Addon:Dbg("incoming", 4, ("[%s] idx=%d <secret aura>"):format(tag, i))
-			else
-				Addon:Dbg("incoming", 4, ("[%s] idx=%d sid=%s name=%s inst=%s")
-					:format(tag, i, sstr(sid), sstr(nm), tostring(inst)))
-			end
-		end
-	end
-	if n == 0 then
-		Addon:Dbg("incoming", 4, ("[%s] no cached auras"):format(tag))
-	end
 end
 
 function Core:InitLootTracking()
@@ -4641,9 +3897,9 @@ function Core:InitLootTracking()
 		return (s:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1"))
 	end
 
-	local GOLD = (type(GOLD_AMOUNT) == "string") and GOLD_AMOUNT:gsub(L["%%d *"], "") or nil
-	local SILVER = (type(SILVER_AMOUNT) == "string") and SILVER_AMOUNT:gsub(L["%%d *"], "") or nil
-	local COPPER = (type(COPPER_AMOUNT) == "string") and COPPER_AMOUNT:gsub(L["%%d *"], "") or nil
+	local GOLD = (type(GOLD_AMOUNT) == "string") and GOLD_AMOUNT:gsub("%%d *", "") or nil
+	local SILVER = (type(SILVER_AMOUNT) == "string") and SILVER_AMOUNT:gsub("%%d *", "") or nil
+	local COPPER = (type(COPPER_AMOUNT) == "string") and COPPER_AMOUNT:gsub("%%d *", "") or nil
 	local GOLD_PAT = GOLD and escapePattern(GOLD) or nil
 	local SILVER_PAT = SILVER and escapePattern(SILVER) or nil
 	local COPPER_PAT = COPPER and escapePattern(COPPER) or nil
@@ -4811,33 +4067,6 @@ function Core:InitLootTracking()
 end
 
 ------------------------------------------------------------------------
--- Monster Emote Tracking
--- CHAT_MSG_MONSTER_EMOTE delivers (message, sourceName); the message
--- contains a %s placeholder for the speaker. Scroll it only when the
--- speaker is the player's current target.
-------------------------------------------------------------------------
-function Core:InitEmoteTracking()
-	if self._emoteFrame then return end
-	self._emoteFrame = CreateFrame("Frame")
-	self._emoteFrame:RegisterEvent("CHAT_MSG_MONSTER_EMOTE")
-	self._emoteFrame:SetScript("OnEvent", function(_, event, msg, sourceName)
-		if not Core:IsMasterEnabled() then return end
-		if not Core:IsNotificationCategoryEnabled("emotes") then return end
-		if type(msg) ~= "string" or msg == "" then return end
-		if type(sourceName) ~= "string" or sourceName == "" then return end
-		if not (ZSBT.IsSafeString and ZSBT.IsSafeString(msg) and ZSBT.IsSafeString(sourceName)) then return end
-		if type(UnitName) ~= "function" then return end
-		local okT, targetName = pcall(UnitName, "target")
-		-- UnitName can return a secret string in group content; any
-		-- comparison against it errors, so bail when it isn't safe.
-		if not (okT and ZSBT.IsSafeString and ZSBT.IsSafeString(targetName) and targetName ~= "") then return end
-		if targetName ~= sourceName then return end
-		local text = msg:gsub("%%s", sourceName)
-		Core:EmitNotificationTemplate("emotes", "%e", { e = text }, { r = 0.8, g = 0.6, b = 1.0 })
-	end)
-end
-
-------------------------------------------------------------------------
 -- Honor / XP / Reputation Tracking
 -- Backup path via CHAT_MSG events (COMBAT_TEXT_UPDATE may not fire
 -- for all honor/XP gains, especially from quests/bonus events).
@@ -4892,15 +4121,15 @@ local function _initRepChangePatterns()
 	add(_G.FACTION_STANDING_DECREASED, -1)
 	add(_G.FACTION_STANDING_DECREASED_GENERIC, -1)
 
-	add(L["Reputation with %s increased by %d."], 1)
-	add(L["Reputation with %s decreased by %d."], -1)
-	add(L["Your reputation with %s has increased by %d."], 1)
-	add(L["Your reputation with %s has decreased by %d."], -1)
+	add("Reputation with %s increased by %d.", 1)
+	add("Reputation with %s decreased by %d.", -1)
+	add("Your reputation with %s has increased by %d.", 1)
+	add("Your reputation with %s has decreased by %d.", -1)
 
-	table.insert(_repChangePatterns, { pat = L["Reputation with (.+) increased by ([%d,]+)"], sign = 1 })
-	table.insert(_repChangePatterns, { pat = L["Reputation with (.+) decreased by ([%d,]+)"], sign = -1 })
-	table.insert(_repChangePatterns, { pat = L["Your reputation with (.+) has increased by ([%d,]+)"], sign = 1 })
-	table.insert(_repChangePatterns, { pat = L["Your reputation with (.+) has decreased by ([%d,]+)"], sign = -1 })
+	table.insert(_repChangePatterns, { pat = "Reputation with (.+) increased by ([%d,]+)", sign = 1 })
+	table.insert(_repChangePatterns, { pat = "Reputation with (.+) decreased by ([%d,]+)", sign = -1 })
+	table.insert(_repChangePatterns, { pat = "Your reputation with (.+) has increased by ([%d,]+)", sign = 1 })
+	table.insert(_repChangePatterns, { pat = "Your reputation with (.+) has decreased by ([%d,]+)", sign = -1 })
 end
 
 function Core:ParseReputationChangeMessage(msg)
@@ -5021,9 +4250,9 @@ function Core:InitProgressTracking()
 						or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 					local okName, playerName = pcall(UnitName, "player")
 					if not okName or type(playerName) ~= "string" then playerName = nil end
-					local who, amt = text:match(L["(.+) has gained (%d[%d,]+) experience"])
+					local who, amt = text:match("(.+) has gained (%d[%d,]+) experience")
 					if not who or not amt then
-						who, amt = text:match(L["(.+) gains (%d[%d,]+) experience"])
+						who, amt = text:match("(.+) gains (%d[%d,]+) experience")
 					end
 					if not who or not amt then return end
 					if playerName and who == playerName then return end
@@ -5069,15 +4298,11 @@ function Core:InitProgressTracking()
 			if not okName or type(playerName) ~= "string" then playerName = nil end
 			local xp, whoXP = nil, nil
 			pcall(function()
-				xp = msg:match(L["You gain (%d[%d,]+) experience"])
+				xp = msg:match("You gain (%d[%d,]+) experience")
 				if not xp then
-					-- Forever/Classic-style: "<mob> dies, you gain 70 experience."
-					xp = msg:match(L["you gain (%d[%d,]+) experience"])
-				end
-				if not xp then
-					local who, amt = msg:match(L["(.+) gains (%d[%d,]+) experience"])
+					local who, amt = msg:match("(.+) gains (%d[%d,]+) experience")
 					if not who or not amt then
-						who, amt = msg:match(L["(.+) has gained (%d[%d,]+) experience"])
+						who, amt = msg:match("(.+) has gained (%d[%d,]+) experience")
 					end
 					if who and amt then
 						if playerName and who == playerName then
@@ -5120,11 +4345,11 @@ function Core:InitProgressTracking()
 			end
         elseif event == "CHAT_MSG_COMBAT_HONOR_GAIN" then
             if (t - Core._lastHonorNotifAt) < PROGRESS_DEDUP_WINDOW then return end
-            local honor = msg:match(L["(%d[%d,]+) honor"])
+            local honor = msg:match("(%d[%d,]+) honor")
             if honor then
                 honor = honor:gsub(",", "")
                 Core._lastHonorNotifAt = t
-				Core:EmitNotification("+" .. honor .. L[" Honor"], {r = 1.0, g = 0.5, b = 0.0}, "honor")
+				Core:EmitNotification("+" .. honor .. " Honor", {r = 1.0, g = 0.5, b = 0.0}, "honor")
             end
 		elseif event == "CHAT_MSG_COMBAT_FACTION_CHANGE" or event == "CHAT_MSG_COMBAT_FACTION_CHANGE_STAT" then
 			if (t - Core._lastRepNotifAt) < PROGRESS_DEDUP_WINDOW then return end
@@ -5155,1031 +4380,38 @@ function Core:InitPowerTracking()
         if unit ~= "player" then return end
         if not Core:IsMasterEnabled() then return end
 
-        -- Track every power type this class can use so each resource's
-        -- "Resource Full" text notification fires independently.
-        local types = {}
-        for i = 0, 20 do
-            if ZSBT.CpPowerTypeAllowed and ZSBT.CpPowerTypeAllowed(i) then
-                types[#types + 1] = i
+        -- Only track primary resource
+        local pType = UnitPowerType("player")
+        local current = UnitPower("player", pType)
+        local max = UnitPowerMax("player", pType)
+
+        if not ZSBT.IsSafeNumber(current) or not ZSBT.IsSafeNumber(max) then return end
+        if max <= 0 then return end
+
+        local pct = (current / max) * 100
+        local prevPct = Core._lastPowerPct[pType] or 0
+        Core._lastPowerPct[pType] = pct
+
+        -- Notify at full resource
+        if pct >= 100 and prevPct < 100 then
+            local powerName = "Resource"
+            if pType == 0 then powerName = "Mana"
+            elseif pType == 1 then powerName = "Rage"
+            elseif pType == 2 then powerName = "Focus"
+            elseif pType == 3 then powerName = "Energy"
+            elseif pType == 4 then powerName = "Combo Points"
+            elseif pType == 6 then powerName = "Runic Power"
+            elseif pType == 8 then powerName = "Astral Power"
+            elseif pType == 9 then powerName = "Holy Power"
+            elseif pType == 11 then powerName = "Maelstrom"
+            elseif pType == 12 then powerName = "Chi"
+            elseif pType == 13 then powerName = "Insanity"
+            elseif pType == 17 then powerName = "Fury"
+            elseif pType == 18 then powerName = "Pain"
             end
-        end
-        if #types == 0 then
-            local pType = UnitPowerType("player")
-            if pType ~= nil then types[1] = pType end
-        end
-
-        for _, pt in ipairs(types) do
-            local current = UnitPower("player", pt)
-            local max = UnitPowerMax("player", pt)
-
-            if ZSBT.IsSafeNumber(current) and ZSBT.IsSafeNumber(max) and max > 0 then
-                local pct = (current / max) * 100
-                local prevPct = Core._lastPowerPct[pt] or 0
-                Core._lastPowerPct[pt] = pct
-
-                -- Notify at full resource. Per-resource opt-in: the
-                -- "power_<pt>" flag must be explicitly enabled in that
-                -- resource's config window (absent = off, so classes with
-                -- several power types don't spam "X Full!" texts).
-                if pct >= 100 and prevPct < 100 then
-                    local p = ZSBT.db and ZSBT.db.profile
-                    local n = p and p.notifications
-                    if n and n["power_" .. pt] == true then
-                        Core:EmitNotificationTemplate("power_" .. pt, "%e Full!",
-                            { e = ZSBT.PowerTypeName and ZSBT.PowerTypeName(pt) or "Resource" },
-                            {r = 1.0, g = 0.6, b = 0.0})
-                    end
-                end
-            end
+            Core:EmitNotification(powerName .. " Full!", {r = 1.0, g = 0.6, b = 0.0}, "power")
         end
     end)
-end
-
-------------------------------------------------------------------------
--- Resource Counter
--- Persistent on-screen counters for unit power types (combo points,
--- soul shards, mana, etc.), one frame per configured power type.
-------------------------------------------------------------------------
-
-local CP_ANCHORS = {
-    ["Top Left"]     = { fx = -1, fy =  1 },
-    ["Top"]          = { fx =  0, fy =  1 },
-    ["Top Right"]    = { fx =  1, fy =  1 },
-    ["Left"]         = { fx = -1, fy =  0 },
-    ["Center"]       = { fx =  0, fy =  0 },
-    ["Right"]        = { fx =  1, fy =  0 },
-    ["Bottom Left"]  = { fx = -1, fy = -1 },
-    ["Bottom"]       = { fx =  0, fy = -1 },
-    ["Bottom Right"] = { fx =  1, fy = -1 },
-}
-
-local CP_MAX_PIPS = 12
-local CP_PIP_SIZE = 12
-local CP_PIP_SPACING = 18
-
--- DK rune slot shapes (power type 5). White-with-alpha TGAs tinted by the
--- counter's color settings; "square" could reuse WHITE8X8 but keeping all
--- four in Media keeps the code path uniform.
-local RUNE_SHAPE_TEX = {
-    square  = "Interface\\AddOns\\ZSBT\\Media\\Textures\\ZSBT_Rune_Square.tga",
-    diamond = "Interface\\AddOns\\ZSBT\\Media\\Textures\\ZSBT_Rune_Diamond.tga",
-    circle  = "Interface\\AddOns\\ZSBT\\Media\\Textures\\ZSBT_Rune_Circle.tga",
-    hexagon = "Interface\\AddOns\\ZSBT\\Media\\Textures\\ZSBT_Rune_Hexagon.tga",
-}
-
-------------------------------------------------------------------------
--- Resource counters are keyed by power type under
--- profile.resourceCounters[powerType]. Legacy profiles keep their single
--- counter settings in flat comboPoints.* keys; the first access migrates
--- them onto the effective power type (saved powerType when the class can
--- use it, otherwise the unit's main power).
-------------------------------------------------------------------------
-
--- Power types each class can actually use. UnitPowerMax returns a positive
--- max for EVERY power type (combo points reads 5 even on a warlock), so
--- "readable value" checks alone cannot filter — gate by class token.
-local ZSBT_CP_CLASS_POWERS = {
-	WARRIOR      = { [1] = true },
-	PALADIN      = { [0] = true, [9] = true },
-	HUNTER       = { [2] = true },
-	ROGUE        = { [3] = true, [4] = true },
-	PRIEST       = { [0] = true, [13] = true },
-	DEATHKNIGHT  = { [5] = true, [6] = true },
-	SHAMAN       = { [0] = true, [11] = true },
-	MAGE         = { [0] = true, [16] = true },
-	WARLOCK      = { [0] = true, [7] = true },
-	MONK         = { [3] = true, [12] = true },
-	DRUID        = { [0] = true, [1] = true, [3] = true, [4] = true },
-	DEMONHUNTER  = { [17] = true, [18] = true },
-	EVOKER       = { [0] = true },
-}
-
-function ZSBT.CpPowerTypeAllowed(i)
-	local _, classToken = UnitClass("player")
-	local allowed = classToken and ZSBT_CP_CLASS_POWERS[classToken]
-	if not allowed then return true end
-	if allowed[i] then return true end
-	-- Always allow the unit's current main power type so forms/specs we
-	-- didn't enumerate still work.
-	local main = UnitPowerType and UnitPowerType("player")
-	return i == main
-end
-
-local CP_POWER_NAMES = {
-	[0] = "Mana", [1] = "Rage", [2] = "Focus", [3] = "Energy",
-	[4] = "Combo Points", [5] = "Runes", [6] = "Runic Power",
-	[7] = "Soul Shards", [8] = "Astral Power", [9] = "Holy Power",
-	[11] = "Maelstrom", [12] = "Chi", [13] = "Insanity",
-	[16] = "Arcane Charges", [17] = "Fury", [18] = "Pain",
-}
-
-function ZSBT.PowerTypeName(i)
-	return CP_POWER_NAMES[tonumber(i) or -1] or ("Power " .. tostring(i))
-end
-
--- Retail 12.x secrets the *current* value of primary power types (mana,
--- rage, ...) while capped count resources (combo points, soul shards, ...)
--- stay readable. C_Secrets.ShouldUnitPowerBeSecret is the authoritative
--- per-type answer; older clients lack it and report false (readable).
-function ZSBT.PowerTypeSecret(i)
-	if C_Secrets and C_Secrets.ShouldUnitPowerBeSecret then
-		local ok, res = pcall(C_Secrets.ShouldUnitPowerBeSecret, "player", tonumber(i))
-		if ok and type(res) == "boolean" then return res end
-	end
-	return false
-end
-
-local function CpEffectivePowerType()
-	local p = ZSBT.db and ZSBT.db.profile
-	local cp = p and p.comboPoints
-	local saved = cp and tonumber(cp.powerType)
-	if saved and ZSBT.CpPowerTypeAllowed(saved)
-		and not ZSBT.PowerTypeSecret(saved) then
-		return saved
-	end
-	local main = UnitPowerType and UnitPowerType("player")
-	if main ~= nil and not ZSBT.PowerTypeSecret(main) then return main end
-	-- Main power is secret (e.g. warlock mana on Retail): fall back to the
-	-- first class-allowed, non-secret type with a real pool.
-	for i = 0, 20 do
-		if ZSBT.CpPowerTypeAllowed(i) and not ZSBT.PowerTypeSecret(i) then
-			local mx = UnitPowerMax and UnitPowerMax("player", i)
-			if ZSBT.IsSafeNumber(mx) and mx > 0 then return i end
-		end
-	end
-	return (main ~= nil) and main or (saved or 0)
-end
-
--- Read accessor: returns the counter config for a power type, or nil.
--- Lazily migrates the legacy flat comboPoints.* block the first time.
-function ZSBT.ResourceCounterConfig(powerType)
-	powerType = tonumber(powerType)
-	if not powerType then return nil end
-	local p = ZSBT.db and ZSBT.db.profile
-	local rc = p and p.resourceCounters
-	if rc == nil then
-		rc = {}
-		p.resourceCounters = rc
-		local cp = p.comboPoints
-		if cp then
-			local pt = CpEffectivePowerType()
-			local dst = {}
-			for k, v in pairs(cp) do
-				if k ~= "powerType" then dst[k] = v end
-			end
-			rc[pt] = dst
-
-			-- Carry the legacy global "power" notification settings over to
-			-- the per-resource "power_<pt>" category (once).
-			local nkey = "power_" .. pt
-			if type(p.notifications) == "table" and p.notifications[nkey] == nil and p.notifications.power ~= nil then
-				p.notifications[nkey] = p.notifications.power
-			end
-			if type(p.notificationsTemplates) == "table" and p.notificationsTemplates[nkey] == nil and p.notificationsTemplates.power ~= nil then
-				p.notificationsTemplates[nkey] = p.notificationsTemplates.power
-			end
-			if type(p.notificationsRouting) == "table" and p.notificationsRouting[nkey] == nil and p.notificationsRouting.power ~= nil then
-				p.notificationsRouting[nkey] = p.notificationsRouting.power
-			end
-			if type(p.notificationsPerType) == "table" and p.notificationsPerType[nkey] == nil and type(p.notificationsPerType.power) == "table" then
-				p.notificationsPerType[nkey] = p.notificationsPerType.power
-			end
-		end
-	end
-	return rc[powerType]
-end
-
--- Sensible out-of-box appearance for a counter created from scratch
--- (enabled stays unset so "Show Resource Tracker" begins off).
-local RC_DEFAULTS = {
-	attachArea = "None",
-	anchor = "Bottom",
-	xOffset = 7,
-	yOffset = 128,
-	format = "pips",
-	color = { r = 0.8274510502815247, g = 0.0, b = 0.03921568766236305 },
-	emptyColor = { r = 0.35, g = 0.35, b = 0.35 },
-	outlineColor = { r = 0.0, g = 0.0, b = 0.0 },
-	fontSize = 0,
-	fontOverride = true,
-	fontFace = "ZSBT: Bungee",
-	fontOutline = "Thin",
-	fontScale = 2.0,
-	width = 257,
-	height = 77,
-	hideAtZero = true,
-	hideOutOfCombat = true,
-	fullSoundEnabled = false,
-	fullSoundKey = "None",
-	fullEffect = "none",
-}
-
--- Write accessor: ensures profile.resourceCounters exists (running the
--- legacy migration if needed) and returns the slot for powerType.
-function ZSBT.ResourceCounterConfigWrite(powerType)
-	powerType = tonumber(powerType)
-	if not powerType then return nil end
-	ZSBT.ResourceCounterConfig(0) -- force migration/init
-	local p = ZSBT.db and ZSBT.db.profile
-	local rc = p and p.resourceCounters
-	if not rc then return nil end
-	local s = rc[powerType]
-	if not s then
-		s = {}
-		for k, v in pairs(RC_DEFAULTS) do s[k] = v end
-		rc[powerType] = s
-	end
-	return s
-end
-
--- Edit mode is shared: scroll-area unlock OR the counter's own unlock.
-local function CpEditUnlocked()
-    return (ZSBT.IsScrollAreasUnlocked and ZSBT.IsScrollAreasUnlocked())
-        or ZSBT._cpUnlocked == true
-end
-
-function ZSBT.IsResourceCounterUnlocked()
-    return ZSBT._cpUnlocked == true
-end
-
-function ZSBT.ToggleResourceCounterUnlock()
-    ZSBT._cpUnlocked = not (ZSBT._cpUnlocked == true)
-    if ZSBT.RefreshComboPoints then ZSBT.RefreshComboPoints() end
-end
-
--- Gold border shown around the counter while it is in edit mode. Built from
--- edge textures (SetBackdrop is unavailable on this client's frames).
-local function SetCpBorder(frame, on)
-    if on then
-        if not frame._cpBorder then
-            local edges = {}
-            for _, e in ipairs({
-                { "TOPLEFT", "TOPRIGHT", 1, -1, -1, -3 },
-                { "BOTTOMLEFT", "BOTTOMRIGHT", 1, 3, -1, 1 },
-                { "TOPLEFT", "BOTTOMLEFT", 1, -1, 3, 1 },
-                { "TOPRIGHT", "BOTTOMRIGHT", -3, -1, -1, 1 },
-            }) do
-                local t = frame:CreateTexture(nil, "OVERLAY")
-                t:SetColorTexture(1, 0.82, 0, 0.9)
-                t:SetPoint("TOPLEFT", frame, e[1], e[3], e[4])
-                t:SetPoint("BOTTOMRIGHT", frame, e[2], e[5], e[6])
-                t:Hide()
-                edges[#edges + 1] = t
-            end
-            frame._cpBorder = edges
-        end
-        for _, t in ipairs(frame._cpBorder) do t:Show() end
-    elseif frame._cpBorder then
-        for _, t in ipairs(frame._cpBorder) do t:Hide() end
-    end
-end
-
-local function ResolveCpFont(cfg)
-    local profile = ZSBT.db and ZSBT.db.profile
-    local general = profile and profile.general and profile.general.font or {}
-    local LSM = LibStub("LibSharedMedia-3.0", true)
-    local override = cfg and cfg.fontOverride == true
-    local faceKey = general.face
-    if override and type(cfg.fontFace) == "string" and cfg.fontFace ~= "" then
-        faceKey = cfg.fontFace
-    end
-    local face = "Fonts\\FRIZQT__.TTF"
-    local fetched = LSM and faceKey and LSM:Fetch("font", faceKey)
-    if fetched then face = fetched end
-    local size = tonumber(cfg and cfg.fontSize) or 0
-    if size <= 0 then
-        local sc = override and (tonumber(cfg.fontScale) or 1.0) or 1.0
-        size = math.max(8, math.floor(((tonumber(general.size) or 16) * sc) + 0.5))
-    end
-    local outlineKey = general.outline or "Thin"
-    if override and type(cfg.fontOutline) == "string" and cfg.fontOutline ~= "" then
-        outlineKey = cfg.fontOutline
-    end
-    local outline = (ZSBT.OUTLINE_STYLES and ZSBT.OUTLINE_STYLES[outlineKey]) or "OUTLINE"
-    return face, size, outline
-end
-
-local function PositionComboPoints(frame, cfg)
-    local areaName = cfg.attachArea
-    local areas = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.scrollAreas
-    local area = areaName and areaName ~= "" and areaName ~= "None" and areas and areas[areaName]
-
-    -- Include live area geometry so dragging a scroll area re-anchors the counter.
-    local geo = ""
-    if area then
-        geo = "|" .. tostring(area.xOffset) .. "," .. tostring(area.yOffset)
-            .. "," .. tostring(area.width) .. "," .. tostring(area.height)
-    end
-    local posKey = table.concat({
-        tostring(cfg.attachArea), tostring(cfg.anchor),
-        tostring(cfg.xOffset), tostring(cfg.yOffset), geo,
-    }, "|")
-    if frame._cpPosKey == posKey then return end
-    frame._cpPosKey = posKey
-
-    local px, py = tonumber(cfg.xOffset) or 0, tonumber(cfg.yOffset) or 0
-    if area then
-        local a = CP_ANCHORS[cfg.anchor]
-        if not a and type(cfg.anchor) == "string" then
-            a = CP_ANCHORS[cfg.anchor:sub(1, 1):upper() .. cfg.anchor:sub(2):lower()]
-        end
-        a = a or CP_ANCHORS["Center"] or { fx = 0, fy = 0 }
-        px = (tonumber(area.xOffset) or 0) + a.fx * ((tonumber(area.width) or 100) / 2)
-        py = (tonumber(area.yOffset) or 0) + a.fy * ((tonumber(area.height) or 100) / 2)
-    end
-    frame:ClearAllPoints()
-    frame:SetPoint("CENTER", UIParent, "CENTER", px, py)
-end
-
--- Full-effect styles animate the counter's own pip textures / text and LOOP
--- while the resource stays at max, giving a persistent "ready" indicator.
--- The ticker is stopped by RefreshComboPoints the moment the value drops.
-local CP_FX_DUR = {
-    ignite = 1.2, chromatic = 1.6, shatter = 1.4, afterimage = 1.6,
-}
-
-local RefreshComboPoints -- forward declaration (defined below)
-
-local function HsvToRgb(h, s, v)
-    h = (h % 360) / 60
-    local i = math.floor(h) % 6
-    local f = h - math.floor(h)
-    local p, q, t = v * (1 - s), v * (1 - s * f), v * (1 - s * (1 - f))
-    if i == 0 then return v, t, p
-    elseif i == 1 then return q, v, p
-    elseif i == 2 then return p, v, t
-    elseif i == 3 then return p, q, v
-    elseif i == 4 then return t, p, v
-    else return v, p, q end
-end
-
-local function CpFxUpdate(frame, cfg)
-    local st = frame._cpFx
-    if not st then return end
-    local p = (GetTime() - st.t0) / st.dur
-    if p >= 1 then
-        -- Loop: the effect runs continuously while the resource is maxed.
-        -- RefreshComboPoints cancels the ticker when the value drops.
-        st.t0 = GetTime()
-        p = 0
-        if st.style == "shatter" and st.dirs then
-            for i = 1, st.mx do
-                local a = math.random() * 6.28318
-                local d = 20 + math.random() * 30
-                st.dirs[i] = { math.cos(a) * d, math.sin(a) * d }
-            end
-        end
-    end
-
-    local style = st.style
-    local gx, gy, gs, ga = 0, 0, 1, 1
-    local hueFx = nil
-    local flicker = nil
-
-    if style == "ignite" then
-        gs = 1 + 0.07 * math.sin(p * math.pi * 4)
-        flicker = (math.sin(p * math.pi * 6) > 0) and 0.75 or 0.15
-    elseif style == "chromatic" then
-        hueFx = (p * 360) % 360
-    elseif style == "afterimage" then
-        gs = 1 + 0.22 * math.sin(p * math.pi * 2)
-    end
-
-    local pips = frame._cpPips
-    local backs = frame._cpPipBacks
-    local onR, onG, onB = st.onR, st.onG, st.onB
-
-    for i = 1, st.mx do
-        local pip = pips[i]
-        local back = backs[i]
-        local dx, dy, s, a = gx, gy, gs, ga
-
-        if style == "shatter" then
-            local d = st.dirs[i]
-            if p < 0.55 then
-                local q = p / 0.55
-                dx, dy = d[1] * q, d[2] * q
-                s, a = 1 - 0.55 * q, 1 - q
-            else
-                local q = (p - 0.55) / 0.45
-                dx, dy = d[1] * (1 - q), d[2] * (1 - q)
-                s, a = 0.45 + 0.55 * q, q
-            end
-        end
-
-        local x = st.xs[i] + dx
-        local psz = math.max(2, st.pipSize * s)
-        pip:SetSize(psz, psz)
-        pip:ClearAllPoints()
-        pip:SetPoint("CENTER", frame, "CENTER", x, dy)
-        pip:SetAlpha(a)
-        if i <= st.cur and (hueFx or flicker) then
-            local r, g, b = onR, onG, onB
-            if hueFx then
-                r, g, b = HsvToRgb(hueFx + i * 25, 0.85, 1)
-            elseif flicker then
-                r = onR + (1 - onR) * flicker
-                g = onG + (1 - onG) * flicker
-                b = onB + (1 - onB) * flicker
-            end
-            pip:SetVertexColor(r, g, b, a)
-        end
-
-        local bSize = st.backSize * s
-        if style == "afterimage" then
-            bSize = st.backSize * (1 + 0.55 * math.sin(math.pi * 2 * p))
-        end
-        back:SetSize(math.max(2, bSize), math.max(2, bSize))
-        back:ClearAllPoints()
-        back:SetPoint("CENTER", frame, "CENTER", x, dy)
-        back:SetAlpha(0.9 * a)
-    end
-
-    local fs = frame._cpText
-    if fs then
-        fs:ClearAllPoints()
-        fs:SetPoint("CENTER", frame, "CENTER", gx, gy)
-        fs:SetAlpha(ga)
-        if gs ~= 1 and st.fsFace then
-            fs:SetFont(st.fsFace, math.max(8, st.fsSize * gs), st.fsOutline)
-        end
-    end
-end
-
--- Fires the full-resource celebration on the counter's own pips/text. The
--- ticker loops until StopComboPointsFx cancels it (value drops or hides).
-local function FireComboPointsEffect(frame, cfg, cur, mx)
-    local style = cfg.fullEffect or "ignite"
-    local dur = CP_FX_DUR[style]
-    if not dur then return end
-    local pips = frame._cpPips
-    if not pips then return end
-
-    local fw = frame:GetWidth() or 200
-    local fh = frame:GetHeight() or 26
-    local spacing = fw / mx
-    local pipSize = math.min(fh - 8, spacing / 1.5)
-    pipSize = math.max(5, math.min(48, pipSize))
-    local xs = {}
-    for i = 1, mx do xs[i] = (i - (mx + 1) / 2) * spacing end
-
-    local fs = frame._cpText
-    local fsFace, fsSize, fsOutline = nil, nil, nil
-    if fs then fsFace, fsSize, fsOutline = fs:GetFont() end
-
-    local on = cfg.color or { r = 1, g = 0.82, b = 0 }
-    local st = {
-        style = style, t0 = GetTime(), dur = dur, mx = mx, cur = cur,
-        xs = xs, spacing = spacing, pipSize = pipSize, backSize = pipSize + 4,
-        onR = on.r or 1, onG = on.g or 0.82, onB = on.b or 0,
-        fsFace = fsFace, fsSize = fsSize, fsOutline = fsOutline,
-        dirs = nil,
-    }
-    if style == "shatter" then
-        st.dirs = {}
-        for i = 1, mx do
-            local a = math.random() * 6.28318
-            local d = 20 + math.random() * 30
-            st.dirs[i] = { math.cos(a) * d, math.sin(a) * d }
-        end
-    end
-
-    if frame._cpFxTicker then
-        frame._cpFxTicker:Cancel()
-        frame._cpFxTicker = nil
-    end
-    frame._cpFx = st
-    frame._cpFxTicker = C_Timer.NewTicker(0.033, function()
-        CpFxUpdate(frame, cfg)
-    end)
-end
-
--- Cancels the looping full effect and restores the text element. Pip visuals
--- are re-laid-out canonically by the next RefreshComboPoints pass.
-local function StopComboPointsFx(frame)
-    if frame._cpFxTicker then
-        frame._cpFxTicker:Cancel()
-        frame._cpFxTicker = nil
-    end
-    local st = frame._cpFx
-    frame._cpFx = nil
-    if not st then return end
-    local f = frame._cpText
-    if f then
-        f:ClearAllPoints()
-        f:SetPoint("CENTER", frame, "CENTER", 0, 0)
-        f:SetAlpha(1)
-        if st.fsFace then f:SetFont(st.fsFace, st.fsSize, st.fsOutline) end
-    end
-end
-
-local function RefreshCpFrame(frame)
-    local pt = frame._cpPowerType
-    local cfg = pt and ZSBT.ResourceCounterConfig(pt) or nil
-    local fs = frame._cpText
-
-    if not cfg or cfg.enabled ~= true then
-        StopComboPointsFx(frame)
-        frame:Hide()
-        frame._cpWasFull = false
-        return
-    end
-
-    -- The counter is keyed by power type, so the frame's key IS the power.
-    local cpType = pt
-    local curRaw = UnitPower("player", cpType)
-    local mxRaw = UnitPowerMax("player", cpType)
-    -- Retail 12.x secrets the current value of primary power types (mana,
-    -- rage, ...). Those counters are unsupported — hide rather than display.
-    if not ZSBT.IsSafeNumber(curRaw) or not ZSBT.IsSafeNumber(mxRaw) then
-        StopComboPointsFx(frame)
-        frame:Hide()
-        frame._cpWasFull = false
-        return
-    end
-    local cur = math.floor(curRaw)
-    local mx = math.floor(mxRaw)
-    if mx <= 0 then
-        StopComboPointsFx(frame)
-        frame:Hide()
-        frame._cpWasFull = false
-        return
-    end
-
-    -- While in edit mode (scroll-area unlock or counter unlock) the counter
-    -- must stay visible & grabbable.
-    local unlocked = CpEditUnlocked()
-    if unlocked ~= frame._cpMouseOn then
-        frame._cpMouseOn = unlocked
-        frame:EnableMouse(unlocked == true)
-        SetCpBorder(frame, unlocked == true)
-        if frame._cpGrip then
-            if unlocked then frame._cpGrip:Show() else frame._cpGrip:Hide() end
-        end
-    end
-    -- Rune counters stay visible at 0: an all-cooldown board is exactly when
-    -- the per-slot sweeps are useful.
-    local isRuneMode = cpType == 5 and type(GetRuneCooldown) == "function" and frame._cpRuneBars ~= nil
-    if not isRuneMode and not unlocked and cfg.hideAtZero ~= false and cur <= 0 then
-        StopComboPointsFx(frame)
-        frame:Hide()
-        return
-    end
-    if not unlocked and cfg.hideOutOfCombat == true and not UnitAffectingCombat("player") then
-        StopComboPointsFx(frame)
-        frame:Hide()
-        return
-    end
-
-    -- Rune mode snapshots cooldowns for rendering/hide-checks only; runes
-    -- continuously recharge so there is no "full"/"depleted" alert edge.
-    if isRuneMode then
-        frame._cpRuneCd = frame._cpRuneCd or {}
-        local ready = 0
-        for i = 1, 6 do
-            local s, d, r = GetRuneCooldown(i)
-            frame._cpRuneCd[i] = { start = s, duration = d, ready = r and true or false }
-            if r then ready = ready + 1 end
-        end
-        frame._cpRuneReady = ready
-    end
-
-    -- Full indicator: the chosen effect loops while at max and stops the
-    -- instant CP drops below max. Sound still fires only on the rising edge;
-    -- re-entering combat at full resumes the loop without replaying the sound.
-    -- Secret values cannot be compared, so full detection is skipped entirely.
-    local isFull = not isRuneMode and cur >= mx
-    if isFull then
-        if not frame._cpWasFull
-            and cfg.fullSoundEnabled == true
-            and type(cfg.fullSoundKey) == "string" and cfg.fullSoundKey ~= "" and cfg.fullSoundKey ~= "None"
-            and ZSBT.PlayLSMSound then
-            ZSBT.PlayLSMSound(cfg.fullSoundKey)
-        end
-        local fxKey = cfg.fullEffect or "ignite"
-        local running = frame._cpFx ~= nil
-        if CP_FX_DUR[fxKey] and (not running or frame._cpFx.style ~= fxKey) then
-            FireComboPointsEffect(frame, cfg, cur, mx)
-        elseif not CP_FX_DUR[fxKey] and running then
-            StopComboPointsFx(frame)
-        end
-    else
-        StopComboPointsFx(frame)
-    end
-    frame._cpWasFull = isFull
-    -- Apply configured frame size (set by resize grip or sliders).
-    local tw = tonumber(cfg.width)
-    local th = tonumber(cfg.height)
-    local nw = tw and math.max(80, math.min(800, tw)) or (frame:GetWidth() or 220)
-    local nh = th and math.max(20, math.min(200, th)) or (frame:GetHeight() or 26)
-    if frame._cpAppliedW ~= nw or frame._cpAppliedH ~= nh then
-        frame._cpAppliedW, frame._cpAppliedH = nw, nh
-        frame:SetSize(nw, nh)
-    end
-
-    -- DK runes: per-slot cooldown display instead of count pips/text.
-    -- Ready runes render in the "on" color; cooling runes fill upward in the
-    -- "empty" color (fill = recharge progress). Shapes come from cfg.runeShape.
-    if isRuneMode then
-        fs:Hide()
-        for i = 1, CP_MAX_PIPS do
-            frame._cpPips[i]:Hide()
-            frame._cpPipBacks[i]:Hide()
-        end
-        -- Optional: hide the whole tracker while every rune is ready —
-        -- runes are normally full, so the tracker only matters mid-fight.
-        if cfg.hideAllReady == true and frame._cpRuneReady >= mx and not unlocked then
-            frame:Hide()
-            return
-        end
-        local onR, onG, onB = (cfg.color or {}).r or 1, (cfg.color or {}).g or 0.82, (cfg.color or {}).b or 0
-        local offR, offG, offB = (cfg.emptyColor or {}).r or 0.35, (cfg.emptyColor or {}).g or 0.35, (cfg.emptyColor or {}).b or 0.35
-        local ol = cfg.outlineColor or { r = 0, g = 0, b = 0 }
-        local olR, olG, olB = ol.r or 0, ol.g or 0, ol.b or 0
-        local shape = (type(cfg.runeShape) == "string" and RUNE_SHAPE_TEX[cfg.runeShape]) and cfg.runeShape or "square"
-        local tex = RUNE_SHAPE_TEX[shape]
-        if frame._cpRuneTex ~= tex then
-            frame._cpRuneTex = tex
-            for i = 1, 6 do
-                frame._cpRuneBars[i]:SetStatusBarTexture(tex)
-                local bk = frame._cpRuneBacks and frame._cpRuneBacks[i]
-                if bk then bk:SetTexture(tex) end
-            end
-        end
-        local showTime = cfg.showRuneTime == true
-        local rface, rsize, routine = ResolveCpFont(cfg)
-        local runeFontKey = rface .. "|" .. tostring(rsize) .. "|" .. tostring(routine)
-        if showTime and frame._cpRuneFontKey ~= runeFontKey then
-            frame._cpRuneFontKey = runeFontKey
-            for j = 1, 6 do
-                local t = frame._cpRuneTexts and frame._cpRuneTexts[j]
-                if t then t:SetFont(rface, rsize, routine) end
-            end
-        end
-        local fw = frame:GetWidth() or 200
-        local fh = frame:GetHeight() or 26
-        local slots = math.max(1, math.min(6, mx))
-        local spacing = fw / slots
-        local slotSize = math.max(5, math.min(48, math.min(fh - 8, spacing / 1.5)))
-        local backSize = slotSize + 4
-        local now = GetTime()
-        for i = 1, 6 do
-            local bar = frame._cpRuneBars[i]
-            local back = frame._cpRuneBacks and frame._cpRuneBacks[i]
-            local cd = frame._cpRuneCd and frame._cpRuneCd[i]
-            local rtxt = frame._cpRuneTexts and frame._cpRuneTexts[i]
-            if i <= slots then
-                local x = (i - (slots + 1) / 2) * spacing
-                local ready = cd and cd.ready == true
-                local cooling = (not ready) and cd and cd.start and cd.duration and cd.duration > 0
-                -- Outline back sits slightly larger behind the shape.
-                if back then
-                    back:SetVertexColor(olR, olG, olB, 0.9)
-                    back:SetSize(backSize, backSize)
-                    back:ClearAllPoints()
-                    back:SetPoint("CENTER", frame, "CENTER", x, 0)
-                    back:Show()
-                end
-                if ready then
-                    bar:SetMinMaxValues(0, 1)
-                    bar:SetValue(1)
-                    bar:SetStatusBarColor(onR, onG, onB, 1)
-                elseif cooling then
-                    local elapsed = now - cd.start
-                    if elapsed < 0 then elapsed = 0 elseif elapsed > cd.duration then elapsed = cd.duration end
-                    bar:SetMinMaxValues(0, cd.duration)
-                    bar:SetValue(elapsed)
-                    bar:SetStatusBarColor(offR, offG, offB, 0.9)
-                else
-                    -- No cooldown data and not flagged ready: show empty.
-                    bar:SetMinMaxValues(0, 1)
-                    bar:SetValue(0)
-                    bar:SetStatusBarColor(offR, offG, offB, 0.35)
-                end
-                bar:SetSize(slotSize, slotSize)
-                bar:ClearAllPoints()
-                bar:SetPoint("CENTER", frame, "CENTER", x, 0)
-                bar:Show()
-                -- Optional seconds-remaining readout inside cooling runes.
-                if rtxt then
-                    if showTime and cooling then
-                        local remain = cd.duration - math.max(0, now - cd.start)
-                        if remain < 0 then remain = 0 end
-                        rtxt:SetText(string.format("%.0f", math.ceil(remain)))
-                        rtxt:SetTextColor(onR, onG, onB, 1)
-                        rtxt:Show()
-                    else
-                        rtxt:Hide()
-                    end
-                end
-            else
-                bar:Hide()
-                if back then back:Hide() end
-                if rtxt then rtxt:Hide() end
-            end
-        end
-        PositionComboPoints(frame, cfg)
-        frame:Show()
-        return
-    end
-
-    -- Text / pips
-    local fmt = cfg.format or "pips"
-    local usePips = (fmt == "pips" and mx <= CP_MAX_PIPS)
-    if usePips then
-        fs:Hide()
-        local onR, onG, onB = (cfg.color or {}).r or 1, (cfg.color or {}).g or 0.82, (cfg.color or {}).b or 0
-        local offR, offG, offB = (cfg.emptyColor or {}).r or 0.35, (cfg.emptyColor or {}).g or 0.35, (cfg.emptyColor or {}).b or 0.35
-        local ol = cfg.outlineColor or { r = 1, g = 1, b = 1 }
-        local olR, olG, olB = ol.r or 1, ol.g or 1, ol.b or 1
-        local backs = frame._cpPipBacks
-        local pips = frame._cpPips
-        -- Pips spread across the frame width; diamond size fits height & spacing.
-        local fw = frame:GetWidth() or 200
-        local fh = frame:GetHeight() or 26
-        local spacing = fw / mx
-        local pipSize = math.min(fh - 8, spacing / 1.5)
-        pipSize = math.max(5, math.min(48, pipSize))
-        local backSize = pipSize + 4
-        for i = 1, CP_MAX_PIPS do
-            local pip = pips[i]
-            local back = backs[i]
-            if i <= mx then
-                local x = (i - (mx + 1) / 2) * spacing
-                if i <= cur then
-                    pip:SetVertexColor(onR, onG, onB, 1)
-                else
-                    pip:SetVertexColor(offR, offG, offB, 0.8)
-                end
-                back:SetVertexColor(olR, olG, olB, 0.9)
-                back:SetSize(backSize, backSize)
-                back:ClearAllPoints()
-                back:SetPoint("CENTER", frame, "CENTER", x, 0)
-                back:Show()
-                pip:SetSize(pipSize, pipSize)
-                pip:ClearAllPoints()
-                pip:SetPoint("CENTER", frame, "CENTER", x, 0)
-                pip:Show()
-            else
-                pip:Hide()
-                back:Hide()
-            end
-        end
-    else
-        for i = 1, CP_MAX_PIPS do
-            frame._cpPips[i]:Hide()
-            frame._cpPipBacks[i]:Hide()
-        end
-        fs:Show()
-        local text
-        if fmt == "number" then
-            text = tostring(cur)
-        else
-            text = tostring(cur) .. "/" .. tostring(mx)
-        end
-        fs:SetText(text)
-        fs:ClearAllPoints()
-        fs:SetPoint("CENTER", frame, "CENTER", 0, 0)
-        fs:SetAlpha(1)
-
-        local col = cfg.color or { r = 1, g = 0.82, b = 0 }
-        fs:SetTextColor(col.r or 1, col.g or 0.82, col.b or 0)
-    end
-
-    local face, size, outline = ResolveCpFont(cfg)
-    local fontKey = face .. "|" .. tostring(size) .. "|" .. tostring(outline)
-    if frame._cpFontKey ~= fontKey then
-        frame._cpFontKey = fontKey
-        fs:SetFont(face, size, outline)
-    end
-
-    PositionComboPoints(frame, cfg)
-    frame:Show()
-end
-
--- Creates (once) and returns the counter frame for a power type.
-local function EnsureCpFrame(powerType)
-    powerType = tonumber(powerType)
-    if not powerType then return nil end
-    Core._cpWidgets = Core._cpWidgets or {}
-    local frame = Core._cpWidgets[powerType]
-    if frame then return frame end
-
-    frame = CreateFrame("Frame", "ZSBT_ResourceCounter_" .. powerType, UIParent)
-    frame._cpPowerType = powerType
-    frame:SetFrameStrata("HIGH")
-    frame:SetSize(220, 26)
-    frame:EnableMouse(false)
-    frame:Hide()
-
-    -- Pip outline backs: slightly larger rotated squares drawn behind each
-    -- diamond for contrast. Drawn on BACKGROUND so pips (ARTWORK) sit on top.
-    frame._cpPipBacks = {}
-    frame._cpPips = {}
-    for i = 1, CP_MAX_PIPS do
-        local back = frame:CreateTexture(nil, "BACKGROUND")
-        back:SetTexture("Interface\\Buttons\\WHITE8X8")
-        back:SetRotation(math.pi / 4)
-        back:SetVertexColor(1, 1, 1, 0.9)
-        back:Hide()
-        frame._cpPipBacks[i] = back
-
-        local pip = frame:CreateTexture(nil, "ARTWORK")
-        pip:SetTexture("Interface\\Buttons\\WHITE8X8")
-        pip:SetRotation(math.pi / 4)
-        pip:SetVertexColor(0.35, 0.35, 0.35, 0.8)
-        pip:Hide()
-        frame._cpPips[i] = pip
-    end
-
-    -- DK runes (power type 5) deplete from full rather than fill, so a count
-    -- is misleading: each of the 6 slots is driven by GetRuneCooldown and
-    -- shows ready (lit) vs cooling (sweep). Same model as Blizzard's
-    -- RuneFrame / MSUF's RUNE_CD mode.
-    if powerType == 5 then
-        frame._cpRuneBars = {}
-        frame._cpRuneBacks = {}
-        frame._cpRuneTexts = {}
-        for i = 1, 6 do
-            -- Outline back: same shape, slightly larger, drawn on BACKGROUND
-            -- so the status bar shape sits on top (mirrors the pip backs).
-            local back = frame:CreateTexture(nil, "BACKGROUND")
-            back:SetVertexColor(0, 0, 0, 0.9)
-            back:Hide()
-            frame._cpRuneBacks[i] = back
-
-            local bar = CreateFrame("StatusBar", nil, frame)
-            bar:SetStatusBarTexture(RUNE_SHAPE_TEX.square)
-            bar:SetOrientation("VERTICAL") -- fill grows upward = recharging
-            bar:SetMinMaxValues(0, 1)
-            bar:Hide()
-            frame._cpRuneBars[i] = bar
-
-            local rtxt = bar:CreateFontString(nil, "OVERLAY")
-            rtxt:SetPoint("CENTER", bar, "CENTER", 0, 0)
-            rtxt:SetJustifyH("CENTER")
-            rtxt:SetJustifyV("MIDDLE")
-            rtxt:Hide()
-            frame._cpRuneTexts[i] = rtxt
-        end
-        -- Cooldown sweeps need per-frame-ish updates: RUNE_POWER_UPDATE only
-        -- fires on spend/energize, not while a rune is recharging.
-        frame._cpRuneTick = 0
-        frame:SetScript("OnUpdate", function(self, elapsed)
-            self._cpRuneTick = (self._cpRuneTick or 0) + elapsed
-            if self._cpRuneTick < 0.1 then return end
-            self._cpRuneTick = 0
-            if self:IsShown() and self._cpRuneBars then
-                RefreshCpFrame(self)
-            end
-        end)
-    end
-
-    -- Resizable while unlocked (edit mode), like scroll area frames.
-    frame:SetResizable(true)
-    if frame.SetResizeBounds then
-        frame:SetResizeBounds(80, 20, 800, 200)
-    end
-    local grip = CreateFrame("Button", nil, frame)
-    grip:SetSize(16, 16)
-    grip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 2)
-    grip:SetFrameLevel(frame:GetFrameLevel() + 5)
-    grip:EnableMouse(true)
-    local gripTex = grip:CreateTexture(nil, "OVERLAY")
-    gripTex:SetAllPoints(grip)
-    gripTex:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
-    grip._cpGripTex = gripTex
-    grip:Hide()
-    frame._cpGrip = grip
-    grip:SetScript("OnMouseDown", function(_, button)
-        if button ~= "LeftButton" then return end
-        if not CpEditUnlocked() then return end
-        frame:StartSizing("BOTTOMRIGHT")
-    end)
-    grip:SetScript("OnMouseUp", function(_, button)
-        if button ~= "LeftButton" then return end
-        frame:StopMovingOrSizing()
-        if not CpEditUnlocked() then return end
-        local w = math.floor((frame:GetWidth() or 0) + 0.5)
-        local h = math.floor((frame:GetHeight() or 0) + 0.5)
-        local cfg = ZSBT.ResourceCounterConfigWrite(powerType)
-        if cfg then
-            cfg.width = math.max(80, math.min(800, w))
-            cfg.height = math.max(20, math.min(200, h))
-            local ACR = LibStub("AceConfigRegistry-3.0", true)
-            if ACR then ACR:NotifyChange("ZSBT") end
-        end
-        frame._cpAppliedW, frame._cpAppliedH = nil, nil
-        RefreshComboPoints()
-    end)
-
-    -- Drag-to-move, only while scroll areas are unlocked (edit mode).
-    frame:SetMovable(true)
-    frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", function(self)
-        if CpEditUnlocked() then
-            self:StartMoving()
-        end
-    end)
-    frame:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        if not CpEditUnlocked() then return end
-        local cx, cy = self:GetCenter()
-        local ucx, ucy = UIParent:GetCenter()
-        local cfg = ZSBT.ResourceCounterConfigWrite(powerType)
-        if not cfg or not cx then return end
-        -- Dropping anywhere detaches to a free position.
-        cfg.attachArea = "None"
-        cfg.xOffset = math.floor(cx - ucx + 0.5)
-        cfg.yOffset = math.floor(cy - ucy + 0.5)
-        local ACR = LibStub("AceConfigRegistry-3.0", true)
-        if ACR then ACR:NotifyChange("ZSBT") end
-        frame._cpPosKey = nil
-        RefreshComboPoints()
-    end)
-
-    -- Watcher: unlock mode can toggle without a power update, so poll lightly
-    -- to enable mouse (drag) and force the counter visible while editing.
-    C_Timer.NewTicker(0.5, function()
-        local unl = CpEditUnlocked()
-        if unl ~= frame._cpMouseOn then
-            frame._cpMouseOn = unl
-            frame:EnableMouse(unl == true)
-            SetCpBorder(frame, unl == true)
-            if frame._cpGrip then
-                if unl then frame._cpGrip:Show() else frame._cpGrip:Hide() end
-            end
-            if unl then RefreshComboPoints() end
-        end
-    end)
-
-    local fs = frame:CreateFontString(nil, "OVERLAY")
-    fs:SetPoint("CENTER", frame, "CENTER", 0, 0)
-    fs:SetJustifyH("CENTER")
-    frame._cpText = fs
-
-    Core._cpWidgets[powerType] = frame
-    return frame
-end
-
-RefreshComboPoints = function()
-    -- Force the legacy flat->resourceCounters migration, then refresh every
-    -- configured counter and hide frames whose config was removed/disabled.
-    ZSBT.ResourceCounterConfig(0)
-    local p = ZSBT.db and ZSBT.db.profile
-    local rc = p and p.resourceCounters
-    local seen = {}
-    if rc then
-        for pt, cfg in pairs(rc) do
-            pt = tonumber(pt)
-            if pt and cfg and cfg.enabled == true then
-                seen[pt] = true
-                local frame = EnsureCpFrame(pt)
-                if frame then RefreshCpFrame(frame) end
-            end
-        end
-    end
-    if Core._cpWidgets then
-        for pt, frame in pairs(Core._cpWidgets) do
-            if not seen[pt] then
-                StopComboPointsFx(frame)
-                frame:Hide()
-                frame._cpWasFull = false
-            end
-        end
-    end
-end
-ZSBT.RefreshComboPoints = function() RefreshComboPoints() end
-
-function Core:InitComboPoints()
-    if self._cpEventFrame then return end
-    Core._cpWidgets = Core._cpWidgets or {}
-
-    local evFrame = CreateFrame("Frame")
-    evFrame:RegisterUnitEvent("UNIT_POWER_UPDATE", "player")
-    evFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    evFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
-    evFrame:RegisterEvent("RUNE_POWER_UPDATE")
-    evFrame:SetScript("OnEvent", function(_, event, unit)
-        if event == "UNIT_POWER_UPDATE" and unit ~= "player" then return end
-        if not Core:IsMasterEnabled() then
-            if Core._cpWidgets then
-                for _, f in pairs(Core._cpWidgets) do
-                    if f:IsShown() then f:Hide() end
-                end
-            end
-            return
-        end
-        RefreshComboPoints()
-    end)
-    self._cpEventFrame = evFrame
-
-    -- Unit power data can be unreadable/secret for a moment after login;
-    -- a single early refresh would hide counters with no later event to
-    -- bring them back. Retry on a short backoff so the state self-corrects.
-    for _, delay in ipairs({ 0.5, 2, 5 }) do
-        C_Timer.After(delay, function() RefreshComboPoints() end)
-    end
 end
 
 ------------------------------------------------------------------------
@@ -6194,8 +4426,7 @@ function Core:InitHealthWarnings()
     if self._healthWarnFrame then return end
     self._healthWarnFrame = CreateFrame("Frame")
     self._healthWarnFrame:RegisterEvent("UNIT_HEALTH")
-    self._healthWarnFrame:RegisterEvent("UNIT_POWER_UPDATE")
-    self._healthWarnFrame:SetScript("OnEvent", function(_, event, unit, powerType)
+    self._healthWarnFrame:SetScript("OnEvent", function(_, event, unit, ...)
         if unit ~= "player" then return end
         if not Core:IsMasterEnabled() then return end
 
@@ -6204,11 +4435,6 @@ function Core:InitHealthWarnings()
 
         if event == "UNIT_HEALTH" then
             Core:CheckLowHealth(profile)
-        elseif event == "UNIT_POWER_UPDATE" then
-            local manaType = (Enum and Enum.PowerType and Enum.PowerType.Mana) or 0
-            if powerType == manaType then
-                Core:CheckLowMana(profile)
-            end
         end
     end)
 end
@@ -6231,42 +4457,5 @@ function Core:CheckLowHealth(profile)
         end
     else
         self._healthBorderWarnState = false
-    end
-end
-
--- Low mana warning: no Blizzard equivalent of LowHealthFrame, so we track
--- UnitPower/UnitPowerMax for the mana power type ourselves. Secret values
--- (mana is secret on Retail 12.x for many classes) skip silently — the
--- warning simply never fires rather than risk unsafe reads.
-local LOW_MANA_POWER = (Enum and Enum.PowerType and Enum.PowerType.Mana) or 0
-
-function Core:CheckLowMana(profile)
-    if type(UnitPower) ~= "function" or type(UnitPowerMax) ~= "function" then return end
-    local okC, cur = pcall(UnitPower, "player", LOW_MANA_POWER)
-    local okM, max = pcall(UnitPowerMax, "player", LOW_MANA_POWER)
-    if not (okC and okM) then return end
-    if not (ZSBT.IsSafeNumber(cur) and ZSBT.IsSafeNumber(max)) then
-        self._manaWarnState = false
-        return
-    end
-    if max <= 0 then
-        self._manaWarnState = false
-        return
-    end
-    local media = profile.media
-    local threshold = 20
-    if media and type(media.lowManaThreshold) == "number" then
-        threshold = media.lowManaThreshold
-    end
-    if (cur / max) * 100 < threshold then
-        if not self._manaWarnState then
-            self._manaWarnState = true
-            local soundKey = media and media.sounds and media.sounds.lowMana
-            if soundKey and soundKey ~= "None" and ZSBT.PlayLSMSound then
-                ZSBT.PlayLSMSound(soundKey)
-            end
-        end
-    else
-        self._manaWarnState = false
     end
 end

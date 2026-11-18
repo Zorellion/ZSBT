@@ -1,5 +1,4 @@
 local ADDON_NAME, ZSBT = ...
-local L = ZSBT.L
 
 ZSBT.UI = ZSBT.UI or {}
 ZSBT.UI.QuickControlBar = ZSBT.UI.QuickControlBar or {}
@@ -50,29 +49,182 @@ local function savePosition(frame)
 	g.quickControlBarPos.y = y
 end
 
-local function updateUnlockButtonText()
-	if not QuickBar._btnUnlock then return end
-	if ZSBT.IsScrollAreasUnlocked and ZSBT.IsScrollAreasUnlocked() then
-		QuickBar._btnUnlock:SetText(L["Lock"])
-	else
-		QuickBar._btnUnlock:SetText(L["Unlock"])
+local function setInstanceAware(val)
+	local g = getGeneral()
+	if not g then return end
+	g.instanceAwareOutgoing = val and true or false
+	if val ~= true then
+		g.damageMeterOutgoingFallback = false
+		g.damageMeterIncomingFallback = false
+		g.autoAttackRestrictFallback = false
+	end
+	if ZSBT.Core and ZSBT.Core.UpdateInstanceState then
+		ZSBT.Core:UpdateInstanceState(true)
+	end
+	notifyConfig()
+end
+
+local function setQuietOutgoing(val)
+	local g = getGeneral()
+	if not g then return end
+	g.quietOutgoingWhenIdle = val and true or false
+	if val ~= true then
+		g.quietOutgoingAutoAttacks = false
+		g.strictOutgoingCombatLogOnly = false
+	end
+	notifyConfig()
+end
+
+local function setPvPStrict(val)
+	local g = getGeneral()
+	if not g then return end
+	g.pvpStrictEnabled = val and true or false
+	if val ~= true then
+		-- Parent off: clear dependents to match Instance menu behavior.
+		g.pvpStrictDisableAutoAttackFallback = false
+	end
+	if ZSBT.Core and ZSBT.Core.UpdateInstanceState then
+		ZSBT.Core:UpdateInstanceState(true)
+	end
+	notifyConfig()
+end
+
+local function toggleBool(key)
+	local g = getGeneral()
+	if not g then return end
+	g[key] = not (g[key] == true)
+	notifyConfig()
+end
+
+local function refreshActiveDropDown()
+	if not QuickBar or not QuickBar._dropDown then return end
+	if UIDropDownMenu_Refresh then
+		pcall(UIDropDownMenu_Refresh, QuickBar._dropDown, nil, 1)
+	end
+	if UIDropDownMenu_RefreshAll then
+		pcall(UIDropDownMenu_RefreshAll, QuickBar._dropDown)
 	end
 end
 
-local function strictOutgoingOn()
-	local g = getGeneral()
-	return g and g.strictOutgoingAlways == true
+local function buildInstanceMenu()
+	local g = getGeneral() or {}
+	local parentOn = (g.instanceAwareOutgoing == true)
+	return {
+		{
+			text = "Dungeon/Raid Aware Outgoing",
+			checked = function() return g.instanceAwareOutgoing == true end,
+			func = function()
+				setInstanceAware(not (g.instanceAwareOutgoing == true))
+				refreshActiveDropDown()
+			end,
+			keepShownOnClick = true,
+		},
+		{
+			text = "Use Damage Meter Outgoing Fallback",
+			isNotRadio = true,
+			disabled = (not parentOn),
+			checked = function() return g.damageMeterOutgoingFallback == true end,
+			func = function() toggleBool("damageMeterOutgoingFallback") end,
+			keepShownOnClick = true,
+		},
+		{
+			text = "Use Damage Meter Incoming Damage Fallback",
+			isNotRadio = true,
+			disabled = (not parentOn),
+			checked = function() return g.damageMeterIncomingFallback == true end,
+			func = function() toggleBool("damageMeterIncomingFallback") end,
+			keepShownOnClick = true,
+		},
+		{
+			text = "Show Auto Attacks in Instances",
+			isNotRadio = true,
+			disabled = (not parentOn),
+			checked = function() return g.autoAttackRestrictFallback == true end,
+			func = function() toggleBool("autoAttackRestrictFallback") end,
+			keepShownOnClick = true,
+		},
+	}
 end
 
-local function updateStrictButton()
-	local btn = QuickBar._btnStrict
-	if not btn then return end
-	local fs = btn.Text or btn.GetFontString and btn:GetFontString()
-	if not fs then return end
-	if strictOutgoingOn() then
-		fs:SetTextColor(0.2, 1.0, 0.2)
+local function buildPvPMenu()
+	local g = getGeneral() or {}
+	local parentOn = (g.pvpStrictEnabled == true)
+	return {
+		{
+			text = "PvP Strict Mode",
+			checked = function() return g.pvpStrictEnabled == true end,
+			func = function()
+				setPvPStrict(not (g.pvpStrictEnabled == true))
+				refreshActiveDropDown()
+			end,
+			keepShownOnClick = true,
+		},
+		{
+			text = "Disable Auto-Attack Fallback",
+			isNotRadio = true,
+			disabled = (not parentOn),
+			checked = function() return g.pvpStrictDisableAutoAttackFallback ~= false end,
+			func = function()
+				toggleBool("pvpStrictDisableAutoAttackFallback")
+				refreshActiveDropDown()
+			end,
+			keepShownOnClick = true,
+		},
+	}
+end
+
+local function buildOpenWorldMenu()
+	local g = getGeneral() or {}
+	local parentOn = (g.quietOutgoingWhenIdle == true)
+	return {
+		{
+			text = "Quiet Outgoing When Idle",
+			checked = function() return g.quietOutgoingWhenIdle == true end,
+			func = function()
+				setQuietOutgoing(not (g.quietOutgoingWhenIdle == true))
+				refreshActiveDropDown()
+			end,
+			keepShownOnClick = true,
+		},
+		{
+			text = "Allow Auto Attacks While Quiet",
+			isNotRadio = true,
+			disabled = (not parentOn),
+			checked = function() return g.quietOutgoingAutoAttacks == true end,
+			func = function()
+				toggleBool("quietOutgoingAutoAttacks")
+				refreshActiveDropDown()
+			end,
+			keepShownOnClick = true,
+		},
+		{
+			text = "Strict Outgoing (Combat Log Only)",
+			isNotRadio = true,
+			checked = function() return g.strictOutgoingCombatLogOnly == true end,
+			func = function()
+				toggleBool("strictOutgoingCombatLogOnly")
+				refreshActiveDropDown()
+			end,
+			keepShownOnClick = true,
+		},
+	}
+end
+
+local function showMenu(anchor, which)
+	if not anchor or not which then return end
+	if not QuickBar._dropDown then return end
+	QuickBar._activeMenu = which
+	if ToggleDropDownMenu then
+		ToggleDropDownMenu(1, nil, QuickBar._dropDown, anchor, 0, 0)
+	end
+end
+
+local function updateUnlockButtonText()
+	if not QuickBar._btnUnlock then return end
+	if ZSBT.IsScrollAreasUnlocked and ZSBT.IsScrollAreasUnlocked() then
+		QuickBar._btnUnlock:SetText("Lock")
 	else
-		fs:SetTextColor(0.8, 0.8, 0.8)
+		QuickBar._btnUnlock:SetText("Unlock")
 	end
 end
 
@@ -100,12 +252,29 @@ function QuickBar:Init()
 	if self._frame then
 		self:RefreshVisibility()
 		updateUnlockButtonText()
-		updateStrictButton()
 		return
 	end
 
+	self._dropDown = CreateFrame("Frame", "ZSBT_QuickControlBarMenu", UIParent, "UIDropDownMenuTemplate")
+	UIDropDownMenu_Initialize(self._dropDown, function(_, level)
+		if level ~= 1 then return end
+		local which = QuickBar._activeMenu
+		local menu = nil
+		if which == "instance" then
+			menu = buildInstanceMenu()
+		elseif which == "openworld" then
+			menu = buildOpenWorldMenu()
+		elseif which == "pvp" then
+			menu = buildPvPMenu()
+		end
+		if type(menu) ~= "table" then return end
+		for _, item in ipairs(menu) do
+			UIDropDownMenu_AddButton(item, level)
+		end
+	end, "MENU")
+
 	local f = CreateFrame("Frame", "ZSBT_QuickControlBar", UIParent, "BackdropTemplate")
-	f:SetSize(185, 28)
+	f:SetSize(346, 28)
 	f:SetFrameStrata("DIALOG")
 	f:SetFrameLevel(50)
 	f:SetBackdrop({
@@ -152,16 +321,61 @@ function QuickBar:Init()
 	label:SetText("ZSBT")
 	f:SetScript("OnEnter", function()
 		GameTooltip:SetOwner(f, "ANCHOR_TOP")
-		GameTooltip:SetText(L["ZSBT - Quick Control Bar"])
-		GameTooltip:AddLine(L["Drag to move."], 0.8, 0.8, 0.8, true)
+		GameTooltip:SetText("ZSBT - Quick Control Bar")
+		GameTooltip:AddLine("Drag to move.", 0.8, 0.8, 0.8, true)
 		GameTooltip:Show()
 	end)
 	f:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
+	local btnInstance = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+	btnInstance:SetSize(80, 22)
+	btnInstance:SetPoint("LEFT", label, "RIGHT", 6, 0)
+	btnInstance:SetText("Instance")
+	btnInstance:SetScript("OnClick", function()
+		showMenu(btnInstance, "instance")
+	end)
+	btnInstance:SetScript("OnEnter", function()
+		GameTooltip:SetOwner(btnInstance, "ANCHOR_TOP")
+		GameTooltip:SetText("ZSBT - Instance Control")
+		GameTooltip:AddLine("Quick toggle dungeon/raid tuning options.", 0.8, 0.8, 0.8, true)
+		GameTooltip:Show()
+	end)
+	btnInstance:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+
+	local btnWorld = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+	btnWorld:SetSize(90, 22)
+	btnWorld:SetPoint("LEFT", btnInstance, "RIGHT", 4, 0)
+	btnWorld:SetText("Open World")
+	btnWorld:SetScript("OnClick", function()
+		showMenu(btnWorld, "openworld")
+	end)
+	btnWorld:SetScript("OnEnter", function()
+		GameTooltip:SetOwner(btnWorld, "ANCHOR_TOP")
+		GameTooltip:SetText("ZSBT - Open World Control")
+		GameTooltip:AddLine("Quick toggle open-world tuning options.", 0.8, 0.8, 0.8, true)
+		GameTooltip:Show()
+	end)
+	btnWorld:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+
+	local btnPvP = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+	btnPvP:SetSize(50, 22)
+	btnPvP:SetPoint("LEFT", btnWorld, "RIGHT", 4, 0)
+	btnPvP:SetText("PvP")
+	btnPvP:SetScript("OnClick", function()
+		showMenu(btnPvP, "pvp")
+	end)
+	btnPvP:SetScript("OnEnter", function()
+		GameTooltip:SetOwner(btnPvP, "ANCHOR_TOP")
+		GameTooltip:SetText("ZSBT - PvP Control")
+		GameTooltip:AddLine("Quick toggle PvP tuning options.", 0.8, 0.8, 0.8, true)
+		GameTooltip:Show()
+	end)
+	btnPvP:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+
 	local btnUnlock = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
 	btnUnlock:SetSize(60, 22)
-	btnUnlock:SetPoint("LEFT", label, "RIGHT", 6, 0)
-	btnUnlock:SetText(L["Unlock"])
+	btnUnlock:SetPoint("LEFT", btnPvP, "RIGHT", 4, 0)
+	btnUnlock:SetText("Unlock")
 	btnUnlock:SetScript("OnClick", function()
 		if ZSBT.IsScrollAreasUnlocked and ZSBT.IsScrollAreasUnlocked() then
 			if ZSBT.HideScrollAreaFrames then
@@ -177,34 +391,14 @@ function QuickBar:Init()
 	end)
 	btnUnlock:SetScript("OnEnter", function()
 		GameTooltip:SetOwner(btnUnlock, "ANCHOR_TOP")
-		GameTooltip:SetText(L["ZSBT - Scroll Areas"])
-		GameTooltip:AddLine(L["Unlock/lock scroll areas for dragging."], 0.8, 0.8, 0.8, true)
+		GameTooltip:SetText("ZSBT - Scroll Areas")
+		GameTooltip:AddLine("Unlock/lock scroll areas for dragging.", 0.8, 0.8, 0.8, true)
 		GameTooltip:Show()
 	end)
 	btnUnlock:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
-	local btnStrict = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-	btnStrict:SetSize(60, 22)
-	btnStrict:SetPoint("LEFT", btnUnlock, "RIGHT", 6, 0)
-	btnStrict:SetText(L["Strict"])
-	btnStrict:SetScript("OnClick", function()
-		local g = getGeneral()
-		if not g then return end
-		g.strictOutgoingAlways = not strictOutgoingOn()
-		updateStrictButton()
-		notifyConfig()
-	end)
-	btnStrict:SetScript("OnEnter", function()
-		GameTooltip:SetOwner(btnStrict, "ANCHOR_TOP")
-		GameTooltip:SetText(L["Strict Outgoing Detection"])
-		GameTooltip:AddLine(L["Require proof before showing outgoing damage, even outside groups. Reduces foreign damage leaking into your scroll areas; may hide some of your own hits."], 0.8, 0.8, 0.8, true)
-		GameTooltip:Show()
-	end)
-	btnStrict:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
-
 	self._frame = f
 	self._btnUnlock = btnUnlock
-	self._btnStrict = btnStrict
 	self._label = label
 
 	local g = getGeneral()
@@ -213,6 +407,5 @@ function QuickBar:Init()
 	end
 	applyPosition(f)
 	updateUnlockButtonText()
-	updateStrictButton()
 	self:RefreshVisibility()
 end

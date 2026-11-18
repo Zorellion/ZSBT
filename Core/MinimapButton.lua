@@ -6,7 +6,6 @@
 -- Drag (Left): Move around minimap ring
 ------------------------------------------------------------------------
 local ADDON_NAME, ZSBT = ...
-local L = ZSBT.L
 
 ZSBT.Core = ZSBT.Core or {}
 ZSBT.Core.Minimap = ZSBT.Core.Minimap or {}
@@ -93,15 +92,15 @@ function MM:Init()
 
     local function tooltipLines(tt)
         if not tt or not tt.AddLine then return end
-        tt:AddLine("|cFF00CC66" .. L["Zore's"] .. "|r " .. L["Scrolling Battle Text"], 1, 1, 1)
+        tt:AddLine("|cFF00CC66Zore's|r Scrolling Battle Text", 1, 1, 1)
         tt:AddLine("|cFF808C9Ev" .. (ZSBT.VERSION or "1.0") .. "|r")
         tt:AddLine(" ")
-        tt:AddLine(L["Left-Click:"], 0.9, 0.9, 0.9)
-        tt:AddLine("  " .. L["Open configuration"], 1, 1, 1)
-        tt:AddLine(L["Right-Click:"], 0.9, 0.9, 0.9)
-        tt:AddLine("  " .. L["Close configuration"], 1, 1, 1)
-        tt:AddLine(L["Middle-Click:"], 0.9, 0.9, 0.9)
-        tt:AddLine("  " .. L["Toggle Enable ZSBT"], 1, 1, 1)
+        tt:AddLine("Left-Click:", 0.9, 0.9, 0.9)
+        tt:AddLine("  Open configuration", 1, 1, 1)
+        tt:AddLine("Right-Click:", 0.9, 0.9, 0.9)
+        tt:AddLine("  Close configuration", 1, 1, 1)
+        tt:AddLine("Middle-Click:", 0.9, 0.9, 0.9)
+        tt:AddLine("  Toggle Enable ZSBT", 1, 1, 1)
     end
 
     local ldbObj = LDB:NewDataObject(LDB_NAME, {
@@ -113,9 +112,7 @@ function MM:Init()
             if not gg then return end
 
             if btn == "LeftButton" then
-                if ZSBT.ConfigShell then
-                    ZSBT.ConfigShell:Toggle()
-                elseif Addon and Addon.OpenConfig then
+                if Addon and Addon.OpenConfig then
                     Addon:OpenConfig()
                 end
                 return
