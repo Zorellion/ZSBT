@@ -92,7 +92,7 @@ local STRICT_PAIR_WINDOW = 0.10 -- strict mode: line+UC are same-event (~1 frame
 local CAND_TTL = 0.45      -- candidate waits this long for its palette line
 local CAST_TTL = 1.5       -- pending cast usable for spellId for this long
 local DOT_TTL = 45.0       -- casts kept this long for periodic aura proof
-local MAX_PENDING = 48     -- cap in-flight pair timers
+local MAX_PENDING = 1024   -- cap in-flight pair timers (raid-scale bursts)
 
 ------------------------------------------------------------------------
 -- Unit classification. "targettarget" is deliberately EXCLUDED from the
@@ -637,18 +637,33 @@ function Out:_MatchLines()
     -- tighten the window: only near-simultaneous candidates may pair.
     local strict = self:_Strict()
     local window = strict and STRICT_PAIR_WINDOW or PAIR_WINDOW
+    -- Active-candidate count per class: lines whose class has no
+    -- pending candidates skip the inner scan entirely (the common
+    -- case in raid-scale foreign-candidate floods).
+    local byCls = { damage = 0, heal = 0, miss = 0 }
+    for ci = 1, #cands do
+        local c = cands[ci]
+        if not c.done and byCls[c.cls] ~= nil then
+            byCls[c.cls] = byCls[c.cls] + 1
+        end
+    end
     for li = 1, #lineBuf do
         local line = lineBuf[li]
         if not line.consumed then
             local cls = CLS_FOR_KIND[line.kind]
-            if cls then
+            if cls and byCls[cls] > 0 then
                 -- Candidates eligible for this line, nearest in time
                 -- first (ties -> earliest hit).
                 local pool = nil
+                -- _cands is append-ordered by c.at (non-decreasing), so
+                -- once a candidate is past the window no later one can
+                -- match — break instead of scanning the whole buffer.
+                local lineAt = line.at
                 for ci = 1, #cands do
                     local c = cands[ci]
+                    if c.at - lineAt > window then break end
                     if not c.done and c.cls == cls then
-                        local dt = math.abs(c.at - line.at)
+                        local dt = math.abs(c.at - lineAt)
                         if dt <= window then
                             pool = pool or {}
                             pool[#pool + 1] = { c = c, dt = dt }
