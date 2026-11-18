@@ -14,10 +14,22 @@
 - Name-keyed aura rules (`"name:X"` in `auraRules`) match every rank of an aura by name when no spellID rule exists.
 - Aura notifications can carry spell icons via `meta.spellIcon`.
 
+- **WoW Forever XP notifications:** the progress tracker now parses Forever's `"<creature> dies, you gain N experience."` chat format, so the `+N XP` notification fires correctly on Forever alongside Retail's existing formats.
+- **XP CVar coverage:** `floatingCombatTextXPChanges`/`_v2` added to the Blizzard FCT suppression lists so Retail's XP-change text follows the XP suppression toggle.
+- **XP chat filter:** a `CHAT_MSG_COMBAT_XP_GAIN` chat filter hides the XP line (and, on clients where the popup is spawned by that display path, the popup) while XP suppression is on. ZSBT's own XP notification still fires.
+
 ### Fixed
 - Outgoing misses, immunes, dodges, parries, blocks, absorbs, deflects, reflects and evades now display when "Show Misses" is enabled. The `UNIT_COMBAT(target)` path returned for every non-hit action; it now emits the dedicated `OUTGOING_MISS_COMBAT` event (from 3.4.4/3.5.5), which routes to the miss kind and the configured Outgoing scroll area. In restricted mode a miss still needs a recent cast of yours to show.
 - Duplicate aura gain notifications: recast pairing, watched-presence rules, and refresh re-notifies now stamp the aura-read timestamp so the combat-text fallback can't double-emit (e.g. two `+Buff` for one cast).
 - Crash (`attempted to index a table that cannot be indexed with secret keys`) when auras report secret `auraInstanceID` (e.g. toys like Essence of Yu'lon). Such auras are now skipped in `ScanPlayerAuras`.
+
+- **Resource counters after login/logout:** delayed refreshes now run at 0.5s, 2s, and 5s after initialization instead of a single early read, so counters recover on their own when power/max-power data isn't ready at first pass.
+
+### Changed
+- **World-text suppression:** when all Blizzard text categories are hidden, ZSBT now inflates `WorldTextScale`/`_v2` to `1000` (flinging world text off-screen) instead of shrinking it. Values still snapshot/restore with the FCT backup.
+
+### Removed
+- **RESOURCE_THRESHOLD trigger:** removed from the Event Type dropdown and in-addon help. The event path was never wired up and every offered resource is secret on Retail 12.x, so it could never fire. Existing saved triggers of this type remain but are inert.
 
 ## 3.3.3
 
