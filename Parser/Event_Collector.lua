@@ -317,28 +317,24 @@ local PENDING_CAST_MAX = 12
 Collector._recentPeriodicSpellAt = Collector._recentPeriodicSpellAt or {}
 local PERIODIC_OUTGOING_WINDOW_SEC = 30.0
 
-local function isWarlockDotSpellId(spellId)
-	if type(spellId) ~= "number" then return false end
-	-- Canonical IDs (legacy / common)
-	if spellId == 172 or spellId == 980 or spellId == 30108 or spellId == 27243 then
-		return true
+-- Class-module dot resolution: name-primary via the active Classes/ module,
+-- ids as fast path. Returns the dot entry table or nil.
+local function dotEntryForSpellId(spellId)
+	local ClassDB = ZSBT.ClassDB
+	if ClassDB and ClassDB.DotEntry then
+		return ClassDB.DotEntry(spellId)
 	end
-	-- Some clients/expansions can use different spellIds for the same DoT.
-	-- Fall back to spell name matching when safe.
-	local sn = (ZSBT and ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId)) or nil
-	if type(sn) ~= "string" or sn == "" then return false end
-	return sn == "Corruption" or sn == "Agony" or sn == "Unstable Affliction" or sn == "Seed of Corruption"
+	return nil
 end
 
 local function isKnownPeriodicSpellId(spellId)
 	if type(spellId) ~= "number" then return false end
-	-- Warlock DoTs (name-based fallback handles spellId variants)
-	if isPlayerClassTag and isPlayerClassTag("WARLOCK") then
-		return isWarlockDotSpellId(spellId)
+	local ClassDB = ZSBT.ClassDB
+	if ClassDB and ClassDB.IsDotSpell then
+		return ClassDB.IsDotSpell(spellId)
 	end
-	return spellId == 172
-		or spellId == 980
-		or spellId == 30108
+	-- Fallback (class modules failed to load): legacy warlock-only ids.
+	return spellId == 172 or spellId == 980 or spellId == 30108 or spellId == 27243
 end
 
 local isPlayerClassTag
@@ -408,171 +404,20 @@ local function getUnitNpcId(unit)
 	return nil
 end
 
-local PET_SIGNATURE_SCHOOLS_BY_CLASS = {
-	MAGE = {
-		-- Water Elemental
-		-- npcId entries can be added based on logs; kept empty by default.
-	},
-	SHAMAN = {
-		-- Fire/Storm/Earth Elementals
-	},
-	WARLOCK = {
-		-- Imp and other minions
-	},
-	DEATHKNIGHT = {
-		-- Risen Ghoul / Army ghouls: physical hits (school=1)
-	},
-}
-
--- Standalone pet school signature check that does not require lastPlayerSpellId.
--- Used by the group-aware pet gate to decide if a WOUND event's school is consistent
--- with the active pet's damage type for the current class.
+-- Pet school signatures live in the active Classes/ module now
+-- (Classes/Registry.lua -> mod.petSchoolHit / petSchoolHitRecent).
 local function isLikelyPetSchoolHit(school)
-	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) then return false end
-
-	-- Warlock: Imp damage is fire (school 4).
-	if isWarlockPlayer() and school == 4 then
-		return true
+	local ClassDB = ZSBT.ClassDB
+	if ClassDB and ClassDB.PetSchoolHit then
+		return ClassDB.PetSchoolHit(school)
 	end
-
-	-- Death Knight: ghoul melee is physical (school 1).
-	if school == 1 and isPlayerClassTag and isPlayerClassTag("DEATHKNIGHT") then
-		local fam = getPetFamilyLower()
-		if fam and fam:find("ghoul", 1, true) then
-			return true
-		end
-	end
-
-	-- Hunter: pet melee is physical (school 1). Hunter pets are permanent (UnitExists("pet")=true).
-	if school == 1 and isPlayerClassTag and isPlayerClassTag("HUNTER") then
-		return true
-	end
-
-	-- Generalized signatures via npcId lookup.
-	local petNpcId = getUnitNpcId("pet")
-	if petNpcId and UnitClass then
-		local okC, _, tag = pcall(UnitClass, "player")
-		if okC and type(tag) == "string" then
-			local byClass = PET_SIGNATURE_SCHOOLS_BY_CLASS[tag]
-			local byNpc = byClass and byClass[petNpcId]
-			local allow = byNpc and byNpc[school]
-			if allow == true then
-				return true
-			end
-		end
-	end
-
-	-- Family-based fallback for common pet types.
-	local fam = getPetFamilyLower()
-	if fam then
-		-- Mage: Water Elemental -> frost school (16).
-		if school == 16 then
-			if (isPlayerClassTag and isPlayerClassTag("MAGE")) or (UnitClass and select(3, pcall(UnitClass, "player")) == "MAGE") then
-				if fam:find("water", 1, true) and fam:find("elemental", 1, true) then
-					return true
-				end
-			end
-		end
-		-- Shaman: elementals -> fire (4) / nature (8).
-		if (school == 4 or school == 8) then
-			local isShaman = false
-			if isPlayerClassTag and isPlayerClassTag("SHAMAN") then
-				isShaman = true
-			elseif UnitClass then
-				local okC, _, tag = pcall(UnitClass, "player")
-				if okC and tag == "SHAMAN" then
-					isShaman = true
-				end
-			end
-			if isShaman then
-				if school == 4 and fam:find("fire", 1, true) and fam:find("elemental", 1, true) then
-					return true
-				end
-				if school == 8 and ((fam:find("storm", 1, true) and fam:find("elemental", 1, true)) or (fam:find("earth", 1, true) and fam:find("elemental", 1, true))) then
-					return true
-				end
-			end
-		end
-	end
-
 	return false
 end
 
 local function isLikelyPetSchoolHitGivenRecentPlayerSpell(self, school, lastPlayerSpellId)
-	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) then return false end
-	if type(lastPlayerSpellId) ~= "number" then return false end
-	-- Warlock: Imp damage is typically fire; avoid stealing it for recent shadow casts.
-	if isWarlockPlayer() then
-		if school == 4 then
-			if lastPlayerSpellId == 172 or lastPlayerSpellId == 980 or lastPlayerSpellId == 30108 or lastPlayerSpellId == 686 then
-				return true
-			end
-		end
-	end
-
-	-- Death Knight: ghouls are physical. When a ghoul pet is active, do not let the
-	-- player's recent-cast window hijack school=1 melee swings.
-	if school == 1 then
-		local isDK = false
-		if isPlayerClassTag and isPlayerClassTag("DEATHKNIGHT") then
-			isDK = true
-		elseif UnitClass then
-			local okC, _, tag = pcall(UnitClass, "player")
-			if okC and tag == "DEATHKNIGHT" then
-				isDK = true
-			end
-		end
-		if isDK then
-			local fam = getPetFamilyLower()
-			if fam and fam:find("ghoul", 1, true) then
-				return true
-			end
-		end
-	end
-
-	-- Generalized signatures for other pet classes.
-	local fam = getPetFamilyLower()
-	local petNpcId = getUnitNpcId("pet")
-	if petNpcId and UnitClass then
-		local okC, _, tag = pcall(UnitClass, "player")
-		if okC and type(tag) == "string" then
-			local byClass = PET_SIGNATURE_SCHOOLS_BY_CLASS[tag]
-			local byNpc = byClass and byClass[petNpcId]
-			local allow = byNpc and byNpc[school]
-			if allow == true then
-				return true
-			end
-		end
-	end
-	if fam then
-		-- Mage: Water Elemental -> frost school.
-		if school == 16 then
-			if (isPlayerClassTag and isPlayerClassTag("MAGE")) or (UnitClass and select(3, pcall(UnitClass, "player")) == "MAGE") then
-				if fam:find("water", 1, true) and fam:find("elemental", 1, true) then
-					return true
-				end
-			end
-		end
-		-- Shaman: elementals -> fire/nature schools.
-		if (school == 4 or school == 8) then
-			local isShaman = false
-			if isPlayerClassTag and isPlayerClassTag("SHAMAN") then
-				isShaman = true
-			elseif UnitClass then
-				local okC, _, tag = pcall(UnitClass, "player")
-				if okC and tag == "SHAMAN" then
-					isShaman = true
-				end
-			end
-			if isShaman then
-				if school == 4 and fam:find("fire", 1, true) and fam:find("elemental", 1, true) then
-					return true
-				end
-				if school == 8 and ((fam:find("storm", 1, true) and fam:find("elemental", 1, true)) or (fam:find("earth", 1, true) and fam:find("elemental", 1, true))) then
-					return true
-				end
-			end
-		end
+	local ClassDB = ZSBT.ClassDB
+	if ClassDB and ClassDB.PetSchoolHitRecent then
+		return ClassDB.PetSchoolHitRecent(self, school, lastPlayerSpellId)
 	end
 	return false
 end
@@ -854,26 +699,10 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 		self._lastPlayerSpellId = spellId
 		self._lastPlayerSpellName = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or nil
 		self._lastPlayerSpellAt = now()
-		-- Death Knight: some ghoul damage sources are guardians and do not appear as UnitExists("pet").
-		-- Track recent ghoul summon casts so UNIT_COMBAT(target) physical hits can still be shown as pet damage.
-		if isPlayerClassTag and isPlayerClassTag("DEATHKNIGHT") then
-			if spellId == 46584 or spellId == 46585 or spellId == 42650 then
-				self._dkGhoulSummonAt = self._lastPlayerSpellAt
-			end
-		end
-		if spellId == 234153 then
-			-- Drain Life is a channeled spell with periodic damage/heal ticks. The
-			-- UNIT_COMBAT(target) stream can deliver multiple non-physical WOUND events
-			-- during the channel; do not collapse these into a single "best" hit.
-			-- Track a short active window so we can emit each tick.
-			self._drainLifeUntil = now() + 6.0
-			self._drainLifeLastTickAt = 0
-		end
-		if spellId == 772 then
-			self._rendLastCastAt = self._lastPlayerSpellAt
-			self._rendNextTickAt = (self._lastPlayerSpellAt or now()) + 3.0
-			self._rendInitialHitAmt = nil
-			self._rendTickState = nil
+		-- Class-module cast hooks: DK ghoul summons, Warlock channels
+		-- (Drain Life/Soul), Warrior Rend tick seeding.
+		if ZSBT.ClassDB and ZSBT.ClassDB.OnPlayerCast then
+			ZSBT.ClassDB.OnPlayerCast(self, spellId, self._lastPlayerSpellName, self._lastPlayerSpellAt)
 		end
 		local dl = OutDbgLevel()
 		if dl >= 5 and isWhirlwindSpellId(spellId) then
@@ -2386,18 +2215,19 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					if not isPhysicalEarly then
 						dotSpellId = getMostRecentPeriodicSpellId(self, t)
 					end
-					-- Hard separation for low-level Warlock: Imp hits are fire. If an Imp is active
-					-- and we see a fire-school WOUND, never attribute it to player spells/DoTs.
-					if isWarlockPlayer() and isImpPet() and (ZSBT.IsSafeNumber(school) and school == 4) then
-						recentPlayerCast = false
-						dotSpellId = nil
-					end
-					-- School safety: Warlock core DoT ticks are shadow; never attribute non-shadow hits
-					-- to these DoTs (spellId variants included).
-					if dotSpellId and isWarlockDotSpellId and isWarlockDotSpellId(dotSpellId) then
-						if not (ZSBT.IsSafeNumber(school) and school == 32) then
+					-- Class-module dot guard: e.g. Warlock Imp fire hits are pet damage,
+					-- never player DoT ticks.
+					if ZSBT.ClassDB and ZSBT.ClassDB.DotGuard then
+						if ZSBT.ClassDB.DotGuard(dotSpellId and dotEntryForSpellId(dotSpellId) or nil, school) == false then
+							recentPlayerCast = false
 							dotSpellId = nil
 						end
+					end
+					-- School safety: a DoT entry may declare its school; never attribute
+					-- hits of a different school to it (spellId variants included).
+					local dotEntry = dotSpellId and dotEntryForSpellId(dotSpellId) or nil
+					if dotEntry and dotEntry.school and ZSBT.IsSafeNumber(school) and school ~= dotEntry.school then
+						dotSpellId = nil
 					end
 					if dl >= 4 and ZSBT.IsSafeNumber(amount) and amount > 0 and (not isPhysicalEarly) and (ZSBT.IsSafeNumber(school) and school == 4) then
 						local petFam = getPetFamilyLower()
@@ -2411,13 +2241,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- Without this, any recent non-periodic cast (e.g. Shadow Bolt) can "stick"
 					-- as the spellId for unrelated magic WOUND ticks.
 					if dotSpellId and (not cachedHasTargetDebuffSpellId(dotSpellId)) then
-						local allowWarlockDot = false
-						if isWarlockPlayer and isWarlockPlayer() then
-							if isWarlockDotSpellId(dotSpellId) and (ZSBT.IsSafeNumber(school) and school == 32) then
-								allowWarlockDot = true
-							end
+						local allowDot = false
+						local de2 = dotEntryForSpellId(dotSpellId)
+						if de2 and de2.school and ZSBT.IsSafeNumber(school) and school == de2.school then
+							allowDot = true
 						end
-						if not allowWarlockDot then
+						if not allowDot then
 							dotSpellId = nil
 						end
 					end
@@ -2518,68 +2347,24 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					end
 				end
 			elseif okEx and hasPet ~= true then
-				-- Guardian-style DK ghouls: if we recently summoned a ghoul and are receiving
-				-- physical WOUND events on target, treat small physical hits as pet damage.
-				if (ZSBT.IsSafeNumber(school) and school == 1) and isPlayerClassTag and isPlayerClassTag("DEATHKNIGHT") then
-					local summonedAt = self._dkGhoulSummonAt
-					if type(summonedAt) == "number" then
-						local ageSummon = t - summonedAt
-						if ageSummon >= 0 and ageSummon <= 45.0 then
-							if ZSBT.IsSafeNumber(amount) and amount > 0 and amount <= 3000 then
-								local ageCast = nil
-								if type(self._lastPlayerSpellAt) == "number" then
-									ageCast = t - self._lastPlayerSpellAt
-								end
-								-- Avoid grabbing the immediate landing of a just-cast physical ability.
-								if not (type(ageCast) == "number" and ageCast >= 0 and ageCast <= 0.15) then
-									-- Group-aware gate for guardian pets: same logic as main pet fallback.
-									if restrict == true and members and members > 1 then
-										if not isLikelyPetSchoolHit(school) then
-											if dl >= 4 then
-												ECPrint(("PET_GUARDIAN_GROUP_SUPPRESS restrict=%s members=%s amt=%s")
-													:format(dbgSafe(restrict), dbgSafe(members), dbgSafe(amount)))
-											end
-											return
-										end
-									end
-									-- Dedup against the main pet fallback and chat pet lines.
-									local lastPetFb = self._lastPetFallbackAt or 0
-									local lastPetChat = self._lastPetChatAt or 0
-									if (t - lastPetFb) >= 0 and (t - lastPetFb) < PET_OUTGOING_DEDUP_WINDOW then
-										return
-									end
-									if (t - lastPetChat) >= 0 and (t - lastPetChat) < PET_OUTGOING_DEDUP_WINDOW then
-										return
-									end
-									self._lastPetFallbackAt = t
-									local pipeId = self._rawPipeCount + 1
-									if self._rawPipe and self._rawPipe[pipeId] ~= nil then
-										local i = pipeId
-										while self._rawPipe[i] ~= nil do
-											i = i + 1
-										end
-										pipeId = i
-									end
-									self._rawPipeCount = pipeId
-									self._rawPipe[pipeId] = amount
-									if dl >= 4 then
-										ECPrint(("PET_GUARDIAN_EMIT class=DK token=%s rawPipeId=%s amt=%s school=%s")
-											:format(dbgSafe(self._castToken), dbgSafe(pipeId), dbgSafe(amount), dbgSafe(school)))
-									end
-									emit("PET_DAMAGE_COMBAT", {
-										timestamp = t,
-										rawPipeId = pipeId,
-										amount = amount,
-										amountText = tostring(amount),
-										isCrit = isCrit,
-										petBucket = nil,
-										schoolMask = 1,
-										targetName = safeUnitName("target"),
-									})
-									return
-								end
-							end
-						end
+				-- Guardian-style pets (e.g. DK ghoul): class module decides.
+				if ZSBT.ClassDB and ZSBT.ClassDB.OnGuardianWound then
+					if ZSBT.ClassDB.OnGuardianWound(self, {
+						t = t,
+						amount = amount,
+						isCrit = isCrit,
+						school = school,
+						restrict = restrict,
+						members = members,
+						dl = dl,
+						emit = emit,
+						safeUnitName = safeUnitName,
+						petSchoolHit = isLikelyPetSchoolHit,
+						dedupWindow = PET_OUTGOING_DEDUP_WINDOW,
+						ecPrint = ECPrint,
+						dbgSafe = dbgSafe,
+					}) then
+						return
 					end
 				end
 			end
@@ -2733,172 +2518,21 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 			-- Rend (772) periodic ticks are physical WOUND events in 12.x and contain no spellId.
 			-- Warrior-only heuristic: after a recent Rend cast, emit tick-like wounds as periodic.
-			if isPlayerClassTag("WARRIOR") then
-				local rAt = self._rendLastCastAt
-				if type(rAt) == "number" then
-					local ageCast = t - rAt
-					if ageCast >= 0 and ageCast <= 24.0 and actionStr == "WOUND" and ZSBT.IsSafeNumber(amount) and amount > 0 then
-						local dl = OutDbgLevel()
-						local debuffOk = cachedHasTargetDebuffSpellId(772)
-						local nextTickAt = self._rendNextTickAt
-						local isNearExpected = false
-						local dtNext = nil
-						if type(nextTickAt) == "number" then
-							dtNext = t - nextTickAt
-							-- Asymmetric window: allow being late (events can be delayed), but be
-							-- strict about being early to avoid seeding on pre-tick ability hits.
-							if dtNext >= -0.20 and dtNext <= 0.90 then
-								isNearExpected = true
-							end
-						end
-						if debuffOk ~= true and ageCast <= 0.25 and not self._rendInitialHitAmt then
-							if ZSBT.IsSafeNumber(amount) and amount > 0 then
-								self._rendInitialHitAmt = amount
-							end
-						end
-						local allowRendAttrib = true
-						if debuffOk ~= true then
-							if isPlayerAutoAttackActive() then
-								if dl >= 5 then
-									ECPrint(("REND_DEBUFF_MISS aa=1 ageCast=%.3f amt=%s"):format(ageCast, dbgSafe(amount)))
-								end
-								allowRendAttrib = false
-							end
-							if allowRendAttrib and dl >= 5 then
-								ECPrint(("REND_DEBUFF_MISS aa=0 ageCast=%.3f amt=%s"):format(ageCast, dbgSafe(amount)))
-							end
-							-- Do not disable Rend attribution just because we're not near the expected
-							-- tick time. Under heavy combat noise, nextTickAt can get out of sync;
-							-- we still want to track state so we can detect repeating tick patterns.
-						end
-						if allowRendAttrib ~= true then
-							-- Fall through to generic physical logic below.
-						else
-							local st = self._rendTickState
-							if type(st) ~= "table" then
-								st = { amt = nil, lastAt = 0, streak = 0, lastEmitAt = 0 }
-								self._rendTickState = st
-							end
-							if dl >= 5 then
-								ECPrint(("REND_CLASS ageCast=%.3f amt=%s next=%s near=%s debuffOk=%s aa=%s cand=%s streak=%s lastAt=%s")
-									:format(ageCast, dbgSafe(amount), dbgSafe(nextTickAt), dbgSafe(isNearExpected), dbgSafe(debuffOk), dbgSafe(isPlayerAutoAttackActive()), dbgSafe(st.amt), dbgSafe(st.streak), dbgSafe(st.lastAt)))
-							end
-							-- If we don't have a baseline tick candidate yet, seed it on the first
-							-- near-expected event. This prevents the tickLike window (based on dt)
-							-- from never starting due to lastAt=0.
-							local seededAlready = (type(st.lastAt) == "number" and st.lastAt > 0)
-							local inFirstTickWindow = false
-							if debuffOk == true then
-								inFirstTickWindow = (ageCast >= 1.6 and ageCast <= 7.0)
-							end
-							local canSeed = (not seededAlready) and ((isNearExpected == true and (not dtNext or dtNext >= -0.20)) or inFirstTickWindow == true)
-							if canSeed and ZSBT.IsSafeNumber(self._rendInitialHitAmt) and self._rendInitialHitAmt > 0 then
-								-- Require tick candidates to be much smaller than the application hit.
-								-- This is ratio-based and scales across level/gear.
-								if not (amount <= (self._rendInitialHitAmt * 0.25)) then
-									canSeed = false
-								end
-							end
-							if canSeed then
-								st.amt = amount
-								st.streak = 1
-								st.lastAt = t
-							end
-							local dt = t - (st.lastAt or 0)
-							local isSame = false
-							if ZSBT.IsSafeNumber(st.amt) and st.amt > 0 then
-								local diff = math.abs(amount - st.amt)
-								local tol = math.max(10, st.amt * 0.18)
-								if diff <= tol then isSame = true end
-							end
-							local tickLike = (dt >= 1.4 and dt <= 5.8)
-							local clusteredRepeat = (isSame == true and dt >= 0.08 and dt <= 0.40)
-							-- Only update streak state on tick-like intervals; intervening non-tick-like
-							-- WOUND events are likely melee/other abilities and should not reset the
-							-- current tick candidate.
-							-- When the Rend debuff isn't confirmed, further require the hit to be near
-							-- the expected tick time; otherwise other abilities can constantly reset
-							-- the candidate amount.
-							local allowTickStateUpdate = tickLike or clusteredRepeat
-							if dl >= 5 then
-								ECPrint(("REND_CLASS2 dt=%.3f tickLike=%s isSame=%s allowState=%s cand=%s streak=%s")
-									:format(dt, dbgSafe(tickLike), dbgSafe(isSame), dbgSafe(allowTickStateUpdate), dbgSafe(st.amt), dbgSafe(st.streak)))
-							end
-							if allowTickStateUpdate then
-								if isSame then
-									st.streak = (st.streak or 0) + 1
-								else
-									-- When debuff isn't confirmed, lock in the candidate amount once we
-									-- have a repeating streak to prevent other physical hits near the
-									-- tick window from hijacking the classifier.
-									if not (debuffOk ~= true and (st.streak or 0) >= 2) then
-										st.amt = amount
-										st.streak = 1
-									end
-								end
-								st.lastAt = t
-								-- If we have a repeating tick-like pattern, resync the expected tick clock
-								-- even if we didn't emit yet. This prevents nextTickAt from getting stuck
-								-- at cast+3 and missing later ticks under heavy combat noise.
-								if debuffOk ~= true and isSame == true and (st.streak or 0) >= 2 then
-									-- Typical Rend tick spacing is ~3s; use a tighter band here to avoid
-									-- latching onto unrelated repeating damage.
-									if dt >= 2.2 and dt <= 3.8 then
-										self._rendNextTickAt = t + 3.0
-									end
-								end
-							end
-							local firstTickLike = false
-							if debuffOk == true then
-								firstTickLike = (ageCast >= 1.8 and ageCast <= 6.5)
-							elseif isNearExpected == true then
-								firstTickLike = true
-							end
-							local canEmit = false
-							if debuffOk == true then
-								canEmit = (st.streak or 0) >= 2 or firstTickLike == true
-							else
-								-- Debuff not confirmed: emit only after a repeating tick pattern is
-								-- established. Prefer the expected tick time gate when available, but
-								-- also allow the emission when the spacing itself is strongly tick-like
-								-- (~3s) to recover when nextTickAt has drifted.
-								local streakOk = (st.streak or 0) >= 2
-								local spacingOk = (dt >= 2.2 and dt <= 3.8)
-								canEmit = streakOk and (isNearExpected == true or spacingOk == true)
-							end
-							if dl >= 5 then
-								ECPrint(("REND_DECIDE canEmit=%s streak=%s near=%s firstTickLike=%s")
-									:format(dbgSafe(canEmit), dbgSafe(st.streak), dbgSafe(isNearExpected), dbgSafe(firstTickLike)))
-							end
-							if canEmit then
-								local dtEmit = t - (st.lastEmitAt or 0)
-								if dtEmit < 0 or dtEmit > 0.80 then
-									st.lastEmitAt = t
-									local tName = safeUnitName("target")
-									emit("OUTGOING_DAMAGE_COMBAT", {
-										timestamp = t,
-										amount = amount,
-										amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
-										spellId = 772,
-										amountSource = "UNIT_COMBAT_DOT",
-										targetName = tName,
-										isCrit = isCrit,
-										isPeriodic = true,
-										schoolMask = 1,
-									})
-									local dl2 = OutDbgLevel()
-									if dl2 >= 5 then
-										ECPrint(("REND_EMIT ageCast=%.3f amt=%s cand=%s streak=%s near=%s debuffOk=%s")
-											:format(ageCast, dbgSafe(amount), dbgSafe(st.amt), dbgSafe(st.streak), dbgSafe(isNearExpected), dbgSafe(debuffOk)))
-									end
-									self._rendNextTickAt = t + 3.0
-									self._lastOutgoingCombatAt = t
-									self._lastOutgoingCombatTargetName = tName
-								end
-							end
-						end
-					end
-				end
+			-- Warrior Rend tick classifier lives in Classes/Warrior.lua now.
+			if ZSBT.ClassDB and ZSBT.ClassDB.OnPhysicalWound then
+				ZSBT.ClassDB.OnPhysicalWound(self, {
+					t = t,
+					amount = amount,
+					isCrit = isCrit,
+					actionStr = actionStr,
+					hasTargetDebuff = cachedHasTargetDebuffSpellId,
+					autoAttackActive = isPlayerAutoAttackActive,
+					outDbgLevel = OutDbgLevel,
+					ecPrint = ECPrint,
+					dbgSafe = dbgSafe,
+					safeUnitName = safeUnitName,
+					emit = emit,
+				})
 			end
 			-- Attempt to attribute physical hits to a recent cast (abilities like Shield Slam).
 			-- If no match exists, treat as auto-attack (no icon). If a pet exists, we require
@@ -3074,11 +2708,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				wwAggPush(self, t, spellId, amount, isCrit, true)
 				return
 			end
-			if spellId == 772 then
-				self._rendLastCastAt = t
-				self._rendNextTickAt = t + 3.0
-				self._rendInitialHitAmt = amount
-				self._rendTickState = nil
+			if ZSBT.ClassDB and ZSBT.ClassDB.OnMatchedPhysical then
+				ZSBT.ClassDB.OnMatchedPhysical(self, spellId, t, amount)
 			end
 			-- Dedup unattributed white swings across the physical and
 			-- auto-fallback branches (same swing can be reported twice with
@@ -3115,13 +2746,16 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		-- proc/secondary values (the root cause of the "300-900 Shadow Bolt" bug).
 		-- Exception: channeled periodic spells like Drain Life should emit each tick.
 		if actionStr == "WOUND" and (not isPhysicalEarly) then
-			local dlUntil = self._drainLifeUntil
-			if type(dlUntil) == "number" and t <= dlUntil then
+			-- Channeled periodic spells (Drain Life/Soul etc.): the class module
+			-- seeds self._channel on cast; emit each tick while the channel is live
+			-- and the channel spell is still the most recent player cast.
+			local ch = self._channel
+			if type(ch) == "table" and type(ch.untilAt) == "number" and t <= ch.untilAt then
 				local wantSid = self._lastPlayerSpellId
-				if wantSid == 234153 then
-					local dtTick = t - (self._drainLifeLastTickAt or 0)
-					if dtTick >= 0.12 then
-						self._drainLifeLastTickAt = t
+				if wantSid == ch.spellId then
+					local dtTick = t - (ch.lastTickAt or 0)
+					if dtTick >= (ch.tickMin or 0.12) then
+						ch.lastTickAt = t
 						local pipeId = self._rawPipeCount + 1
 						self._rawPipeCount = pipeId
 						self._rawPipe[pipeId] = amount
@@ -3130,7 +2764,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						emit("OUTGOING_DAMAGE_COMBAT", {
 							timestamp = t,
 							rawPipeId = pipeId,
-							spellId = 234153,
+							spellId = ch.spellId,
 							amountSource = "UNIT_COMBAT_DOT",
 							targetName = safeUnitName("target"),
 							isCrit = isCrit,
@@ -3179,13 +2813,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				if dotSpellId then
 					debuffOk = cachedHasTargetDebuffSpellId(dotSpellId)
 					if debuffOk ~= true then
-						local allowWarlockDot = false
-						if isWarlockPlayer and isWarlockPlayer() then
-							if isWarlockDotSpellId(dotSpellId) and (ZSBT.IsSafeNumber(school) and school == 32) then
-								allowWarlockDot = true
-							end
+						local allowDot = false
+						local de3 = dotEntryForSpellId(dotSpellId)
+						if de3 and de3.school and ZSBT.IsSafeNumber(school) and school == de3.school then
+							allowDot = true
 						end
-						if not allowWarlockDot then
+						if not allowDot then
 							if dl >= 4 then
 								ECPrint(("DOT_ATTRIB_FAIL src=UNIT_COMBAT_SMALL token=%s dotSpellId=%s debuffOk=%s amt=%s school=%s")
 									:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(debuffOk), dbgSafe(amount), dbgSafe(school)))
