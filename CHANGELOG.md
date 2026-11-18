@@ -2,10 +2,8 @@
 
 ## Unreleased
 
-### Fixed
-- Warlock nukes misattributed to pet damage on clients that report classic rank spell IDs (e.g. Forever's Shadow Bolt = 705): the pet-fallback nuke exemption, the Imp-fire exception, and the Shadow Bolt travel-time windows now match spells by name (via `CleanSpellName`, rank suffixes stripped) with the modern IDs kept as a fast path, instead of hardcoding spellId 686.
-- Warlock nukes double-displaying: physical `UNIT_COMBAT(target)` hits (pet melee / auto-attacks) could match a pending nuke cast and print a second number with the spell's icon next to the real bolt. Physical hits can no longer take a warlock nuke/DoT spellId; they fall through to the normal auto-attack path.
-- Nukes hidden while DoTs are on the target: shadow-school `WOUND` events were claimed as periodic ticks whenever a recent DoT existed, so Shadow Bolt displayed as a Corruption/Agony tick (or not at all). Both DoT-attribution paths now defer to a live non-periodic pending cast — the direct hit wins, ticks still attribute when no nuke is in flight.
+### Changed
+- **Warlock pet-attribution rules reverted:** the 3.3 additions that kept shadow-school (32) hits attributed to the player unless the last cast was a hardcoded warlock nuke/DoT ID list, plus the warlock physical-hit auto-attack exception, are removed. `UNIT_COMBAT` has no source attribution on Midnight, and the ID-list approach broke on clients reporting classic rank spell IDs (e.g. Forever's Shadow Bolt = 705) — nukes were claimed by the pet fallback and hidden. Warlock pet signatures are back to Imp-fire (4) only; the generic pet-eligibility gate, `petMayOwnHit` auto-attack fix, and all dedup/hardening from 3.3 remain.
 
 ## 3.3.4
 
