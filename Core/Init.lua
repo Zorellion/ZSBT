@@ -265,6 +265,19 @@ end
 ------------------------------------------------------------------------
 -- OnInitialize: Fires once when addon loads (before PLAYER_LOGIN)
 ------------------------------------------------------------------------
+-- Attach the AceDBOptions profiles table (built once in OnInitialize) to a
+-- freshly built options tree. Rebuilds (OpenConfig, the config shell) would
+-- otherwise drop it and leave the DB Profiles page blank.
+function Addon:InjectDBProfilesOptions(options)
+	local profilesTable = ZSBT._profilesTable
+	if not (profilesTable and type(options) == "table" and options.args) then return end
+	if options.args.profiles and options.args.profiles.args then
+		options.args.profiles.args.acedbProfiles = profilesTable
+	else
+		options.args.acedbProfiles = profilesTable
+	end
+end
+
 function Addon:OnInitialize()
     -- Initialize AceDB with our defaults and enable profiles
     self.db = LibStub("AceDB-3.0"):New("ZSBTDB", ZSBT.DEFAULTS, true)
@@ -1635,11 +1648,8 @@ function Addon:OnInitialize()
 				safeRestrictDeleteDefault(profilesTable)
 				profilesTable.order = 100
 				profilesTable.name = L["|cFFFFD100DB Profiles|r"]
-				if options and options.args and options.args.profiles and options.args.profiles.args then
-					options.args.profiles.args.acedbProfiles = profilesTable
-				elseif options and options.args then
-					options.args.acedbProfiles = profilesTable
-				end
+				ZSBT._profilesTable = profilesTable
+				Addon:InjectDBProfilesOptions(options)
 			end
 		end
 		local ACR = LibStub("AceConfig-3.0", true)
@@ -1651,7 +1661,6 @@ function Addon:OnInitialize()
 			return
 		end
 		ACR:RegisterOptionsTable("ZSBT", options)
-		ZSBT._mainOptions = options
 		self.configDialog = ACD
 
         -- Set the default size for the config dialog
@@ -1921,13 +1930,29 @@ function Addon:HandleSlashCommand(input)
 	end
 
 	if not cmd or cmd == "" then
-		self:OpenConfig()
+		-- Bare /zsbt opens the ZCT-style shell; the classic AceConfig UI
+		-- stays reachable via "/zsbt classic".
+		if ZSBT.ConfigShell then
+			ZSBT.ConfigShell:Toggle()
+		else
+			self:OpenConfig()
+		end
 		return
 	end
 
     cmd = cmd:lower()
 
-    if cmd == "minimap" then
+    if cmd == "zctui" then
+        if self.ToggleZCTUI then
+            self:ToggleZCTUI()
+        elseif ZSBT.ConfigShell then
+            ZSBT.ConfigShell:Toggle()
+        end
+        return
+    elseif cmd == "classic" or cmd == "oldui" or cmd == "legacy" then
+        self:OpenConfig()
+        return
+    elseif cmd == "minimap" then
 		local mm = ZSBT.Core and ZSBT.Core.Minimap
 		if not (mm and (mm.SetHidden or mm.UpdateVisibility)) then
 			self:Print(L["Minimap button module not available."])
@@ -2039,19 +2064,7 @@ function Addon:OpenConfig()
 	if ZSBT.BuildOptionsTable then
 		local ok, options = pcall(ZSBT.BuildOptionsTable)
 		if ok and type(options) == "table" then
-			-- Carry over the AceDB profiles tab injected in OnInitialize.
-			local prev = ZSBT._mainOptions
-			local prevArgs = prev and prev.args
-			if prevArgs and options.args then
-				if prevArgs.profiles and prevArgs.profiles.args
-					and prevArgs.profiles.args.acedbProfiles
-					and options.args.profiles and options.args.profiles.args then
-					options.args.profiles.args.acedbProfiles = prevArgs.profiles.args.acedbProfiles
-				elseif prevArgs.acedbProfiles then
-					options.args.acedbProfiles = prevArgs.acedbProfiles
-				end
-			end
-			ZSBT._mainOptions = options
+			self:InjectDBProfilesOptions(options)
 			local ACR = LibStub("AceConfigRegistry-3.0", true)
 			if ACR then
 				pcall(ACR.RegisterOptionsTable, ACR, "ZSBT", options, true)
@@ -2060,6 +2073,14 @@ function Addon:OpenConfig()
 	end
 	if self.configDialog then
 		self.configDialog:Open("ZSBT")
+	end
+end
+
+-- ZCT-style config shell (left-nav pages). Separate command until the
+-- user approves cutover; "/zsbt" keeps opening the classic UI.
+function Addon:OpenZCTUI()
+	if ZSBT.ConfigShell then
+		ZSBT.ConfigShell:Open()
 	end
 end
 

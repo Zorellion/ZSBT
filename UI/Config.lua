@@ -3175,29 +3175,34 @@ function ZSBT.BuildOptionsTable()
         childGroups = "tree",
         args = {
             ----------------------------------------------------------------
-            -- Tab 0: Quick Start
-            ----------------------------------------------------------------
-            quickStart = ZSBT.BuildTab_QuickStart(),
-
-            ----------------------------------------------------------------
             -- Tab 1: General
             ----------------------------------------------------------------
             general = ZSBT.BuildTab_General(),
 
             ----------------------------------------------------------------
-            -- Tab 0.5: Display
+            -- Tab 3: Combat Text
             ----------------------------------------------------------------
-            display = ZSBT.BuildTab_Display(),
+            combatText = ZSBT.BuildTab_CombatText(),
 
             ----------------------------------------------------------------
-            -- Tab 0.75: Alerts
+            -- Tab 4: Crits
+            ----------------------------------------------------------------
+            crits = ZSBT.BuildTab_Crits(),
+
+            ----------------------------------------------------------------
+            -- Tab 5: Alerts
             ----------------------------------------------------------------
             alerts = ZSBT.BuildTab_Alerts(),
 
             ----------------------------------------------------------------
-            -- Tab 0.9: Combat Text
+            -- Tab 6: Resources
             ----------------------------------------------------------------
-            combatText = ZSBT.BuildTab_CombatText(),
+            resources = ZSBT.BuildTab_Resources(),
+
+            ----------------------------------------------------------------
+            -- Tab 7: Scroll Areas
+            ----------------------------------------------------------------
+            scrollAreas = ZSBT.BuildTab_ScrollAreas(),
 
             ----------------------------------------------------------------
             -- Tab 2: Profiles
@@ -3502,6 +3507,32 @@ function ZSBT.BuildDebugOptionsTable()
 		}
 		order = order + 1
 	end
+
+	-- Combat probe controls (harvested from the Incoming/Outgoing builders).
+	-- Flat-injected with renumbered orders so they sort after the channel
+	-- selects without changing the debug table's structure.
+	if ZSBT.BuildTab_Incoming then ZSBT.BuildTab_Incoming() end
+	if ZSBT.BuildTab_Outgoing then ZSBT.BuildTab_Outgoing() end
+	local function injectProbes(probe, headerName, base)
+		if not (probe and next(probe)) then return end
+		args[headerName] = { type = "header", name = L[headerName], order = base }
+		local keys = {}
+		for k in pairs(probe) do keys[#keys + 1] = k end
+		table.sort(keys, function(a, b)
+			local oa = (type(probe[a]) == "table" and tonumber(probe[a].order)) or 0
+			local ob = (type(probe[b]) == "table" and tonumber(probe[b].order)) or 0
+			if oa == ob then return a < b end
+			return oa < ob
+		end)
+		for i, k in ipairs(keys) do
+			local v = probe[k]
+			if type(v) == "table" then v.order = base + i end
+			args[k] = v
+		end
+	end
+	local diag = ZSBT._diagArgs or {}
+	injectProbes(diag.incoming, "Incoming Probe", 30)
+	injectProbes(diag.outgoing, "Outgoing Probe", 50)
 
 	return {
 		type = "group",

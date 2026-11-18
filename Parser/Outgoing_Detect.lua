@@ -47,6 +47,7 @@ function Outgoing:ProcessEvent(info)
 		kind = kind,
 		amount = info.amount,
 		amountText = info.amountText,
+		missType = info.missType,
 		rawPipeId = info.rawPipeId,
 		spellName = info.spellName,
 		spellId = info.spellId,

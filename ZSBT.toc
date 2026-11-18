@@ -71,5 +71,6 @@ Parser\Pulse_Engine.lua
 # UI - Config tabs before main config assembler
 UI\ConfigTabs.lua
 UI\Config.lua
+UI\ConfigShell.lua
 UI\ScrollAreaFrames.lua
 UI\QuickControlBar.lua

@@ -170,6 +170,7 @@ function Incoming:ProcessEvent(info)
             kind = info.kind,
             amount = info.amount,
             amountText = info.amountText,
+            missType = info.missType,
             rawPipeId = info.rawPipeId,
             spellID = info.spellId,
             spellName = info.spellName,
@@ -184,6 +185,7 @@ function Incoming:ProcessEvent(info)
         }
 
 		ev.amountText = safeStrOrNil(ev.amountText)
+		ev.missType = safeStrOrNil(ev.missType)
 		ev.targetName = safeStrOrNil(ev.targetName)
 		ev.spellName = safeStrOrNil(ev.spellName)
 		ev.confidence = safeStrOrNil(ev.confidence)
