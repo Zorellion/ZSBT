@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.3.2
+
+### Added
+- Full UI localization restored on the 3.3 codebase (from 3.5.0): menus, tabs, options, tooltips, dialogs and slash-command output route through AceLocale. Eight locale files: `deDE`, `esES`, `frFR`, `itIT`, `ptBR`, `ruRU`, `zhCN`, `koKR`; missing keys fall back to English.
+- Active locale shown in the login message and at the top of the Help tab.
+- `Locales/ForceLocale.lua` test hook (disabled by default via a commented .toc entry).
+
 ## 3.3.1
 
 ### Changed
