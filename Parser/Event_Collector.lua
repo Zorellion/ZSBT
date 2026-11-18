@@ -247,6 +247,10 @@ local function flushBestOutgoing(self, token)
 	self._rawPipe[pipeId] = bucket.amount
 	self._lastOutgoingCombatAt = bucket.timestamp
 	self._lastOutgoingCombatTargetName = bucket.targetName
+	-- One number per cast: remember this token flushed so later WOUND waves
+	-- for the same cast can't recreate the bucket and double-display.
+	self._lastBestFlushToken = token
+	self._lastBestFlushAt = now()
 	if (tonumber(dl) or 0) >= 4 then
 		ECPrint(("FLUSH_BEST token=%s spellId=%s amt=%s school=%s crit=%s cnt=%s max=%s second=%s")
 			:format(dbgSafe(token), dbgSafe(bucket.spellId), dbgSafe(bucket.amount), dbgSafe(bucket.schoolMask), dbgSafe(bucket.isCrit), dbgSafe(bucket._seenCount), dbgSafe(bucket._seenMax), dbgSafe(bucket._seenSecond)))
@@ -2500,6 +2504,16 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							dotSpellId = nil
 						end
 					end
+					-- A live non-periodic pending cast is stronger evidence than
+					-- DoT attribution: a direct nuke (e.g. Shadow Bolt) landing
+					-- while DoTs are up must not be swallowed as a tick. Peek
+					-- only — do not consume the cast.
+					if dotSpellId then
+						local peek = consumeBestPendingCast(self, t, nil, nil, false)
+						if peek and peek.spellId and not isKnownPeriodicSpellId(peek.spellId) then
+							dotSpellId = nil
+						end
+					end
 					if dotSpellId then
 						if not isCorroboratedHugeHit(t, amount, dotSpellId) then
 							if dl >= 4 then
@@ -3266,6 +3280,14 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		-- If no existing bucket, only start one when we can attribute this hit.
 		local matchedCast = nil
 		if not existing then
+			-- Same cast token already flushed: drop further non-physical hits
+			-- until the next cast. Window is short enough that channeled ticks
+			-- (~1s spacing) can still open a new bucket.
+			local lfTok = self._lastBestFlushToken
+			local lfAt = self._lastBestFlushAt or 0
+			if tokenKey == lfTok and (t - lfAt) >= 0 and (t - lfAt) < 1.0 then
+				return
+			end
 			-- Small non-physical hits can be either real spell damage (low level / old content)
 			-- or tiny procs/secondary effects. Prefer attribution first; only suppress when
 			-- we cannot correlate it to a recent cast/periodic effect.
@@ -3293,6 +3315,14 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							end
 							dotSpellId = nil
 						end
+					end
+				end
+				-- Same pending-cast precedence as the pet-fallback DoT path:
+				-- a live non-periodic cast means this is the nuke, not a tick.
+				if dotSpellId then
+					local peek = consumeBestPendingCast(self, t, nil, nil, false)
+					if peek and peek.spellId and not isKnownPeriodicSpellId(peek.spellId) then
+						dotSpellId = nil
 					end
 				end
 				if dotSpellId then
