@@ -2692,7 +2692,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					timestamp = t,
 					amountText = actionStr,
 					spellId = spellId,
-					spellIdWeak = (spellId ~= nil) and true or nil,
 					amountSource = "UNIT_COMBAT_MISS",
 					targetName = safeUnitName("target"),
 					isCrit = false,
