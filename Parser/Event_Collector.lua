@@ -358,6 +358,10 @@ local WARLOCK_NUKE_SPELL_NAMES = {
 	["Shadowburn"] = true,
 	["Haunt"] = true,
 	["Darkglare"] = true,
+	["Corruption"] = true,
+	["Agony"] = true,
+	["Unstable Affliction"] = true,
+	["Seed of Corruption"] = true,
 }
 
 local _spellBaseNameCache = {}
@@ -3077,6 +3081,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					})
 					return
 				end
+			end
+			-- Warlock nukes/DoTs are never physical: a physical WOUND matching one
+			-- of these casts is pet melee or an auto-attack, not the spell. Strip
+			-- the spellId so it can't print a fake "Shadow Bolt" number alongside
+			-- the real bolt landing through the non-physical merge bucket.
+			if matchedCast and matchedCast.spellId and isWarlockPlayer() and isWarlockNukeSpellId(matchedCast.spellId) then
+				matchedCast = nil
 			end
 			if restrict and not matchedCast then
 				return
