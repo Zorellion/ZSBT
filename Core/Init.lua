@@ -1883,6 +1883,12 @@ function Addon:OnEnable()
             -- Respect saved disabled state
             DisableParsers()
             if ZSBT.Core and ZSBT.Core.Disable then ZSBT.Core:Disable() end
+            -- Master-disabled must never leave Blizzard FCT suppressed:
+            -- a previous session could have exited with cvars off, and
+            -- Core:Disable() early-returns when it was never enabled.
+            if ZSBT.Core and ZSBT.Core.RestoreBlizzardFCT then
+                ZSBT.Core:RestoreBlizzardFCT()
+            end
         end
     end)
 
@@ -1948,6 +1954,24 @@ function Addon:HandleSlashCommand(input)
         return
     elseif cmd == "classic" or cmd == "oldui" or cmd == "legacy" then
         self:OpenConfig()
+        return
+    elseif cmd == "fixfilter" or cmd == "rebuildfilter" or cmd == "filterfix" then
+        -- Rebuild the "ZSBT" combat-log filter in place: purges stale
+        -- duplicates and writes a fresh one, selected on next login.
+        local f = ZSBT.ZCT and ZSBT.ZCT.CombatLogFilter
+        if f and f.RebuildNow then
+            local ok, removed = f:RebuildNow()
+            if ok then
+                if f.PromptReload then f:PromptReload() end
+                self:Print(L["ZSBT combat-log filter rebuilt"]
+                    .. (type(removed) == "number" and removed > 0
+                        and (" (removed " .. removed .. " stale)") or ""))
+            else
+                self:Print(L["Could not rebuild the combat-log filter (no filter data)."])
+            end
+        else
+            self:Print(L["Combat-log filter module not available."])
+        end
         return
     elseif cmd == "minimap" then
 		local mm = ZSBT.Core and ZSBT.Core.Minimap

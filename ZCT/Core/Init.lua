@@ -57,6 +57,7 @@ ZCT.DEFAULTS = {
         groupPolicy = {                -- used only when Context:Strict()
             spells = "strict",         -- direct/heal need cast attribution
             dots   = "auto",           -- tick/hot need aura proof (auto)
+            misses = "allow",          -- miss lines are self-proving (ours only)
             auto   = "block",          -- unattributed melee/ranged/miss
         },
         crit = {

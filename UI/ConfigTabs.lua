@@ -2219,6 +2219,22 @@ function ZSBT.BuildTab_General()
                     LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
                 end,
             },
+            strictOutgoingAlways = {
+                type  = "toggle",
+                name  = L["Strict Outgoing Detection"],
+                desc  = L["NOTE: requires the ZSBT combat-log filter. Always requires proof before showing outgoing damage, even outside groups. Use this in the open world when other players are hitting your target — it reduces their damage leaking into your scroll areas, at the cost of occasionally hiding some of your own hits (periodic ticks may show without spell names)."],
+                width = "full",
+                order = 3.45,
+                get   = function()
+                    local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+                    return g and g.strictOutgoingAlways == true
+                end,
+                set   = function(_, val)
+                    local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+                    if g then g.strictOutgoingAlways = val and true or false end
+                    LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+                end,
+            },
 
 			hideBlizzardFCT = {
 				type = "toggle",
@@ -5691,7 +5707,7 @@ local PET_BUCKET_KEYS = {
 ------------------------------------------------------------------------
 local GENERAL_GROUP_KEYS = {
 	system = {
-		enabled=1, combatOnly=1, hideBlizzardFCT=1, hideBlizzardFCTOutgoing=1,
+		enabled=1, combatOnly=1, strictOutgoingAlways=1, hideBlizzardFCT=1, hideBlizzardFCTOutgoing=1,
 		hideBlizzardFCTIncomingDamage=1, hideBlizzardFCTIncomingHealing=1,
 		hideBlizzardFCTReactives=1, hideBlizzardFCTXPRepHonor=1,
 		hideBlizzardFCTResourceGains=1, hideBlizzardFCTPet=1,
@@ -5724,7 +5740,7 @@ local GENERAL_DROP_KEYS = {
 -- Logical ordering inside the new tree children: core toggles first,
 -- then Blizzard FCT suppression, inline crits, UI, quick actions.
 local GENERAL_ORDER = {
-	enabled = 1, combatOnly = 2,
+	enabled = 1, combatOnly = 2, strictOutgoingAlways = 3,
 	hideBlizzardFCT = 10,
 	hideBlizzardFCTOutgoing = 11, hideBlizzardFCTIncomingDamage = 12,
 	hideBlizzardFCTIncomingHealing = 13, hideBlizzardFCTReactives = 14,

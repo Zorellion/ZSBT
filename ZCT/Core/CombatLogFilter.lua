@@ -347,6 +347,53 @@ function Filter:InstallAtLogout()
     return true
 end
 
+-- Support-tool rebuild: purge EVERY filter named ours (old versions left
+-- duplicates), then write one fresh copy and select it. The apply step is
+-- protected mid-session, so this takes effect on next login/relog — which
+-- is still the fastest fix for a corrupted or stale filter.
+function Filter:RebuildNow()
+    local saved = _G.Blizzard_CombatLog_Filters
+    if type(saved) ~= "table" or type(saved.filters) ~= "table" then
+        return false, "no combat-log filter data"
+    end
+    local removed = 0
+    for i = #saved.filters, 1, -1 do
+        local f = saved.filters[i]
+        if type(f) == "table" and f.name == FILTER_NAME then
+            table.remove(saved.filters, i)
+            removed = removed + 1
+        end
+    end
+    local cur = tonumber(saved.currentFilter) or 1
+    saved.currentFilter = math.max(1, math.min(cur, math.max(1, #saved.filters)))
+    local ok = Filter:InstallAtLogout()
+    if ZCT.Dbg and ZCT.Dbg.Enabled and ZCT.Dbg:Enabled("filter") then
+        ZCT.Dbg:Info("filter", "rebuild: removed=%d ok=%s", removed, tostring(ok == true))
+    end
+    return ok == true, removed
+end
+
+-- Reload prompt shown after a manual rebuild: the apply step is protected
+-- mid-session, so the new filter only takes effect on next login.
+function Filter:PromptReload()
+    if type(StaticPopupDialogs) ~= "table" or type(StaticPopup_Show) ~= "function" then return end
+    StaticPopupDialogs["ZSBT_FILTER_REBUILT"] = {
+        text = "|cff66aaffZSBT|r combat-log filter rebuilt.\n\n"
+            .. "You must reload (or log out/in) for it to take effect.\n"
+            .. "After reloading, the ZSBT filter will be selected automatically.",
+        button1 = "Reload UI",
+        button2 = "Later",
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        OnAccept = function()
+            if ReloadUI then ReloadUI() end
+        end,
+        OnCancel = function() end,
+    }
+    StaticPopup_Show("ZSBT_FILTER_REBUILT")
+end
+
 -- Blizzard_CombatLog turns filtered events OFF whenever the Combat Log
 -- chat window hides (COMBATLOG OnHide -> SetFilteredEventsEnabled(false)),
 -- e.g. switching chat tabs or a chat addon parking the window. That kills

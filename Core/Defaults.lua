@@ -20,6 +20,7 @@ ZSBT.DEFAULTS = {
             autoRelaxOutgoingWhenSolo = false,
             instanceAwareOutgoing = true,
             strictOutgoingCombatLogOnly = false,
+            strictOutgoingAlways = false,
             quietOutgoingWhenIdle = false,
             quietOutgoingAutoAttacks = false,
 			pvpStrictEnabled = true,

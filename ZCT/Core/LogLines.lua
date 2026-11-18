@@ -81,6 +81,13 @@ function Lines:RecordLine(r, g, b)
     if ZCT.Dbg and ZCT.Dbg:Enabled("lines") then
         ZCT.Dbg:Trace("lines", "kind=%s rgb=%.3f,%.3f,%.3f", kind, r, g, b)
     end
+
+    -- A fresh palette line may complete a pending UNIT_COMBAT pair.
+    -- Matching is symmetric: candidates also re-check buffered lines
+    -- when they arrive, so CLEU/UNIT_COMBAT ordering doesn't matter.
+    if ZCT.Outgoing and ZCT.Outgoing.MatchLines then
+        ZCT.Outgoing:MatchLines()
+    end
 end
 
 -- Kind of the closest recorded line to tHit within window, or nil.

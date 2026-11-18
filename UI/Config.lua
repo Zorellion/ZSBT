@@ -2739,6 +2739,27 @@ If ZSBT is enabled but you see nothing:
 - `/reload`
 ]],
 
+	troubleshooting_filter = [[# Combat-Log Filter
+
+Outgoing damage text requires the "ZSBT" combat-log filter to be selected at the top of the combat log window. While it is active, the combat log only shows your own damage — that is intentional.
+
+If outgoing numbers stopped appearing:
+
+## 1) Check the filter row
+- Open the combat log and look at the filter buttons at the top.
+- The "ZSBT" button must be the highlighted/selected one.
+- If another filter is selected, click ZSBT. A popup will also warn you when the filter is lost.
+
+## 2) Rebuild the filter
+- Use the "Rebuild Combat-Log Filter" button below (or `/zsbt fixfilter`).
+- This removes stale/duplicate ZSBT filters and writes a fresh one.
+- You must `/reload` afterwards — the new filter activates on next login.
+
+## 3) Still nothing?
+- Make sure ZSBT is enabled and at least one scroll area is on.
+- If other players are hitting your target, ZSBT gets stricter automatically and may show fewer numbers — that is by design.
+]],
+
 	troubleshooting_icons = [[# Icons/Names
 
 ZSBT tries to show spell icons and spell names only when it can do so reliably.
@@ -2834,6 +2855,12 @@ If you see Blizzard combat text (for example, incoming heals) while ZSBT is enab
 
 ## Useful command
 - `/zsbt dumpcvars` prints the relevant Blizzard combat text CVars and defaults.
+
+## Blizzard combat text stays off after disabling/removing ZSBT
+ZSBT suppresses Blizzard combat text while it is enabled. If you turned ZSBT off (or removed it) and Blizzard damage numbers did not come back:
+
+- With ZSBT installed: turn `Enable ZSBT` off, or go to `General` -> `Hide Blizzard Combat Text` and disable it — Blizzard text is restored automatically. `Restore Blizzard Combat Text Now` is the panic button.
+- With ZSBT removed entirely: nothing can run to restore the saved CVars. Reinstall ZSBT once and use the restore option above, or re-enable combat text manually in `Interface` -> `Combat` options.
 
 ## XP/world text size is too small
 If you previously changed CVars to reduce XP/progress spam and your world text now looks too small:
@@ -2944,6 +2971,7 @@ local HELP_TOPICS = {
 		docKey = "troubleshooting",
 		children = {
 			"troubleshooting_nothing",
+			"troubleshooting_filter",
 			"troubleshooting_icons",
 			"troubleshooting_spam",
 			"troubleshooting_notifications",
@@ -2955,6 +2983,7 @@ local HELP_TOPICS = {
 		},
 	},
 	troubleshooting_nothing = { name = L["Nothing Shows"], docKey = "troubleshooting_nothing" },
+	troubleshooting_filter = { name = L["Combat-Log Filter"], docKey = "troubleshooting_filter" },
 	troubleshooting_icons = { name = L["Icons/Names"], docKey = "troubleshooting_icons" },
 	troubleshooting_spam = { name = L["Spam"], docKey = "troubleshooting_spam" },
 	troubleshooting_notifications = { name = L["Notifications / Interrupt Alerts"], docKey = "troubleshooting_notifications" },
@@ -3378,6 +3407,22 @@ local function buildHelpTreeArgs(orderKeys)
 									end
 								end
 							},
+							rebuildFilter = (childKey == "troubleshooting_filter") and {
+								type = "execute",
+								name = L["Rebuild Combat-Log Filter"],
+								desc = L["Removes stale/duplicate ZSBT combat-log filters and writes a fresh one, selected on next login. Use this if outgoing damage text stopped appearing."],
+								order = 0.15,
+								width = "full",
+								func = function()
+									local f = ZSBT.ZCT and ZSBT.ZCT.CombatLogFilter
+									if f and f.RebuildNow then
+										local ok = f:RebuildNow()
+										if ok and f.PromptReload then f:PromptReload() end
+									elseif Addon and Addon.Print then
+										Addon:Print(L["Combat-log filter module not available."])
+									end
+								end,
+							} or nil,
 							repairSpamControlRuleKeys = (childKey == "troubleshooting_spam") and {
 								type = "execute",
 								name = L["Repair Spam Control Rules"],
