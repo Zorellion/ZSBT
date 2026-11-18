@@ -87,8 +87,9 @@ function Out:_Contended()
     return self._contended
 end
 
-local PAIR_DELAY = 0.18    -- wait for the palette line before deciding
 local PAIR_WINDOW = 0.55   -- line must be within this of the UNIT_COMBAT
+local STRICT_PAIR_WINDOW = 0.10 -- strict mode: line+UC are same-event (~1 frame)
+local CAND_TTL = 0.45      -- candidate waits this long for its palette line
 local CAST_TTL = 1.5       -- pending cast usable for spellId for this long
 local DOT_TTL = 45.0       -- casts kept this long for periodic aura proof
 local MAX_PENDING = 48     -- cap in-flight pair timers
@@ -366,17 +367,30 @@ end
 -- wrong is ever displayed, we just show less.
 ------------------------------------------------------------------------
 local GATE_KINDS = { direct = "spells", heal = "spells",
-    tick = "dots", hot = "dots" }
+    tick = "dots", hot = "dots",
+    directMiss = "misses", tickMiss = "misses", meleeMiss = "misses",
+    rangedMiss = "misses", shieldMiss = "misses" }
+
+-- Strict determination shared by _Gate and _MatchLines: profile toggle,
+-- legacy ZCTDB key, group/content context, or measured contention.
+function Out:_Strict()
+    local ctx = ZCT.Context
+    local db = ZCT.GetDB and ZCT:GetDB() or nil
+    -- strictOutgoingAlways lives in the ZSBT profile (ZSBTDB), so it
+    -- follows DB profile swaps; ZCTDB is per-character only.
+    local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+    return (g and g.strictOutgoingAlways == true)
+        or (db and db.strictAlways == true)
+        or (ctx and ctx.Strict and ctx:Strict()) or self:_Contended()
+end
 
 function Out:_Gate(c, kind)
-    local ctx = ZCT.Context
-    local strict = (ctx and ctx.Strict and ctx:Strict()) or self:_Contended()
-    if not strict then return true end
+    if not self:_Strict() then return true end
     local db = ZCT.GetDB and ZCT:GetDB() or nil
     local pol = (db and db.groupPolicy) or {}
     local family = GATE_KINDS[kind] or "auto"
     local mode = pol[family] or ({ spells = "strict", dots = "auto",
-        auto = "block" })[family]
+        misses = "allow", auto = "block" })[family]
     if mode == "allow" or mode == "off" then return true end
     if family == "auto" then return false end  -- "block"/default
     if family == "spells" then
@@ -511,96 +525,176 @@ function Out:HandleUnitCombat(unit, action, descriptor, amount, school)
         at = GetTime(),
     }
 
-    if self._pending >= MAX_PENDING then
+    -- Purge finished candidates, then buffer this one. Matching runs
+    -- both ways (see _MatchLines): palette lines claim their nearest
+    -- candidate and candidates claim their nearest line, so a foreign
+    -- hit can only steal a line by being closer in time to it than our
+    -- own UNIT_COMBAT — not merely by arriving first.
+    local cands = self._cands
+    local w = 1
+    for i = 1, #cands do
+        local c = cands[i]
+        if not c.done then cands[w] = c; w = w + 1 end
+    end
+    for i = w, #cands do cands[i] = nil end
+    self._pending = #cands
+
+    if #cands >= MAX_PENDING then
         self.stats.cap = self.stats.cap + 1
         return
     end
+    cand.done = false
+    cands[#cands + 1] = cand
+    self._pending = #cands
     self.stats.cand = self.stats.cand + 1
     if enemy then self:_NoteCandidate() end
-    self._pending = self._pending + 1
-    C_Timer.After(PAIR_DELAY, function()
-        self._pending = self._pending - 1
-        self:_Pair(cand)
+    C_Timer.After(CAND_TTL, function()
+        self:_Expire(cand)
     end)
+    self:_MatchLines()
 end
 
 ------------------------------------------------------------------------
--- Deferred pairing: claim a palette line, then emit (or fallback).
+-- Deferred pairing: closest-timestamp matching between UNIT_COMBAT
+-- candidates and palette lines. Each line kind maps to exactly one
+-- candidate class (the sets are disjoint), so a line only ever
+-- competes for candidates of its own class.
 ------------------------------------------------------------------------
-function Out:_Pair(c)
+local CLS_FOR_KIND = {}
+for cls, set in pairs(LINE_SETS) do
+    for kind in pairs(set) do CLS_FOR_KIND[kind] = cls end
+end
+
+Out._cands = Out._cands or {}
+
+-- Emit a proven pair. The caller has already consumed the line and
+-- marked the candidate done.
+function Out:_EmitPaired(c, kind)
+    self.stats.paired = self.stats.paired + 1
+    Out._starved = 0
+    -- pet = SOURCE is the pet, and only when provable (attributed to
+    -- a pet cast). c.pet would mean "target is the pet" — wrong here.
+    local spellId, byPet = attributeCast(c, kind)
+    -- Direction: a heal landing on player/pet (incl. targettarget
+    -- resolving to either) is healing RECEIVED — Drain Life's leech,
+    -- self-heals, received heals -> incoming, even when our own
+    -- cast produced the palette line. Heals on other allies stay
+    -- outgoing. Damage/miss are always outgoing.
+    local selfUnit = c.cls == "heal" and selfHealUnit(c.unit) or nil
+    local dir = selfUnit and "in" or "out"
+    -- Incoming heal that changed nothing (HP already at max) is a
+    -- pure overheal — suppress when health data is readable.
+    local overheal = c.cls == "heal" and dir == "in"
+        and self:_HideOverheal() and self:_WasFullHeal(selfUnit, c.at)
+    if overheal then
+        if ZCT.Dbg and ZCT.Dbg:Enabled("overheal") then
+            ZCT.Dbg:Trace("overheal", "suppress heal unit=%s", tostring(c.unit))
+        end
+        return
+    end
+    -- Palette line proves player/pet source involvement.
+    ZCT.Normalize:Emit(c.cls, {
+        direction = dir,
+        amount = c.amount,
+        school = c.school,
+        crit = c.crit,
+        periodic = (kind == "tick" or kind == "hot"),
+        lineKind = kind,
+        spellId = spellId,
+        -- Incoming heals: pet = the healed target. Outgoing: pet =
+        -- proven cast source. Never c.pet ("target is pet" is only
+        -- meaningful for incoming).
+        pet = (dir == "in") and (selfUnit == "pet") or (byPet == true),
+        action = c.action,
+        flagText = c.flagText,
+        unit = c.unit,
+    })
+    if ZCT.Dbg and ZCT.Dbg:Enabled("outgoing") then
+        -- pet= is proven cast attribution only; casterMode re-routes
+        -- unattributed melee later in Decide, so show that too.
+        local db = ZCT.GetDB and ZCT:GetDB() or nil
+        local cm = db and db.casterMode == true and spellId == nil
+            and (kind == "melee" or kind == "meleeMiss")
+        ZCT.Dbg:Trace("outgoing", "pair %s unit=%s kind=%s crit=%s spell=%s pet=%s cm=%s",
+            c.cls, tostring(c.unit), tostring(kind), tostring(c.crit),
+            tostring(spellId), tostring(byPet == true), tostring(cm == true))
+    end
+end
+
+-- Match every unconsumed palette line to its nearest pending candidate.
+-- Runs on both sides of the pairing: when a line is recorded (LogLines)
+-- and when a candidate is buffered (HandleUnitCombat), so ordering
+-- between COMBAT_LOG_MESSAGE and UNIT_COMBAT doesn't matter — a pair
+-- forms as soon as both halves exist.
+function Out:_MatchLines()
     local lines = ZCT.LogLines
-    local kind, line = nil, nil
-    if lines and lines.TakeClassifiedLine then
-        kind, line = lines:TakeClassifiedLine(c.at, PAIR_WINDOW, LINE_SETS[c.cls])
-    end
-
-    local gated = kind ~= nil and not self:_Gate(c, kind)
-    if gated then
-        -- Strict mode: candidate couldn't prove it's ours. Every buffered
-        -- line IS provably ours (the filter only passes player+pet
-        -- sources) — this candidate just may not be its owner (a
-        -- follower's swing can claim your line). Release it so the real
-        -- owner's candidate can still pair; show less, never wrong.
-        if line then line.consumed = false end
-        self.stats.gated = (self.stats.gated or 0) + 1
-        if ZCT.Dbg and ZCT.Dbg:Enabled("outgoing") then
-            ZCT.Dbg:Trace("outgoing", "gate %s unit=%s kind=%s (strict)",
-                c.cls, tostring(c.unit), tostring(kind))
-        end
-    end
-
-    if kind and not gated then
-        self.stats.paired = self.stats.paired + 1
-        -- pet = SOURCE is the pet, and only when provable (attributed to
-        -- a pet cast). c.pet would mean "target is the pet" — wrong here.
-        local spellId, byPet = attributeCast(c, kind)
-        -- Direction: a heal landing on player/pet (incl. targettarget
-        -- resolving to either) is healing RECEIVED — Drain Life's leech,
-        -- self-heals, received heals -> incoming, even when our own
-        -- cast produced the palette line. Heals on other allies stay
-        -- outgoing. Damage/miss are always outgoing.
-        local selfUnit = c.cls == "heal" and selfHealUnit(c.unit) or nil
-        local dir = selfUnit and "in" or "out"
-        -- Incoming heal that changed nothing (HP already at max) is a
-        -- pure overheal — suppress when health data is readable.
-        local overheal = c.cls == "heal" and dir == "in"
-            and self:_HideOverheal() and self:_WasFullHeal(selfUnit, c.at)
-        if overheal then
-            if ZCT.Dbg and ZCT.Dbg:Enabled("overheal") then
-                ZCT.Dbg:Trace("overheal", "suppress heal unit=%s", tostring(c.unit))
+    local lineBuf = lines and lines._lines
+    local cands = self._cands
+    if not lineBuf or #cands == 0 then return end
+    -- In strict mode a legit pair is the SAME combat event seen twice
+    -- (UNIT_COMBAT + its palette line, ~1 frame apart). A foreign
+    -- candidate claiming the line always has a real time gap — so
+    -- tighten the window: only near-simultaneous candidates may pair.
+    local strict = self:_Strict()
+    local window = strict and STRICT_PAIR_WINDOW or PAIR_WINDOW
+    for li = 1, #lineBuf do
+        local line = lineBuf[li]
+        if not line.consumed then
+            local cls = CLS_FOR_KIND[line.kind]
+            if cls then
+                -- Candidates eligible for this line, nearest in time
+                -- first (ties -> earliest hit).
+                local pool = nil
+                for ci = 1, #cands do
+                    local c = cands[ci]
+                    if not c.done and c.cls == cls then
+                        local dt = math.abs(c.at - line.at)
+                        if dt <= window then
+                            pool = pool or {}
+                            pool[#pool + 1] = { c = c, dt = dt }
+                        end
+                    end
+                end
+                if pool then
+                    table.sort(pool, function(a, b)
+                        if a.dt ~= b.dt then return a.dt < b.dt end
+                        return a.c.at < b.c.at
+                    end)
+                    -- Strict mode: a candidate that can't prove the hit
+                    -- is ours releases the line to the next-nearest
+                    -- candidate — show less, never wrong.
+                    for _, e in ipairs(pool) do
+                        local c = e.c
+                        if self:_Gate(c, line.kind) then
+                            c.done = true
+                            line.consumed = true
+                            self:_EmitPaired(c, line.kind)
+                            break
+                        end
+                        c.done = true
+                        self.stats.gated = (self.stats.gated or 0) + 1
+                        if ZCT.Dbg and ZCT.Dbg:Enabled("outgoing") then
+                            ZCT.Dbg:Trace("outgoing", "gate %s unit=%s kind=%s (strict)",
+                                c.cls, tostring(c.unit), tostring(line.kind))
+                        end
+                    end
+                end
             end
-        else
-        -- Palette line proves player/pet source involvement.
-        ZCT.Normalize:Emit(c.cls, {
-            direction = dir,
-            amount = c.amount,
-            school = c.school,
-            crit = c.crit,
-            periodic = (kind == "tick" or kind == "hot"),
-            lineKind = kind,
-            spellId = spellId,
-            -- Incoming heals: pet = the healed target. Outgoing: pet =
-            -- proven cast source. Never c.pet ("target is pet" is only
-            -- meaningful for incoming).
-            pet = (dir == "in") and (selfUnit == "pet") or (byPet == true),
-            action = c.action,
-            flagText = c.flagText,
-            unit = c.unit,
-        })
-        if ZCT.Dbg and ZCT.Dbg:Enabled("outgoing") then
-            -- pet= is proven cast attribution only; casterMode re-routes
-            -- unattributed melee later in Decide, so show that too.
-            local db = ZCT.GetDB and ZCT:GetDB() or nil
-            local cm = db and db.casterMode == true and spellId == nil
-                and (kind == "melee" or kind == "meleeMiss")
-            ZCT.Dbg:Trace("outgoing", "pair %s unit=%s kind=%s crit=%s spell=%s pet=%s cm=%s",
-                c.cls, tostring(c.unit), tostring(kind), tostring(c.crit),
-                tostring(spellId), tostring(byPet == true), tostring(cm == true))
         end
-        end
-    elseif not gated and c.cls == "heal" and selfHealUnit(c.unit) then
-        -- Heal on self/pet with NO palette line => another player healed
-        -- us (our filter would have produced a line for self-heals).
+    end
+end
+Out.MatchLines = Out._MatchLines
+
+-- Candidate TTL expired with no line: foreign damage/miss, or the
+-- filter is inactive. Heal candidates on self/pet fall back to
+-- incoming (another player healed us).
+function Out:_Expire(c)
+    if c.done then return end
+    c.done = true
+    self.stats.dropped = self.stats.dropped + 1
+    if isEnemyUnit(c.unit) then self:_NoteDrop() end
+    local lines = ZCT.LogLines
+    if c.cls == "heal" and selfHealUnit(c.unit) then
         local su = selfHealUnit(c.unit)
         if self:_HideOverheal() and self:_WasFullHeal(su, c.at) then
             if ZCT.Dbg and ZCT.Dbg:Enabled("overheal") then
@@ -620,21 +714,15 @@ function Out:_Pair(c)
     end
     -- All other unmatched candidates: someone else's damage/miss, or the
     -- filter is inactive. Traced so "no outgoing text" is diagnosable.
-    if not kind then
-        self.stats.dropped = self.stats.dropped + 1
-        if isEnemyUnit(c.unit) then self:_NoteDrop() end
-        local buffered = lines and lines.Count and lines:Count() or 0
-        if ZCT.Dbg and ZCT.Dbg:Enabled("outgoing") then
-            ZCT.Dbg:Trace("outgoing", "drop %s unit=%s: no unclaimed line (buffered=%s)",
-                c.cls, tostring(c.unit), tostring(buffered))
-        end
-        -- Only enemy damage/miss candidates imply lines SHOULD exist;
-        -- heal candidates on allies (followers' HoTs etc.) never do.
-        if c.cls ~= "heal" and lines and lines.SignalSeen then
-            Out:_CheckFeed(lines:SignalSeen())
-        end
-    else
-        Out._starved = 0
+    local buffered = lines and lines.Count and lines:Count() or 0
+    if ZCT.Dbg and ZCT.Dbg:Enabled("outgoing") then
+        ZCT.Dbg:Trace("outgoing", "drop %s unit=%s: no unclaimed line (buffered=%s)",
+            c.cls, tostring(c.unit), tostring(buffered))
+    end
+    -- Only enemy damage/miss candidates imply lines SHOULD exist;
+    -- heal candidates on allies (followers' HoTs etc.) never do.
+    if c.cls ~= "heal" and lines and lines.SignalSeen then
+        Out:_CheckFeed(lines:SignalSeen())
     end
 end
 

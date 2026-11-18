@@ -1304,12 +1304,18 @@ end
 function Core:Disable()
     if not self._enabled then return end
     self._enabled = false
+    self._pendingCVarApply = false
 
     if Addon and Addon.Dbg then
 		Addon:Dbg("core", 3, "Core:Disable()")
 	elseif Addon and Addon.DebugPrint then
 		Addon:DebugPrint(1, "Core:Disable()")
 	end
+
+    -- Restore Blizzard combat text: suppression cvars are SAVED, so
+    -- leaving them off would keep the user's default damage display
+    -- dead even with ZSBT fully off.
+    self:RestoreBlizzardFCT()
 
     if self.Combat and self.Combat.Disable then self.Combat:Disable() end
     if self.Cooldowns and self.Cooldowns.Disable then self.Cooldowns:Disable() end

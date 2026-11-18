@@ -1,5 +1,21 @@
 # Changelog
 
+## 4.1.1
+
+### Added
+- **`/zsbt fixfilter`** (aliases `/zsbt rebuildfilter`, `/zsbt filterfix`): purges stale/duplicate "ZSBT" combat-log filters, writes a fresh one, and selects it on next login. Followed by a popup explaining that `/reload` or relog is required, with a one-click Reload UI button.
+- **Help & Support -> Combat-Log Filter** troubleshooting topic with a "Rebuild Combat-Log Filter" button that runs the same repair and shows the reload prompt.
+- **"Strict Outgoing Detection" toggle** (General -> System, profile-scoped): forces strict pairing proof even outside groups — for open-world shared targets. Notes that it requires the ZSBT combat-log filter.
+
+### Changed
+- **Outgoing pairing is now closest-timestamp, not first-come:** palette lines claim their nearest UNIT_COMBAT candidate and candidates re-check buffered lines, so foreign hits can only steal a line by being closer in time to it than your own hit — previously arrival order let a foreign swing landing just before yours claim your line and inherit your pending cast's spell name.
+- **Strict mode pairing window tightened** to 0.10s (was effectively ~0.55s): your UNIT_COMBAT and its palette line are the same combat event (~1 frame apart); foreign candidates always carry a real time gap.
+- **Misses/avoids/absorbs/resists show in strict mode:** miss line kinds now map to a `misses` group policy (default `allow`) — a miss line can only exist when you missed, so the line is already the proof. Melee/ranged damage swings remain gated.
+
+### Fixed
+- **Blizzard combat text stayed suppressed after disabling/removing ZSBT:** `Core:Disable()` never restored the saved combat-text CVars, unregistered frames, or nulled `CombatText_AddMessage*` hooks — turning ZSBT off left both ZSBT and Blizzard text dead, and deleting the addon left the saved CVars off permanently. Disable now restores Blizzard FCT, and the login path restores it whenever the master toggle is off (covers already-broken saved states).
+- Help docs: new "Blizzard combat text stays off" recovery section.
+
 ## 4.1
 
 ### Changed
