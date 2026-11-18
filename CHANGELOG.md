@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.3.4
 
 ### Added
 - **Resource Tracker** (from 3.5.3, with the 3.5.6 rework): Alerts > Notifications > Resource Tracker adds freely-positionable resource counters (diamond pips or fraction/number text) with drag-to-move and corner-resize while unlocked, looping Ignite/Chromatic/Shatter/Afterimage effects and a rising-edge sound while a resource sits at max, per-counter font overrides, and a gold border in unlock mode.
