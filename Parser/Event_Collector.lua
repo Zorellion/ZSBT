@@ -2673,6 +2673,31 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			return
 		end
 		if actionStr and actionStr ~= "WOUND" then
+			-- Miss outcomes (MISS/DODGE/PARRY/BLOCK/ABSORB/etc.) arrive as their
+			-- own action with no damage amount; emit them as miss text instead.
+			if actionStr == "MISS" or actionStr == "DODGE" or actionStr == "PARRY"
+				or actionStr == "BLOCK" or actionStr == "ABSORB" or actionStr == "IMMUNE"
+				or actionStr == "DEFLECT" or actionStr == "REFLECT" or actionStr == "EVADE" then
+				local spellId = nil
+				if self._lastPlayerSpellAt and self._lastPlayerSpellId then
+					local age = t - self._lastPlayerSpellAt
+					if age >= 0 and age <= 1.5 then
+						spellId = self._lastPlayerSpellId
+					end
+				end
+				if restrict and not spellId then
+					return
+				end
+				emit("OUTGOING_MISS_COMBAT", {
+					timestamp = t,
+					amountText = actionStr,
+					spellId = spellId,
+					spellIdWeak = (spellId ~= nil) and true or nil,
+					amountSource = "UNIT_COMBAT_MISS",
+					targetName = safeUnitName("target"),
+					isCrit = false,
+				})
+			end
 			return
 		end
 		-- Filter non-hit descriptors that frequently show up as small/zero values.
