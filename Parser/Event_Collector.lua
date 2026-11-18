@@ -247,10 +247,6 @@ local function flushBestOutgoing(self, token)
 	self._rawPipe[pipeId] = bucket.amount
 	self._lastOutgoingCombatAt = bucket.timestamp
 	self._lastOutgoingCombatTargetName = bucket.targetName
-	-- One number per cast: remember this token flushed so later WOUND waves
-	-- for the same cast can't recreate the bucket and double-display.
-	self._lastBestFlushToken = token
-	self._lastBestFlushAt = now()
 	if (tonumber(dl) or 0) >= 4 then
 		ECPrint(("FLUSH_BEST token=%s spellId=%s amt=%s school=%s crit=%s cnt=%s max=%s second=%s")
 			:format(dbgSafe(token), dbgSafe(bucket.spellId), dbgSafe(bucket.amount), dbgSafe(bucket.schoolMask), dbgSafe(bucket.isCrit), dbgSafe(bucket._seenCount), dbgSafe(bucket._seenMax), dbgSafe(bucket._seenSecond)))
@@ -332,72 +328,6 @@ local function isWarlockDotSpellId(spellId)
 	local sn = (ZSBT and ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId)) or nil
 	if type(sn) ~= "string" or sn == "" then return false end
 	return sn == "Corruption" or sn == "Agony" or sn == "Unstable Affliction" or sn == "Seed of Corruption"
-end
-
--- Direct-damage warlock spells whose landings should keep player attribution
--- even when a shadow-school pet hit arrives inside the recent-cast window.
--- Warlock pets (felhunter/felguard/voidwalker/succubus) deal steady shadow
--- damage; without this list every pet bite near a cast would be claimed as
--- the player's spell. DoTs are included for non-periodic tick edge cases.
-local WARLOCK_NUKE_SPELL_IDS = {
-	[686] = true,     -- Shadow Bolt
-	[29722] = true,   -- Incinerate
-	[116858] = true,  -- Chaos Bolt
-	[17877] = true,   -- Shadowburn
-	[48181] = true,   -- Haunt
-	[205180] = true,  -- Darkglare
-	[172] = true,     -- Corruption
-	[980] = true,     -- Agony
-	[30108] = true,   -- Unstable Affliction
-	[27243] = true,   -- Seed of Corruption
-}
-
--- Spell IDs differ between clients (Retail uses modern IDs like 686; Forever
--- still reports classic rank IDs such as 705 for Shadow Bolt). Resolve names
--- once per spellId and cache the verdict so WOUND hot paths stay cheap.
-local WARLOCK_NUKE_SPELL_NAMES = {
-	["Shadow Bolt"] = true,
-	["Incinerate"] = true,
-	["Chaos Bolt"] = true,
-	["Shadowburn"] = true,
-	["Haunt"] = true,
-	["Darkglare"] = true,
-	["Corruption"] = true,
-	["Agony"] = true,
-	["Unstable Affliction"] = true,
-	["Seed of Corruption"] = true,
-}
-
-local _spellBaseNameCache = {}
-
-local function spellBaseName(spellId)
-	if type(spellId) ~= "number" then return nil end
-	local cached = _spellBaseNameCache[spellId]
-	if cached ~= nil then return cached end
-	local base = false
-	local name = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or nil
-	if type(name) == "string" and name ~= "" then
-		-- Strip rank/tooltip suffixes: "Shadow Bolt (Rank 3)" -> "Shadow Bolt"
-		base = name:gsub("%s*%(.*%)%s*$", "")
-	end
-	_spellBaseNameCache[spellId] = base
-	return base
-end
-
-local function spellNameMatches(spellId, names)
-	local base = spellBaseName(spellId)
-	return type(base) == "string" and names[base] == true
-end
-
-local function isWarlockNukeSpellId(spellId)
-	if type(spellId) ~= "number" then return false end
-	if WARLOCK_NUKE_SPELL_IDS[spellId] then return true end
-	return spellNameMatches(spellId, WARLOCK_NUKE_SPELL_NAMES)
-end
-
-local function isShadowBoltSpellId(spellId)
-	if spellId == 686 then return true end
-	return spellNameMatches(spellId, { ["Shadow Bolt"] = true })
 end
 
 local function isKnownPeriodicSpellId(spellId)
@@ -500,10 +430,8 @@ local PET_SIGNATURE_SCHOOLS_BY_CLASS = {
 local function isLikelyPetSchoolHit(school)
 	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) then return false end
 
-	-- Warlock: Imp/Infernal fire (4); felhunter/felguard/voidwalker/succubus
-	-- shadow damage (32). Physical pet melee stays excluded — it is
-	-- indistinguishable from the player's own auto-attacks.
-	if isWarlockPlayer() and (school == 4 or school == 32) then
+	-- Warlock: Imp damage is fire (school 4).
+	if isWarlockPlayer() and school == 4 then
 		return true
 	end
 
@@ -576,7 +504,7 @@ local function isLikelyPetSchoolHitGivenRecentPlayerSpell(self, school, lastPlay
 	-- Warlock: Imp damage is typically fire; avoid stealing it for recent shadow casts.
 	if isWarlockPlayer() then
 		if school == 4 then
-			if isWarlockDotSpellId(lastPlayerSpellId) or isShadowBoltSpellId(lastPlayerSpellId) then
+			if lastPlayerSpellId == 172 or lastPlayerSpellId == 980 or lastPlayerSpellId == 30108 or lastPlayerSpellId == 686 then
 				return true
 			end
 		end
@@ -2451,17 +2379,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					if isLikelyPetSchoolHitGivenRecentPlayerSpell(self, school, self._lastPlayerSpellId) then
 						recentPlayerCast = false
 					end
-					-- Warlock shadow pets deal steady shadow damage that would
-					-- otherwise be swallowed by the recent-cast window (felhunter
-					-- bites land ~1s apart, almost always near a player cast).
-					-- Let the pet claim shadow-school hits UNLESS the recent cast
-					-- was a known warlock nuke — those landings are the player's.
-					if recentPlayerCast and isWarlockPlayer() and (ZSBT.IsSafeNumber(school) and school == 32) then
-						local sid = self._lastPlayerSpellId
-						if not isWarlockNukeSpellId(sid) then
-							recentPlayerCast = false
-						end
-					end
 					-- DoT ticks can arrive long after the cast and look like small magic WOUND
 					-- events. If we have a recent periodic spell in our window, prefer treating
 					-- this as player periodic damage instead of pet damage.
@@ -2504,16 +2421,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							dotSpellId = nil
 						end
 					end
-					-- A live non-periodic pending cast is stronger evidence than
-					-- DoT attribution: a direct nuke (e.g. Shadow Bolt) landing
-					-- while DoTs are up must not be swallowed as a tick. Peek
-					-- only — do not consume the cast.
-					if dotSpellId then
-						local peek = consumeBestPendingCast(self, t, nil, nil, false)
-						if peek and peek.spellId and not isKnownPeriodicSpellId(peek.spellId) then
-							dotSpellId = nil
-						end
-					end
 					if dotSpellId then
 						if not isCorroboratedHugeHit(t, amount, dotSpellId) then
 							if dl >= 4 then
@@ -2547,21 +2454,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					local petEligibleHit = true
 					if ZSBT.IsSafeNumber(school) and not isLikelyPetSchoolHit(school) then
 						petEligibleHit = false
-						-- Warlock exception: when the player is definitively NOT
-						-- auto-attacking, physical WOUNDs are almost certainly the
-						-- pet's melee (succubus/voidwalker/felhunter white hits —
-						-- warlocks typically cast at range while the pet melees).
-						-- If the player IS swinging, the two are indistinguishable
-						-- and the hit stays outgoing.
-						if petEligibleHit == false and isPhysicalEarly and isWarlockPlayer() then
-							local okAR, notAuto = pcall(function()
-								if not IsAutoRepeatAction then return nil end
-								return IsAutoRepeatAction(1) == false
-							end)
-							if okAR and notAuto == true then
-								petEligibleHit = true
-							end
-						end
 					end
 					if not recentPlayerCast and petEligibleHit then
 						if not isCorroboratedHugePetHit(t, amount) then
@@ -3096,13 +2988,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					return
 				end
 			end
-			-- Warlock nukes/DoTs are never physical: a physical WOUND matching one
-			-- of these casts is pet melee or an auto-attack, not the spell. Strip
-			-- the spellId so it can't print a fake "Shadow Bolt" number alongside
-			-- the real bolt landing through the non-physical merge bucket.
-			if matchedCast and matchedCast.spellId and isWarlockPlayer() and isWarlockNukeSpellId(matchedCast.spellId) then
-				matchedCast = nil
-			end
 			if restrict and not matchedCast then
 				return
 			end
@@ -3280,14 +3165,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		-- If no existing bucket, only start one when we can attribute this hit.
 		local matchedCast = nil
 		if not existing then
-			-- Same cast token already flushed: drop further non-physical hits
-			-- until the next cast. Window is short enough that channeled ticks
-			-- (~1s spacing) can still open a new bucket.
-			local lfTok = self._lastBestFlushToken
-			local lfAt = self._lastBestFlushAt or 0
-			if tokenKey == lfTok and (t - lfAt) >= 0 and (t - lfAt) < 1.0 then
-				return
-			end
 			-- Small non-physical hits can be either real spell damage (low level / old content)
 			-- or tiny procs/secondary effects. Prefer attribution first; only suppress when
 			-- we cannot correlate it to a recent cast/periodic effect.
@@ -3315,14 +3192,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							end
 							dotSpellId = nil
 						end
-					end
-				end
-				-- Same pending-cast precedence as the pet-fallback DoT path:
-				-- a live non-periodic cast means this is the nuke, not a tick.
-				if dotSpellId then
-					local peek = consumeBestPendingCast(self, t, nil, nil, false)
-					if peek and peek.spellId and not isKnownPeriodicSpellId(peek.spellId) then
-						dotSpellId = nil
 					end
 				end
 				if dotSpellId then
@@ -3434,7 +3303,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					if type(lastAt) == "number" and type(lastId) == "number" then
 						local age = t - lastAt
 						local maxAge = castWindow
-						if isShadowBoltSpellId(lastId) then
+						if lastId == 686 then
 							maxAge = math.max(maxAge, 2.50)
 						elseif not isPhysical then
 							maxAge = math.max(maxAge, 1.25)
@@ -3458,7 +3327,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						local lastId = self._lastPlayerSpellId
 						if type(lastId) == "number" then
 							local maxAge = 1.25
-							if isShadowBoltSpellId(lastId) then
+							if lastId == 686 then
 								maxAge = 2.50
 							end
 							if age >= 0 and age <= maxAge then
