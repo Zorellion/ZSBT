@@ -4,8 +4,6 @@
 ------------------------------------------------------------------------
 local ADDON_NAME, ZSBT = ...
 
-local L = ZSBT.L
-
 ------------------------------------------------------------------------
 -- Create the Ace3 addon object
 ------------------------------------------------------------------------
@@ -113,7 +111,7 @@ local function GetUTAnnouncerPresetTriggers()
 			eventType = "UT_KILL_1",
 			throttleSec = 0,
 			action = {
-				text = L["First Blood!"],
+				text = "First Blood!",
 				scrollArea = "Notifications",
 				sound = "ZSBT: First Blood",
 				color = { r = 1.0, g = 0.0, b = 0.11764705882353 },
@@ -131,7 +129,7 @@ local function GetUTAnnouncerPresetTriggers()
 			eventType = "UT_KILL_2",
 			throttleSec = 0,
 			action = {
-				text = L["Double Kill!"],
+				text = "Double Kill!",
 				scrollArea = "Notifications",
 				sound = "ZSBT: Double Kill",
 				color = { r = 1.0, g = 0.0, b = 0.11764705882353 },
@@ -149,7 +147,7 @@ local function GetUTAnnouncerPresetTriggers()
 			eventType = "UT_KILL_3",
 			throttleSec = 0,
 			action = {
-				text = L["Killing Spree!"],
+				text = "Killing Spree!",
 				scrollArea = "Notifications",
 				sound = "ZSBT: Killing Spree",
 				color = { r = 1.0, g = 0.0, b = 0.11764705882353 },
@@ -167,7 +165,7 @@ local function GetUTAnnouncerPresetTriggers()
 			eventType = "UT_KILL_4",
 			throttleSec = 0,
 			action = {
-				text = L["Mega Kill!"],
+				text = "Mega Kill!",
 				scrollArea = "Notifications",
 				sound = "ZSBT: Mega Kill",
 				color = { r = 1.0, g = 0.0, b = 0.11764705882353 },
@@ -185,7 +183,7 @@ local function GetUTAnnouncerPresetTriggers()
 			eventType = "UT_KILL_5",
 			throttleSec = 0,
 			action = {
-				text = L["Rampage!"],
+				text = "Rampage!",
 				scrollArea = "Notifications",
 				sound = "ZSBT: Rampage",
 				color = { r = 1.0, g = 0.0, b = 0.11764705882353 },
@@ -203,7 +201,7 @@ local function GetUTAnnouncerPresetTriggers()
 			eventType = "UT_KILL_6",
 			throttleSec = 0,
 			action = {
-				text = L["Unstoppable!"],
+				text = "Unstoppable!",
 				scrollArea = "Notifications",
 				sound = "ZSBT: Unstoppable",
 				color = { r = 1.0, g = 0.0, b = 0.11764705882353 },
@@ -221,7 +219,7 @@ local function GetUTAnnouncerPresetTriggers()
 			eventType = "UT_KILL_7",
 			throttleSec = 0,
 			action = {
-				text = L["God Like!"],
+				text = "God Like!",
 				scrollArea = "Notifications",
 				sound = "ZSBT: Godlike",
 				color = { r = 1.0, g = 0.81176470588235, b = 0.0 },
@@ -265,376 +263,6 @@ end
 ------------------------------------------------------------------------
 -- OnInitialize: Fires once when addon loads (before PLAYER_LOGIN)
 ------------------------------------------------------------------------
-function Addon:InjectDBProfilesOptions(options)
-	local AceDBOptions = LibStub("AceDBOptions-3.0", true)
-	if not AceDBOptions and self.Print then
-		self:Print("|cFFFF4444ZSBT: AceDBOptions-3.0 library not loaded - DB Profiles page will be empty.|r")
-	end
-	if AceDBOptions then
-		local mainDb = self.db
-		local function deepCopyTable(src, seen)
-			if type(src) ~= "table" then return src end
-			-- IMPORTANT: Never deep-copy the AceDB database object.
-			-- If we clone it, the Profiles UI would operate on a detached copy and
-			-- newly created profiles would not persist to SavedVariables.
-			if src == mainDb then return src end
-			seen = seen or {}
-			if seen[src] then return seen[src] end
-			local dst = {}
-			seen[src] = dst
-			for k, v in pairs(src) do
-				dst[deepCopyTable(k, seen)] = deepCopyTable(v, seen)
-			end
-			local mt = getmetatable(src)
-			if mt ~= nil then
-				setmetatable(dst, mt)
-			end
-			return dst
-		end
-		local function wrapHandler(handler)
-			if type(handler) ~= "table" then return handler end
-			local h = {}
-			setmetatable(h, { __index = handler })
-			h.DeleteProfile = function(selfH, info, value)
-				if value == "Default" then
-					return
-				end
-				if type(handler.DeleteProfile) == "function" then
-					return handler.DeleteProfile(handler, info, value)
-				end
-			end
-			return h
-		end
-		local function cloneProfilesTable(t)
-			local copy = deepCopyTable(t)
-			if copy and copy.handler then
-				copy.handler = wrapHandler(copy.handler)
-			end
-			return copy
-		end
-		local function safeGetProfilesTable(db)
-			local ok, t = pcall(AceDBOptions.GetOptionsTable, AceDBOptions, db, true)
-			if not ok then
-				if ZSBT and ZSBT.Print then ZSBT:Print("|cFFFF4444ZSBT: AceDBOptions profile table failed:|r " .. tostring(t)) end
-				return nil
-			end
-			return cloneProfilesTable(t)
-		end
-		local function safeListProfiles(handler, info)
-			if not handler or type(handler.ListProfiles) ~= "function" then return nil end
-			local ok, t = pcall(handler.ListProfiles, handler, info)
-			if ok and type(t) == "table" then return t end
-			return nil
-		end
-		local function safeSetChooseArg(tbl)
-			local chooseOpt = tbl and tbl.args and tbl.args.choose
-			if chooseOpt then
-				chooseOpt.arg = "nocurrent"
-			end
-		end
-		local function safeRestrictDeleteDefault(tbl)
-			local deleteOpt = tbl and tbl.args and tbl.args.delete
-			if deleteOpt then
-				deleteOpt.values = function(info)
-					local profiles = safeListProfiles(info and info.handler, info)
-					if type(profiles) == "table" then
-						profiles["Default"] = nil
-					end
-					return profiles
-				end
-				deleteOpt.disabled = function(info)
-					local profiles = info and info.option and info.option.values and info.option.values(info)
-					return (type(profiles) ~= "table") or (not next(profiles))
-				end
-			end
-		end
-		-- Request the profiles options table without AceDBOptions' built-in
-		-- "common" suggestions (realm/class/char/Default). We only want to show
-		-- real saved profiles the user has actually created.
-		local profilesTable = safeGetProfilesTable(self.db)
-		if profilesTable and profilesTable.handler and profilesTable.args then
-			local addon = self
-			local function getCharKey()
-				local name = UnitName and UnitName("player")
-				local realm = (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName and GetRealmName())
-				if type(name) ~= "string" or name == "" then return nil end
-				if type(realm) ~= "string" or realm == "" then realm = "UnknownRealm" end
-				return name .. "-" .. realm
-			end
-			addon._copyFromCharKey = addon._copyFromCharKey or ""
-			addon._copyCharMode = addon._copyCharMode or "merge"
-			local function getSvCharTable()
-				local sv = mainDb and mainDb.sv
-				local ch = sv and sv.char
-				if type(ch) == "table" then return ch end
-				return nil
-			end
-			local function listCharKeys()
-				local out = {}
-				local ch = getSvCharTable()
-				local cur = getCharKey()
-				if type(ch) ~= "table" then
-					return out
-				end
-				for k in pairs(ch) do
-					if type(k) == "string" and k ~= "" and k ~= cur then
-						out[k] = k
-					end
-				end
-				return out
-			end
-			local function mergeMissing(dst, src)
-				if type(dst) ~= "table" or type(src) ~= "table" then return end
-				for k, v in pairs(src) do
-					if dst[k] == nil then
-						dst[k] = deepCopyTable(v)
-					end
-				end
-			end
-			local function replaceTable(dst, src)
-				if type(dst) ~= "table" or type(src) ~= "table" then return end
-				for k in pairs(dst) do
-					dst[k] = nil
-				end
-				for k, v in pairs(src) do
-					dst[k] = deepCopyTable(v)
-				end
-			end
-			local function copyFromSelectedChar(copySpellRules, copyAuraRules, copyTriggers)
-				local fromKey = addon._copyFromCharKey
-				if type(fromKey) ~= "string" or fromKey == "" then
-					if addon and addon.Print then addon:Print(L["Select a source character first."]) end
-					return
-				end
-				local ch = getSvCharTable()
-				local src = ch and ch[fromKey]
-				local dst = mainDb and mainDb.char
-				if type(src) ~= "table" or type(dst) ~= "table" then
-					if addon and addon.Print then addon:Print(L["Source/target character data not available."]) end
-					return
-				end
-				local mode = addon._copyCharMode
-				if mode ~= "merge" and mode ~= "replace" then mode = "merge" end
-				local changed = false
-				if copySpellRules then
-					dst.spamControl = dst.spamControl or {}
-					dst.spamControl.spellRules = dst.spamControl.spellRules or {}
-					local srcRules = src.spamControl and src.spamControl.spellRules
-					if type(srcRules) == "table" then
-						if mode == "replace" then
-							replaceTable(dst.spamControl.spellRules, srcRules)
-						else
-							mergeMissing(dst.spamControl.spellRules, srcRules)
-						end
-						changed = true
-					end
-				end
-				if copyAuraRules then
-					dst.spamControl = dst.spamControl or {}
-					dst.spamControl.auraRules = dst.spamControl.auraRules or {}
-					local srcRules = src.spamControl and src.spamControl.auraRules
-					if type(srcRules) == "table" then
-						if mode == "replace" then
-							replaceTable(dst.spamControl.auraRules, srcRules)
-						else
-							mergeMissing(dst.spamControl.auraRules, srcRules)
-						end
-						changed = true
-					end
-				end
-				if copyTriggers then
-					dst.triggers = dst.triggers or { enabled = true, items = {} }
-					dst.triggers.items = dst.triggers.items or {}
-					local srcTrig = src.triggers
-					local srcItems = srcTrig and srcTrig.items
-					if type(srcItems) == "table" then
-						if mode == "replace" then
-							dst.triggers.enabled = (srcTrig and srcTrig.enabled ~= false) and true or false
-							dst.triggers.items = deepCopyTable(srcItems)
-						changed = true
-						else
-							local existing = {}
-							for _, t in ipairs(dst.triggers.items) do
-								if type(t) == "table" then
-									local id = t.id or t._key
-									if id ~= nil then existing[tostring(id)] = true end
-								end
-							end
-							for _, t in ipairs(srcItems) do
-								if type(t) == "table" then
-									local id = t.id or t._key
-									if id == nil or existing[tostring(id)] ~= true then
-										dst.triggers.items[#dst.triggers.items + 1] = deepCopyTable(t)
-										changed = true
-									end
-								end
-							end
-						end
-					end
-				end
-				if changed then
-					if copyTriggers and ZSBT and type(ZSBT.RefreshTriggersTab) == "function" then
-						pcall(ZSBT.RefreshTriggersTab)
-					end
-					local ACR2 = LibStub("AceConfigRegistry-3.0", true)
-					if ACR2 then
-						pcall(function() ACR2:NotifyChange("ZSBT_SpellRules") end)
-						pcall(function() ACR2:NotifyChange("ZSBT_BuffRules") end)
-						pcall(function() ACR2:NotifyChange("ZSBT") end)
-					end
-					if addon and addon.Print then addon:Print(L["Copied rules/triggers from "] .. tostring(fromKey) .. " (" .. tostring(mode) .. ").") end
-				end
-			end
-
-			profilesTable.args.zsbtPresetProfiles = {
-				type = "group",
-				name = L["Preset Profiles"],
-				order = 999,
-				inline = true,
-				args = {
-				desc = {
-					type = "description",
-					name = L["Restore shipped preset profiles (layouts) to their defaults. This only modifies the preset profile itself and does not change which profile you currently have selected."],
-					order = 1,
-					width = "full",
-				},
-				resetMelee = {
-					type = "execute",
-					name = L["Reset Preset: Melee"],
-					order = 2,
-					width = "full",
-					func = function()
-						if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
-							ZSBT.Presets.ResetPreset("Melee")
-							if addon and addon.Print then addon:Print(L["Reset preset: Melee"]) end
-						end
-					end,
-				},
-				resetRanged = {
-					type = "execute",
-					name = L["Reset Preset: Ranged"],
-					order = 3,
-					width = "full",
-					func = function()
-						if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
-							ZSBT.Presets.ResetPreset("Ranged")
-							if addon and addon.Print then addon:Print(L["Reset preset: Ranged"]) end
-						end
-					end,
-				},
-				resetTank = {
-					type = "execute",
-					name = L["Reset Preset: Tank"],
-					order = 4,
-					width = "full",
-					func = function()
-						if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
-							ZSBT.Presets.ResetPreset("Tank")
-							if addon and addon.Print then addon:Print(L["Reset preset: Tank"]) end
-						end
-					end,
-				},
-				resetHealer = {
-					type = "execute",
-					name = L["Reset Preset: Healer"],
-					order = 5,
-					width = "full",
-					func = function()
-						if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
-							ZSBT.Presets.ResetPreset("Healer")
-							if addon and addon.Print then addon:Print(L["Reset preset: Healer"]) end
-						end
-					end,
-				},
-				resetPetClass = {
-					type = "execute",
-					name = L["Reset Preset: Pet Class"],
-					order = 6,
-					width = "full",
-					func = function()
-						if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
-							ZSBT.Presets.ResetPreset("PetClass")
-							if addon and addon.Print then addon:Print(L["Reset preset: Pet Class"]) end
-						end
-					end,
-				},
-			},
-		}
-
-		profilesTable.args.zsbtCopyCharData = {
-			type = "group",
-			name = L["Copy Rules / Triggers"],
-			order = 998,
-			inline = true,
-			args = {
-				desc = {
-					type = "description",
-					name = L["Copy per-character Spell Rules, Buff Rules, and Triggers into your current character. Profiles do not include these items."],
-					order = 1,
-					width = "full",
-				},
-				fromChar = {
-					type = "select",
-					name = L["Copy From Character"],
-					order = 2,
-					width = "full",
-					values = function() return listCharKeys() end,
-					get = function() return addon._copyFromCharKey end,
-					set = function(_, v) addon._copyFromCharKey = tostring(v or "") end,
-				},
-				mode = {
-					type = "select",
-					name = L["Copy Mode"],
-					order = 3,
-					width = "full",
-					values = { merge = L["Merge (add missing)"], replace = "Replace" },
-					get = function() return addon._copyCharMode end,
-					set = function(_, v) addon._copyCharMode = tostring(v or "merge") end,
-				},
-				copySpellRules = {
-					type = "execute",
-					name = L["Copy Spell Rules"],
-					order = 10,
-					width = "full",
-					func = function() copyFromSelectedChar(true, false, false) end,
-				},
-				copyAuraRules = {
-					type = "execute",
-					name = L["Copy Buff Rules"],
-					order = 11,
-					width = "full",
-					func = function() copyFromSelectedChar(false, true, false) end,
-				},
-				copyTriggers = {
-					type = "execute",
-					name = L["Copy Triggers"],
-					order = 12,
-					width = "full",
-					func = function() copyFromSelectedChar(false, false, true) end,
-				},
-				copyAll = {
-					type = "execute",
-					name = L["Copy All (Rules + Triggers)"],
-					order = 13,
-					width = "full",
-					func = function() copyFromSelectedChar(true, true, true) end,
-				},
-			},
-		}
-
-		safeSetChooseArg(profilesTable)
-		safeRestrictDeleteDefault(profilesTable)
-		profilesTable.order = 100
-		profilesTable.name = L["|cFFFFD100DB Profiles|r"]
-		if options and options.args and options.args.profiles and options.args.profiles.args then
-			options.args.profiles.args.acedbProfiles = profilesTable
-		elseif options and options.args then
-			options.args.acedbProfiles = profilesTable
-		end
-	end
-	end
-end
-
 function Addon:OnInitialize()
     -- Initialize AceDB with our defaults and enable profiles
     self.db = LibStub("AceDB-3.0"):New("ZSBTDB", ZSBT.DEFAULTS, true)
@@ -722,47 +350,6 @@ function Addon:OnInitialize()
 
 	migrateGeneralDefaultsOnce()
 	migrateGeneralDefaults_v2()
-
-	-- One-time cleanup: earlier builds installed a "ZSBT" combat-log filter
-	-- into Blizzard_CombatLog_Filters and made it the active filter, which
-	-- silently restricted the user's whole combat log to self+pet damage.
-	-- The attribution module that needed it is gone — remove the filter and
-	-- restore a sane currentFilter so users' logs return to normal.
-	local function cleanupCombatLogFilter()
-		self.db.global = self.db.global or {}
-		self.db.global.migrations = self.db.global.migrations or {}
-		if self.db.global.migrations.combatLogFilterCleanup_v1 == true then return end
-
-		local saved = _G.Blizzard_CombatLog_Filters
-		if type(saved) == "table" and type(saved.filters) == "table" then
-			local removedIdx = nil
-			for i = #saved.filters, 1, -1 do
-				local f = saved.filters[i]
-				if type(f) == "table" and f.name == "ZSBT" then
-					table.remove(saved.filters, i)
-					removedIdx = i
-				end
-			end
-			if removedIdx then
-				local cur = tonumber(saved.currentFilter) or 1
-				if cur == removedIdx then
-					saved.currentFilter = math.max(1, math.min(cur, #saved.filters))
-				elseif cur > removedIdx then
-					saved.currentFilter = cur - 1
-				end
-			end
-		end
-
-		-- Drop persisted learned cast school/delay profiles — the learning
-		-- layer was removed; the data is dead weight.
-		if type(self.db.global.castProfiles) == "table" then
-			self.db.global.castProfiles = nil
-		end
-
-		self.db.global.migrations.combatLogFilterCleanup_v1 = true
-	end
-
-	cleanupCombatLogFilter()
 
 	-- Diagnostics migration: seed new channel-based debug settings from legacy fields.
 	local function migrateDiagnosticsDebugChannels_v1()
@@ -1648,13 +1235,373 @@ function Addon:OnInitialize()
 	        local options = ZSBT.BuildOptionsTable()
 
 	        		-- Inject the AceDBOptions-3.0 profiles tab into the options tree
-		self:InjectDBProfilesOptions(options)
+			local AceDBOptions = LibStub("AceDBOptions-3.0", true)
+			if AceDBOptions then
+				local mainDb = self.db
+				local function deepCopyTable(src, seen)
+					if type(src) ~= "table" then return src end
+					-- IMPORTANT: Never deep-copy the AceDB database object.
+					-- If we clone it, the Profiles UI would operate on a detached copy and
+					-- newly created profiles would not persist to SavedVariables.
+					if src == mainDb then return src end
+					seen = seen or {}
+					if seen[src] then return seen[src] end
+					local dst = {}
+					seen[src] = dst
+					for k, v in pairs(src) do
+						dst[deepCopyTable(k, seen)] = deepCopyTable(v, seen)
+					end
+					local mt = getmetatable(src)
+					if mt ~= nil then
+						setmetatable(dst, mt)
+					end
+					return dst
+				end
+				local function wrapHandler(handler)
+					if type(handler) ~= "table" then return handler end
+					local h = {}
+					setmetatable(h, { __index = handler })
+					h.DeleteProfile = function(selfH, info, value)
+						if value == "Default" then
+							return
+						end
+						if type(handler.DeleteProfile) == "function" then
+							return handler.DeleteProfile(handler, info, value)
+						end
+					end
+					return h
+				end
+				local function cloneProfilesTable(t)
+					local copy = deepCopyTable(t)
+					if copy and copy.handler then
+						copy.handler = wrapHandler(copy.handler)
+					end
+					return copy
+				end
+				local function safeGetProfilesTable(db)
+					local ok, t = pcall(AceDBOptions.GetOptionsTable, AceDBOptions, db, true)
+					if not ok then return nil end
+					return cloneProfilesTable(t)
+				end
+				local function safeListProfiles(handler, info)
+					if not handler or type(handler.ListProfiles) ~= "function" then return nil end
+					local ok, t = pcall(handler.ListProfiles, handler, info)
+					if ok and type(t) == "table" then return t end
+					return nil
+				end
+				local function safeSetChooseArg(tbl)
+					local chooseOpt = tbl and tbl.args and tbl.args.choose
+					if chooseOpt then
+						chooseOpt.arg = "nocurrent"
+					end
+				end
+				local function safeRestrictDeleteDefault(tbl)
+					local deleteOpt = tbl and tbl.args and tbl.args.delete
+					if deleteOpt then
+						deleteOpt.values = function(info)
+							local profiles = safeListProfiles(info and info.handler, info)
+							if type(profiles) == "table" then
+								profiles["Default"] = nil
+							end
+							return profiles
+						end
+						deleteOpt.disabled = function(info)
+							local profiles = info and info.option and info.option.values and info.option.values(info)
+							return (type(profiles) ~= "table") or (not next(profiles))
+						end
+					end
+				end
+				-- Request the profiles options table without AceDBOptions' built-in
+				-- "common" suggestions (realm/class/char/Default). We only want to show
+				-- real saved profiles the user has actually created.
+				local profilesTable = safeGetProfilesTable(self.db)
+				if profilesTable and profilesTable.handler and profilesTable.args then
+					local addon = self
+					local function getCharKey()
+						local name = UnitName and UnitName("player")
+						local realm = (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName and GetRealmName())
+						if type(name) ~= "string" or name == "" then return nil end
+						if type(realm) ~= "string" or realm == "" then realm = "UnknownRealm" end
+						return name .. "-" .. realm
+					end
+					addon._copyFromCharKey = addon._copyFromCharKey or ""
+					addon._copyCharMode = addon._copyCharMode or "merge"
+					local function getSvCharTable()
+						local sv = mainDb and mainDb.sv
+						local ch = sv and sv.char
+						if type(ch) == "table" then return ch end
+						return nil
+					end
+					local function listCharKeys()
+						local out = {}
+						local ch = getSvCharTable()
+						local cur = getCharKey()
+						if type(ch) ~= "table" then
+							return out
+						end
+						for k in pairs(ch) do
+							if type(k) == "string" and k ~= "" and k ~= cur then
+								out[k] = k
+							end
+						end
+						return out
+					end
+					local function mergeMissing(dst, src)
+						if type(dst) ~= "table" or type(src) ~= "table" then return end
+						for k, v in pairs(src) do
+							if dst[k] == nil then
+								dst[k] = deepCopyTable(v)
+							end
+						end
+					end
+					local function replaceTable(dst, src)
+						if type(dst) ~= "table" or type(src) ~= "table" then return end
+						for k in pairs(dst) do
+							dst[k] = nil
+						end
+						for k, v in pairs(src) do
+							dst[k] = deepCopyTable(v)
+						end
+					end
+					local function copyFromSelectedChar(copySpellRules, copyAuraRules, copyTriggers)
+						local fromKey = addon._copyFromCharKey
+						if type(fromKey) ~= "string" or fromKey == "" then
+							if addon and addon.Print then addon:Print("Select a source character first.") end
+							return
+						end
+						local ch = getSvCharTable()
+						local src = ch and ch[fromKey]
+						local dst = mainDb and mainDb.char
+						if type(src) ~= "table" or type(dst) ~= "table" then
+							if addon and addon.Print then addon:Print("Source/target character data not available.") end
+							return
+						end
+						local mode = addon._copyCharMode
+						if mode ~= "merge" and mode ~= "replace" then mode = "merge" end
+						local changed = false
+						if copySpellRules then
+							dst.spamControl = dst.spamControl or {}
+							dst.spamControl.spellRules = dst.spamControl.spellRules or {}
+							local srcRules = src.spamControl and src.spamControl.spellRules
+							if type(srcRules) == "table" then
+								if mode == "replace" then
+									replaceTable(dst.spamControl.spellRules, srcRules)
+								else
+									mergeMissing(dst.spamControl.spellRules, srcRules)
+								end
+								changed = true
+							end
+						end
+						if copyAuraRules then
+							dst.spamControl = dst.spamControl or {}
+							dst.spamControl.auraRules = dst.spamControl.auraRules or {}
+							local srcRules = src.spamControl and src.spamControl.auraRules
+							if type(srcRules) == "table" then
+								if mode == "replace" then
+									replaceTable(dst.spamControl.auraRules, srcRules)
+								else
+									mergeMissing(dst.spamControl.auraRules, srcRules)
+								end
+								changed = true
+							end
+						end
+						if copyTriggers then
+							dst.triggers = dst.triggers or { enabled = true, items = {} }
+							dst.triggers.items = dst.triggers.items or {}
+							local srcTrig = src.triggers
+							local srcItems = srcTrig and srcTrig.items
+							if type(srcItems) == "table" then
+								if mode == "replace" then
+									dst.triggers.enabled = (srcTrig and srcTrig.enabled ~= false) and true or false
+									dst.triggers.items = deepCopyTable(srcItems)
+								changed = true
+								else
+									local existing = {}
+									for _, t in ipairs(dst.triggers.items) do
+										if type(t) == "table" then
+											local id = t.id or t._key
+											if id ~= nil then existing[tostring(id)] = true end
+										end
+									end
+									for _, t in ipairs(srcItems) do
+										if type(t) == "table" then
+											local id = t.id or t._key
+											if id == nil or existing[tostring(id)] ~= true then
+												dst.triggers.items[#dst.triggers.items + 1] = deepCopyTable(t)
+												changed = true
+											end
+										end
+									end
+								end
+							end
+						end
+						if changed then
+							if copyTriggers and ZSBT and type(ZSBT.RefreshTriggersTab) == "function" then
+								pcall(ZSBT.RefreshTriggersTab)
+							end
+							local ACR2 = LibStub("AceConfigRegistry-3.0", true)
+							if ACR2 then
+								pcall(function() ACR2:NotifyChange("ZSBT_SpellRules") end)
+								pcall(function() ACR2:NotifyChange("ZSBT_BuffRules") end)
+								pcall(function() ACR2:NotifyChange("ZSBT") end)
+							end
+							if addon and addon.Print then addon:Print("Copied rules/triggers from " .. tostring(fromKey) .. " (" .. tostring(mode) .. ").") end
+						end
+					end
+
+					profilesTable.args.zsbtPresetProfiles = {
+						type = "group",
+						name = "Preset Profiles",
+						order = 999,
+						inline = true,
+						args = {
+						desc = {
+							type = "description",
+							name = "Restore shipped preset profiles (layouts) to their defaults. This only modifies the preset profile itself and does not change which profile you currently have selected.",
+							order = 1,
+							width = "full",
+						},
+						resetMelee = {
+							type = "execute",
+							name = "Reset Preset: Melee",
+							order = 2,
+							width = "full",
+							func = function()
+								if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
+									ZSBT.Presets.ResetPreset("Melee")
+									if addon and addon.Print then addon:Print("Reset preset: Melee") end
+								end
+							end,
+						},
+						resetRanged = {
+							type = "execute",
+							name = "Reset Preset: Ranged",
+							order = 3,
+							width = "full",
+							func = function()
+								if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
+									ZSBT.Presets.ResetPreset("Ranged")
+									if addon and addon.Print then addon:Print("Reset preset: Ranged") end
+								end
+							end,
+						},
+						resetTank = {
+							type = "execute",
+							name = "Reset Preset: Tank",
+							order = 4,
+							width = "full",
+							func = function()
+								if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
+									ZSBT.Presets.ResetPreset("Tank")
+									if addon and addon.Print then addon:Print("Reset preset: Tank") end
+								end
+							end,
+						},
+						resetHealer = {
+							type = "execute",
+							name = "Reset Preset: Healer",
+							order = 5,
+							width = "full",
+							func = function()
+								if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
+									ZSBT.Presets.ResetPreset("Healer")
+									if addon and addon.Print then addon:Print("Reset preset: Healer") end
+								end
+							end,
+						},
+						resetPetClass = {
+							type = "execute",
+							name = "Reset Preset: Pet Class",
+							order = 6,
+							width = "full",
+							func = function()
+								if ZSBT and ZSBT.Presets and ZSBT.Presets.ResetPreset then
+									ZSBT.Presets.ResetPreset("PetClass")
+									if addon and addon.Print then addon:Print("Reset preset: Pet Class") end
+								end
+							end,
+						},
+					},
+				}
+
+				profilesTable.args.zsbtCopyCharData = {
+					type = "group",
+					name = "Copy Rules / Triggers",
+					order = 998,
+					inline = true,
+					args = {
+						desc = {
+							type = "description",
+							name = "Copy per-character Spell Rules, Buff Rules, and Triggers into your current character. Profiles do not include these items.",
+							order = 1,
+							width = "full",
+						},
+						fromChar = {
+							type = "select",
+							name = "Copy From Character",
+							order = 2,
+							width = "full",
+							values = function() return listCharKeys() end,
+							get = function() return addon._copyFromCharKey end,
+							set = function(_, v) addon._copyFromCharKey = tostring(v or "") end,
+						},
+						mode = {
+							type = "select",
+							name = "Copy Mode",
+							order = 3,
+							width = "full",
+							values = { merge = "Merge (add missing)", replace = "Replace" },
+							get = function() return addon._copyCharMode end,
+							set = function(_, v) addon._copyCharMode = tostring(v or "merge") end,
+						},
+						copySpellRules = {
+							type = "execute",
+							name = "Copy Spell Rules",
+							order = 10,
+							width = "full",
+							func = function() copyFromSelectedChar(true, false, false) end,
+						},
+						copyAuraRules = {
+							type = "execute",
+							name = "Copy Buff Rules",
+							order = 11,
+							width = "full",
+							func = function() copyFromSelectedChar(false, true, false) end,
+						},
+						copyTriggers = {
+							type = "execute",
+							name = "Copy Triggers",
+							order = 12,
+							width = "full",
+							func = function() copyFromSelectedChar(false, false, true) end,
+						},
+						copyAll = {
+							type = "execute",
+							name = "Copy All (Rules + Triggers)",
+							order = 13,
+							width = "full",
+							func = function() copyFromSelectedChar(true, true, true) end,
+						},
+					},
+				}
+
+				safeSetChooseArg(profilesTable)
+				safeRestrictDeleteDefault(profilesTable)
+				profilesTable.order = 100
+				profilesTable.name = "|cFFFFD100DB Profiles|r"
+				if options and options.args and options.args.profiles and options.args.profiles.args then
+					options.args.profiles.args.acedbProfiles = profilesTable
+				elseif options and options.args then
+					options.args.acedbProfiles = profilesTable
+				end
+			end
+		end
 		local ACR = LibStub("AceConfig-3.0", true)
 		local ACD = LibStub("AceConfigDialog-3.0", true)
 		if not ACR or not ACD then
-			self:Print(L["|cFFFF4444ZSBT config libraries are missing.|r"])
-			self:Print(L["This usually means you installed a no-lib build or the addon was installed incompletely."])
-			self:Print(L["Fix: reinstall ZSBT with embedded libraries, or install the standalone 'Ace3' addon."])
+			self:Print("|cFFFF4444ZSBT config libraries are missing.|r")
+			self:Print("This usually means you installed a no-lib build or the addon was installed incompletely.")
+			self:Print("Fix: reinstall ZSBT with embedded libraries, or install the standalone 'Ace3' addon.")
 			return
 		end
 		ACR:RegisterOptionsTable("ZSBT", options)
@@ -1705,13 +1652,6 @@ function Addon:OnInitialize()
 			self.configDialog:SetDefaultSize("ZSBT_TriggerEditor", 560, 520)
 		end
 
-		if ZSBT.BuildResourceCounterOptionsTable then
-			ACR:RegisterOptionsTable("ZSBT_ResourceCounter", function()
-				return ZSBT.BuildResourceCounterOptionsTable()
-			end)
-			self.configDialog:SetDefaultSize("ZSBT_ResourceCounter", 560, 620)
-		end
-
 		if ZSBT.BuildDebugOptionsTable then
 			ACR:RegisterOptionsTable("ZSBT_Debug", function()
 				return ZSBT.BuildDebugOptionsTable()
@@ -1720,9 +1660,8 @@ function Addon:OnInitialize()
 		end
 	end
 
-    self:Print("|cFF00CC66" .. ZSBT.ADDON_TITLE .. L["|r |cFF808C9Ev"] .. ZSBT.VERSION ..
-                   L["|r loaded. Type |cFF00CC66/zsbt|r to configure."] ..
-                   " |cFF888888[" .. GetLocale() .. "]|r")
+    self:Print("|cFF00CC66" .. ZSBT.ADDON_TITLE .. "|r |cFF808C9Ev" .. ZSBT.VERSION ..
+                   "|r loaded. Type |cFF00CC66/zsbt|r to configure.")
 end
 
 ------------------------------------------------------------------------
@@ -1775,7 +1714,7 @@ function Addon:OnEnable()
 		if (tonumber(channelDbg) or 0) >= 5 or (tonumber(legacyDbg) or 0) >= 5 then
 			if Addon and Addon.Print and not ZSBT._lcpDbgRegisteredPrintDone then
 				ZSBT._lcpDbgRegisteredPrintDone = true
-				Addon:Print(L["LibCombatPulse consumers active (cutover enabled)."])
+				Addon:Print("LibCombatPulse consumers active (cutover enabled).")
 			end
 		end
 		ZSBT._lcpConsumerHandle = LCP:NewConsumer("ZSBT", {
@@ -1877,18 +1816,12 @@ function Addon:OnEnable()
             -- Enable parsers with combat lockdown protection
             local success = EnableParsers()
             if not success then
-                Addon:Print(L["In combat - ZSBT will fully enable after combat ends."])
+                Addon:Print("In combat - ZSBT will fully enable after combat ends.")
             end
         else
             -- Respect saved disabled state
             DisableParsers()
             if ZSBT.Core and ZSBT.Core.Disable then ZSBT.Core:Disable() end
-            -- Master-disabled must never leave Blizzard FCT suppressed:
-            -- a previous session could have exited with cvars off, and
-            -- Core:Disable() early-returns when it was never enabled.
-            if ZSBT.Core and ZSBT.Core.RestoreBlizzardFCT then
-                ZSBT.Core:RestoreBlizzardFCT()
-            end
         end
     end)
 
@@ -1933,50 +1866,16 @@ function Addon:HandleSlashCommand(input)
 	end
 
 	if not cmd or cmd == "" then
-		-- Bare /zsbt opens the ZCT-style shell; the classic AceConfig UI
-		-- stays reachable via "/zsbt classic".
-		if ZSBT.ConfigShell then
-			ZSBT.ConfigShell:Toggle()
-		else
-			self:OpenConfig()
-		end
+		self:OpenConfig()
 		return
 	end
 
     cmd = cmd:lower()
 
-    if cmd == "zctui" then
-        if self.ToggleZCTUI then
-            self:ToggleZCTUI()
-        elseif ZSBT.ConfigShell then
-            ZSBT.ConfigShell:Toggle()
-        end
-        return
-    elseif cmd == "classic" or cmd == "oldui" or cmd == "legacy" then
-        self:OpenConfig()
-        return
-    elseif cmd == "fixfilter" or cmd == "rebuildfilter" or cmd == "filterfix" then
-        -- Rebuild the "ZSBT" combat-log filter in place: purges stale
-        -- duplicates and writes a fresh one, selected on next login.
-        local f = ZSBT.ZCT and ZSBT.ZCT.CombatLogFilter
-        if f and f.RebuildNow then
-            local ok, removed = f:RebuildNow()
-            if ok then
-                if f.PromptReload then f:PromptReload() end
-                self:Print(L["ZSBT combat-log filter rebuilt"]
-                    .. (type(removed) == "number" and removed > 0
-                        and (" (removed " .. removed .. " stale)") or ""))
-            else
-                self:Print(L["Could not rebuild the combat-log filter (no filter data)."])
-            end
-        else
-            self:Print(L["Combat-log filter module not available."])
-        end
-        return
-    elseif cmd == "minimap" then
+    if cmd == "minimap" then
 		local mm = ZSBT.Core and ZSBT.Core.Minimap
 		if not (mm and (mm.SetHidden or mm.UpdateVisibility)) then
-			self:Print(L["Minimap button module not available."])
+			self:Print("Minimap button module not available.")
 			return
 		end
 		if mm.Init then
@@ -1989,7 +1888,7 @@ function Addon:HandleSlashCommand(input)
 		else
 			mm:UpdateVisibility()
 		end
-		self:Print((L["Minimap button %s."]):format(g.minimap.hide and "hidden" or "shown"))
+		self:Print(("Minimap button %s."):format(g.minimap.hide and "hidden" or "shown"))
 		return
 	end
 
@@ -2003,7 +1902,7 @@ function Addon:HandleSlashCommand(input)
         self:HandleResetCommand()
         return
     elseif cmd == "version" then
-        self:Print(ZSBT.ADDON_TITLE .. L[" v"] .. ZSBT.VERSION)
+        self:Print(ZSBT.ADDON_TITLE .. " v" .. ZSBT.VERSION)
         return
     elseif cmd == "auratest" then
         if ZSBT.Core and ZSBT.Core.RunAuraTest then
@@ -2013,7 +1912,7 @@ function Addon:HandleSlashCommand(input)
     elseif cmd == "restorefct" then
         if ZSBT.Core and ZSBT.Core.RestoreBlizzardFCT then
             ZSBT.Core:RestoreBlizzardFCT()
-            self:Print(L["Restored Blizzard Floating Combat Text settings."])
+            self:Print("Restored Blizzard Floating Combat Text settings.")
         end
         return
     elseif cmd == "dumpcvars" then
@@ -2037,12 +1936,12 @@ function Addon:HandleSlashCommand(input)
 				return
 			end
 			if d ~= nil then
-				self:Print(name .. "=" .. tostring(v) .. L[" (def "] .. tostring(d) .. ")")
+				self:Print(name .. "=" .. tostring(v) .. " (def " .. tostring(d) .. ")")
 			else
 				self:Print(name .. "=" .. tostring(v))
 			end
 		end
-		self:Print(L["Blizzard Combat Text CVars:"])
+		self:Print("Blizzard Combat Text CVars:")
 		dump("enableFloatingCombatText")
 		dump("enableCombatText")
 		dump("floatingCombatTextCombatDamage")
@@ -2055,13 +1954,11 @@ function Addon:HandleSlashCommand(input)
 		dump("floatingCombatTextCombatXP_v2")
 		dump("fctCombatXP")
 		dump("fctCombatXP_v2")
-		dump("floatingCombatTextXPChanges")
-		dump("floatingCombatTextXPChanges_v2")
 		dump("floatingCombatTextReactives")
 		dump("floatingCombatTextReactives_v2")
 		dump("CombatDamage")
 		dump("CombatHealing")
-		self:Print(L["World / XP text scale CVars:"])
+		self:Print("World / XP text scale CVars:")
 		dump("WorldTextScale")
 		dump("WorldTextSize")
 		dump("worldTextScale")
@@ -2072,653 +1969,16 @@ function Addon:HandleSlashCommand(input)
 		return
 	end
 
-    if cmd == "sectest" then
-		if ZSBT.RunSecretProbe then
-			ZSBT.RunSecretProbe()
-		end
-		return
-    end
-
-    if cmd == "resdiag" then
-		local function s(v)
-			if issecretvalue and issecretvalue(v) then return "SECRET" end
-			local ok, r = pcall(tostring, v)
-			return ok and r or "ERR"
-		end
-		local _, classToken = UnitClass("player")
-		self:Print("ZSBT resdiag class=" .. tostring(classToken)
-			.. " mainPT=" .. s(UnitPowerType and UnitPowerType("player")))
-		for i = 0, 20 do
-			local cur = UnitPower("player", i)
-			local mx = UnitPowerMax("player", i)
-			local safe = ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(cur) and ZSBT.IsSafeNumber(mx)
-			local allowed = ZSBT.CpPowerTypeAllowed and ZSBT.CpPowerTypeAllowed(i)
-			local shouldSecret = C_Secrets and C_Secrets.ShouldUnitPowerBeSecret
-				and C_Secrets.ShouldUnitPowerBeSecret("player", i)
-			local btn = ZSBT.CpPowerTypeAllowed and ZSBT.CpPowerTypeAllowed(i)
-				and not (ZSBT.PowerTypeSecret and ZSBT.PowerTypeSecret(i))
-				and ZSBT.IsSafeNumber(mx) and mx > 0
-			self:Print(("  pt%d cur=%s max=%s safe=%s allowed=%s shouldSecret=%s button=%s"):format(
-				i, s(cur), s(mx), tostring(safe == true), tostring(allowed == true),
-				tostring(shouldSecret == true), tostring(btn == true)))
-		end
-		local rc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.resourceCounters
-		if rc then
-			for k, v in pairs(rc) do
-				self:Print("  rc[" .. tostring(k) .. "] enabled=" .. tostring(v and v.enabled == true)
-					.. " attach=" .. tostring(v and v.attachArea)
-					.. " pos=" .. tostring(v and v.xOffset) .. "," .. tostring(v and v.yOffset))
-			end
-		else
-			self:Print("  resourceCounters=nil")
-		end
-		if ZSBT.Core and ZSBT.Core._cpWidgets then
-			for pt, f in pairs(ZSBT.Core._cpWidgets) do
-				self:Print("  widget pt" .. tostring(pt) .. " shown=" .. tostring(f:IsShown()))
-			end
-		else
-			self:Print("  no widgets")
-		end
-		-- Probe alternate read paths for the secret UnitPower current.
-		local function probe(name, fn)
-			local ok, v = pcall(fn)
-			self:Print("  probe " .. name .. " = " .. (ok and s(v) or "ERR"))
-		end
-		probe("UnitPower(main)", function() return UnitPower("player") end)
-		probe("UnitPower(1)", function() return UnitPower("player", 1) end)
-		probe("UnitPower(Enum.Rage)", function()
-			return UnitPower("player", Enum and Enum.PowerType and Enum.PowerType.Rage or 1)
-		end)
-		local cur1 = UnitPower("player", 1)
-		probe("canaccessvalue(cur1)", function()
-			return canaccessvalue and canaccessvalue(cur1)
-		end)
-		probe("cur1+0", function() return cur1 + 0 end)
-		probe("cur1==0", function() return cur1 == 0 end)
-		probe("floor(cur1)", function() return math.floor(cur1) end)
-		probe("tostring(cur1)", function() return tostring(cur1) end)
-		probe("cur1<mx", function() return cur1 < UnitPowerMax("player", 1) end)
-		probe("ShouldUnitPowerBeSecret", function()
-			return C_Secrets and C_Secrets.ShouldUnitPowerBeSecret and C_Secrets.ShouldUnitPowerBeSecret("player", 1)
-		end)
-		probe("UnitPowerPercent(1)", function() return UnitPowerPercent("player", 1) end)
-		probe("UnitPowerMissing(1)", function() return UnitPowerMissing("player", 1) end)
-		probe("UnitPowerDisplayMod(1)", function() return UnitPowerDisplayMod and UnitPowerDisplayMod("player", 1) end)
-		probe("UnitPower(1,true)", function() return UnitPower("player", 1, true) end)
-		-- StatusBar interpreter test: SetValue accepts secrets natively and
-		-- the fill texture's pixel width is a readable real number.
-		local sb = CreateFrame("StatusBar", nil, UIParent)
-		sb:SetSize(10000, 10)
-		sb:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-		sb:SetMinMaxValues(0, 100)
-		local okSV = pcall(sb.SetValue, sb, cur1)
-		probe("sb.SetValue(secret)", function() return okSV end)
-		local tex = sb.GetStatusBarTexture and sb:GetStatusBarTexture()
-		probe("tex width", function() return tex and tex:GetWidth() end)
-		probe("sb width", function() return sb:GetWidth() end)
-		sb:Hide()
-		-- Secret strings can be *displayed* even though they can't be read.
-		-- Probe which formatting paths produce a usable secret string.
-		probe("fmt %d/%d", function() return string.format("%d/%d", cur1, 100) end)
-		probe("fmt %s", function() return string.format("%s", cur1) end)
-		probe("concat", function() return "" .. cur1 end)
-		probe("AbbreviateNumbers", function() return AbbreviateNumbers and AbbreviateNumbers(cur1) end)
-		local fs = UIParent:CreateFontString(nil, "OVERLAY")
-		fs:SetPoint("CENTER")
-		local okST = pcall(fs.SetText, fs, string.format("%d/%d", cur1, 100))
-		probe("fs.SetText(fmt)", function() return okST end)
-		probe("fs.GetText", function() return fs:GetText() end)
-		fs:Hide()
-		-- Blizzard unit-frame power bars set their value via secure code;
-		-- StatusBar:GetValue() may return the real number.
-		local barCount, secretCount, playerBars = 0, 0, 0
-		local function unitOf(f)
-			local d = f
-			for _ = 1, 6 do
-				if type(d) ~= "table" then return nil end
-				if d.unit == "player" then return "player" end
-				if d.GetAttribute and d:GetAttribute("unit") == "player" then return "player" end
-				d = d.GetParent and d:GetParent()
-			end
-			return nil
-		end
-		local function scanBar(f)
-			if type(f) ~= "table" or type(f.GetValue) ~= "function" then return end
-			barCount = barCount + 1
-			local okV, v = pcall(f.GetValue, f)
-			if okV and issecretvalue and issecretvalue(v) then
-				secretCount = secretCount + 1
-				v = nil
-			end
-			if unitOf(f) == "player" then
-				playerBars = playerBars + 1
-				local nm = f.GetName and f:GetName() or "?"
-				local okMM, mn, mx = pcall(f.GetMinMaxValues, f)
-				self:Print("  pbar " .. tostring(nm) .. " val=" .. s(v)
-					.. " minmax=" .. tostring(okMM and mn) .. "/" .. tostring(okMM and mx))
-			end
-		end
-		local function walk(f, depth)
-			if depth > 10 or type(f) ~= "table" or not f.GetChildren then return end
-			local kids = { f:GetChildren() }
-			for _, ch in ipairs(kids) do
-				pcall(scanBar, ch)
-				walk(ch, depth + 1)
-			end
-		end
-		local roots = { UIParent, WorldFrame }
-		for _, name in ipairs({ "PlayerFrame", "TargetFrame", "FocusFrame", "PetFrame",
-			"PartyFrame", "RaidFrame", "Minimap" }) do
-			local f = _G[name]
-			if f then roots[#roots + 1] = f end
-		end
-		for _, r in ipairs(roots) do
-			if r then pcall(walk, r, 0) pcall(scanBar, r) end
-		end
-		self:Print("  bars scanned=" .. barCount .. " secret=" .. secretCount
-			.. " playerBars=" .. playerBars
-			.. " inCombat=" .. tostring(UnitAffectingCombat("player") == true))
-		return
-    end
-
-    if cmd == "icdiag" then
-		-- Toggle item-cooldown tracing: record -> cooldown read -> ready.
-		local ic = ZSBT.ItemCooldowns
-		if not ic then
-			self:Print("ZSBT icdiag: ItemCooldowns module not loaded")
-			return
-		end
-		ic._verbose = not ic._verbose
-		self:Print("ZSBT icdiag " .. (ic._verbose and "ON" or "OFF"))
-		if ic._hookLog and #ic._hookLog > 0 then
-			self:Print("ICDBG hooks: " .. table.concat(ic._hookLog, " "))
-		end
-		self:Print(("ICDBG bagEvents=%d"):format(ic._bagEvents or 0))
-		return
-    end
-
-    if cmd == "xpdiag" then
-		-- Toggle a live probe that prints every XP-relevant event to chat.
-		-- Used to determine which channel carries XP gain on this client.
-		if self._xpDiagFrame then
-			self._xpDiagFrame:UnregisterAllEvents()
-			self._xpDiagFrame:SetScript("OnEvent", nil)
-			self._xpDiagFrame = nil
-			self:Print("ZSBT xpdiag OFF")
-			return
-		end
-		local f = CreateFrame("Frame")
-		self._xpDiagFrame = f
-		for _, ev in ipairs({
-			"CHAT_MSG_COMBAT_XP_GAIN",
-			"CHAT_MSG_SYSTEM",
-			"CHAT_MSG_COMBAT_MISC_INFO",
-			"COMBAT_TEXT_UPDATE",
-		}) do
-			pcall(f.RegisterEvent, f, ev)
-		end
-		f:SetScript("OnEvent", function(_, event, a1, a2, a3)
-			local function s(v)
-				if issecretvalue and issecretvalue(v) then return "<secret>" end
-				local ok, r = pcall(tostring, v)
-				return ok and r or "<err>"
-			end
-			self:Print(("XPDBG|%s|%s|%s|%s"):format(
-				tostring(event), s(a1), s(a2), s(a3)))
-		end)
-		self:Print("ZSBT xpdiag ON — get some kills, then /zsbt xpdiag to stop")
-		return
-    end
-
-    if cmd == "xpfind" then
-		-- Trap the XP popup: on CHAT_MSG_COMBAT_XP_GAIN, scan the whole UI
-		-- tree a few times and print any FontString whose text looks like
-		-- "+75 xp". Names the exact frame responsible for the popup.
-		if self._xpFindFrame then
-			self._xpFindFrame:UnregisterAllEvents()
-			self._xpFindFrame:SetScript("OnEvent", nil)
-			self._xpFindFrame = nil
-			self:Print("ZSBT xpfind OFF")
-			return
-		end
-		local Z = self
-		local function scan(tag)
-			local hits = 0
-			local seen = {}
-			local function check(fs)
-				local ok, txt = pcall(fs.GetText, fs)
-				if ok and type(txt) == "string" and txt ~= "" then
-					local low = txt:lower()
-					if low:find("xp", 1, true) or txt:match("^%+%d") then
-						local parent = fs.GetParent and fs:GetParent() or nil
-						local pname = parent and parent.GetName and parent:GetName() or nil
-						local key = tostring(fs) .. "|" .. txt
-						if not seen[key] then
-							seen[key] = true
-							Z:Print(("XPFIND|%s|%s|parent=%s|shown=%s"):format(
-								tag, txt, tostring(pname or fs),
-								tostring(parent and parent.IsShown and parent:IsShown())))
-							hits = hits + 1
-						end
-					end
-				end
-			end
-			local function walk(frame, depth)
-				if not frame or depth > 8 or hits >= 40 then return end
-				pcall(check, frame)
-				if frame.GetFontString then
-					local ok, fs = pcall(frame.GetFontString, frame)
-					if ok and fs then check(fs) end
-				end
-				if frame.GetChildren then
-					local okC, ch = pcall(frame.GetChildren, frame)
-					if okC and ch then
-						for _, c in ipairs(ch) do
-							walk(c, depth + 1)
-						end
-					end
-				end
-			end
-			for _, v in pairs(_G) do
-				if type(v) == "table" or type(v) == "userdata" then
-					local ok, isFrame = pcall(function()
-						return v.IsObjectType and v:IsObjectType("Frame") end)
-					if ok and isFrame then walk(v, 0) end
-				end
-			end
-			if hits == 0 then Z:Print("XPFIND|" .. tag .. "|no xp fontstrings") end
-		end
-		local f = CreateFrame("Frame")
-		self._xpFindFrame = f
-		pcall(f.RegisterEvent, f, "CHAT_MSG_COMBAT_XP_GAIN")
-		f:SetScript("OnEvent", function(_, event)
-			if event ~= "CHAT_MSG_COMBAT_XP_GAIN" then return end
-			if not (C_Timer and C_Timer.After) then return end
-			for _, d in ipairs({ 0.15, 0.4, 0.9, 1.6 }) do
-				C_Timer.After(d, function() scan("t" .. d) end)
-			end
-		end)
-		self:Print("ZSBT xpfind ON — get some kills, then /zsbt xpfind to stop")
-		return
-    end
-
-    if cmd == "textscan" then
-		-- Enumerate text-related globals on this client and hook the
-		-- CombatText_AddMessage family to see what carries XP gain text.
-		local arg = rest and rest:lower():gsub("^%s+", "") or ""
-		local needles
-		if arg ~= "" then
-			needles = {}
-			for w in arg:gmatch("%S+") do needles[#needles + 1] = w end
-		else
-			needles = { "combattext", "worldtext", "floatingtext", "xpgain",
-				"experience", "combat_text", "scrolletext", "addmessage", "addtext",
-				"playerxp", "rested", "exhaustion", "xp" }
-		end
-		local function matchName(n)
-			if type(n) ~= "string" then return false end
-			local ln = n:lower()
-			for _, nd in ipairs(needles) do
-				if ln:find(nd, 1, true) then return true end
-			end
-			return false
-		end
-		local names = {}
-		for n in pairs(_G) do
-			if matchName(n) then names[#names + 1] = n end
-		end
-		table.sort(names)
-		local shown = 0
-		for _, n in ipairs(names) do
-			local ok, v = pcall(function() return _G[n] end)
-			if ok then
-				local ty = type(v)
-				if ty ~= "string" then
-					local extra = ""
-					pcall(function()
-						if (ty == "table" or ty == "userdata")
-							and type(v.IsObjectType) == "function"
-							and v:IsObjectType("Frame") then
-							extra = " frame shown=" .. tostring(v:IsShown())
-						end
-					end)
-					self:Print("G " .. n .. " = " .. ty .. extra)
-					shown = shown + 1
-					if shown >= 200 then break end
-				end
-			end
-		end
-		self:Print("textscan globals=" .. shown)
-		-- Wrap AddMessage-family globals; print only XP-ish calls.
-		-- (Session-only diagnostic; /reload restores originals.)
-		if not self._textScanHooked then
-			self._textScanHooked = true
-			for n, v in pairs(_G) do
-				if type(v) == "function" and type(n) == "string"
-					and (n:lower():find("addmessage", 1, true)
-						or n:lower():find("addtext", 1, true)) then
-					local orig = v
-					_G[n] = function(...)
-						local parts = {}
-						for i = 1, 6 do
-							local a = select(i, ...)
-							if a == nil then break end
-							local okS, s = pcall(tostring, a)
-							parts[#parts + 1] = okS and s or "?"
-						end
-						local line = table.concat(parts, "|")
-						if line:lower():find("xp", 1, true)
-							or line:lower():find("experience", 1, true) then
-							pcall(self.Print, self, "HOOK " .. n .. " " .. line)
-						end
-						return orig(...)
-					end
-					self:Print("wrapped " .. n)
-				end
-			end
-		end
-		return
-    end
-
-    if cmd == "xpwrap" then
-		-- Wrap CombatText:AddMessage (and CombatText2 if present) to log
-		-- argument shapes for XP-ish messages. Diagnostic only.
-		if self._xpWrapHooked then
-			self:Print("xpwrap already active")
-			return
-		end
-		self._xpWrapHooked = true
-		local targets = {}
-		for _, fname in ipairs({ "CombatText", "CombatText2" }) do
-			local f = _G[fname]
-			if f and type(f.AddMessage) == "function" then
-				targets[#targets + 1] = { name = fname, frame = f }
-			end
-		end
-		-- Also find any other frame carrying the combat-text AddMessage method
-		-- (per-unit/nameplate combat text frames share the mixin).
-		local seen = {}
-		for _, t in ipairs(targets) do seen[t.frame] = true end
-		local function scan(f, depth)
-			if depth > 12 or type(f) ~= "table" or not f.GetChildren then return end
-			pcall(function()
-				if type(f.AddMessage) == "function" and not seen[f] then
-					seen[f] = true
-					targets[#targets + 1] = {
-						name = (f.GetName and f:GetName()) or "?",
-						frame = f,
-					}
-				end
-			end)
-			local ok, kids = pcall(f.GetChildren, f)
-			if ok and kids then
-				for _, ch in ipairs(kids) do scan(ch, depth + 1) end
-			end
-		end
-		pcall(scan, UIParent, 0)
-		pcall(scan, WorldFrame, 0)
-		for _, t in ipairs(targets) do
-			local f = t.frame
-			if type(f.AddMessage) == "function" then
-				local orig = f.AddMessage
-				f.AddMessage = function(selfArg, ...)
-					local parts = {}
-					for i = 1, 8 do
-						local a = select(i, ...)
-						if a == nil then break end
-						local okS, s = pcall(tostring, a)
-						parts[#parts + 1] = okS and s or "?"
-					end
-					local line = table.concat(parts, "|")
-					local ll = line:lower()
-					if ll:find("xp", 1, true) or ll:find("experience", 1, true)
-						or ll:find("honor", 1, true) or ll:find("reputation", 1, true) then
-						pcall(self.Print, self, "XPWRAP " .. t.name .. " " .. line)
-					end
-					return orig(selfArg, ...)
-				end
-				self:Print("xpwrap armed on " .. t.name)
-			else
-				self:Print("xpwrap: " .. t.name .. ".AddMessage missing")
-			end
-		end
-		self:Print("xpwrap targets=" .. #targets)
-		return
-    end
-
-    if cmd == "ctinspect" then
-		-- Dump the combat-text event registry and frame state to find what
-		-- drives the XP floating text on this client.
-		local cfe = CombatTextFrameEvents
-		if type(cfe) == "table" then
-			local keys = {}
-			for k in pairs(cfe) do keys[#keys + 1] = tostring(k) end
-			table.sort(keys)
-			self:Print("CombatTextFrameEvents keys (" .. #keys .. "):")
-			for _, k in ipairs(keys) do self:Print("  " .. k) end
-		else
-			self:Print("CombatTextFrameEvents = " .. type(cfe))
-		end
-		local ct = CombatText
-		if ct and type(ct.IsEventRegistered) == "function" then
-			local cands = {
-				"COMBAT_TEXT_UPDATE", "CHAT_MSG_COMBAT_XP_GAIN", "UNIT_COMBAT",
-				"CHAT_MSG_SYSTEM", "CHAT_MSG_COMBAT_MISC_INFO",
-				"CHAT_MSG_COMBAT_HONOR_GAIN", "CHAT_MSG_COMBAT_FACTION_CHANGE",
-				"PLAYER_XP_UPDATE", "COMBAT_LOG_EVENT_UNFILTERED",
-			}
-			for _, ev in ipairs(cands) do
-				local ok, reg = pcall(ct.IsEventRegistered, ct, ev)
-				self:Print("CombatText event " .. ev .. " = " .. tostring(ok and reg))
-			end
-			local kids = {}
-			pcall(function()
-				for _, ch in ipairs({ ct:GetChildren() }) do
-					kids[#kids + 1] = ch:GetName() or "?"
-				end
-			end)
-			self:Print("CombatText children: " .. table.concat(kids, ", "))
-		else
-			self:Print("CombatText frame unavailable")
-		end
-		if type(C_CombatText) == "table" then
-			local keys = {}
-			for k in pairs(C_CombatText) do keys[#keys + 1] = tostring(k) end
-			table.sort(keys)
-			self:Print("C_CombatText keys (" .. #keys .. "):")
-			for _, k in ipairs(keys) do self:Print("  " .. k) end
-		else
-			self:Print("C_CombatText = " .. type(C_CombatText))
-		end
-		-- Dump the mixin API and per-event config so we can find the
-		-- message-add interception point.
-		if type(CombatTextMixin) == "table" then
-			local keys = {}
-			for k in pairs(CombatTextMixin) do keys[#keys + 1] = tostring(k) end
-			table.sort(keys)
-			self:Print("CombatTextMixin keys (" .. #keys .. "):")
-			for _, k in ipairs(keys) do self:Print("  " .. k) end
-		end
-		if type(CombatTextUtil) == "table" then
-			local keys = {}
-			for k in pairs(CombatTextUtil) do keys[#keys + 1] = tostring(k) end
-			table.sort(keys)
-			self:Print("CombatTextUtil keys (" .. #keys .. "):")
-			for _, k in ipairs(keys) do self:Print("  " .. k) end
-		end
-		for _, tname in ipairs({ "CombatTextTypeInfo", "CombatTextConstants",
-			"CombatTextCachableCVars", "CombatTextFont", "CombatTextFontOutline" }) do
-			local t = _G[tname]
-			if type(t) == "table" then
-				local keys = {}
-				for k in pairs(t) do keys[#keys + 1] = tostring(k) end
-				table.sort(keys)
-				self:Print(tname .. " keys (" .. #keys .. "):")
-				for _, k in ipairs(keys) do
-					self:Print("  " .. k)
-				end
-			else
-				self:Print(tname .. " = " .. type(t))
-			end
-		end
-		if type(cfe) == "table" then
-			for ev, cfg in pairs(cfe) do
-				if type(cfg) == "table" then
-					local ck = {}
-					for k in pairs(cfg) do ck[#ck + 1] = tostring(k) end
-					table.sort(ck)
-					self:Print("CFE." .. tostring(ev) .. " cfg: " .. table.concat(ck, ","))
-				end
-			end
-		end
-		return
-    end
-
-    if cmd == "findcvar" then
-		-- List CVars/commands containing the given substring with current values.
-		local arg = rest and rest:lower():gsub("^%s+", "") or ""
-		if arg == "" then
-			self:Print("Usage: /zsbt findcvar <substring> [more substrings]  (space-separated OR match)")
-			return
-		end
-		local needles = {}
-		for w in arg:gmatch("%S+") do needles[#needles + 1] = w end
-		local function matchAny(name)
-			local ln = name:lower()
-			for _, nd in ipairs(needles) do
-				if ln:find(nd, 1, true) then return true end
-			end
-			return false
-		end
-		local found = 0
-		local enumerator = (C_Console and C_Console.GetAllCommands)
-			or (C_CVar and (C_CVar.GetAllCVars or C_CVar.GetCVars))
-			or _G.GetAllCommands or _G.GetAllCVars
-		if enumerator then
-			local okList, list = pcall(enumerator)
-			if okList and type(list) == "table" then
-				for _, name in ipairs(list) do
-					if type(name) == "string" and matchAny(name) then
-						local ok, v = pcall(GetCVar, name)
-						self:Print(name .. " = " .. (ok and tostring(v) or "?"))
-						found = found + 1
-						if found >= 80 then break end
-					end
-				end
-			end
-		else
-			-- Older clients lack C_Console.GetAllCommands; probe a candidate
-			-- list of known text/XP-related CVars instead.
-			local candidates = {
-				"enableCombatText", "enableFloatingCombatText",
-				"floatingCombatTextAllSpellMechanics", "floatingCombatTextAuras",
-				"floatingCombatTextCombatDamage", "floatingCombatTextCombatDamageAllAutos",
-				"floatingCombatTextCombatDamageDirectionalOffset", "floatingCombatTextCombatDamageDirectionalScale",
-				"floatingCombatTextCombatDamageStyle", "floatingCombatTextCombatHealing",
-				"floatingCombatTextCombatHealingAbsorbSelf", "floatingCombatTextCombatHealingAbsorbTarget",
-				"floatingCombatTextCombatLogPeriodicSpells", "floatingCombatTextCombatState",
-				"floatingCombatTextComboPoints", "floatingCombatTextDamageReduction",
-				"floatingCombatTextDodgeParryMiss", "floatingCombatTextEnergyGains",
-				"floatingCombatTextFloatMode", "floatingCombatTextFriendlyHealers",
-				"floatingCombatTextHonorGains", "floatingCombatTextLowManaHealth",
-				"floatingCombatTextPeriodicEnergyGains", "floatingCombatTextPetMeleeDamage",
-				"floatingCombatTextPetSpellDamage", "floatingCombatTextReactives",
-				"floatingCombatTextRepChanges", "floatingCombatTextSpellMechanics",
-				"floatingCombatTextSpellMechanicsOther",
-				"floatingCombatTextCombatXP", "floatingCombatTextXPChanges",
-				"fctCombatXP", "fctCombatXP_v2",
-				"floatingCombatTextCombatDamage_v2", "floatingCombatTextCombatHealing_v2",
-				"floatingCombatTextCombatXP_v2", "floatingCombatTextXPChanges_v2",
-				"floatingCombatTextReactives_v2", "floatingCombatTextFloatMode_v2",
-				"WorldTextScale", "WorldTextScale_v2", "WorldTextScreenY", "WorldTextScreenY_v2",
-				"WorldTextSize", "worldTextScale", "worldTextSize",
-				"WorldTextCritScreenY", "WorldTextGravity", "WorldTextNonRandomZ",
-				"WorldTextRampDuration", "WorldTextRampPow", "WorldTextRampPowCrit",
-				"WorldTextRandomXY", "WorldTextRandomZMax", "WorldTextRandomZMin",
-				"WorldTextStartPosRandomness",
-				"xpBarText", "showHonorAsExperience", "threatWorldText",
-				"statusText", "statusTextDisplay",
-				"showXPGain", "xpGain", "experienceGain", "gainExperience",
-				"showExperienceGain", "combatTextXP", "fctXP", "fctExperience",
-				"floatingTextXP", "floatingTextExperience", "popupXP",
-				"announceXP", "xpAnnounce", "experienceText", "xpText",
-				"showCombatText", "combatText", "floatingCombatText",
-				"enableWorldText", "worldText", "damageText", "healText",
-				"showAllFloatingCombatText", "combatTextEnabled",
-				"nameplateShowAll", "alwaysShowNameplates",
-			}
-			local probed = 0
-			for _, name in ipairs(candidates) do
-				if matchAny(name) then
-					probed = probed + 1
-					local ok, v = pcall(GetCVar, name)
-					if ok and v ~= nil then
-						self:Print(name .. " = " .. tostring(v))
-						found = found + 1
-					end
-				end
-			end
-			self:Print("(probed " .. probed .. " candidates; only existing CVars shown)")
-		end
-		self:Print("findcvar enum=" .. tostring(enumerator ~= nil))
-		self:Print("findcvar '" .. arg .. "' matches=" .. found)
-		return
-    end
-
-    if cmd == "attrib" or cmd == "attribpanel" or cmd == "attributions" then
-		local panel = ZSBT.AttribPanel
-		if not panel then
-			self:Print(L["Attribution panel module not available."])
-			return
-		end
-		local arg = rest and rest:lower():gsub("^%s+", "") or ""
-		if arg == "clear" then
-			panel:Clear()
-			self:Print(L["Attribution panel cleared."])
-		elseif arg == "copy" then
-			panel:CopyToClipboard()
-		elseif arg == "on" or arg == "show" then
-			panel:Show()
-		elseif arg == "off" or arg == "hide" then
-			panel:Hide()
-		else
-			panel:Toggle()
-		end
-		return
-    end
-
-    self:Print(L["|cFF808C9EUnknown command:|r "] .. cmd)
-	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | attrib [on|off|clear] | reset | version | auratest | restorefct | dumpcvars | resdiag | sectest | xpdiag | xpfind | findcvar <text> | textscan | ctinspect | xpwrap]"])
+    self:Print("|cFF808C9EUnknown command:|r " .. cmd)
+	self:Print("|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | reset | version | auratest | restorefct | dumpcvars]")
 end
 
 ------------------------------------------------------------------------
 -- Open Configuration Window
 ------------------------------------------------------------------------
 function Addon:OpenConfig()
-	-- The options tree is built once in OnInitialize, before unit power
-	-- data is readable — resource buttons (and anything else gated on live
-	-- UnitPower/UnitClass state) would be missing for the whole session.
-	-- Rebuild on open so dynamic args reflect the current character.
-	if ZSBT.BuildOptionsTable then
-		local ok, options = pcall(ZSBT.BuildOptionsTable)
-		if ok and type(options) == "table" then
-			self:InjectDBProfilesOptions(options)
-			local ACR = LibStub("AceConfigRegistry-3.0", true)
-			if ACR then
-				pcall(ACR.RegisterOptionsTable, ACR, "ZSBT", options, true)
-			end
-		end
-	end
 	if self.configDialog then
 		self.configDialog:Open("ZSBT")
-	end
-end
-
--- ZCT-style config shell (left-nav pages). Separate command until the
--- user approves cutover; "/zsbt" keeps opening the classic UI.
-function Addon:OpenZCTUI()
-	if ZSBT.ConfigShell then
-		ZSBT.ConfigShell:Open()
 	end
 end
 
@@ -2732,15 +1992,6 @@ function Addon:OpenBuffRulesManager()
     if self.configDialog then
         self.configDialog:Open("ZSBT_BuffRules")
     end
-end
-
-function Addon:OpenResourceCounterConfig(powerType)
-	powerType = tonumber(powerType)
-	if not powerType then return end
-	ZSBT._editingResourcePowerType = powerType
-	if self.configDialog then
-		self.configDialog:Open("ZSBT_ResourceCounter")
-	end
 end
 
 function Addon:OpenDebugConfig()
@@ -2779,28 +2030,28 @@ end
 ------------------------------------------------------------------------
 function Addon:HandleDebugCommand(levelStr)
 	local function usage()
-		self:Print(L["Usage:"])
-		self:Print(L["  /zsbt debug show"])
-		self:Print(L["  /zsbt debug frame <1-10>          (route debug output to ChatFrameN)"])
-		self:Print(L["  /zsbt debug <0-5>                 (set global default)"])
-		self:Print(L["  /zsbt debug <channel> <0-5>       (set per-channel override)"])
-		self:Print(L["Levels: 0=Off, 1=Error, 2=Warn, 3=Info, 4=Debug, 5=Trace"])
-		self:Print(L["Channels: core, cooldowns, incoming, outgoing, triggers, notifications, ui, diagnostics, lcp, safety, perf"])
+		self:Print("Usage:")
+		self:Print("  /zsbt debug show")
+		self:Print("  /zsbt debug frame <1-10>          (route debug output to ChatFrameN)")
+		self:Print("  /zsbt debug <0-5>                 (set global default)")
+		self:Print("  /zsbt debug <channel> <0-5>       (set per-channel override)")
+		self:Print("Levels: 0=Off, 1=Error, 2=Warn, 3=Info, 4=Debug, 5=Trace")
+		self:Print("Channels: core, cooldowns, incoming, outgoing, triggers, notifications, ui, diagnostics, lcp, safety, perf")
 	end
 
 	local function show()
 		local d = self.db and self.db.profile and self.db.profile.diagnostics
 		if type(d) ~= "table" then
-			self:Print(L["Diagnostics not initialized."])
+			self:Print("Diagnostics not initialized.")
 			return
 		end
 		local def = tonumber(d.debugDefaultLevel)
 		if type(def) ~= "number" then def = tonumber(d.debugLevel) or 0 end
-		self:Print(L["Debug default level: "] .. tostring(def))
-		self:Print(L["Debug chat frame: "] .. tostring(d.debugChatFrame or 1))
+		self:Print("Debug default level: " .. tostring(def))
+		self:Print("Debug chat frame: " .. tostring(d.debugChatFrame or 1))
 		local ch = d.debugChannels
 		if type(ch) ~= "table" then
-			self:Print(L["Debug channels: <none>"])
+			self:Print("Debug channels: <none>")
 			return
 		end
 		local keys = {}
@@ -2838,7 +2089,7 @@ function Addon:HandleDebugCommand(levelStr)
 			return
 		end
 		self.db.profile.diagnostics.debugChatFrame = n
-		self:Print(L["Debug output routed to ChatFrame"] .. tostring(n))
+		self:Print("Debug output routed to ChatFrame" .. tostring(n))
 		return
 	end
 
@@ -2851,7 +2102,7 @@ function Addon:HandleDebugCommand(levelStr)
 			return
 		end
 		self.db.profile.diagnostics.debugDefaultLevel = level
-		self:Print(L["Debug default level set to "] .. tostring(level))
+		self:Print("Debug default level set to " .. tostring(level))
 		return
 	end
 
@@ -2864,7 +2115,7 @@ function Addon:HandleDebugCommand(levelStr)
 	end
 	self.db.profile.diagnostics.debugChannels = self.db.profile.diagnostics.debugChannels or {}
 	self.db.profile.diagnostics.debugChannels[channel] = level
-	self:Print(L["Debug channel '"] .. tostring(channel) .. L["' set to "] .. tostring(level))
+	self:Print("Debug channel '" .. tostring(channel) .. "' set to " .. tostring(level))
 end
 
 ------------------------------------------------------------------------
@@ -2873,15 +2124,15 @@ end
 function Addon:HandleCooldownDebugCommand(levelStr)
 	local level = tonumber(levelStr)
 	if not level or level < 0 or level > 5 then
-		self:Print(L["Usage: /zsbt cddebug [0-5]"])
-		self:Print(L["  Alias for: /zsbt debug cooldowns <0-5>"])
+		self:Print("Usage: /zsbt cddebug [0-5]")
+		self:Print("  Alias for: /zsbt debug cooldowns <0-5>")
 		return
 	end
 
 	self.db.profile.diagnostics.cooldownsDebugLevel = level
 	self.db.profile.diagnostics.debugChannels = self.db.profile.diagnostics.debugChannels or {}
 	self.db.profile.diagnostics.debugChannels.cooldowns = level
-	self:Print(L["Cooldown debug channel set to "] .. tostring(level))
+	self:Print("Cooldown debug channel set to " .. tostring(level))
 end
 
 ------------------------------------------------------------------------
@@ -2889,6 +2140,6 @@ end
 ------------------------------------------------------------------------
 function Addon:HandleResetCommand()
     self.db:ResetProfile()
-    self:Print(L["Profile reset to defaults."])
+    self:Print("Profile reset to defaults.")
 end
 

@@ -83,7 +83,7 @@ For Trade Skills:
 - `%t` New level (Skill Ups)
 
 Examples:
-- `+%a %e (%t)`
+- `+%a %e (%t)` (MSBT-style)
 - `+%e x%a` (simple)
 - `+%e` (minimal)
 

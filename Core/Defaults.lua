@@ -20,7 +20,6 @@ ZSBT.DEFAULTS = {
             autoRelaxOutgoingWhenSolo = false,
             instanceAwareOutgoing = true,
             strictOutgoingCombatLogOnly = false,
-            strictOutgoingAlways = false,
             quietOutgoingWhenIdle = false,
             quietOutgoingAutoAttacks = false,
 			pvpStrictEnabled = true,
@@ -90,15 +89,13 @@ ZSBT.DEFAULTS = {
 			lootItems = true,
 			lootMoney = true,
 			lootCurrency = true,
-			itemCooldowns = false,
-			emotes = false,
 			tradeskillUps = true,
 			tradeskillLearned = true,
 			interrupts = true,
 			caststops = false,
             cooldowns = true,
             auras = true,
-            power = false,
+            power = true,
             procs = true,
             triggers = true,
 			externalAddons = true,
@@ -115,8 +112,6 @@ ZSBT.DEFAULTS = {
 			lootItems = "Notifications",
 			lootMoney = "Notifications",
 			lootCurrency = "Notifications",
-			itemCooldowns = "Notifications",
-			emotes = "Notifications",
 			tradeskillUps = "Notifications",
 			tradeskillLearned = "Notifications",
 			interrupts = "Notifications",
@@ -140,8 +135,6 @@ ZSBT.DEFAULTS = {
 			lootItems = "+%a %e (%t)",
 			lootMoney = "+%e",
 			lootCurrency = "+%a %e (%t)",
-			itemCooldowns = "%e is ready",
-			emotes = "%e",
 			tradeskillUps = "%e +%a (%t)",
 			tradeskillLearned = "Learned: %e",
 			interrupts = "%t Interrupted!",
@@ -149,7 +142,7 @@ ZSBT.DEFAULTS = {
 			externalAddons = "%e",
 			cooldowns = "%e",
 			auras = "%e",
-			power = "%e Full!",
+			power = "%e",
 			procs = "%e",
 			triggers = "%e",
 		},
@@ -157,8 +150,6 @@ ZSBT.DEFAULTS = {
 		notificationsMoneyFormat = {
 			lootMoney = "text",
 		},
-
-		itemCooldownExclusions = {},
 
 		notificationsPerType = {
 			combatState = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
@@ -171,41 +162,14 @@ ZSBT.DEFAULTS = {
 			lootItems = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			lootMoney = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			lootCurrency = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
-			itemCooldowns = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
-			emotes = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			tradeskillUps = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			tradeskillLearned = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			externalAddons = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			cooldowns = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			auras = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
-			power = { style = { fontOverride = true, fontFace = "ZSBT: Bungee", fontSize = 72, color = { r = 1, g = 0, b = 0.1294117718935013 } }, sound = { enabled = false, soundKey = "None" } },
+			power = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			procs = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			triggers = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
-		},
-
-		comboPoints = {
-			enabled = false,
-			powerType = 4,
-			attachArea = "None",
-			anchor = "Bottom",
-			xOffset = 7,
-			yOffset = 128,
-			format = "pips",
-			color = { r = 0.8274510502815247, g = 0.0, b = 0.03921568766236305 },
-			emptyColor = { r = 0.35, g = 0.35, b = 0.35 },
-			outlineColor = { r = 0.0, g = 0.0, b = 0.0 },
-			fontSize = 0,
-			fontOverride = true,
-			fontFace = "ZSBT: Bungee",
-			fontOutline = "Thin",
-			fontScale = 2.0,
-			width = 257,
-			height = 77,
-			hideAtZero = true,
-			hideOutOfCombat = true,
-			fullSoundEnabled = true,
-			fullSoundKey = "ZSBT: Finish Him",
-			fullEffect = "chromatic",
 		},
 
 		interruptAlerts = {
@@ -298,11 +262,6 @@ ZSBT.DEFAULTS = {
             customDamageColor  = { r = 1, g = 1, b = 1 },
             customHealingColor = { r = 1, g = 1, b = 1 },
             customColor     = { r = 1, g = 1, b = 1 },
-            misses = {
-                scrollArea = nil,  -- nil -> damage.scrollArea
-                color      = { r = 0.70, g = 0.70, b = 0.70 },
-                hidden     = {},   -- { DODGE=true, ... } per-subtype hides
-            },
         },
 
         ------------------------------------------------------------------------
@@ -315,7 +274,6 @@ ZSBT.DEFAULTS = {
 				showTargets    = false,
                 autoAttackMode = "Show All",
                 minThreshold   = 0,
-                showFlags      = true,
                 showMisses     = true,
             },
             healing = {
@@ -332,7 +290,6 @@ ZSBT.DEFAULTS = {
                 soundEnabled = false,
                 sound = "None",
                 minSoundAmount = 0,
-                minDisplayAmount = 0,
                 instanceSoundMode = "Only when amount is known",
             },
             showSpellNames = false,
@@ -340,11 +297,6 @@ ZSBT.DEFAULTS = {
             useSchoolColors = true,
             customDamageColor  = { r = 1, g = 1, b = 1 },
             customHealingColor = { r = 1, g = 1, b = 1 },
-            misses = {
-                scrollArea = nil,  -- nil -> damage.scrollArea
-                color      = { r = 0.70, g = 0.70, b = 0.70 },
-                hidden     = {},   -- { DODGE=true, ... } per-subtype hides
-            },
         },
 
         ------------------------------------------------------------------------
@@ -352,7 +304,6 @@ ZSBT.DEFAULTS = {
         ------------------------------------------------------------------------
         pets = {
             enabled       = true,
-            casterMode    = false,
             scrollArea    = "Outgoing",
             aggregation   = "Generic (\"Pet Hit X\")",
             minThreshold  = 0,
@@ -380,7 +331,6 @@ ZSBT.DEFAULTS = {
                 enabled     = false,
                 window      = 1.5,
                 showCount   = true,
-                mergeCrits  = false,
             },
             whirlwindAggregate = {
                 enabled = false,
@@ -432,10 +382,8 @@ ZSBT.DEFAULTS = {
             soundChannel = "Master",
             sounds = {
                 lowHealth     = "None",
-                lowMana       = "None",
                 cooldownReady = "None",
             },
-            lowManaThreshold = 20,
             custom = {
                 fonts = {
                     -- [displayName] = "path"

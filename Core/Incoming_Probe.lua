@@ -94,14 +94,7 @@ local function FlushIncomingMerge(key)
             end
             text = sumText .. " x" .. tostring(e.count)
         elseif e.mode == "secret" then
-            if ZSBT.IsSafeString(text) then
-                text = text .. " x" .. tostring(e.count)
-            else
-                -- Secret raw amount: pass through untouched for SetText; the
-                -- count renders as a separate badge FontString (outgoing-style).
-                if type(e.meta) ~= "table" then e.meta = {} end
-                e.meta.mergeBadgeCount = e.count
-            end
+            text = ((e.kind == "heal") and "Heals" or "Hits") .. " x" .. tostring(e.count)
         elseif ZSBT.IsSafeString(text) then
             text = text .. " x" .. tostring(e.count)
         end
@@ -425,18 +418,9 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
         if prof.damage and prof.damage.showMisses == false then
             return
         end
-        local m = prof.misses
-        local mt = ZSBT.NormalizeMissSubtype
-            and ZSBT.NormalizeMissSubtype(evt.missType) or nil
-        if mt and m and type(m.hidden) == "table" and m.hidden[mt] then
-            return
-        end
-        local area = (m and m.scrollArea)
-            or (prof.damage and prof.damage.scrollArea) or "Incoming"
+        local area = (prof.damage and prof.damage.scrollArea) or "Incoming"
         local missText = ZSBT.IsSafeString(evt.amountText) and evt.amountText or "Miss"
-        local mc = m and m.color
-        local color = (type(mc) == "table") and mc
-            or {r = 0.70, g = 0.70, b = 0.70}  -- Gray for misses
+        local color = {r = 0.70, g = 0.70, b = 0.70}  -- Gray for misses
         local sid = evt.spellID or evt.spellId
         local meta = {
             probe = true,
@@ -497,11 +481,8 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
     -- run secret-threshold evaluation, hide it to avoid unfilterable spam.
     -- Heals are exempt: on secret-value clients (e.g. WoW Forever) EVERY heal
     -- amount is tainted, so this policy would suppress all incoming healing.
-    -- Damage is also exempt: self-inflicted drains (Burning Rush) and absorbed
-    -- hits arrive as secret raw-pipe values with no safe numeric amount, and
-    -- the Blizzard-approved raw display path is the only way to show them.
-    -- The raw value still renders via SetText and merges collapse to "xN".
-    if rawPipeValue ~= nil and not ZSBT.IsSafeNumber(rawPipeValue) and thresholdAmt == nil and kind ~= "heal" and kind ~= "damage" then
+    -- The raw value still renders via SetText and merges collapse to "Heals xN".
+    if rawPipeValue ~= nil and not ZSBT.IsSafeNumber(rawPipeValue) and thresholdAmt == nil and kind ~= "heal" then
         local catMin = tonumber(conf.minThreshold) or 0
         local spam = ZSBT.db.profile.spamControl and ZSBT.db.profile.spamControl.throttling
         local globalMin = 0
@@ -540,17 +521,6 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
         local mode = tostring(critConf.instanceSoundMode or "Only when amount is known")
         if mode == "Any Crit" then
             ZSBT.PlayLSMSound(soundKey)
-            return
-        end
-        -- Secret amount (Midnight): evaluate the minimum visually instead of
-        -- going permanently silent when the amount can't be read.
-        local secretAmt = rawPipeValue
-        if secretAmt == nil and isTainted then secretAmt = evt.amount end
-        if secretAmt ~= nil and not ZSBT.IsSafeNumber(secretAmt) and ZSBT.EvaluateSecretThreshold then
-            local okEv, res = pcall(ZSBT.EvaluateSecretThreshold, secretAmt, minAmt)
-            if okEv and type(res) == "number" and res > 0 then
-                ZSBT.PlayLSMSound(soundKey)
-            end
         end
     end
 
@@ -568,16 +538,13 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
         end
     end
     local resolvedCritConf = kindOverrideCritConf or baseCritConf
-    -- Below critConf.minDisplayAmount a crit is demoted to a normal hit.
-    local dispIsCrit = evt.isCrit == true
-        and ZSBT.CritMeetsDisplayMin(resolvedCritConf, rawPipeValue, isTainted, evt.amount)
 
     -- New incoming crit routing (Incoming tab)
-    if (not forceInline) and dispIsCrit and resolvedCritConf and resolvedCritConf.enabled == true and ZSBT.IsSafeString(resolvedCritConf.scrollArea) and resolvedCritConf.scrollArea ~= "" then
+    if (not forceInline) and evt.isCrit == true and resolvedCritConf and resolvedCritConf.enabled == true and ZSBT.IsSafeString(resolvedCritConf.scrollArea) and resolvedCritConf.scrollArea ~= "" then
         area = resolvedCritConf.scrollArea
         critRouted = true
     -- Legacy per-category crit routing (Damage/Healing)
-    elseif (not forceInline) and dispIsCrit and conf.critScrollArea and ZSBT.IsSafeString(conf.critScrollArea) and conf.critScrollArea ~= "" then
+    elseif (not forceInline) and evt.isCrit == true and conf.critScrollArea and ZSBT.IsSafeString(conf.critScrollArea) and conf.critScrollArea ~= "" then
         area = conf.critScrollArea
         critRouted = true
     end
@@ -604,7 +571,9 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
             -- the outgoing heal path). Merged bursts still collapse to
             -- "Heals xN" / "Hits xN" in the merge buffer.
             mergeMode = "secret"
-            text = rawPipeValue
+            if kind == "heal" then
+                text = rawPipeValue
+            end
         end
     else
         text = displayText
@@ -689,7 +658,7 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
     end
 
     -- Crit color override
-    if dispIsCrit then
+    if evt.isCrit then
         local cc = resolvedCritConf and resolvedCritConf.color
         if type(cc) == "table" and type(cc.r) == "number" and type(cc.g) == "number" and type(cc.b) == "number" then
             color = { r = cc.r, g = cc.g, b = cc.b }
@@ -709,13 +678,13 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
         stream = "incoming",
         spellId = sid,
         targetName = (kind == "heal" and playerName) or evt.targetName,
-        isCrit = dispIsCrit,
+        isCrit = evt.isCrit == true,
         school = evt.schoolMask,
     }
 
     maybePlayCritSound(resolvedCritConf, rawPipeValue, isTainted)
 
-    if dispIsCrit and resolvedCritConf and resolvedCritConf.enabled == true then
+    if evt.isCrit and resolvedCritConf and resolvedCritConf.enabled == true then
         if resolvedCritConf.sticky ~= false then
             meta.stickyCrit = true
             meta.stickyJiggle = (resolvedCritConf.stickyJiggle ~= false)
@@ -771,8 +740,8 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
 
     if mergeEnabled then
         local schoolKey = (ZSBT.IsSafeNumber(evt.schoolMask) and evt.schoolMask) or 0
-        local key = tostring(area) .. ":" .. tostring(kind) .. ":" .. (dispIsCrit and "C" or "N") .. ":" .. tostring(schoolKey) .. ":" .. tostring(mergeMode)
-        PushIncomingMerge(key, area, kind, dispIsCrit, schoolKey, mergeMode, mergeAmount, text, color, meta)
+        local key = tostring(area) .. ":" .. tostring(kind) .. ":" .. (evt.isCrit and "C" or "N") .. ":" .. tostring(schoolKey) .. ":" .. tostring(mergeMode)
+        PushIncomingMerge(key, area, kind, evt.isCrit == true, schoolKey, mergeMode, mergeAmount, text, color, meta)
         return
     end
 

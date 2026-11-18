@@ -107,14 +107,7 @@ local function canUseDamageMeterIncoming()
 		and Enum.DamageMeterType.DamageTaken
 end
 
--- Damage-meter combat-text fallback: RETIRED by the ZCT combat-core
--- transplant. It emitted unattributed numbers for the legacy
--- restrict-mode pipeline; ZCT owns attribution now. Flip to true to
--- re-enable the legacy polls.
-local DAMAGE_METER_COMBAT_TEXT_ENABLED = false
-
 local function shouldPollDamageMeterOutgoing()
-	if not DAMAGE_METER_COMBAT_TEXT_ENABLED then return false end
 	if not isDamageMeterOutgoingEnabled() then return false end
 	if not (ZSBT.Core and ZSBT.Core.ShouldRestrictOutgoingFallback and ZSBT.Core:ShouldRestrictOutgoingFallback()) then
 		return false
@@ -125,7 +118,6 @@ local function shouldPollDamageMeterOutgoing()
 end
 
 local function shouldPollDamageMeterIncoming()
-	if not DAMAGE_METER_COMBAT_TEXT_ENABLED then return false end
 	if not isDamageMeterIncomingEnabled() then return false end
 	if not (ZSBT.Core and ZSBT.Core.ShouldRestrictOutgoingFallback and ZSBT.Core:ShouldRestrictOutgoingFallback()) then
 		return false
@@ -723,7 +715,6 @@ function Engine:_processHealthDamage(sample)
 	end
 end
 
-
 function Engine:_processHealthHeal(sample)
 	if not sample or not CorrelationLogic or not StateManager then return end
 
@@ -1187,7 +1178,6 @@ function Engine:flushBucket()
 					rawPipeId = sample.rawPipeId,
 					spellName = nil,
 					spellId = sample.spellId,
-					spellIdWeak = sample.spellIdWeak == true,
 					dbgChatId = sample.dbgChatId,
 					amountSource = sample.amountSource,
 					isAuto = sample.isAuto == true,
@@ -1209,7 +1199,6 @@ function Engine:flushBucket()
 					rawPipeId = sample.rawPipeId,
 					spellName = nil,
 					spellId = sample.spellId,
-					spellIdWeak = sample.spellIdWeak == true,
 					amountSource = sample.amountSource,
 					schoolMask = sample.schoolMask,
 					targetName = sample.targetName,
@@ -1228,7 +1217,6 @@ function Engine:flushBucket()
 					rawPipeId = sample.rawPipeId,
 					spellName = nil,
 					spellId = sample.spellId,
-					spellIdWeak = sample.spellIdWeak == true,
 					amountSource = sample.amountSource,
 					schoolMask = sample.schoolMask,
 					targetName = sample.targetName,
@@ -1303,14 +1291,6 @@ function Engine:flushBucket()
 				local val = sample.amount
 				if val == nil then
 					val = (rawPipeId and ec and ec._rawPipe and ec._rawPipe[rawPipeId]) or nil
-				end
-				if ZSBT.AttribPanel and ZSBT.AttribPanel.RecordPet then
-					ZSBT.AttribPanel:RecordPet({
-						amount = val,
-						isCrit = sample.isCrit,
-						schoolMask = sample.schoolMask,
-						petBucket = sample.petBucket,
-					})
 				end
 				if rawPipeId and ec and ec._rawPipe then
 					ec._rawPipe[rawPipeId] = nil

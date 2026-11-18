@@ -4,7 +4,6 @@
 -- notification text, plays the configured sound, and emits to display.
 ------------------------------------------------------------------------
 local ADDON_NAME, ZSBT = ...
-local L = ZSBT.L
 
 ZSBT.Core = ZSBT.Core or {}
 ZSBT.Core.Cooldowns = ZSBT.Core.Cooldowns or {}
@@ -70,7 +69,7 @@ function Cooldowns:OnCooldownReady(event)
 	end
 
     -- Format the notification text
-    local fmt = db.cooldowns.format or L["%s Ready!"]
+    local fmt = db.cooldowns.format or "%s Ready!"
     local text = fmt:format(event.spellName)
 
     -- Determine scroll area

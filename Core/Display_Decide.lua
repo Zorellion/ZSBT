@@ -9,8 +9,6 @@
 
 local ADDON_NAME, ZSBT = ...
 
-local L = ZSBT.L
-
 ZSBT.Core = ZSBT.Core or {}
 ZSBT.Core.Display = ZSBT.Core.Display or {}
 local Display = ZSBT.Core.Display
@@ -31,7 +29,7 @@ local function ResolveFontForArea(areaName)
         useGlobal = false
     end
 
-    local faceKey    = (not useGlobal and areaFont and areaFont.face)    or general.face or L["Friz Quadrata TT"]
+    local faceKey    = (not useGlobal and areaFont and areaFont.face)    or general.face or "Friz Quadrata TT"
     local sizeVal    = (not useGlobal and areaFont and areaFont.size)    or general.size or 18
     local outlineKey = (not useGlobal and areaFont and areaFont.outline) or general.outline or "Thin"
     local alphaVal   = (not useGlobal and areaFont and areaFont.alpha)   or general.alpha or 1.0
@@ -135,7 +133,7 @@ local function ResolveCritFont(meta)
     local general = profile.general.font or {}
 
     -- Face: use crit override or fall back to master
-    local faceKey = critConf.face or general.face or L["Friz Quadrata TT"]
+    local faceKey = critConf.face or general.face or "Friz Quadrata TT"
     local LSM = LibStub("LibSharedMedia-3.0", true)
     local critFace = "Fonts\\FRIZQT__.TTF"
     if LSM and faceKey then
@@ -233,18 +231,15 @@ local function FlushMergeByKey(key)
         if entry.mode == "numeric" and type(entry.totalAmount) == "number" and entry.totalAmount > 0 then
             text = tostring(math.floor(entry.totalAmount + 0.5))
             if showCount then
-                text = text .. L[" (x"] .. entry.count .. ")"
+                text = text .. " (x" .. entry.count .. ")"
             end
         elseif showCount then
             -- Secret/tainted or non-numeric text: count-only (no math).
-            -- Safe strings get an inline suffix; secret text cannot be
-            -- concatenated, so the count rides as a separate badge
-            -- FontString (ZCT-style) via meta.mergeBadgeCount.
+            -- Keep the base label text and append count.
             if ZSBT.IsSafeString(text) then
-                text = text .. L[" (x"] .. entry.count .. ")"
+                text = text .. " (x" .. entry.count .. ")"
             else
-                if type(entry.meta) ~= "table" then entry.meta = {} end
-                entry.meta.mergeBadgeCount = entry.count
+                text = "Hits (x" .. entry.count .. ")"
             end
         end
     end
@@ -277,24 +272,12 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
 		return
 	end
 
-	-- Don't merge: misses, notifications, periodic ticks — and crits
-	-- unless the user opted in via spamControl.merging.mergeCrits.
-	-- Ticks arrive already spaced by the dot's interval; holding them
-	-- for the merge window just adds visible latency and collapses
-	-- distinct ticks. When crit merging IS enabled, crits get their own
-	-- merge key (see below) so they never roll up with normal hits.
+	-- Don't merge: crits, misses, notifications
 	local isCrit = meta and meta.isCrit
 	local isMiss = meta and meta.kind == "miss"
 	local isNotification = meta and meta.kind == "notification"
-	local isPeriodic = meta and meta.isPeriodic == true
-	local mergeCrits = mergeConf.mergeCrits == true
-	if isPeriodic and ZSBT.Addon and ZSBT.Addon.Dbg then
-		ZSBT.Addon:Dbg("outgoing", 4, "MERGE_BYPASS_PERIODIC", tostring(meta and meta.spellId))
-	end
-	if (isCrit and not mergeCrits) or isMiss or isNotification or isPeriodic then
-		-- Bypassed events display immediately but must NOT flush pending
-		-- merges: unattributed ticks/hits interleave constantly under ZCT
-		-- and flushing here prevented same-spell hits from ever merging.
+	if isCrit or isMiss or isNotification then
+		FlushMergesForArea(areaName)
 		ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
 			fontAlpha, anchorH, dirMult, duration, color, meta)
 		if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
@@ -313,6 +296,7 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
 	end
 	if not canSpellMerge then
 		-- Avoid merging unrelated events: if we can't key by spellId, do not merge.
+		FlushMergesForArea(areaName)
 		ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
 			fontAlpha, anchorH, dirMult, duration, color, meta)
 		if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end
@@ -324,8 +308,8 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
 	local maxMerge = 8  -- never hold more than 8 hits
 
 	-- Tainted/secret text cannot be inspected (text:match would error); it
-	-- merges via mode "secret" and FlushMergeByKey renders the raw value
-	-- plus an (xN) badge without touching the secret.
+	-- merges count-only via mode "secret" and FlushMergeByKey renders
+	-- "Hits (xN)" without touching the raw value.
 	local numVal = nil
 	local mode = "secret"
 	if ZSBT.IsSafeString and ZSBT.IsSafeString(text) then
@@ -336,10 +320,7 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
 	end
 
 	-- Key by scroll area + spellId so we merge per spell per window.
-	-- Crits get their own bucket: under forceCritsInline they share the
-	-- normal area, and a crit rollup must never absorb non-crit hits.
 	local key = tostring(areaName) .. ":" .. tostring(spellId)
-		.. (isCrit and ":crit" or "")
 	local existing = mergeBuffer[key]
 	if existing then
 		local elapsed = GetTime() - existing.lastUpdate
@@ -466,7 +447,7 @@ function Display:Emit(areaName, text, color, meta)
 			if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then return tostring(v) end
 			return "<secret>"
 		end
-		Addon:Print(L["|cFF00CC66[EMIT]|r "] .. safeDbg(areaName) .. " kind=heal text=" .. safeDbg(text))
+		Addon:Print("|cFF00CC66[EMIT]|r " .. safeDbg(areaName) .. " kind=heal text=" .. safeDbg(text))
 	elseif dbg >= 4 and type(areaName) == "string" then
 		local isOutgoingArea = (areaName == "Outgoing") or (outHealArea and areaName == outHealArea)
 		if isOutgoingArea and (not (ZSBT.IsSafeString and ZSBT.IsSafeString(text))) then
@@ -479,7 +460,7 @@ function Display:Emit(areaName, text, color, meta)
 			if Addon and Addon.Dbg then
 				Addon:Dbg("safety", 4, "EMIT_SECRET", safeDbg(areaName), "kind=" .. safeDbg(meta and meta.kind), "text=" .. safeDbg(text))
 			elseif Addon and Addon.Print then
-				Addon:Print(L["|cFF00CC66[EMIT_SECRET]|r "] .. safeDbg(areaName)
+				Addon:Print("|cFF00CC66[EMIT_SECRET]|r " .. safeDbg(areaName)
 					.. " kind=" .. safeDbg(meta and meta.kind)
 					.. " text=" .. safeDbg(text))
 			end
@@ -513,7 +494,7 @@ function Display:Emit(areaName, text, color, meta)
 				if Addon and Addon.Dbg then
 					Addon:Dbg("ui", 4, "EMIT_BIG", safeDbg(areaName), "kind=" .. safeDbg(meta and meta.kind), "text=" .. safeDbg(text))
 				elseif Addon and Addon.Print then
-					Addon:Print(L["|cFF00CC66[EMIT_BIG]|r "] .. safeDbg(areaName)
+					Addon:Print("|cFF00CC66[EMIT_BIG]|r " .. safeDbg(areaName)
 						.. " kind=" .. safeDbg(meta and meta.kind)
 						.. " text=" .. safeDbg(text))
 				end
@@ -549,7 +530,7 @@ function Display:Emit(areaName, text, color, meta)
 				if Addon and Addon.Dbg then
 					Addon:Dbg("ui", 4, "EMIT_MILLION", safeDbg(areaName), "kind=" .. safeDbg(meta and meta.kind), "text=" .. safeDbg(text))
 				elseif Addon and Addon.Print then
-					Addon:Print(L["|cFF00CC66[EMIT_MILLION]|r "] .. safeDbg(areaName)
+					Addon:Print("|cFF00CC66[EMIT_MILLION]|r " .. safeDbg(areaName)
 						.. " kind=" .. safeDbg(meta and meta.kind)
 						.. " text=" .. safeDbg(text))
 				end
@@ -563,7 +544,7 @@ function Display:Emit(areaName, text, color, meta)
         -- Safe fallback: chat-only when a scroll area is missing.
         -- text may be tainted so we pass it directly to Print (which calls SetText).
         if Addon and Addon.Print then
-            Addon:Print(L["Display fallback:"], areaName or "?")
+            Addon:Print("Display fallback:", areaName or "?")
         end
         return
     end
@@ -571,7 +552,7 @@ function Display:Emit(areaName, text, color, meta)
     -- Require the test renderer (ScrollAreaFrames.lua)
     if type(ZSBT.FireTestText) ~= "function" then
         if Addon and Addon.Print then
-            Addon:Print(L["Display: no FireTestText renderer"])
+            Addon:Print("Display: no FireTestText renderer")
         end
         return
     end
@@ -713,11 +694,6 @@ function Display:Emit(areaName, text, color, meta)
 		end
 	end
 
-    if ZSBT.Addon and ZSBT.Addon.Dbg and meta and meta.stream == "outgoing" and meta.kind == "damage" then
-        local sname = (meta.spellId and ZSBT.CleanSpellName and ZSBT.CleanSpellName(meta.spellId)) or "?"
-        ZSBT.Addon:Dbg("outgoing", 4, ("EMIT_OK t=%.2f area=%s spellId=%s name=%s per=%s")
-            :format(GetTime(), tostring(areaName), tostring(meta.spellId), tostring(sname), tostring(meta.isPeriodic == true)))
-    end
     TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag, fontAlpha,
         anchorH, dirMult, duration, color, meta)
 	if tok and ZSBT.Addon and ZSBT.Addon.PerfEnd then ZSBT.Addon:PerfEnd(tok) end

@@ -5,8 +5,6 @@
 ------------------------------------------------------------------------
 
 local ADDON_NAME, ZSBT = ...
-
-local L = ZSBT.L
 local Addon = ZSBT.Addon
 local LSM = LibStub("LibSharedMedia-3.0")
 
@@ -64,8 +62,8 @@ function ZSBT.GetResolvedSpellLabel(spellId)
 		local ok, fetched = pcall(GetSpellInfo, spellId)
 		name = ok and fetched or nil
 	end
-	name = name or (L["Spell #"] .. tostring(spellId))
-	return L["Resolved: "] .. tostring(name) .. L[" (ID: "] .. tostring(spellId) .. ")"
+	name = name or ("Spell #" .. tostring(spellId))
+	return "Resolved: " .. tostring(name) .. " (ID: " .. tostring(spellId) .. ")"
 end
 
 do
@@ -266,14 +264,14 @@ function ZSBT.ValuesFromKeys(tbl)
 end
 
 function ZSBT.BuildBuffRulesOptionsTable()
-    assert(ZSBT.BuildTab_BuffRulesManager, L["ConfigTabs.lua must be loaded before Config.lua"])
+    assert(ZSBT.BuildTab_BuffRulesManager, "ConfigTabs.lua must be loaded before Config.lua")
 
 	local tab = ZSBT.BuildTab_BuffRulesManager()
 	local args = (tab and tab.args) or {}
 
     return {
         type = "group",
-		name = L["|cFFFFD100Buff Rules|r"],
+		name = "|cFFFFD100Buff Rules|r",
 		childGroups = "tab",
 		args = args,
     }
@@ -327,6 +325,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 		["AURA_STACKS"] = "AURA_STACKS",
 		["COOLDOWN_READY"] = "COOLDOWN_READY",
 		["LOW_HEALTH"] = "LOW_HEALTH",
+		["RESOURCE_THRESHOLD"] = "RESOURCE_THRESHOLD",
 		["SPELL_USABLE"] = "SPELL_USABLE",
 		["SPELLCAST_SUCCEEDED"] = "SPELLCAST_SUCCEEDED",
 		["KILLING_BLOW"] = "KILLING_BLOW",
@@ -345,26 +344,27 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 	}
 
 	local EVENT_HELP = {
-		AURA_GAIN = L["Fires when you gain a buff/aura. Optionally set SpellID to match a specific aura."],
-		AURA_FADE = L["Fires when a buff/aura fades. Optionally set SpellID to match a specific aura."],
-		AURA_STACKS = L["Fires when the player's aura stack count is at/above the configured threshold. Optionally set Max Stacks to cap it."],
-		COOLDOWN_READY = L["Fires when a tracked cooldown becomes ready. Best used with specific SpellID."],
-		LOW_HEALTH = L["Fires when Blizzard's low health warning triggers (red border)."],
-		SPELL_USABLE = L["Fires when the spell becomes usable (edge: unusable  usable). Uses polling and can flicker based on resources/targeting; use Rearm-after-unusable and/or Throttle to prevent noise. Great workaround for Execute-style reminders when target HP is protected."],
-		SPELLCAST_SUCCEEDED = L["Fires when you successfully cast a spell (UNIT_SPELLCAST_SUCCEEDED on player). Optionally set SpellID to match a specific spell."],
-		KILLING_BLOW = L["Fires when you personally land a killing blow (combat log PARTY_KILL)."],
-		UT_KILL_1 = L["Fires on the 1st kill in a rapid kill chain (UT announcer). Tokens: {count} {value}."],
-		UT_KILL_2 = L["Fires on the 2nd kill in a rapid kill chain (UT announcer). Tokens: {count} {value}."],
-		UT_KILL_3 = L["Fires on the 3rd kill in a rapid kill chain (UT announcer). Tokens: {count} {value}."],
-		UT_KILL_4 = L["Fires on the 4th kill in a rapid kill chain (UT announcer). Tokens: {count} {value}."],
-		UT_KILL_5 = L["Fires on the 5th kill in a rapid kill chain (UT announcer). Tokens: {count} {value}."],
-		UT_KILL_6 = L["Fires on the 6th kill in a rapid kill chain (UT announcer). Tokens: {count} {value}."],
-		UT_KILL_7 = L["Fires on the 7th+ kill in a rapid kill chain (UT announcer). Tokens: {count} {value}."],
-		ENTER_COMBAT = L["Fires when you enter combat."],
-		LEAVE_COMBAT = L["Fires when you leave combat."],
-		TARGET_CHANGED = L["Fires when your target changes."],
-		EQUIPMENT_CHANGED = L["Fires when your equipment changes (slot id in {value})."],
-		SPEC_CHANGED = L["Fires when your specialization changes."],
+		AURA_GAIN = "Fires when you gain a buff/aura. Optionally set SpellID to match a specific aura.",
+		AURA_FADE = "Fires when a buff/aura fades. Optionally set SpellID to match a specific aura.",
+		AURA_STACKS = "Fires when the player's aura stack count is at/above the configured threshold. Optionally set Max Stacks to cap it.",
+		COOLDOWN_READY = "Fires when a tracked cooldown becomes ready. Best used with specific SpellID.",
+		LOW_HEALTH = "Fires when Blizzard's low health warning triggers (red border).",
+		RESOURCE_THRESHOLD = "Fires when your resource (mana/rage/energy/etc.) crosses the threshold (above or below).",
+		SPELL_USABLE = "Fires when the spell becomes usable (edge: unusable  usable). Uses polling and can flicker based on resources/targeting; use Rearm-after-unusable and/or Throttle to prevent noise. Great workaround for Execute-style reminders when target HP is protected.",
+		SPELLCAST_SUCCEEDED = "Fires when you successfully cast a spell (UNIT_SPELLCAST_SUCCEEDED on player). Optionally set SpellID to match a specific spell.",
+		KILLING_BLOW = "Fires when you personally land a killing blow (combat log PARTY_KILL).",
+		UT_KILL_1 = "Fires on the 1st kill in a rapid kill chain (UT announcer). Tokens: {count} {value}.",
+		UT_KILL_2 = "Fires on the 2nd kill in a rapid kill chain (UT announcer). Tokens: {count} {value}.",
+		UT_KILL_3 = "Fires on the 3rd kill in a rapid kill chain (UT announcer). Tokens: {count} {value}.",
+		UT_KILL_4 = "Fires on the 4th kill in a rapid kill chain (UT announcer). Tokens: {count} {value}.",
+		UT_KILL_5 = "Fires on the 5th kill in a rapid kill chain (UT announcer). Tokens: {count} {value}.",
+		UT_KILL_6 = "Fires on the 6th kill in a rapid kill chain (UT announcer). Tokens: {count} {value}.",
+		UT_KILL_7 = "Fires on the 7th+ kill in a rapid kill chain (UT announcer). Tokens: {count} {value}.",
+		ENTER_COMBAT = "Fires when you enter combat.",
+		LEAVE_COMBAT = "Fires when you leave combat.",
+		TARGET_CHANGED = "Fires when your target changes.",
+		EQUIPMENT_CHANGED = "Fires when your equipment changes (slot id in {value}).",
+		SPEC_CHANGED = "Fires when your specialization changes.",
 	}
 
 	local function GetEventHelpText()
@@ -375,7 +375,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 
 	return {
 		type = "group",
-		name = L["Trigger Editor"],
+		name = "Trigger Editor",
 		args = {
 			eventHelp = {
 				type = "description",
@@ -384,16 +384,16 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 				fontSize = "medium",
 				width = "full",
 			},
-			header = { type = "header", name = L["Edit Trigger"], order = 1 },
+			header = { type = "header", name = "Edit Trigger", order = 1 },
 			info = {
 				type = "description",
-				name = L["Text tokens: {spell} {id} {event} {pct} {threshold} {unit} {power} {value} {stacks} {count} {label}"],
+				name = "Text tokens: {spell} {id} {event} {pct} {threshold} {unit} {power} {value} {stacks} {count} {label}",
 				order = 2,
 				fontSize = "medium",
 			},
 			enabled = {
 				type = "toggle",
-				name = L["Enabled"],
+				name = "Enabled",
 				order = 3,
 				width = "full",
 				get = function()
@@ -408,7 +408,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			eventType = {
 				type = "select",
-				name = L["Event Type"],
+				name = "Event Type",
 				order = 4,
 				values = EVENT_VALUES,
 				get = function()
@@ -423,8 +423,8 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			spellId = {
 				type = "input",
-				name = L["SpellID (optional)"],
-				desc = L["Enter a SpellID or exact spell name. Used for Aura Gain/Fade, Cooldown Ready, Spell Usable, Aura Stacks, and Spellcast Succeeded triggers. Leave blank to match any."],
+				name = "SpellID (optional)",
+				desc = "Enter a SpellID or exact spell name. Used for Aura Gain/Fade, Cooldown Ready, Spell Usable, Aura Stacks, and Spellcast Succeeded triggers. Leave blank to match any.",
 				order = 5,
 				hidden = function()
 					local t = getTrigger(); local et = t and t.eventType
@@ -468,7 +468,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			auraSecretWarning = {
 				type = "description",
-				name = L["Note: Some buffs/auras are hidden (\"secret\") during combat and cannot be detected reliably by SpellID. For those spells, use Spellcast Succeeded instead."],
+				name = "Note: Some buffs/auras are hidden (\"secret\") during combat and cannot be detected reliably by SpellID. For those spells, use Spellcast Succeeded instead.",
 				order = 5.02,
 				width = "full",
 				hidden = function()
@@ -479,8 +479,8 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			convertAuraToSpellcast = {
 				type = "execute",
-				name = L["Convert to Spellcast Succeeded"],
-				desc = L["Switch this trigger to SPELLCAST_SUCCEEDED while keeping the SpellID and action settings."],
+				name = "Convert to Spellcast Succeeded",
+				desc = "Switch this trigger to SPELLCAST_SUCCEEDED while keeping the SpellID and action settings.",
 				order = 5.03,
 				width = "full",
 				hidden = function()
@@ -496,7 +496,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			powerType = {
 				type = "select",
-				name = L["Power Type"],
+				name = "Power Type",
 				order = 5.2,
 				hidden = function()
 					local t = getTrigger(); return not (t and t.eventType == "RESOURCE_THRESHOLD")
@@ -521,7 +521,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			direction = {
 				type = "select",
-				name = L["Direction"],
+				name = "Direction",
 				order = 5.21,
 				hidden = function()
 					local t = getTrigger(); return not (t and t.eventType == "RESOURCE_THRESHOLD")
@@ -538,7 +538,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			thresholdValue = {
 				type = "range",
-				name = L["Power Threshold"],
+				name = "Power Threshold",
 				order = 5.22,
 				min = 0,
 				max = 200,
@@ -557,7 +557,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			minStacks = {
 				type = "range",
-				name = L["Min Stacks"],
+				name = "Min Stacks",
 				order = 5.3,
 				min = 0,
 				max = 50,
@@ -576,7 +576,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			maxStacks = {
 				type = "range",
-				name = L["Max Stacks (0=off)"],
+				name = "Max Stacks (0=off)",
 				order = 5.31,
 				min = 0,
 				max = 50,
@@ -596,8 +596,8 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			onlyInCombat = {
 				type = "toggle",
-				name = L["Only In Combat"],
-				desc = L["For SPELL_USABLE: only check/fire while you are in combat."],
+				name = "Only In Combat",
+				desc = "For SPELL_USABLE: only check/fire while you are in combat.",
 				order = 5.4,
 				width = "full",
 				hidden = function()
@@ -614,8 +614,8 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			rearmUnusableSec = {
 				type = "range",
-				name = L["Rearm after unusable (sec)"],
-				desc = L["For SPELL_USABLE: requires the spell to be unusable for this many seconds before it can fire again (helps prevent flicker spam). 0 = off."],
+				name = "Rearm after unusable (sec)",
+				desc = "For SPELL_USABLE: requires the spell to be unusable for this many seconds before it can fire again (helps prevent flicker spam). 0 = off.",
 				order = 5.41,
 				min = 0,
 				max = 30,
@@ -636,8 +636,8 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			throttle = {
 				type = "range",
-				name = L["Throttle (sec)"],
-				desc = L["Minimum time between firings for this trigger."],
+				name = "Throttle (sec)",
+				desc = "Minimum time between firings for this trigger.",
 				order = 6,
 				min = 0,
 				max = 30,
@@ -655,8 +655,8 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			fontOverride = {
 				type = "toggle",
-				name = L["Font Override"],
-				desc = L["Override the font settings for this trigger's notification."],
+				name = "Font Override",
+				desc = "Override the font settings for this trigger's notification.",
 				order = 6.1,
 				width = "full",
 				get = function()
@@ -672,7 +672,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			fontFace = {
 				type = "select",
-				name = L["Font Face"],
+				name = "Font Face",
 				order = 6.11,
 				values = function() return ZSBT.BuildFontDropdown() end,
 				hidden = function()
@@ -681,7 +681,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 				end,
 				get = function()
 					local t = getTrigger(); local a = t and t.action
-					return (type(a) == "table" and type(a.fontFace) == "string" and a.fontFace ~= "") and a.fontFace or L["Friz Quadrata TT"]
+					return (type(a) == "table" and type(a.fontFace) == "string" and a.fontFace ~= "") and a.fontFace or "Friz Quadrata TT"
 				end,
 				set = function(_, v)
 					local t = ensureTrigger(); if not t then return end
@@ -692,7 +692,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			fontOutline = {
 				type = "select",
-				name = L["Outline Style"],
+				name = "Outline Style",
 				order = 6.12,
 				values = function() return ZSBT.ValuesFromKeys(ZSBT.OUTLINE_STYLES) end,
 				hidden = function()
@@ -712,7 +712,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			fontSize = {
 				type = "range",
-				name = L["Font Size (0=use scale)"],
+				name = "Font Size (0=use scale)",
 				order = 6.13,
 				min = 0,
 				max = 72,
@@ -736,8 +736,8 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			fontScale = {
 				type = "range",
-				name = L["Font Scale"],
-				desc = L["Multiplier applied to the resolved scroll area font size when Font Size is 0."],
+				name = "Font Scale",
+				desc = "Multiplier applied to the resolved scroll area font size when Font Size is 0.",
 				order = 6.14,
 				min = 0.5,
 				max = 3.0,
@@ -760,8 +760,8 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			sticky = {
 				type = "toggle",
-				name = L["Sticky"],
-				desc = L["Make this trigger display like a crit (Pow-style placement) with optional scale/duration boosts."],
+				name = "Sticky",
+				desc = "Make this trigger display like a crit (Pow-style placement) with optional scale/duration boosts.",
 				order = 6.2,
 				width = "full",
 				get = function()
@@ -777,8 +777,8 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			stickyJiggle = {
 				type = "toggle",
-				name = L["Sticky Jiggle (shake)"],
-				desc = L["When Sticky is enabled, also apply the shake/jiggle animation. Disable this if you want Sticky sizing/placement without shaking."],
+				name = "Sticky Jiggle (shake)",
+				desc = "When Sticky is enabled, also apply the shake/jiggle animation. Disable this if you want Sticky sizing/placement without shaking.",
 				order = 6.205,
 				width = "full",
 				hidden = function()
@@ -799,7 +799,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			stickyScale = {
 				type = "range",
-				name = L["Sticky Scale"],
+				name = "Sticky Scale",
 				order = 6.21,
 				min = 1.0,
 				max = 3.0,
@@ -822,7 +822,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			stickyDurationMult = {
 				type = "range",
-				name = L["Sticky Duration Mult"],
+				name = "Sticky Duration Mult",
 				order = 6.22,
 				min = 1.0,
 				max = 4.0,
@@ -845,8 +845,8 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			text = {
 				type = "input",
-				name = L["Text"],
-				desc = L["Trigger text (supports tokens)."],
+				name = "Text",
+				desc = "Trigger text (supports tokens).",
 				order = 10,
 				width = "full",
 				get = function()
@@ -861,7 +861,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			scrollArea = {
 				type = "select",
-				name = L["Scroll Area"],
+				name = "Scroll Area",
 				order = 11,
 				values = function() return ZSBT.GetScrollAreaNames() end,
 				get = function()
@@ -876,8 +876,8 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			showSpellIcon = {
 				type = "toggle",
-				name = L["Show Spell Icon"],
-				desc = L["Include the spell icon in this trigger notification (only when SpellID is known)."],
+				name = "Show Spell Icon",
+				desc = "Include the spell icon in this trigger notification (only when SpellID is known).",
 				order = 11.5,
 				width = "full",
 				get = function()
@@ -892,7 +892,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			sound = {
 				type = "select",
-				name = L["Sound"],
+				name = "Sound",
 				order = 12,
 				values = function() return ZSBT.BuildSoundDropdown() end,
 				get = function()
@@ -907,7 +907,7 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			color = {
 				type = "color",
-				name = L["Color"],
+				name = "Color",
 				order = 13,
 				get = function()
 					local t = getTrigger(); local a = t and t.action
@@ -923,8 +923,8 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 			},
 			test = {
 				type = "execute",
-				name = L["Test Trigger"],
-				desc = L["Fire this trigger once using a simulated event (uses current editor settings)."],
+				name = "Test Trigger",
+				desc = "Fire this trigger once using a simulated event (uses current editor settings).",
 				order = 20,
 				width = "full",
 				func = function()
@@ -940,27 +940,27 @@ function ZSBT.BuildTriggerEditorOptionsTable()
 						local ok, info = pcall(C_Spell.GetSpellInfo, testSid)
 						spellName = ok and info and info.name or nil
 					end
-					spellName = spellName or (testSid and (L["Spell #"] .. tostring(testSid)) or nil)
+					spellName = spellName or (testSid and ("Spell #" .. tostring(testSid)) or nil)
 
 					local ctx = { eventType = et, _skipThrottle = true }
 					if et == "AURA_GAIN" then
-						ctx.event = "GAIN"; ctx.unit = "player"; ctx.spellId = testSid; ctx.spellName = spellName or L["Example Aura"]; ctx.stacks = 1
+						ctx.event = "GAIN"; ctx.unit = "player"; ctx.spellId = testSid; ctx.spellName = spellName or "Example Aura"; ctx.stacks = 1
 					elseif et == "AURA_FADE" then
-						ctx.event = "FADE"; ctx.unit = "player"; ctx.spellId = testSid; ctx.spellName = spellName or L["Example Aura"]; ctx.stacks = 0
+						ctx.event = "FADE"; ctx.unit = "player"; ctx.spellId = testSid; ctx.spellName = spellName or "Example Aura"; ctx.stacks = 0
 					elseif et == "AURA_STACKS" then
-						ctx.event = "STACKS"; ctx.unit = "player"; ctx.spellId = testSid; ctx.spellName = spellName or L["Example Aura"]; ctx.stacks = math.max(tonumber(t.minStacks) or 1, 5); ctx.threshold = tonumber(t.minStacks) or 1
+						ctx.event = "STACKS"; ctx.unit = "player"; ctx.spellId = testSid; ctx.spellName = spellName or "Example Aura"; ctx.stacks = math.max(tonumber(t.minStacks) or 1, 5); ctx.threshold = tonumber(t.minStacks) or 1
 					elseif et == "COOLDOWN_READY" then
-						ctx.event = "READY"; ctx.unit = "player"; ctx.spellId = testSid; ctx.spellName = spellName or L["Example Cooldown"]
+						ctx.event = "READY"; ctx.unit = "player"; ctx.spellId = testSid; ctx.spellName = spellName or "Example Cooldown"
 					elseif et == "LOW_HEALTH" then
 						ctx.event = "LOW_HEALTH"; ctx.pct = 15; ctx.threshold = 30
 					elseif et == "RESOURCE_THRESHOLD" then
 						ctx.event = "POWER"; ctx.unit = "player"; ctx.powerType = "RAGE"; ctx.value = 80; ctx.threshold = 70
 					elseif et == "SPELL_USABLE" then
-						ctx.event = "USABLE"; ctx.unit = "player"; ctx.spellId = testSid; ctx.spellName = spellName or L["Example Spell"]
+						ctx.event = "USABLE"; ctx.unit = "player"; ctx.spellId = testSid; ctx.spellName = spellName or "Example Spell"
 					elseif et == "SPELLCAST_SUCCEEDED" then
-						ctx.event = "SUCCEEDED"; ctx.unit = "player"; ctx.spellId = testSid; ctx.spellName = spellName or L["Example Spell"]
+						ctx.event = "SUCCEEDED"; ctx.unit = "player"; ctx.spellId = testSid; ctx.spellName = spellName or "Example Spell"
 					elseif et == "KILLING_BLOW" then
-						ctx.event = "PARTY_KILL"; ctx.unit = "player"; ctx.value = L["Training Dummy"]; ctx.threshold = "Creature-0-0-0-0-0-0000000000"; ctx.spellName = L["Training Dummy"]
+						ctx.event = "PARTY_KILL"; ctx.unit = "player"; ctx.value = "Training Dummy"; ctx.threshold = "Creature-0-0-0-0-0-0000000000"; ctx.spellName = "Training Dummy"
 					elseif et == "ENTER_COMBAT" then
 						ctx.event = "ENTER_COMBAT"; ctx.unit = "player"
 					elseif et == "LEAVE_COMBAT" then
@@ -983,24 +983,24 @@ end
 function ZSBT.BuildSpellRuleEditorOptionsTable()
 	return {
 		type = "group",
-		name = L["Spell Rule Editor"],
+		name = "Spell Rule Editor",
 		args = {
-			header = { type = "header", name = L["Edit Spell Rule"], order = 1 },
+			header = { type = "header", name = "Edit Spell Rule", order = 1 },
 			spellLabel = {
 				type = "description",
 				name = function()
 					local id = ZSBT._editingSpellRuleSpellID
-					if type(id) ~= "number" then return L["No spell selected."] end
+					if type(id) ~= "number" then return "No spell selected." end
 					local name = (C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(id) and C_Spell.GetSpellInfo(id).name) or (GetSpellInfo and GetSpellInfo(id))
-					name = name or (L["Spell #"] .. tostring(id))
-					return name .. L["  |cFF888888(ID: "] .. tostring(id) .. ")|r"
+					name = name or ("Spell #" .. tostring(id))
+					return name .. "  |cFF888888(ID: " .. tostring(id) .. ")|r"
 				end,
 				order = 2,
 				fontSize = "medium",
 			},
 			enabled = {
 				type = "toggle",
-				name = L["Enabled"],
+				name = "Enabled",
 				order = 3,
 				width = "full",
 				get = function()
@@ -1020,8 +1020,8 @@ function ZSBT.BuildSpellRuleEditorOptionsTable()
 			},
 			throttle = {
 				type = "range",
-				name = L["Throttle (sec)"],
-				desc = L["Minimum time between displays for this spell (Outgoing only)."],
+				name = "Throttle (sec)",
+				desc = "Minimum time between displays for this spell (Outgoing only).",
 				order = 4,
 				min = 0,
 				max = 2.0,
@@ -1044,8 +1044,8 @@ function ZSBT.BuildSpellRuleEditorOptionsTable()
 			},
 			scrollArea = {
 				type = "select",
-				name = L["Scroll Area Override"],
-				desc = L["Optional: override the default Spell Rules scroll area for this spell."],
+				name = "Scroll Area Override",
+				desc = "Optional: override the default Spell Rules scroll area for this spell.",
 				order = 5,
 				values = function()
 					local v = { ["(Default)"] = "(Default)" }
@@ -1074,19 +1074,19 @@ function ZSBT.BuildSpellRuleEditorOptionsTable()
 			},
 			aggHeader = {
 				type = "header",
-				name = L["Aggregation"],
+				name = "Aggregation",
 				order = 6,
 			},
 			aggCaveat = {
 				type = "description",
-				name = L["Note (WoW 12.x Midnight): Aggregation only applies when ZSBT receives a valid SpellID for the outgoing event. Some combat sources do not provide a SpellID (events may show as spellId=nil / no icon), and those cannot be aggregated per-spell."],
+				name = "Note (WoW 12.x Midnight): Aggregation only applies when ZSBT receives a valid SpellID for the outgoing event. Some combat sources do not provide a SpellID (events may show as spellId=nil / no icon), and those cannot be aggregated per-spell.",
 				order = 6.1,
 				fontSize = "medium",
 			},
 			aggEnabled = {
 				type = "toggle",
-				name = L["Enable Aggregation"],
-				desc = L["Combine rapid repeated hits into a single line (e.g. Whirlwind shows (xN))."],
+				name = "Enable Aggregation",
+				desc = "Combine rapid repeated hits into a single line (e.g. Whirlwind shows (xN)).",
 				order = 7,
 				width = "full",
 				hidden = function() return type(ZSBT._editingSpellRuleSpellID) ~= "number" end,
@@ -1109,8 +1109,8 @@ function ZSBT.BuildSpellRuleEditorOptionsTable()
 			},
 			aggWindow = {
 				type = "range",
-				name = L["Aggregation Window (sec)"],
-				desc = L["Time window for combining hits."],
+				name = "Aggregation Window (sec)",
+				desc = "Time window for combining hits.",
 				order = 8,
 				min = 0.10,
 				max = 1.25,
@@ -1136,8 +1136,8 @@ function ZSBT.BuildSpellRuleEditorOptionsTable()
 			},
 			aggShowCount = {
 				type = "toggle",
-				name = L["Show (xN) Count"],
-				desc = L["Append a hit count marker like (x5) to aggregated events."],
+				name = "Show (xN) Count",
+				desc = "Append a hit count marker like (x5) to aggregated events.",
 				order = 9,
 				width = "full",
 				hidden = function() return type(ZSBT._editingSpellRuleSpellID) ~= "number" end,
@@ -1160,8 +1160,8 @@ function ZSBT.BuildSpellRuleEditorOptionsTable()
 			},
 			similarHitsEnabled = {
 				type = "toggle",
-				name = L["Similar Hits (xN, crits)"],
-				desc = L["Optional: for multi-hit spells (e.g. Whirlwind), show (xN, 1 crit) on the aggregated line. Not enabled by default."],
+				name = "Similar Hits (xN, crits)",
+				desc = "Optional: for multi-hit spells (e.g. Whirlwind), show (xN, 1 crit) on the aggregated line. Not enabled by default.",
 				order = 9.1,
 				width = "full",
 				hidden = function() return type(ZSBT._editingSpellRuleSpellID) ~= "number" end,
@@ -1184,13 +1184,13 @@ function ZSBT.BuildSpellRuleEditorOptionsTable()
 			},
 			styleHeader = {
 				type = "header",
-				name = L["Style Override"],
+				name = "Style Override",
 				order = 10,
 			},
 			styleFontOverride = {
 				type = "toggle",
-				name = L["Font Override"],
-				desc = L["Override font and color for this spell's outgoing text."],
+				name = "Font Override",
+				desc = "Override font and color for this spell's outgoing text.",
 				order = 11,
 				width = "full",
 				hidden = function() return type(ZSBT._editingSpellRuleSpellID) ~= "number" end,
@@ -1213,7 +1213,7 @@ function ZSBT.BuildSpellRuleEditorOptionsTable()
 			},
 			styleFontFace = {
 				type = "select",
-				name = L["Font Face"],
+				name = "Font Face",
 				order = 12,
 				values = function() return ZSBT.BuildFontDropdown() end,
 				hidden = function()
@@ -1228,7 +1228,7 @@ function ZSBT.BuildSpellRuleEditorOptionsTable()
 					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
 					local r = sc and sc.spellRules and id and sc.spellRules[id]
 					local st = r and r.style
-					return (type(st) == "table" and type(st.fontFace) == "string" and st.fontFace ~= "") and st.fontFace or L["Friz Quadrata TT"]
+					return (type(st) == "table" and type(st.fontFace) == "string" and st.fontFace ~= "") and st.fontFace or "Friz Quadrata TT"
 				end,
 				set = function(_, v)
 					local id = ZSBT._editingSpellRuleSpellID
@@ -1242,7 +1242,7 @@ function ZSBT.BuildSpellRuleEditorOptionsTable()
 			},
 			styleFontOutline = {
 				type = "select",
-				name = L["Outline Style"],
+				name = "Outline Style",
 				order = 13,
 				values = function() return ZSBT.ValuesFromKeys(ZSBT.OUTLINE_STYLES) end,
 				hidden = function()
@@ -1271,7 +1271,7 @@ function ZSBT.BuildSpellRuleEditorOptionsTable()
 			},
 			styleFontSize = {
 				type = "range",
-				name = L["Font Size (0=use scale)"],
+				name = "Font Size (0=use scale)",
 				order = 14,
 				min = 0,
 				max = 72,
@@ -1304,8 +1304,8 @@ function ZSBT.BuildSpellRuleEditorOptionsTable()
 			},
 			styleFontScale = {
 				type = "range",
-				name = L["Font Scale"],
-				desc = L["Multiplier applied to the resolved scroll area font size when Font Size is 0."],
+				name = "Font Scale",
+				desc = "Multiplier applied to the resolved scroll area font size when Font Size is 0.",
 				order = 15,
 				min = 0.5,
 				max = 3.0,
@@ -1337,7 +1337,7 @@ function ZSBT.BuildSpellRuleEditorOptionsTable()
 			},
 			styleColor = {
 				type = "color",
-				name = L["Color"],
+				name = "Color",
 				order = 16,
 				hidden = function()
 					local id = ZSBT._editingSpellRuleSpellID
@@ -1372,25 +1372,24 @@ end
 function ZSBT.BuildBuffRuleEditorOptionsTable()
 	return {
 		type = "group",
-		name = L["Buff Rule Editor"],
+		name = "Buff Rule Editor",
 		args = {
-			header = { type = "header", name = L["Edit Buff Rule"], order = 1 },
+			header = { type = "header", name = "Edit Buff Rule", order = 1 },
 			spellLabel = {
 				type = "description",
 				name = function()
 					local id = ZSBT._editingBuffRuleSpellID
-					if type(id) ~= "number" then return L["No buff selected."] end
+					if type(id) ~= "number" then return "No buff selected." end
 					local name = (C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(id) and C_Spell.GetSpellInfo(id).name) or (GetSpellInfo and GetSpellInfo(id))
-					name = name or (L["Spell #"] .. tostring(id))
-					return name .. L["  |cFF888888(ID: "] .. tostring(id) .. ")|r"
-						.. (ZSBT.AuraTrackabilityLabel and ZSBT.AuraTrackabilityLabel(id) or "")
+					name = name or ("Spell #" .. tostring(id))
+					return name .. "  |cFF888888(ID: " .. tostring(id) .. ")|r"
 				end,
 				order = 2,
 				fontSize = "medium",
 			},
 			enabled = {
 				type = "toggle",
-				name = L["Enabled"],
+				name = "Enabled",
 				order = 3,
 				width = "full",
 				get = function()
@@ -1410,7 +1409,7 @@ function ZSBT.BuildBuffRuleEditorOptionsTable()
 			},
 			hideGain = {
 				type = "toggle",
-				name = L["Hide Gain"],
+				name = "Hide Gain",
 				order = 4,
 				width = "full",
 				get = function()
@@ -1430,7 +1429,7 @@ function ZSBT.BuildBuffRuleEditorOptionsTable()
 			},
 			hideFade = {
 				type = "toggle",
-				name = L["Hide Fade"],
+				name = "Hide Fade",
 				order = 5,
 				width = "full",
 				get = function()
@@ -1450,8 +1449,8 @@ function ZSBT.BuildBuffRuleEditorOptionsTable()
 			},
 			throttle = {
 				type = "range",
-				name = L["Throttle (sec)"],
-				desc = L["Minimum time between notifications for this buff (gain/fade tracked separately)."],
+				name = "Throttle (sec)",
+				desc = "Minimum time between notifications for this buff (gain/fade tracked separately).",
 				order = 6,
 				min = 0,
 				max = 10.0,
@@ -1474,8 +1473,8 @@ function ZSBT.BuildBuffRuleEditorOptionsTable()
 			},
 			scrollArea = {
 				type = "select",
-				name = L["Scroll Area Override"],
-				desc = L["Optional: override the default Buff Rules scroll area for this buff."],
+				name = "Scroll Area Override",
+				desc = "Optional: override the default Buff Rules scroll area for this buff.",
 				order = 7,
 				values = function()
 					local v = { ["(Default)"] = "(Default)" }
@@ -1502,359 +1501,6 @@ function ZSBT.BuildBuffRuleEditorOptionsTable()
 					end
 				end,
 			},
-			showIcon = {
-				type = "toggle",
-				name = L["Show Icon"],
-				desc = L["Display the spell icon next to this buff's gain/fade notifications."],
-				order = 8,
-				width = "full",
-				get = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					return type(r) == "table" and r.showIcon == true
-				end,
-				set = function(_, v)
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					if not (sc and type(id) == "number") then return end
-					sc.auraRules = sc.auraRules or {}
-					sc.auraRules[id] = sc.auraRules[id] or {}
-					sc.auraRules[id].showIcon = v and true or false
-				end,
-			},
-			notifyOnCast = {
-				type = "toggle",
-				name = L["Notify on Cast"],
-				desc = L["Also notify when you cast this spell. Only fires for castable spells; the aura gain is suppressed for the same application to avoid duplicates."],
-				order = 9,
-				width = "full",
-				get = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					return type(r) == "table" and r.notifyOnCast == true
-				end,
-				set = function(_, v)
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					if not (sc and type(id) == "number") then return end
-					sc.auraRules = sc.auraRules or {}
-					sc.auraRules[id] = sc.auraRules[id] or {}
-					sc.auraRules[id].notifyOnCast = v and true or false
-				end,
-			},
-			styleHeader = {
-				type = "header",
-				name = L["Appearance"],
-				order = 10,
-			},
-			styleFontOverride = {
-				type = "toggle",
-				name = L["Font Override"],
-				desc = L["Override font and color for this buff's notifications."],
-				order = 11,
-				width = "full",
-				get = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local st = r and r.style
-					return type(st) == "table" and st.fontOverride == true
-				end,
-				set = function(_, v)
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					if not (sc and type(id) == "number") then return end
-					sc.auraRules = sc.auraRules or {}
-					sc.auraRules[id] = sc.auraRules[id] or {}
-					sc.auraRules[id].style = sc.auraRules[id].style or {}
-					sc.auraRules[id].style.fontOverride = v and true or false
-				end,
-			},
-			styleFontFace = {
-				type = "select",
-				name = L["Font Face"],
-				order = 12,
-				values = function() return ZSBT.BuildFontDropdown() end,
-				hidden = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local st = r and r.style
-					return not (type(st) == "table" and st.fontOverride == true)
-				end,
-				get = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local st = r and r.style
-					return (type(st) == "table" and type(st.fontFace) == "string" and st.fontFace ~= "") and st.fontFace or L["Friz Quadrata TT"]
-				end,
-				set = function(_, v)
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					if not (sc and type(id) == "number") then return end
-					sc.auraRules = sc.auraRules or {}
-					sc.auraRules[id] = sc.auraRules[id] or {}
-					sc.auraRules[id].style = sc.auraRules[id].style or {}
-					sc.auraRules[id].style.fontFace = (type(v) == "string" and v ~= "") and v or nil
-				end,
-			},
-			styleFontOutline = {
-				type = "select",
-				name = L["Outline Style"],
-				order = 13,
-				values = function() return ZSBT.ValuesFromKeys(ZSBT.OUTLINE_STYLES) end,
-				hidden = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local st = r and r.style
-					return not (type(st) == "table" and st.fontOverride == true)
-				end,
-				get = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local st = r and r.style
-					return (type(st) == "table" and type(st.fontOutline) == "string" and st.fontOutline ~= "") and st.fontOutline or "Thin"
-				end,
-				set = function(_, v)
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					if not (sc and type(id) == "number") then return end
-					sc.auraRules = sc.auraRules or {}
-					sc.auraRules[id] = sc.auraRules[id] or {}
-					sc.auraRules[id].style = sc.auraRules[id].style or {}
-					sc.auraRules[id].style.fontOutline = (type(v) == "string" and v ~= "") and v or nil
-				end,
-			},
-			styleFontSize = {
-				type = "range",
-				name = L["Font Size (0=use scale)"],
-				order = 14,
-				min = 0,
-				max = 72,
-				softMax = 32,
-				step = 1,
-				hidden = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local st = r and r.style
-					return not (type(st) == "table" and st.fontOverride == true)
-				end,
-				get = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local st = r and r.style
-					return type(st) == "table" and (tonumber(st.fontSize) or 0) or 0
-				end,
-				set = function(_, v)
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					if not (sc and type(id) == "number") then return end
-					sc.auraRules = sc.auraRules or {}
-					sc.auraRules[id] = sc.auraRules[id] or {}
-					sc.auraRules[id].style = sc.auraRules[id].style or {}
-					local n = tonumber(v) or 0
-					sc.auraRules[id].style.fontSize = (n > 0) and n or nil
-				end,
-			},
-			styleFontScale = {
-				type = "range",
-				name = L["Font Scale"],
-				desc = L["Multiplier applied to the resolved scroll area font size when Font Size is 0."],
-				order = 15,
-				min = 0.5,
-				max = 3.0,
-				softMax = 2.0,
-				step = 0.05,
-				hidden = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local st = r and r.style
-					return not (type(st) == "table" and st.fontOverride == true)
-				end,
-				get = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local st = r and r.style
-					return type(st) == "table" and (tonumber(st.fontScale) or 1.0) or 1.0
-				end,
-				set = function(_, v)
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					if not (sc and type(id) == "number") then return end
-					sc.auraRules = sc.auraRules or {}
-					sc.auraRules[id] = sc.auraRules[id] or {}
-					sc.auraRules[id].style = sc.auraRules[id].style or {}
-					sc.auraRules[id].style.fontScale = tonumber(v) or 1.0
-				end,
-			},
-			styleColor = {
-				type = "color",
-				name = L["Color"],
-				order = 16,
-				hidden = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local st = r and r.style
-					return not (type(st) == "table" and st.fontOverride == true)
-				end,
-				get = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local st = r and r.style
-					local c = type(st) == "table" and st.color
-					if type(c) ~= "table" then return 1, 1, 1 end
-					return tonumber(c.r) or 1, tonumber(c.g) or 1, tonumber(c.b) or 1
-				end,
-				set = function(_, r, g, b)
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					if not (sc and type(id) == "number") then return end
-					sc.auraRules = sc.auraRules or {}
-					sc.auraRules[id] = sc.auraRules[id] or {}
-					sc.auraRules[id].style = sc.auraRules[id].style or {}
-					sc.auraRules[id].style.color = { r = r, g = g, b = b }
-				end,
-			},
-			soundHeader = {
-				type = "header",
-				name = L["Sound"],
-				order = 17,
-			},
-			soundEnabled = {
-				type = "toggle",
-				name = L["Play Sound"],
-				order = 18,
-				width = "full",
-				get = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local s = r and r.sound
-					return type(s) == "table" and s.enabled == true
-				end,
-				set = function(_, v)
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					if not (sc and type(id) == "number") then return end
-					sc.auraRules = sc.auraRules or {}
-					sc.auraRules[id] = sc.auraRules[id] or {}
-					sc.auraRules[id].sound = sc.auraRules[id].sound or {}
-					sc.auraRules[id].sound.enabled = v and true or false
-				end,
-			},
-			soundGainKey = {
-				type = "select",
-				name = L["Gain Sound"],
-				desc = L["Sound played when this buff is gained. Falls back to the shared Sound setting if unset."],
-				order = 19,
-				values = function() return ZSBT.BuildSoundDropdown() end,
-				hidden = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local s = r and r.sound
-					return not (type(s) == "table" and s.enabled == true)
-				end,
-				get = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local s = r and r.sound
-					return (type(s) == "table" and ((type(s.gainKey) == "string" and s.gainKey ~= "") and s.gainKey or s.soundKey)) or "None"
-				end,
-				set = function(_, v)
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					if not (sc and type(id) == "number") then return end
-					sc.auraRules = sc.auraRules or {}
-					sc.auraRules[id] = sc.auraRules[id] or {}
-					sc.auraRules[id].sound = sc.auraRules[id].sound or {}
-					sc.auraRules[id].sound.gainKey = (type(v) == "string" and v ~= "") and v or nil
-				end,
-			},
-			soundFadeKey = {
-				type = "select",
-				name = L["Fade Sound"],
-				desc = L["Sound played when this buff fades. Falls back to the shared Sound setting if unset."],
-				order = 20,
-				values = function() return ZSBT.BuildSoundDropdown() end,
-				hidden = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local s = r and r.sound
-					return not (type(s) == "table" and s.enabled == true)
-				end,
-				get = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local s = r and r.sound
-					return (type(s) == "table" and ((type(s.fadeKey) == "string" and s.fadeKey ~= "") and s.fadeKey or s.soundKey)) or "None"
-				end,
-				set = function(_, v)
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					if not (sc and type(id) == "number") then return end
-					sc.auraRules = sc.auraRules or {}
-					sc.auraRules[id] = sc.auraRules[id] or {}
-					sc.auraRules[id].sound = sc.auraRules[id].sound or {}
-					sc.auraRules[id].sound.fadeKey = (type(v) == "string" and v ~= "") and v or nil
-				end,
-			},
-			soundTest = {
-				type = "execute",
-				name = L["Test Gain"],
-				desc = L["Play the gain sound."],
-				order = 21,
-				width = "half",
-				hidden = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local s = r and r.sound
-					return not (type(s) == "table" and s.enabled == true)
-				end,
-				func = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local s = r and r.sound
-					if type(s) == "table" then ZSBT.PlayLSMSound(s.gainKey or s.soundKey) end
-				end,
-			},
-			soundTestFade = {
-				type = "execute",
-				name = L["Test Fade"],
-				desc = L["Play the fade sound."],
-				order = 22,
-				width = "half",
-				hidden = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local s = r and r.sound
-					return not (type(s) == "table" and s.enabled == true)
-				end,
-				func = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					local s = r and r.sound
-					if type(s) == "table" then ZSBT.PlayLSMSound(s.fadeKey or s.soundKey) end
-				end,
-			},
 		},
 	}
 end
@@ -1873,7 +1519,7 @@ function ZSBT.BuildFontDropdown()
     end
     -- Ensure default WoW font is always present
     if not fonts["Friz Quadrata TT"] then
-        fonts["Friz Quadrata TT"] = L["Friz Quadrata TT"]
+        fonts["Friz Quadrata TT"] = "Friz Quadrata TT"
     end
     return fonts
 end
@@ -1885,7 +1531,7 @@ end
 -- Always includes a "None" option at the top.
 ------------------------------------------------------------------------
 function ZSBT.BuildSoundDropdown()
-    local sounds = { ["None"] = L["None"] }
+    local sounds = { ["None"] = "None" }
     if LSM then
         for _, name in ipairs(LSM:List("sound")) do
             sounds[name] = name
@@ -2073,7 +1719,7 @@ And within those, ensure these categories are enabled:
    - Click `Settings` (or `Chat Settings`).
    - Go to the `Combat Log` section.
 
-3. **Open the Combat Log "Filters" / L["What to Log"] panel**
+3. **Open the Combat Log "Filters" / "What to Log" panel**
    - Look for a button like `Filters`, `What to Log`, or `Configure`.
 
 4. **Enable the two required filter presets**
@@ -2422,6 +2068,8 @@ Triggers let you create your own notifications when specific events happen.
 ### Warnings / thresholds
 - **LOW_HEALTH**
   - Fires when low-health warning logic triggers.
+- **RESOURCE_THRESHOLD**
+  - Fires when a configured resource threshold is crossed.
 
 ### Kill / UT-style
 - **KILLING_BLOW**
@@ -2660,7 +2308,7 @@ For Trade Skills:
 - `%t` New level (Skill Ups)
 
 Examples:
-- `+%a %e (%t)`
+- `+%a %e (%t)` (MSBT-style)
 - `+%e x%a` (simple)
 - `+%e` (minimal)
 
@@ -2737,27 +2385,6 @@ If ZSBT is enabled but you see nothing:
 
 ## 5) Reload
 - `/reload`
-]],
-
-	troubleshooting_filter = [[# Combat-Log Filter
-
-Outgoing damage text requires the "ZSBT" combat-log filter to be selected at the top of the combat log window. While it is active, the combat log only shows your own damage — that is intentional.
-
-If outgoing numbers stopped appearing:
-
-## 1) Check the filter row
-- Open the combat log and look at the filter buttons at the top.
-- The "ZSBT" button must be the highlighted/selected one.
-- If another filter is selected, click ZSBT. A popup will also warn you when the filter is lost.
-
-## 2) Rebuild the filter
-- Use the "Rebuild Combat-Log Filter" button below (or `/zsbt fixfilter`).
-- This removes stale/duplicate ZSBT filters and writes a fresh one.
-- You must `/reload` afterwards — the new filter activates on next login.
-
-## 3) Still nothing?
-- Make sure ZSBT is enabled and at least one scroll area is on.
-- If other players are hitting your target, ZSBT gets stricter automatically and may show fewer numbers — that is by design.
 ]],
 
 	troubleshooting_icons = [[# Icons/Names
@@ -2856,16 +2483,10 @@ If you see Blizzard combat text (for example, incoming heals) while ZSBT is enab
 ## Useful command
 - `/zsbt dumpcvars` prints the relevant Blizzard combat text CVars and defaults.
 
-## Blizzard combat text stays off after disabling/removing ZSBT
-ZSBT suppresses Blizzard combat text while it is enabled. If you turned ZSBT off (or removed it) and Blizzard damage numbers did not come back:
-
-- With ZSBT installed: turn `Enable ZSBT` off, or go to `General` -> `Hide Blizzard Combat Text` and disable it — Blizzard text is restored automatically. `Restore Blizzard Combat Text Now` is the panic button.
-- With ZSBT removed entirely: nothing can run to restore the saved CVars. Reinstall ZSBT once and use the restore option above, or re-enable combat text manually in `Interface` -> `Combat` options.
-
 ## XP/world text size is too small
 If you previously changed CVars to reduce XP/progress spam and your world text now looks too small:
 
-- Run `/zsbt dumpcvars` and check the L["World / XP text scale CVars"] section.
+- Run `/zsbt dumpcvars` and check the "World / XP text scale CVars" section.
 - Restore the relevant CVar to its default value (shown in the dump output).
 ]],
 
@@ -2937,41 +2558,40 @@ UT Announcer is an Unreal Tournament–style multi-kill announcer implemented as
 }
 
 local HELP_TOPICS = {
-	gettingStarted = { name = L["Getting Started"], docKey = "gettingStarted" },
-	general = { name = L["General"], docKey = "general" },
-	quickControlBar = { name = L["Quick Control Bar"], docKey = "quickControlBar" },
-	combatLogSettings = { name = L["Combat Log Settings"], docKey = "combatLogSettings" },
+	gettingStarted = { name = "Getting Started", docKey = "gettingStarted" },
+	general = { name = "General", docKey = "general" },
+	quickControlBar = { name = "Quick Control Bar", docKey = "quickControlBar" },
+	combatLogSettings = { name = "Combat Log Settings", docKey = "combatLogSettings" },
 	dbProfiles = {
-		name = L["Profiles (Presets)"],
+		name = "Profiles (Presets)",
 		text =
-			L["Profiles are saved configurations.\n\n"] ..
-			L["Shipped preset profiles\n"] ..
-			L["- ZSBT - Preset: Melee\n"] ..
-			L["- ZSBT - Preset: Ranged\n"] ..
-			L["- ZSBT - Preset: Tank\n"] ..
-			L["- ZSBT - Preset: Healer\n"] ..
-			L["- ZSBT - Preset: Pet Class\n\n"] ..
-			L["Reset preset buttons (bottom of Profiles)\n"] ..
-			L["- Resets the preset profile back to the shipped layout.\n"] ..
-			L["- Does NOT switch your currently selected profile."],
+			"Profiles are saved configurations.\n\n" ..
+			"Shipped preset profiles\n" ..
+			"- ZSBT - Preset: Melee\n" ..
+			"- ZSBT - Preset: Ranged\n" ..
+			"- ZSBT - Preset: Tank\n" ..
+			"- ZSBT - Preset: Healer\n" ..
+			"- ZSBT - Preset: Pet Class\n\n" ..
+			"Reset preset buttons (bottom of Profiles)\n" ..
+			"- Resets the preset profile back to the shipped layout.\n" ..
+			"- Does NOT switch your currently selected profile.",
 	},
-	scrollAreas = { name = L["Scroll Areas"], docKey = "scrollAreas" },
-	incoming = { name = L["Incoming"], docKey = "incoming" },
-	outgoing = { name = L["Outgoing"], docKey = "outgoing" },
-	pets = { name = L["Pets"], docKey = "pets" },
-	spamControl = { name = L["Spam Control"], docKey = "spamControl" },
-	triggers = { name = L["Triggers"], docKey = "triggers" },
-	cooldowns = { name = L["Cooldowns"], docKey = "cooldowns" },
-	notifications = { name = L["Notifications"], docKey = "notifications" },
-	media = { name = L["Media"], docKey = "media" },
-	utAnnouncer = { name = L["UT Announcer"], docKey = "utAnnouncer" },
-	diagnostics = { name = L["Diagnostics"], docKey = "diagnostics" },
+	scrollAreas = { name = "Scroll Areas", docKey = "scrollAreas" },
+	incoming = { name = "Incoming", docKey = "incoming" },
+	outgoing = { name = "Outgoing", docKey = "outgoing" },
+	pets = { name = "Pets", docKey = "pets" },
+	spamControl = { name = "Spam Control", docKey = "spamControl" },
+	triggers = { name = "Triggers", docKey = "triggers" },
+	cooldowns = { name = "Cooldowns", docKey = "cooldowns" },
+	notifications = { name = "Notifications", docKey = "notifications" },
+	media = { name = "Media", docKey = "media" },
+	utAnnouncer = { name = "UT Announcer", docKey = "utAnnouncer" },
+	diagnostics = { name = "Diagnostics", docKey = "diagnostics" },
 	troubleshooting = {
-		name = L["Troubleshooting"],
+		name = "Troubleshooting",
 		docKey = "troubleshooting",
 		children = {
 			"troubleshooting_nothing",
-			"troubleshooting_filter",
 			"troubleshooting_icons",
 			"troubleshooting_spam",
 			"troubleshooting_notifications",
@@ -2982,16 +2602,15 @@ local HELP_TOPICS = {
 			"troubleshooting_bug",
 		},
 	},
-	troubleshooting_nothing = { name = L["Nothing Shows"], docKey = "troubleshooting_nothing" },
-	troubleshooting_filter = { name = L["Combat-Log Filter"], docKey = "troubleshooting_filter" },
-	troubleshooting_icons = { name = L["Icons/Names"], docKey = "troubleshooting_icons" },
-	troubleshooting_spam = { name = L["Spam"], docKey = "troubleshooting_spam" },
-	troubleshooting_notifications = { name = L["Notifications / Interrupt Alerts"], docKey = "troubleshooting_notifications" },
-	troubleshooting_triggers = { name = L["Triggers/Cooldowns"], docKey = "troubleshooting_triggers" },
-	troubleshooting_media = { name = L["Custom Media"], docKey = "troubleshooting_media" },
-	troubleshooting_blizzardCombatText = { name = L["Blizzard Combat Text"], docKey = "troubleshooting_blizzardCombatText" },
-	troubleshooting_limits = { name = L["Limits"], docKey = "troubleshooting_limits" },
-	troubleshooting_bug = { name = L["Bug Report"], docKey = "troubleshooting_bug" },
+	troubleshooting_nothing = { name = "Nothing Shows", docKey = "troubleshooting_nothing" },
+	troubleshooting_icons = { name = "Icons/Names", docKey = "troubleshooting_icons" },
+	troubleshooting_spam = { name = "Spam", docKey = "troubleshooting_spam" },
+	troubleshooting_notifications = { name = "Notifications / Interrupt Alerts", docKey = "troubleshooting_notifications" },
+	troubleshooting_triggers = { name = "Triggers/Cooldowns", docKey = "troubleshooting_triggers" },
+	troubleshooting_media = { name = "Custom Media", docKey = "troubleshooting_media" },
+	troubleshooting_blizzardCombatText = { name = "Blizzard Combat Text", docKey = "troubleshooting_blizzardCombatText" },
+	troubleshooting_limits = { name = "Limits", docKey = "troubleshooting_limits" },
+	troubleshooting_bug = { name = "Bug Report", docKey = "troubleshooting_bug" },
 }
 
 local HELP_ORDER = {
@@ -3031,7 +2650,7 @@ local function prettyPrintMarkdown(md)
 	s = s:gsub("%*%*", "")
 	s = s:gsub("%*", "")
 	-- Bullets: keep simple dash bullets, but normalize indentation
-	s = s:gsub(L["\n%- "], L["\n- "])
+	s = s:gsub("\n%- ", "\n- ")
 	s = s:gsub("\n%-%-%-+\n", "\n")
 	-- Inline code markers
 	s = s:gsub("`", "")
@@ -3196,9 +2815,9 @@ function ZSBT.OpenHelpTopicInPopup(topicKey)
 	local frame = ensureHelpPopup()
 	if not frame then return end
 
-	local titleText = L["ZSBT Help"]
+	local titleText = "ZSBT Help"
 	if type(topic.name) == "string" and topic.name ~= "" then
-		titleText = L["ZSBT Help: "] .. topic.name
+		titleText = "ZSBT Help: " .. topic.name
 	end
 	if helpPopupTitle then
 		helpPopupTitle:SetText(titleText)
@@ -3232,9 +2851,9 @@ function ZSBT.UpdateHelpPopupIfOpen(topicKey)
 		st.selected = topicKey
 	end
 
-	local titleText = L["ZSBT Help"]
+	local titleText = "ZSBT Help"
 	if type(topic.name) == "string" and topic.name ~= "" then
-		titleText = L["ZSBT Help: "] .. topic.name
+		titleText = "ZSBT Help: " .. topic.name
 	end
 	if helpPopupTitle then
 		helpPopupTitle:SetText(titleText)
@@ -3258,7 +2877,7 @@ local function buildHelpTreeArgs(orderKeys)
 		local Addon = ZSBT and ZSBT.Addon
 		local db = ZSBT and ZSBT.db
 		if not db then
-			if Addon and Addon.Print then Addon:Print(L["ZSBT: database not ready."]) end
+			if Addon and Addon.Print then Addon:Print("ZSBT: database not ready.") end
 			return
 		end
 
@@ -3320,22 +2939,14 @@ local function buildHelpTreeArgs(orderKeys)
 
 		if Addon and Addon.Print then
 			if repairedTotal > 0 then
-				Addon:Print(L["ZSBT: repaired Spam Control rule keys (migrated "] .. tostring(repairedTotal) .. L[" entries)."])
+				Addon:Print("ZSBT: repaired Spam Control rule keys (migrated " .. tostring(repairedTotal) .. " entries).")
 			else
-				Addon:Print(L["ZSBT: no Spam Control rule keys needed repair."])
+				Addon:Print("ZSBT: no Spam Control rule keys needed repair.")
 			end
 		end
 	end
 
 	local args = {}
-	args.localeInfo = {
-		type = "description",
-		name = function()
-			return L["Locale"] .. ": " .. GetLocale() .. "  |  v" .. ZSBT.VERSION
-		end,
-		order = 0,
-		width = "full",
-	}
 	local order = 1
 	local keys = (type(orderKeys) == "table") and orderKeys or HELP_ORDER
 	for _, key in ipairs(keys) do
@@ -3347,8 +2958,8 @@ local function buildHelpTreeArgs(orderKeys)
 				groupArgs = {}
 				groupArgs.openPopup = {
 					type = "execute",
-					name = L["Open In Window"],
-					desc = L["Open this help topic in a separate window so you can keep it visible while configuring ZSBT."],
+					name = "Open In Window",
+					desc = "Open this help topic in a separate window so you can keep it visible while configuring ZSBT.",
 					order = 0,
 					width = "full",
 					func = function()
@@ -3359,8 +2970,8 @@ local function buildHelpTreeArgs(orderKeys)
 				}
 				groupArgs.openDebugUI = (key == "troubleshooting") and {
 					type = "execute",
-					name = L["Open Debug UI"],
-					desc = L["Opens the Debug UI (debug channels/levels)."],
+					name = "Open Debug UI",
+					desc = "Opens the Debug UI (debug channels/levels).",
 					order = 0.005,
 					width = "full",
 					func = function()
@@ -3397,8 +3008,8 @@ local function buildHelpTreeArgs(orderKeys)
 						local childArgs = {
 							openPopup = {
 								type = "execute",
-								name = L["Open In Window"],
-								desc = L["Open this help topic in a separate window so you can keep it visible while configuring ZSBT."],
+								name = "Open In Window",
+								desc = "Open this help topic in a separate window so you can keep it visible while configuring ZSBT.",
 								order = 0.1,
 								width = "full",
 								func = function()
@@ -3407,26 +3018,10 @@ local function buildHelpTreeArgs(orderKeys)
 									end
 								end
 							},
-							rebuildFilter = (childKey == "troubleshooting_filter") and {
-								type = "execute",
-								name = L["Rebuild Combat-Log Filter"],
-								desc = L["Removes stale/duplicate ZSBT combat-log filters and writes a fresh one, selected on next login. Use this if outgoing damage text stopped appearing."],
-								order = 0.15,
-								width = "full",
-								func = function()
-									local f = ZSBT.ZCT and ZSBT.ZCT.CombatLogFilter
-									if f and f.RebuildNow then
-										local ok = f:RebuildNow()
-										if ok and f.PromptReload then f:PromptReload() end
-									elseif Addon and Addon.Print then
-										Addon:Print(L["Combat-log filter module not available."])
-									end
-								end,
-							} or nil,
 							repairSpamControlRuleKeys = (childKey == "troubleshooting_spam") and {
 								type = "execute",
-								name = L["Repair Spam Control Rules"],
-								desc = L["If your Spell/Aura rules look missing after an update, this repairs rule keys that were saved as strings (\"12345\") instead of numbers (12345)."],
+								name = "Repair Spam Control Rules",
+								desc = "If your Spell/Aura rules look missing after an update, this repairs rule keys that were saved as strings (\"12345\") instead of numbers (12345).",
 								order = 0.15,
 								width = "full",
 								func = function()
@@ -3466,7 +3061,7 @@ local function buildHelpTreeArgs(orderKeys)
 				args = groupArgs or {
 					popupHelp = {
 						type = "description",
-						name = L["Tip: If you want to keep this help visible while you change settings in other tabs, click the button below to open it in a separate window."],
+						name = "Tip: If you want to keep this help visible while you change settings in other tabs, click the button below to open it in a separate window.",
 						order = 0,
 						width = "full",
 						fontSize = "medium",
@@ -3487,8 +3082,8 @@ local function buildHelpTreeArgs(orderKeys)
 					},
 					openChatSettings = (key == "combatLogSettings") and {
 						type = "execute",
-						name = L["Open Combat Log / Chat Settings"],
-						desc = L["Opens WoW's chat settings so you can quickly get to Combat Log filters."],
+						name = "Open Combat Log / Chat Settings",
+						desc = "Opens WoW's chat settings so you can quickly get to Combat Log filters.",
 						order = 0.05,
 						width = "full",
 						func = function()
@@ -3510,15 +3105,15 @@ local function buildHelpTreeArgs(orderKeys)
 
 							if not (ChatConfigFrame and ChatConfigFrame.IsShown and ChatConfigFrame:IsShown()) then
 								if Addon and Addon.Print then
-									Addon:Print(L["Unable to open Chat/Combat Log settings automatically. Open Chat Settings manually and go to Combat Log filters."])
+									Addon:Print("Unable to open Chat/Combat Log settings automatically. Open Chat Settings manually and go to Combat Log filters.")
 								end
 							end
 						end,
 					} or nil,
 					openPopup = {
 						type = "execute",
-						name = L["Open In Window"],
-						desc = L["Open this help topic in a separate window so you can keep it visible while configuring ZSBT."],
+						name = "Open In Window",
+						desc = "Open this help topic in a separate window so you can keep it visible while configuring ZSBT.",
 						order = 0.1,
 						width = "full",
 						func = function()
@@ -3566,42 +3161,37 @@ end
 ------------------------------------------------------------------------
 function ZSBT.BuildOptionsTable()
     -- Ensure ConfigTabs has been loaded
-    assert(ZSBT.BuildTab_General, L["ConfigTabs.lua must be loaded before Config.lua"])
+    assert(ZSBT.BuildTab_General, "ConfigTabs.lua must be loaded before Config.lua")
 
     local options = {
         type = "group",
-        name = L["|cFFFFD100Zore's|r |cFFFFFFFFScrolling Battle Text|r  |cFF888888v"] .. (ZSBT.VERSION or "1.0") .. "|r",
+        name = "|cFFFFD100Zore's|r |cFFFFFFFFScrolling Battle Text|r  |cFF888888v" .. (ZSBT.VERSION or "1.0") .. "|r",
         childGroups = "tree",
         args = {
+            ----------------------------------------------------------------
+            -- Tab 0: Quick Start
+            ----------------------------------------------------------------
+            quickStart = ZSBT.BuildTab_QuickStart(),
+
             ----------------------------------------------------------------
             -- Tab 1: General
             ----------------------------------------------------------------
             general = ZSBT.BuildTab_General(),
 
             ----------------------------------------------------------------
-            -- Tab 3: Combat Text
+            -- Tab 0.5: Display
             ----------------------------------------------------------------
-            combatText = ZSBT.BuildTab_CombatText(),
+            display = ZSBT.BuildTab_Display(),
 
             ----------------------------------------------------------------
-            -- Tab 4: Crits
-            ----------------------------------------------------------------
-            crits = ZSBT.BuildTab_Crits(),
-
-            ----------------------------------------------------------------
-            -- Tab 5: Alerts
+            -- Tab 0.75: Alerts
             ----------------------------------------------------------------
             alerts = ZSBT.BuildTab_Alerts(),
 
             ----------------------------------------------------------------
-            -- Tab 6: Resources
+            -- Tab 0.9: Combat Text
             ----------------------------------------------------------------
-            resources = ZSBT.BuildTab_Resources(),
-
-            ----------------------------------------------------------------
-            -- Tab 7: Scroll Areas
-            ----------------------------------------------------------------
-            scrollAreas = ZSBT.BuildTab_ScrollAreas(),
+            combatText = ZSBT.BuildTab_CombatText(),
 
             ----------------------------------------------------------------
             -- Tab 2: Profiles
@@ -3613,13 +3203,13 @@ function ZSBT.BuildOptionsTable()
             ----------------------------------------------------------------
             maintenance = {
                 type = "group",
-                name = L["|cFFFFD100Help and Support|r"],
+                name = "|cFFFFD100Help and Support|r",
                 order = 9,
                 childGroups = "tree",
                 args = {
                     maintenance_help = {
                         type = "group",
-                        name = L["|cFFFFD100Help|r"],
+                        name = "|cFFFFD100Help|r",
                         order = 1,
                         childGroups = "tree",
                         args = buildHelpTreeArgs(),
@@ -3627,7 +3217,7 @@ function ZSBT.BuildOptionsTable()
 
                     maintenance_troubleshooting = {
                         type = "group",
-                        name = L["|cFFFFD100Troubleshooting|r"],
+                        name = "|cFFFFD100Troubleshooting|r",
                         order = 2,
                         childGroups = "tree",
                         args = (function()
@@ -3648,42 +3238,21 @@ function ZSBT.BuildOptionsTable()
 end
 
 function ZSBT.BuildSpellRulesOptionsTable()
-    assert(ZSBT.BuildTab_SpellRulesManager, L["ConfigTabs.lua must be loaded before Config.lua"])
+    assert(ZSBT.BuildTab_SpellRulesManager, "ConfigTabs.lua must be loaded before Config.lua")
 
     local tab = ZSBT.BuildTab_SpellRulesManager()
     local args = (tab and tab.args) or {}
 
     return {
         type = "group",
-		name = L["|cFFFFD100Outgoing Spell Rules|r"],
+		name = "|cFFFFD100Spell Rules|r",
 		childGroups = "tab",
 		args = {
 			main = {
 				type  = "group",
-				name  = L["Outgoing Spell Rules"],
+				name  = "Spell Rules",
 				order = 1,
 				args  = args,
-			},
-		},
-    }
-end
-
-function ZSBT.BuildResourceCounterOptionsTable()
-    assert(ZSBT.BuildResourceCounterManagerArgs, L["ConfigTabs.lua must be loaded before Config.lua"])
-
-    local pt = tonumber(ZSBT._editingResourcePowerType) or 0
-    local resName = (ZSBT.PowerTypeName and ZSBT.PowerTypeName(pt)) or "Resource"
-
-    return {
-        type = "group",
-		name = L["|cFFFFD100Resource Counter|r"],
-		childGroups = "tab",
-		args = {
-			main = {
-				type  = "group",
-				name  = resName,
-				order = 1,
-				args  = ZSBT.BuildResourceCounterManagerArgs(),
 			},
 		},
     }
@@ -3713,12 +3282,12 @@ function ZSBT.BuildDebugOptionsTable()
 	end
 
 	local LEVELS = {
-		[0] = L["0 - Off"],
-		[1] = L["1 - Error"],
-		[2] = L["2 - Warn"],
-		[3] = L["3 - Info"],
-		[4] = L["4 - Debug"],
-		[5] = L["5 - Trace"],
+		[0] = "0 - Off",
+		[1] = "1 - Error",
+		[2] = "2 - Warn",
+		[3] = "3 - Info",
+		[4] = "4 - Debug",
+		[5] = "5 - Trace",
 	}
 
 	local CHANNEL_ORDER = {
@@ -3787,13 +3356,13 @@ function ZSBT.BuildDebugOptionsTable()
 	local args = {
 		header = {
 			type = "header",
-			name = L["Debug Configuration"],
+			name = "Debug Configuration",
 			order = 1,
 		},
 		globalDefault = {
 			type = "select",
-			name = L["Default Debug Level"],
-			desc = L["Sets the global default debug severity. Channels can override this."],
+			name = "Default Debug Level",
+			desc = "Sets the global default debug severity. Channels can override this.",
 			order = 2,
 			width = "full",
 			values = function() return LEVELS end,
@@ -3802,20 +3371,20 @@ function ZSBT.BuildDebugOptionsTable()
 		},
 		actionsHeader = {
 			type = "header",
-			name = L["Quick Actions"],
+			name = "Quick Actions",
 			order = 3,
 		},
 		debugChatFrame = {
 			type = "select",
-			name = L["Debug Chat Frame"],
-			desc = L["Routes debug output (Addon:Dbg) to the selected chat window."],
+			name = "Debug Chat Frame",
+			desc = "Routes debug output (Addon:Dbg) to the selected chat window.",
 			order = 3.1,
 			width = "full",
 			values = function()
 				local out = {}
 				for i = 1, 10 do
 					local f = _G and _G["ChatFrame" .. tostring(i)]
-					local label = L["ChatFrame"] .. tostring(i)
+					local label = "ChatFrame" .. tostring(i)
 					local n = f and f.GetName and f:GetName() or nil
 					if type(n) == "string" and n ~= "" then
 						label = label .. " (" .. n .. ")"
@@ -3837,8 +3406,8 @@ function ZSBT.BuildDebugOptionsTable()
 		},
 		setupDebugChat = {
 			type = "execute",
-			name = L["Setup Debug Chat Tab"],
-			desc = L["Creates a new chat window named 'ZSBT Debug' and routes debug output there."],
+			name = "Setup Debug Chat Tab",
+			desc = "Creates a new chat window named 'ZSBT Debug' and routes debug output there.",
 			order = 3.2,
 			width = "full",
 			func = function()
@@ -3846,14 +3415,14 @@ function ZSBT.BuildDebugOptionsTable()
 				if not d then return end
 				if type(FCF_OpenNewWindow) ~= "function" then
 					if ZSBT and ZSBT.Addon and ZSBT.Addon.Print then
-						ZSBT.Addon:Print(L["Chat window API not available."])
+						ZSBT.Addon:Print("Chat window API not available.")
 					end
 					return
 				end
-				local ok, frameOrErr = pcall(FCF_OpenNewWindow, L["ZSBT Debug"])
+				local ok, frameOrErr = pcall(FCF_OpenNewWindow, "ZSBT Debug")
 				if not ok then
 					if ZSBT and ZSBT.Addon and ZSBT.Addon.Print then
-						ZSBT.Addon:Print(L["Failed to create debug chat window."])
+						ZSBT.Addon:Print("Failed to create debug chat window.")
 					end
 					return
 				end
@@ -3868,78 +3437,25 @@ function ZSBT.BuildDebugOptionsTable()
 				end
 			end,
 		},
-		attribPanel = {
-			type = "execute",
-			name = L["Attribution Panel"],
-			desc = L["Toggle the live outgoing-attribution debug panel (color-coded by resolution source)."],
-			order = 3.3,
-			width = "full",
-			func = function()
-				if ZSBT.AttribPanel and ZSBT.AttribPanel.Toggle then
-					ZSBT.AttribPanel:Toggle()
-				end
-			end,
-		},
-		sessionDiagHeader = {
-			type = "header",
-			name = L["Session Diagnostics"],
-			order = 3.4,
-		},
-		secretProbe = {
-			type = "execute",
-			name = L["Run Secret-Value Probe"],
-			desc = L["Re-runs the secret amount evaluation probe on the most recent secret combat value (same as /zsbt sectest)."],
-			order = 3.5,
-			width = "full",
-			func = function()
-				if ZSBT.RunSecretProbe then
-					ZSBT.RunSecretProbe()
-				end
-			end,
-		},
-		icDiag = {
-			type = "execute",
-			name = L["Toggle Item Cooldown Diagnostics"],
-			desc = L["Toggles item cooldown tracing (same as /zsbt icdiag)."],
-			order = 3.6,
-			width = "full",
-			func = function()
-				if ZSBT.Addon and ZSBT.Addon.HandleSlashCommand then
-					ZSBT.Addon:HandleSlashCommand("icdiag")
-				end
-			end,
-		},
-		xpDiag = {
-			type = "execute",
-			name = L["Toggle XP Event Probe"],
-			desc = L["Toggles a live probe that prints XP-related events (same as /zsbt xpdiag)."],
-			order = 3.7,
-			width = "full",
-			func = function()
-				if ZSBT.Addon and ZSBT.Addon.HandleSlashCommand then
-					ZSBT.Addon:HandleSlashCommand("xpdiag")
-				end
-			end,
-		},
 		allOff = {
 			type = "execute",
-			name = L["All Off"],
-			desc = L["Sets default and all channels to 0."],
+			name = "All Off",
+			desc = "Sets default and all channels to 0.",
 			order = 4,
 			width = "half",
 			func = function() setAllChannels(0) end,
 		},
 		allDebug = {
 			type = "execute",
-			name = L["All Debug"],
-			desc = L["Sets default and all channels to 4."],
+			name = "All Debug",
+			desc = "Sets default and all channels to 4.",
 			order = 5,
 			width = "half",
 			func = function() setAllChannels(4) end,
 		},
 		channelsHeader = {
 			type = "header",
-			name = L["Per-Channel Overrides"],
+			name = "Per-Channel Overrides",
 			order = 6,
 		},
 	}
@@ -3950,7 +3466,7 @@ function ZSBT.BuildDebugOptionsTable()
 		args["channel_" .. ch] = {
 			type = "select",
 			name = ch,
-			desc = L["Override level for this channel."],
+			desc = "Override level for this channel.",
 			order = order,
 			width = "full",
 			values = function() return LEVELS end,
@@ -3960,35 +3476,9 @@ function ZSBT.BuildDebugOptionsTable()
 		order = order + 1
 	end
 
-	-- Combat probe controls (harvested from the Incoming/Outgoing builders).
-	-- Flat-injected with renumbered orders so they sort after the channel
-	-- selects without changing the debug table's structure.
-	if ZSBT.BuildTab_Incoming then ZSBT.BuildTab_Incoming() end
-	if ZSBT.BuildTab_Outgoing then ZSBT.BuildTab_Outgoing() end
-	local function injectProbes(probe, headerName, base)
-		if not (probe and next(probe)) then return end
-		args[headerName] = { type = "header", name = L[headerName], order = base }
-		local keys = {}
-		for k in pairs(probe) do keys[#keys + 1] = k end
-		table.sort(keys, function(a, b)
-			local oa = (type(probe[a]) == "table" and tonumber(probe[a].order)) or 0
-			local ob = (type(probe[b]) == "table" and tonumber(probe[b].order)) or 0
-			if oa == ob then return a < b end
-			return oa < ob
-		end)
-		for i, k in ipairs(keys) do
-			local v = probe[k]
-			if type(v) == "table" then v.order = base + i end
-			args[k] = v
-		end
-	end
-	local diag = ZSBT._diagArgs or {}
-	injectProbes(diag.incoming, "Incoming Probe", 30)
-	injectProbes(diag.outgoing, "Outgoing Probe", 50)
-
 	return {
 		type = "group",
-		name = L["|cFFFFD100Debug|r"],
+		name = "|cFFFFD100Debug|r",
 		args = args,
 	}
 end
@@ -4183,7 +3673,6 @@ function ZSBT.ApplyStrikeSilverStyling()
             or appName == "ZSBT_SpellRuleEditor"
             or appName == "ZSBT_BuffRuleEditor"
             or appName == "ZSBT_TriggerEditor"
-            or appName == "ZSBT_ResourceCounter"
             or appName == "ZSBT_Debug"
     end
 
@@ -4559,7 +4048,7 @@ function ZSBT.SetCooldownOverlayVisible(isVisible)
     -- Option B: drag/drop overlay removed (buggy). Force hidden.
     if false and isVisible then
         if o.mainText then
-            o.mainText:SetText(L["|cFF00CC66[ Drag Spell Here ]|r"])
+            o.mainText:SetText("|cFF00CC66[ Drag Spell Here ]|r")
         end
         if o.iconOverlay then
             o.iconOverlay:Hide()
@@ -4816,14 +4305,14 @@ function ZSBT.CreateCooldownDropOverlay()
         local mainText = cooldownDropOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         mainText:SetPoint("LEFT", iconBg, "RIGHT", 15, 8)
         mainText:SetJustifyH("LEFT")
-        mainText:SetText(L["|cFF00CC66[ Drag Spell Here ]|r"])
+        mainText:SetText("|cFF00CC66[ Drag Spell Here ]|r")
         cooldownDropOverlay.mainText = mainText
         
         -- Subtext
         local subText = cooldownDropOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         subText:SetPoint("TOPLEFT", mainText, "BOTTOMLEFT", 0, -3)
         subText:SetJustifyH("LEFT")
-        subText:SetText(L["|cFF888888Drag from spellbook or action bar|r"])
+        subText:SetText("|cFF888888Drag from spellbook or action bar|r")
         
         -- Hover highlight
         local highlight = cooldownDropOverlay:CreateTexture(nil, "HIGHLIGHT")
@@ -4861,34 +4350,34 @@ function ZSBT.CreateCooldownDropOverlay()
                             self.iconOverlay:Show()
                         end
                         if self.mainText then
-                            self.mainText:SetText(L["|cFF00FF00Added!|r"])
+                            self.mainText:SetText("|cFF00FF00Added!|r")
                         end
                         
                         -- Reset after 2 seconds
                         C_Timer.After(2.0, function()
                             if self.mainText then
-                                self.mainText:SetText(L["|cFF00CC66[ Drag Spell Here ]|r"])
+                                self.mainText:SetText("|cFF00CC66[ Drag Spell Here ]|r")
                             end
                             if self.iconOverlay then
                                 self.iconOverlay:Hide()
                             end
                         end)
                         
-                        local displayName = name and (name .. " (ID: " .. spellID .. ")") or (L["Spell ID: "] .. spellID)
-                        ZSBT.Addon:Print(L["Now tracking: "] .. displayName)
+                        local displayName = name and (name .. " (ID: " .. spellID .. ")") or ("Spell ID: " .. spellID)
+                        ZSBT.Addon:Print("Now tracking: " .. displayName)
                         
                         -- Refresh UI
                         LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
                     else
-                        ZSBT.Addon:Print(L["Spell ID "] .. spellID .. L[" is already being tracked."])
+                        ZSBT.Addon:Print("Spell ID " .. spellID .. " is already being tracked.")
                     end
                 else
-                    ZSBT.Addon:Print(L["Could not resolve spell ID. Try dragging from action bar."])
+                    ZSBT.Addon:Print("Could not resolve spell ID. Try dragging from action bar.")
                 end
                 ClearCursor()
             elseif cursorType == "petaction" then
                 ClearCursor()
-                ZSBT.Addon:Print(L["Pet abilities cannot be tracked."])
+                ZSBT.Addon:Print("Pet abilities cannot be tracked.")
             elseif cursorType == "item" then
                 -- Item drag: store as string key to avoid ID collisions with spells
                 local itemID = id
@@ -4911,26 +4400,26 @@ function ZSBT.CreateCooldownDropOverlay()
                             self.iconOverlay:Show()
                         end
                         if self.mainText then
-                            self.mainText:SetText(L["|cFF00FF00Added!|r"])
+                            self.mainText:SetText("|cFF00FF00Added!|r")
                         end
 
                         -- Reset after 2 seconds
                         C_Timer.After(2.0, function()
                             if self.mainText then
-                                self.mainText:SetText(L["|cFF00CC66[ Drag Spell Here ]|r"])
+                                self.mainText:SetText("|cFF00CC66[ Drag Spell Here ]|r")
                             end
                             if self.iconOverlay then
                                 self.iconOverlay:Hide()
                             end
                         end)
 
-                        local displayName = name and (name .. L[" (Item ID: "] .. itemID .. ")") or (L["Item ID: "] .. itemID)
-                        ZSBT.Addon:Print(L["Now tracking: "] .. displayName)
+                        local displayName = name and (name .. " (Item ID: " .. itemID .. ")") or ("Item ID: " .. itemID)
+                        ZSBT.Addon:Print("Now tracking: " .. displayName)
 
                         -- Refresh UI
                         LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
                     else
-                        ZSBT.Addon:Print(L["Item ID "] .. itemID .. L[" is already being tracked."])
+                        ZSBT.Addon:Print("Item ID " .. itemID .. " is already being tracked.")
                     end
                 end
                 ClearCursor()
@@ -4985,7 +4474,7 @@ local spellRulesDropOverlay = nil
 local function FindSpellRulesInstructionFontString(root)
 	if not root then return nil end
 
-	local needle = L["Drag a spell here to create a per-spell outgoing throttle rule"]
+	local needle = "Drag a spell here to create a per-spell outgoing throttle rule"
 
 	local function scanFrame(frame, depth)
 		if not frame or depth > 6 then return nil end
@@ -5064,9 +4553,9 @@ end
 
 local function FindSpellRulesDropZoneHostFrame(contentRoot)
 	-- Host group title.
-	local fs = FindFontStringByExactText(contentRoot, L["[ Drag Spell Here ]"])
+	local fs = FindFontStringByExactText(contentRoot, "[ Drag Spell Here ]")
 	if not fs then
-		fs = FindFontStringBySubstring(contentRoot, L["Drag Spell Here"])
+		fs = FindFontStringBySubstring(contentRoot, "Drag Spell Here")
 	end
 	if not fs then return nil end
 	local p = fs:GetParent()
@@ -5077,7 +4566,7 @@ end
 local function FindSpellRulesPresetButtonFontString(root)
 	if not root then return nil end
 
-	local needle = L["Apply Protection Preset"]
+	local needle = "Apply Protection Preset"
 
 	local function scanFrame(frame, depth)
 		if not frame or depth > 8 then return nil end
@@ -5160,13 +4649,13 @@ function ZSBT.CreateSpellRulesDropOverlay()
         local mainText = spellRulesDropOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         mainText:SetPoint("LEFT", iconBg, "RIGHT", 15, 8)
         mainText:SetJustifyH("LEFT")
-        mainText:SetText(L["|cFF00CC66[ Drag Spell Here ]|r"])
+        mainText:SetText("|cFF00CC66[ Drag Spell Here ]|r")
         spellRulesDropOverlay.mainText = mainText
 
         local subText = spellRulesDropOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         subText:SetPoint("TOPLEFT", mainText, "BOTTOMLEFT", 0, -3)
         subText:SetJustifyH("LEFT")
-        subText:SetText(L["|cFF888888Adds an outgoing spam rule (throttle slider)|r"])
+        subText:SetText("|cFF888888Adds an outgoing spam rule (throttle slider)|r")
 
         local highlight = spellRulesDropOverlay:CreateTexture(nil, "HIGHLIGHT")
         highlight:SetAllPoints()
@@ -5200,28 +4689,28 @@ function ZSBT.CreateSpellRulesDropOverlay()
                         self.iconOverlay:Show()
                     end
                     if self.mainText then
-                        self.mainText:SetText(L["|cFF00FF00Added!|r"])
+                        self.mainText:SetText("|cFF00FF00Added!|r")
                     end
 
                     C_Timer.After(2.0, function()
                         if self.mainText then
-                            self.mainText:SetText(L["|cFF00CC66[ Drag Spell Here ]|r"])
+                            self.mainText:SetText("|cFF00CC66[ Drag Spell Here ]|r")
                         end
                         if self.iconOverlay then
                             self.iconOverlay:Hide()
                         end
                     end)
 
-                    local displayName = name and (name .. " (ID: " .. spellID .. ")") or (L["Spell ID: "] .. spellID)
+                    local displayName = name and (name .. " (ID: " .. spellID .. ")") or ("Spell ID: " .. spellID)
                     if ZSBT.Addon and ZSBT.Addon.Print then
-                        ZSBT.Addon:Print(L["Added spell rule: "] .. displayName)
+                        ZSBT.Addon:Print("Added spell rule: " .. displayName)
                     end
 
                     LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
                 end
             else
                 if ZSBT.Addon and ZSBT.Addon.Print then
-                    ZSBT.Addon:Print(L["Could not resolve spell ID. Try dragging from action bar."])
+                    ZSBT.Addon:Print("Could not resolve spell ID. Try dragging from action bar.")
                 end
             end
             ClearCursor()
