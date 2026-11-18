@@ -1,5 +1,10 @@
 # Changelog
 
+## 4.1.3
+
+### Added
+- **Strict toggle on the Quick Control Bar:** a "Strict" button (green when on) flips Strict Outgoing Detection in place — same profile-scoped `general.strictOutgoingAlways` key as General -> System, useful for toggling strict parsing on/off without opening the config.
+
 ## 4.1.2
 
 ### Fixed

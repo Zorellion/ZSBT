@@ -1137,3 +1137,5 @@ L["Hidden Types"] = true
 L["Miss Color"] = true
 L["Which scroll area displays misses and avoids."] = true
 L["Never display this type of miss or avoid."] = true
+L["Strict"] = true
+L["Require proof before showing outgoing damage, even outside groups. Reduces foreign damage leaking into your scroll areas; may hide some of your own hits."] = true
