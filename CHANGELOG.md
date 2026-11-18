@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Added
+- **Resource Tracker** (from 3.5.3, with the 3.5.6 rework): Alerts > Notifications > Resource Tracker adds freely-positionable resource counters (diamond pips or fraction/number text) with drag-to-move and corner-resize while unlocked, looping Ignite/Chromatic/Shatter/Afterimage effects and a rising-edge sound while a resource sits at max, per-counter font overrides, and a gold border in unlock mode.
+- One independently-configured counter per resource, a DK rune tracker with selectable rune shapes, seconds-remaining text and hide-when-ready, and filtering of resources Retail marks secret (`C_Secrets.ShouldUnitPowerBeSecret`).
+- Resource Full notification: per-resource opt-in with a customizable template (`%e` = resource name). Replaces the single global Power Full notification.
+- The config options table is rebuilt each time the window opens so class-dependent options (such as the Runes button) are present without a reload; the DB Profiles tab is preserved across the rebuild.
 - Aura notifications no longer go silent in combat on secret-value clients: `SPELL_AURA_*` combat-text notices now act as a fallback when `UNIT_AURA` payloads are unreadable, deduplicated against readable aura updates.
 - Buff refresh re-notification: recasting a buff that keeps the same aura instance now re-shows its gain when `expirationTime` jumps forward.
 - Recast pairing: a cast of a known self-buff within 0.5s of an unreadable aura update re-shows the buff's cached name/icon.
