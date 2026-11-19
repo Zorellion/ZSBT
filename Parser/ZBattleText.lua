@@ -275,7 +275,8 @@ end
 -- to route otherwise-dropped candidates through emit() so the
 -- deferred line pairing can prove them.
 function ZB:VetoActive()
-    return ZB._trusted == true and ZB._vetoDisabled ~= true
+    if ZB._trusted ~= true or ZB._vetoDisabled then return false end
+    return not feedDead()
 end
 
 local function say(msg)
@@ -493,21 +494,23 @@ local DEFER_WINDOW = 0.45
 ZB._pending = ZB._pending or {}
 ZB._flushAt = ZB._flushAt or 0
 
+-- True while no classified line has arrived recently. Transient by
+-- design: out-of-combat gaps produce no lines, so a stale feed must not
+-- latch the veto off for the session — it re-engages as soon as lines
+-- resume. _lastLineAt == 0 (nothing seen yet) is NOT stale: early
+-- candidates simply defer and pair once the feed starts.
+local function feedDead()
+    local last = ZB._lastLineAt or 0
+    if last <= 0 then return false end
+    local tNow = GetTime and GetTime() or 0
+    return tNow - last > FEED_DEAD_SEC
+end
+
 local function vetoDisabledNow()
     if ZB._vetoDisabled then return true end
-    local tNow = GetTime and GetTime() or 0
-    -- Feed presumed dead: no classified line in a while means the filter
-    -- stopped delivering. Fall back to heuristics rather than eating
-    -- every outgoing number.
-    if tNow - (ZB._lastLineAt or 0) > FEED_DEAD_SEC then
-        ZB._vetoDisabled = true
-        if not ZB._vetoWarned then
-            ZB._vetoWarned = true
-            say(("|cffdd5555[ZSBT]|r '%s' filter line feed lost — ownership veto disabled for this session.")
-                :format(FILTER_NAME))
-        end
-        return true
-    end
+    -- Feed presumed dead: fall back to heuristics rather than eating
+    -- every outgoing number. No latch — combat lulls are normal.
+    if feedDead() then return true end
     return false
 end
 
