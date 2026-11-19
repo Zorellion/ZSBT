@@ -72,6 +72,7 @@ local function spellSchoolFits(learned, school)
 end
 
 local castSchoolOk -- fwd decl; real def below
+local consumeBestPendingCast -- fwd decl; emit() calls it before the real def below
 
 -- Friendly non-player casts (pet slot, imps, guardians) recorded in
 -- _petCasts. A hit claims one of them instead of taking the most recent
@@ -1085,7 +1086,7 @@ function Collector:LearnConfirmedSchool(spellId, schoolMask, trusted)
 	end
 end
 
-local function consumeBestPendingCast(self, tNow, wantSpellId, maxWindowSec, doConsume, hitSchool)
+consumeBestPendingCast = function(self, tNow, wantSpellId, maxWindowSec, doConsume, hitSchool)
 	expirePendingCasts(self, tNow)
 	local window = maxWindowSec or PENDING_CAST_WINDOW_SEC
 	local bestI, best, bestDt
