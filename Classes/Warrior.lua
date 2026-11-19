@@ -1,4 +1,4 @@
-|-- Classes/Warrior.lua — Warrior-specific combat attribution
+-- Classes/Warrior.lua — Warrior-specific combat attribution
 --
 -- Warrior is the pure-physical baseline: no permanent pet, no guardian
 -- summons, nearly every hit school-1. That means:
