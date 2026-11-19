@@ -69,6 +69,9 @@ local GUARDIAN_SUMMONS = {
 	[63560]  = { { group = "darktrans", duration = 15 },
 		{ group = "magus", duration = 15 } },               -- Dark Transformation (+Magus)
 	[49206]  = { { group = "gargoyle",  duration = 30 } }, -- Summon Gargoyle
+	[81256]  = { { group = "drw",       duration = 20 } }, -- Dancing Rune Weapon (log-verified)
+	[49028]  = { { group = "drw",       duration = 20 } }, -- Dancing Rune Weapon, second id (log-verified)
+	[1237128] = { { group = "drw",      duration = 20 } }, -- Dancing Rune Weapon, third id (log-verified)
 }
 
 -- Class-module UI toggles this module supports.
@@ -93,6 +96,11 @@ local GUARDIAN_SPELLS = {
 	darktrans = {
 		{ sid = 1278150, school = 32 }, -- Sweeping Claws (log-verified dominant id; 91778 also fires)
 	},
+	-- Dancing Rune Weapon: window tracked but spellbook intentionally empty.
+	-- Log-verified mirrors: Heart Strike 228645 + Death Strike 49998/45470
+	-- (school 1, unnameable), Death's Caress 195292 + Blood Plague 55078
+	-- (both school 32 -> two candidates -> ambiguous under one-match).
+	drw       = {},
 	horsemen  = {
 		{ sid = 445513, school = 32 }, -- Whitemane's Death Coil (log-verified)
 		-- Nazgrim's Scourge Strike shadow component (445509, school 32) is
