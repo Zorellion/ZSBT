@@ -172,8 +172,12 @@ function mod.onPhysicalWound(self, ctx)
 		if dtEmit < 0 or dtEmit > 0.80 then
 			st.lastEmitAt = t
 			local tName = safeUnitName("target")
+			local pipeId = self._rawPipeCount + 1
+			self._rawPipeCount = pipeId
+			self._rawPipe[pipeId] = amount
 			emit("OUTGOING_DAMAGE_COMBAT", {
 				timestamp = t,
+				rawPipeId = pipeId,
 				amount = amount,
 				amountText = (IsSafeNumber(amount) and tostring(amount)) or nil,
 				spellId = self._rendSpellId or 772,
