@@ -134,6 +134,14 @@ local function auditEmit(eventType, payload)
 		tostring(p.targetName)))
 end
 
+-- Raw audit note for funnel tracing (candidates, gate drops). Self-gates
+-- on _auditTrace via ZB:Audit.
+local function auditNote(msg)
+	if ZSBT._auditTrace ~= true then return end
+	local zbt = ZSBT.ZBattleText
+	if zbt and zbt.Audit then zbt:Audit(msg) end
+end
+
 local function emit(eventType, payload)
 	-- ZBattleText ownership veto: when the combat-log filter is trusted,
 	-- ambiguous outgoing damage must be corroborated by a palette line.
@@ -222,6 +230,8 @@ end
 -- Pipeline drop tracer: every silent return on the unattributed
 -- target-WOUND path prints UC_DROP so we can see exactly where hits die.
 local function dbgDrop(reason, tok, school)
+	auditNote(("AUDD reason=%s token=%s school=%s"):format(
+		tostring(reason), dbgSafe(tok), dbgSafe(school)))
 	if OutDbgLevel() >= 4 or ZSBT._ucDropTrace == true then
 		ECPrint(("UC_DROP reason=%s token=%s school=%s"):format(reason, dbgSafe(tok), dbgSafe(school)))
 		local z = ZSBT.ZBattleText
@@ -2591,6 +2601,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			if zbtc and zbtc.FileLog then
 				zbtc:FileLog(("CAND school=%s crit=%s"):format((ZSBT.IsSafeNumber(school) and tostring(school)) or "sec", tostring(isCrit == true)))
 			end
+			auditNote(("AUDCAND school=%s crit=%s"):format(
+				(ZSBT.IsSafeNumber(school) and tostring(school)) or "sec", tostring(isCrit == true)))
 		elseif actionStr then
 			-- Same non-damage event (HEAL, MISS/DODGE/PARRY/...) reported through
 			-- a second unit token (target + nameplate remap) in the same frame.
