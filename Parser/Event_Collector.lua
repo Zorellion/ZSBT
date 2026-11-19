@@ -63,11 +63,47 @@ local function safeUnitName(unit)
 	return value
 end
 
+-- Most recent friendly non-player cast (pet slot, imps, guardians) within
+-- `window` seconds. Returns spellId, unit or nil. Used to tag pet-fallback
+-- emits with the pet spell that likely produced the hit.
+local function recentPetCast(self, t, window)
+	local casts = self._petCasts
+	if type(casts) ~= "table" then return nil end
+	local best, bestUnit
+	for i = #casts, 1, -1 do
+		local c = casts[i]
+		local age = t - (c.at or 0)
+		if age >= 0 and age <= (window or 1.5) then
+			best = c.spellId
+			bestUnit = c.unit
+			break
+		elseif age > (window or 1.5) then
+			break
+		end
+	end
+	return best, bestUnit
+end
+
 -- Forward parsed events to the configured sink callback.
 local function emit(eventType, payload)
 	-- ZBattleText ownership veto: when the combat-log filter is trusted,
 	-- ambiguous outgoing damage must be corroborated by a palette line.
 	-- Untrusted => OfferOutgoing returns true and nothing changes.
+	if eventType == "OUTGOING_DAMAGE_COMBAT" and payload then
+		-- Unattributed non-physical hit + a recent friendly/minion cast =
+		-- likely temporary-pet damage. Flag it here so EVERY emit path
+		-- (bucket flush, physical direct, auto fallback) can deliver as
+		-- pet damage after the veto proves ownership. Physical school-1
+		-- hits stay generic: melee is indistinguishable from autos.
+		if payload.spellId == nil and payload.schoolMask ~= 1 and payload._petRoute ~= false then
+			local psid = recentPetCast(Collector, payload.timestamp or now(), 1.2)
+			if psid ~= nil then
+				payload._petRoute = true
+				payload.petSpellId = psid
+				payload.petBucket = "summons"
+			end
+		end
+	end
 	if eventType == "OUTGOING_DAMAGE_COMBAT"
 		and ZSBT.ZBattleText and ZSBT.ZBattleText.OfferOutgoing
 		and not ZSBT.ZBattleText:OfferOutgoing(payload) then
@@ -80,6 +116,10 @@ local function emit(eventType, payload)
 	local sinkType = eventType
 	if eventType == "OUTGOING_DAMAGE_COMBAT" and payload and payload._petRoute == true then
 		sinkType = "PET_DAMAGE_COMBAT"
+		local zbt3 = ZSBT.ZBattleText
+		if zbt3 and zbt3.FileLog then
+			zbt3:FileLog(("PET_ROUTE petSid=%s school=%s"):format(tostring(payload.petSpellId), tostring(payload.schoolMask)))
+		end
 	end
 	if Collector._sink then
 		Collector._sink(sinkType, payload)
@@ -139,27 +179,6 @@ end
 -- candidates (pet-minion hits, shared-target damage) may then flow to
 -- emit() where OfferOutgoing pairs them with a palette line instead of
 -- dying in the heuristic gates.
--- Most recent friendly non-player cast (pet slot, imps, guardians) within
--- `window` seconds. Returns spellId, unit or nil. Used to tag pet-fallback
--- emits with the pet spell that likely produced the hit.
-local function recentPetCast(self, t, window)
-	local casts = self._petCasts
-	if type(casts) ~= "table" then return nil end
-	local best, bestUnit
-	for i = #casts, 1, -1 do
-		local c = casts[i]
-		local age = t - (c.at or 0)
-		if age >= 0 and age <= (window or 1.5) then
-			best = c.spellId
-			bestUnit = c.unit
-			break
-		elseif age > (window or 1.5) then
-			break
-		end
-	end
-	return best, bestUnit
-end
-
 local function zbtVetoActive()
 	local z = ZSBT.ZBattleText
 	if not (z and z.VetoActive) then return false end
@@ -319,9 +338,7 @@ local function flushBestOutgoing(self, token)
 	local zbt = ZSBT.ZBattleText
 	if zbt and zbt.FileLog then
 		zbt:FileLog(("FLUSH sid=%s school=%s cnt=%s crit=%s"):format(tostring(bucket.spellId), tostring(bucket.schoolMask), tostring(bucket._seenCount), tostring(bucket.isCrit)))
-		if bucket.petRoute == true then
-			zbt:FileLog(("PET_ROUTE petSid=%s school=%s"):format(tostring(bucket.petSpellId), tostring(bucket.schoolMask)))
-		end
+
 	end
 	emit("OUTGOING_DAMAGE_COMBAT", {
 		timestamp = bucket.timestamp,
@@ -331,9 +348,7 @@ local function flushBestOutgoing(self, token)
 		targetName = bucket.targetName,
 		isCrit = bucket.isCrit,
 		schoolMask = bucket.schoolMask,
-		petSpellId = bucket.petSpellId,
-		petBucket = (bucket.petRoute == true and bucket.schoolMask ~= 1) and "summons" or nil,
-		_petRoute = bucket.petRoute == true or nil,
+
 	})
 end
 
@@ -3340,18 +3355,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 
 		local schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil
 
-		-- Unattributed non-physical hit + a recent friendly/minion cast =
-		-- likely temporary-pet (imp/dreadstalker) damage. Route through the
-		-- veto first, then display as pet damage with the pet's spell id.
-		-- Physical (school 1) stays generic: melee swings are indistinguishable
-		-- from the player's own auto attacks.
-		local petRoute, petSid = nil, nil
-		if spellId == nil and schoolMask ~= 1 then
-			local psid = recentPetCast(self, t, 1.2)
-			if psid ~= nil then
-				petRoute, petSid = true, psid
-			end
-		end
 
 		-- Merge window: multiple UNIT_COMBAT(target) hits can arrive per cast.
 		-- Keep only the largest amount in a short window to avoid showing tiny
@@ -3371,8 +3374,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				timestamp = t,
 				token = token,
 				spellId = spellId,
-				petRoute = petRoute,
-				petSpellId = petSid,
+
 				targetName = targetName,
 				amount = amount,
 				_seenCount = 1,
