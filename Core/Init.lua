@@ -2150,6 +2150,7 @@ function Addon:HandleCTProbeCommand(argStr)
 	input = input:gsub("^%s+", ""):gsub("%s+$", "")
 	local col = ZSBT.Parser and ZSBT.Parser.EventCollector
 	local probe = col and col._ctAddProbe
+	local discovered = col and col._ctAddDiscovered
 	if input == "clear" then
 		if type(probe) == "table" then
 			wipe(probe)
@@ -2160,7 +2161,12 @@ function Addon:HandleCTProbeCommand(argStr)
 		return
 	end
 	if type(probe) ~= "table" or #probe == 0 then
-		self:Print(L["CT probe: no data. Hooks install on combat start; fight something first."])
+		if type(discovered) == "table" and #discovered > 0 then
+			self:Print(L["CT probe: hooks installed, zero calls recorded."])
+			self:Print(L["CT probe globals: "] .. table.concat(discovered, ", "))
+		else
+			self:Print(L["CT probe: not installed (collector not enabled yet)."])
+		end
 		return
 	end
 	local total = #probe

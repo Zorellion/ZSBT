@@ -3619,6 +3619,7 @@ function Collector:Enable()
 			end
 		end
 		table.sort(discovered)
+		Collector._ctAddDiscovered = discovered
 		ECPrint("CTADD_SCAN hooks=" .. tostring(hookCount) .. " :: " .. table.concat(discovered, ", "))
 	end
 
