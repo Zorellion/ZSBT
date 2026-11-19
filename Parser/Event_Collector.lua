@@ -865,19 +865,31 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 	-- Other friendly units (temporary pets like Wild Imps may cast under
 	-- their own unit token): record them too, filtered to friends only.
 	if unit ~= "player" and unit ~= "target" and UnitIsFriend then
-		local okF, isFriend = pcall(UnitIsFriend, "player", unit)
-		if okF and isFriend == true then
-			self._petCasts = self._petCasts or {}
-			local tCast2 = now()
-			self._petCasts[#self._petCasts + 1] = { unit = unit, spellId = spellId, at = tCast2 }
-			if #self._petCasts > 24 then table.remove(self._petCasts, 1) end
-			local zbtc2 = ZSBT.ZBattleText
-			if zbtc2 and zbtc2.FileLog then
-				zbtc2:FileLog(("FRIEND_CAST unit=%s sid=%s"):format(tostring(unit), tostring(spellId)))
+		-- targettarget resolves to the player whenever the mob is attacking
+		-- you; without this check the player's own casts land in _petCasts
+		-- and petRoute can tag player damage as pet damage.
+		local isPlayerAlias = false
+		if UnitIsUnit then
+			local okP, pres = pcall(UnitIsUnit, unit, "player")
+			if okP then
+				local okPC, peq = pcall(function() return pres == true end)
+				if okPC and peq == true then isPlayerAlias = true end
+			end
+		end
+		if not isPlayerAlias then
+			local okF, isFriend = pcall(UnitIsFriend, "player", unit)
+			if okF and isFriend == true then
+				self._petCasts = self._petCasts or {}
+				local tCast2 = now()
+				self._petCasts[#self._petCasts + 1] = { unit = unit, spellId = spellId, at = tCast2 }
+				if #self._petCasts > 24 then table.remove(self._petCasts, 1) end
+				local zbtc2 = ZSBT.ZBattleText
+				if zbtc2 and zbtc2.FileLog then
+					zbtc2:FileLog(("FRIEND_CAST unit=%s sid=%s"):format(tostring(unit), tostring(spellId)))
+				end
 			end
 		end
 	end
-
 	-- Trace casts from units we do not record (enemies, unknown tokens)
 	-- so temporary-pet cast tokens can be identified. Throttled per unit.
 	if unit ~= "player" and unit ~= "target" and unit ~= "pet" then
