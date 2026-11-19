@@ -1,6 +1,22 @@
 # Changelog
 
-## 3.3.7
+## 3.3.8-beta
+
+### Changed
+- **ZCT combat core transplant:** the combat attribution pipeline is rebuilt on Zore's Combat Text internals (`ZSBT.ZCT`): collector -> combat-log line classification -> incoming/outgoing pairing -> normalized combat events -> bridge into ZSBT's existing display. Animations, fonts, scroll behavior, and formatting are unchanged.
+- **The config shell is now the only UI:** `/zsbt` opens it directly. The classic AceConfig window and the `/zsbt zctui` alias are retired; `OpenConfig` forwards to the shell for stale callers.
+- **Class-driven attribution modules:** per-class modules now declare hooks (pet schools, cast budgets, guardian windows, auto-attack vetoes, DoTs, channels). Warlock is the reference implementation; Hunter is fully implemented (pet melee vs auto-shot split, Kill Command, Dark Ranger guardian naming incl. Shadow Thrash); other classes fall back to safe generic attribution.
+
+### Added
+- **Icon Position option** (Incoming/Outgoing Damage): place the spell icon left or right of the text, shown when Show Spell Icons is enabled.
+- **Class page toggles are capability-driven:** modules declare which toggles apply (e.g. Name Guardian Spells, Show Pet Melee Hits); classes without toggles get no class button.
+
+### Fixed
+- School colors: pet damage now honors Use School Colors, composite school masks (shadowflame, cosmic) resolve instead of falling back to white, and the custom `media.schoolColors` palette applies.
+- Per-cast attribution budgets stop foreign misses/ticks inheriting the last cast's icon (Shadow Bolt miss spam fix).
+- Travel-time casts (Hand of Gul'dan, Implosion, Demonbolt) claim their delayed hits instead of displaying generic numbers.
+- Nil-call in the outgoing emit path that silently killed outgoing display.
+
 
 ### Fixed
 - **Doubled dodge/parry/miss text:** `UNIT_COMBAT` fires once per unit token, so a miss on your target arrived as both `nameplateN` (remapped to target) and `target`, and each event emitted its own miss line. Non-damage actions now collapse same-action twins within 50ms before reaching the emit branches, matching the dedup damage already had.
