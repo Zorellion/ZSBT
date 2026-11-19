@@ -64,7 +64,7 @@ local function safeUnitName(unit)
 end
 
 -- Chaos school (127) tooltips cover every school; hits may report the
--- composite masks 124/126 (MSBT/FCT SchoolFits).
+-- composite masks 124/126 (FCT SchoolFits).
 local function spellSchoolFits(learned, school)
 	if learned == nil or school == nil then return true end
 	if learned == school then return true end
@@ -101,7 +101,7 @@ local function consumePetCast(self, t, window, hitSchool)
 end
 
 -- Spell facts read from the spell's own description (adapted from
--- Forever Combat Text via MSBT's Combat/Spells.lua, MIT).
+-- Forever Combat Text, MIT).
 -- C_Spell.GetSpellDescription is plain for your spells even on secret-
 -- value clients, so a cast knows its own damage school from the moment
 -- it is first parsed — no confirmed-hit bootstrap needed. The full FCT
@@ -2681,7 +2681,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			instanceAware = true
 		end
 		-- Strict outgoing mode: still allow UNIT_COMBAT(target) for outgoing, but only
-		-- when we can correlate it to a very recent player cast (MSBT-style safety).
+		-- when we can correlate it to a very recent player cast (conservative safety).
 		if isStrictOutgoingCombatLogOnly() then
 			restrict = true
 			instanceAware = true
