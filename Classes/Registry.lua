@@ -267,6 +267,17 @@ function ClassDB.ResolvePetMelee(self)
 	return nil
 end
 
+-- Per-cast-instance naming budget for the recency-stamp paths: how many
+-- hits one cast of spellId may name. Class knowledge — AoE/burst spells
+-- (Implosion) claim many, single-target nukes default to 1. nil = default.
+function ClassDB.CastBudget(spellId)
+	local mod = ClassDB.ActiveModule()
+	if mod and mod.castBudget then
+		return mod.castBudget[spellId]
+	end
+	return nil
+end
+
 -- Returns false when the module vetoes this dot attribution (e.g. warlock
 -- Imp fire hits are pet damage, never DoT ticks). nil/true = allowed.
 function ClassDB.DotGuard(entry, school)
