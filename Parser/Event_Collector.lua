@@ -63,27 +63,6 @@ local function safeUnitName(unit)
 	return value
 end
 
--- Most recent friendly non-player cast (pet slot, imps, guardians) within
--- `window` seconds. Returns spellId, unit or nil. Used to tag pet-fallback
--- emits with the pet spell that likely produced the hit.
-local function recentPetCast(self, t, window)
-	local casts = self._petCasts
-	if type(casts) ~= "table" then return nil end
-	local best, bestUnit
-	for i = #casts, 1, -1 do
-		local c = casts[i]
-		local age = t - (c.at or 0)
-		if age >= 0 and age <= (window or 1.5) then
-			best = c.spellId
-			bestUnit = c.unit
-			break
-		elseif age > (window or 1.5) then
-			break
-		end
-	end
-	return best, bestUnit
-end
-
 -- Chaos school (127) tooltips cover every school; hits may report the
 -- composite masks 124/126 (MSBT/FCT SchoolFits).
 local function spellSchoolFits(learned, school)
@@ -92,13 +71,106 @@ local function spellSchoolFits(learned, school)
 	return learned == 127 and (school == 124 or school == 126)
 end
 
--- A cast may only claim a hit whose school fits what confirmed hits taught
--- about that spell. Unknown stays permissive (a guess, like FCT); a
--- known-wrong school is refused — this is what stops "Consecration shown
--- as Shadow Bolt".
-local function castSchoolOk(self, spellId, school)
+local castSchoolOk -- fwd decl; real def below
+
+-- Friendly non-player casts (pet slot, imps, guardians) recorded in
+-- _petCasts. A hit claims one of them instead of taking the most recent
+-- unconditionally: the newest school-fitting cast wins (FCT candidate
+-- scoring) and each cast has an outcome budget — PET_CAST_MAX_CLAIMS
+-- stamps total, covering AoE like Whiplash while stopping one cast from
+-- absorbing an unlimited run of foreign hits.
+local PET_CAST_MAX_CLAIMS = 8
+local function consumePetCast(self, t, window, hitSchool)
+	local casts = self._petCasts
+	if type(casts) ~= "table" then return nil end
+	local w = window or 1.5
+	for i = #casts, 1, -1 do
+		local c = casts[i]
+		local age = t - (c.at or 0)
+		if age > w then break end
+		if age >= 0
+			and (c.claims or 0) < PET_CAST_MAX_CLAIMS
+			and castSchoolOk(self, c.spellId, hitSchool) then
+			c.claims = (c.claims or 0) + 1
+			return c.spellId, c.unit
+		end
+	end
+	return nil
+end
+
+-- Spell facts read from the spell's own description (adapted from
+-- Forever Combat Text via MSBT's Combat/Spells.lua, MIT).
+-- C_Spell.GetSpellDescription is plain for your spells even on secret-
+-- value clients, so a cast knows its own damage school from the moment
+-- it is first parsed — no confirmed-hit bootstrap needed. The full FCT
+-- school table covers composite names (Shadowflame 36, Chaos 127) so
+-- warlock/hunter tooltips resolve exactly.
+local SPELL_SCHOOL_WORDS = {
+	physical = 1, holy = 2, fire = 4, nature = 8,
+	frost = 16, shadow = 32, arcane = 64,
+	holystrike = 3, flamestrike = 5, stormstrike = 9,
+	froststrike = 17, shadowstrike = 33, spellstrike = 65,
+	holyfire = 6, holystorm = 10, holyfrost = 18,
+	shadowholy = 34, divine = 66,
+	firestorm = 12, frostfire = 20, shadowflame = 36, spellfire = 68,
+	froststorm = 24, shadowstorm = 40, spellstorm = 72,
+	shadowfrost = 48, spellfrost = 80, spellshadow = 96,
+	elemental = 28, cosmic = 106, chromatic = 124, magic = 126, chaos = 127,
+	radiant = 6, twilight = 34, plague = 40, astral = 72, volcanic = 5,
+}
+local spellFactsCache = {}
+local function SpellFacts(spellId)
+	if type(spellId) ~= "number" then return nil end
+	local c = spellFactsCache[spellId]
+	if c ~= nil then return c or nil end
+	local facts
+	local locale = GetLocale and GetLocale()
+	if (locale == "enUS" or locale == "enGB")
+		and C_Spell and type(C_Spell.GetSpellDescription) == "function" then
+		local ok, text = pcall(C_Spell.GetSpellDescription, spellId)
+		if ok and ZSBT.IsSafeString and ZSBT.IsSafeString(text) and text ~= "" then
+			local lower = text:lower()
+			local school, multi, harms = nil, false, false
+			if not (lower:find("^heals") or lower:find("heals %d") or lower:find("restores %d") or lower:find("converts %d+ health")) then
+				if lower:find("%d+ damage") then harms = true end
+				for word in lower:gmatch("(%a+) damage") do
+					local s = SPELL_SCHOOL_WORDS[word]
+					if s then
+						harms = true
+						if school and school ~= s then multi = true end
+						school = school or s
+					end
+				end
+				if not school and (lower:find("weapon damage", 1, true) or lower:find("melee damage", 1, true)
+					or lower:find("ranged damage", 1, true) or lower:find("fires several missiles", 1, true)) then
+					school, harms = 1, true
+				end
+				facts = { school = (not multi) and school or nil, damages = harms }
+			else
+				facts = { damages = false }
+			end
+		elseif type(C_Spell.RequestLoadSpellData) == "function" then
+			pcall(C_Spell.RequestLoadSpellData, spellId)
+		end
+	end
+	if facts then spellFactsCache[spellId] = facts end
+	return facts
+end
+
+-- A cast may only claim a hit it can plausibly have made:
+-- * a spell whose own tooltip deals no damage claims nothing;
+-- * a tooltip-declared school is authoritative (FCT catalog facts);
+-- * a school learned from confirmed hits gates identically;
+-- * unknown stays permissive (a guess, like FCT).
+-- This is what stops "Consecration shown as Shadow Bolt".
+castSchoolOk = function(self, spellId, school)
 	if type(spellId) ~= "number" then return true end
+	local facts = SpellFacts(spellId)
+	if facts and facts.damages == false then return false end
 	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) then return true end
+	if facts and type(facts.school) == "number" then
+		return spellSchoolFits(facts.school, school)
+	end
 	return spellSchoolFits(self._learnedSpellSchool[spellId], school)
 end
 
@@ -143,12 +215,13 @@ local function emit(eventType, payload)
 		-- pet damage after the veto proves ownership. Physical school-1
 		-- hits stay generic: melee is indistinguishable from autos.
 		if payload.spellId == nil and payload.schoolMask ~= 1 and payload._petRoute ~= false then
-			local psid = recentPetCast(Collector, payload.timestamp or now(), 1.2)
-			-- School gate: a recent pet cast may only tag a hit whose school
-			-- fits what confirmed hits taught about that pet spell.
-			if psid ~= nil and castSchoolOk(Collector, psid, payload.schoolMask) then
+			-- Consume-style match: newest school-fitting pet cast claims the
+			-- hit (budgeted), and the stamp counts as trusted provenance.
+			local psid = consumePetCast(Collector, payload.timestamp or now(), 1.2, payload.schoolMask)
+			if psid ~= nil then
 				payload._petRoute = true
 				payload.petSpellId = psid
+				payload._petSidLearn = true
 				payload.petBucket = "summons"
 			end
 		end
@@ -159,9 +232,13 @@ local function emit(eventType, payload)
 		return
 	end
 	-- OfferOutgoing sets _vetoConfirmed when a palette line proved
-	-- ownership (fast match): teach the spell's school for future stamps.
+	-- ownership (fast match): teach the spell's school for future stamps —
+	-- but only when the sid came from a consumed cast record.
 	if eventType == "OUTGOING_DAMAGE_COMBAT" and payload and payload._vetoConfirmed == true then
-		Collector:LearnConfirmedSchool(payload.spellId or payload.petSpellId, payload.schoolMask)
+		local learnSid = payload.spellId or payload.petSpellId
+		local learnTrust = (payload.spellId ~= nil and payload._sidLearn == true)
+			or (payload.spellId == nil and payload.petSpellId ~= nil and payload._petSidLearn == true)
+		Collector:LearnConfirmedSchool(learnSid, payload.schoolMask, learnTrust)
 	end
 	-- Veto-approved unattributed hits that look like minion/pet damage
 	-- deliver as PET_DAMAGE_COMBAT so they get pet styling. The swap
@@ -409,6 +486,7 @@ local function flushBestOutgoing(self, token)
 		timestamp = bucket.timestamp,
 		rawPipeId = pipeId,
 		spellId = bucket.spellId,
+		_sidLearn = bucket._sidLearn,
 		amountSource = "UNIT_COMBAT_BEST",
 		targetName = bucket.targetName,
 		isCrit = bucket.isCrit,
@@ -888,6 +966,13 @@ local function enqueuePendingCast(self, spellId, spellName, tNow)
 	-- Icon eligibility: prefer concrete signals. Hostile target at cast time is
 	-- a strong indicator of a damage cast.
 	local eligibleIcon = (helpful == false) or (harmful == true) or (targetHostile == true)
+	-- A spell whose own tooltip deals no damage can never own a hit — the
+	-- FCT "Curse of Tongues" fix; summon/curse casts stay out of the pool
+	-- so their spellId can't stamp foreign damage.
+	local castFacts = SpellFacts(spellId)
+	if castFacts and castFacts.damages == false then
+		return
+	end
 	table.insert(self._pendingCasts, {
 		token = self._pendingCastNextToken,
 		spellId = spellId,
@@ -918,9 +1003,17 @@ function Collector:_persistLearnedSchool(spellId, schoolMask)
 	prof.learnedSpellSchools[spellId] = schoolMask
 end
 
-function Collector:LearnConfirmedSchool(spellId, schoolMask)
+function Collector:LearnConfirmedSchool(spellId, schoolMask, trusted)
 	if type(spellId) ~= "number" then return end
 	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(schoolMask)) then return end
+	-- Provenance gate (FCT Trust): only a sid bound to a consumed cast
+	-- record may teach. Recency/fallback stamps are guesses — a foreign
+	-- hit confirmed by a stolen line would otherwise teach its school to
+	-- your spell (the "Demonbolt learned Holy" poison).
+	if trusted ~= true then return end
+	-- Tooltip-declared schools are already authoritative; nothing to learn.
+	local facts = SpellFacts(spellId)
+	if facts and type(facts.school) == "number" then return end
 	local votes = self._schoolVotes[spellId]
 	if type(votes) ~= "table" then
 		votes = {}
@@ -2902,10 +2995,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						if zbt2 and zbt2.FileLog then
 							zbt2:FileLog(("PET_EMIT school=%s"):format(tostring(school)))
 						end
-						local petSid, petUnit = recentPetCast(self, t, 1.5)
-						if petSid ~= nil and not castSchoolOk(self, petSid, school) then
-							petSid = nil
-						end
+						local petSid, petUnit = consumePetCast(self, t, 1.5, school)
 						if ZSBT.IsSafeNumber(school) and school == 1 and zbtVetoActive() then
 							-- Physical pet hits go through the ownership veto:
 							-- a MY_PET melee line must confirm them (the
@@ -2916,6 +3006,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								rawPipeId = pipeId,
 								spellId = nil,
 								petSpellId = petSid,
+								_petSidLearn = petSid ~= nil or nil,
 								petUnit = petUnit,
 								_petRoute = true,
 								amount = amount,
@@ -2929,6 +3020,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							timestamp = t,
 							rawPipeId = pipeId,
 							petSpellId = petSid,
+							_petSidLearn = petSid ~= nil or nil,
 							petUnit = petUnit,
 							amount = amount,
 							amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
@@ -3368,16 +3460,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				and isLikelyPetPhysicalHit(school)
 				and (zbtVetoActive() or not members or members <= 1) then
 				petRoutePhys = true
-				local ps = recentPetCast(self, t, 1.5)
-				if castSchoolOk(self, ps, school) then petSidPhys = ps end
+				petSidPhys = consumePetCast(self, t, 1.5, school)
 			end
 			emit("OUTGOING_DAMAGE_COMBAT", {
 				timestamp = t,
 				rawPipeId = pipeId,
 				spellId = spellId,
+				_sidLearn = (matchedCast ~= nil and spellId ~= nil) or nil,
 				isAuto = (spellId == nil and swingOk),
 				_petRoute = petRoutePhys,
 				petSpellId = petSidPhys,
+				_petSidLearn = petSidPhys ~= nil or nil,
 				amountSource = "UNIT_COMBAT_PHYSICAL",
 				targetName = safeUnitName("target"),
 				isCrit = isCrit,
@@ -3761,10 +3854,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		end
 
 		local spellId = nil
+		local sidLearn = nil
 		if existing and existing.spellId then
 			spellId = existing.spellId
+			sidLearn = existing._sidLearn
 		elseif matchedCast then
 			spellId = (matchedCast.eligibleIcon == true) and matchedCast.spellId or nil
+			sidLearn = (matchedCast.spellId ~= nil) or nil
 		end
 
 		local schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil
@@ -3790,6 +3886,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				timestamp = t,
 				token = token,
 				spellId = spellId,
+				_sidLearn = sidLearn,
 
 				targetName = targetName,
 				amount = amount,
@@ -4366,16 +4463,28 @@ function Collector:Enable()
 	-- Restore learned spell schools from the profile so the school gate
 	-- keeps its ratchet across /reload. Votes seed at threshold so a saved
 	-- school isn't instantly flippable.
+	-- v2: values learned before provenance-gated learning may be poisoned
+	-- (a foreign hit's stolen line taught Demonbolt "Holy"); wipe once.
+	-- Any saved school that contradicts the spell's own tooltip-declared
+	-- school is also dropped — the tooltip is authoritative.
 	do
 		local prof = ZSBT.db and ZSBT.db.profile
 		local saved = type(prof) == "table" and prof.learnedSpellSchools or nil
+		if type(prof) == "table" and prof.learnedSpellSchoolsVer ~= 2 then
+			saved = nil
+			prof.learnedSpellSchools = {}
+			prof.learnedSpellSchoolsVer = 2
+		end
 		if type(saved) == "table" then
 			for sid, school in pairs(saved) do
 				if type(sid) == "number" and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school) then
-					self._learnedSpellSchool[sid] = school
-					local v = self._schoolVotes[sid]
-					if type(v) ~= "table" then v = {} self._schoolVotes[sid] = v end
-					v[school] = math.max(v[school] or 0, SCHOOL_LEARN_VOTES)
+					local facts = SpellFacts(sid)
+					if not (facts and type(facts.school) == "number" and not spellSchoolFits(facts.school, school)) then
+						self._learnedSpellSchool[sid] = school
+						local v = self._schoolVotes[sid]
+						if type(v) ~= "table" then v = {} self._schoolVotes[sid] = v end
+						v[school] = math.max(v[school] or 0, SCHOOL_LEARN_VOTES)
+					end
 				end
 			end
 		end
