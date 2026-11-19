@@ -124,12 +124,16 @@ local GUARDIAN_SPELLS = {
 }
 
 -- Player summon casts → which guardian groups go out, and for how long.
+-- Keyed on the CAST spellId (UNIT_SPELLCAST_SUCCEEDED), which differs
+-- from the damage id — HoG casts as 105174, damages as 86040.
 local GUARDIAN_SUMMONS = {
-	[86040] = { { group = "wildimp", duration = 11 } },             -- Hand of Gul'dan
+	[86040] = { { group = "wildimp", duration = 11 } },             -- Hand of Gul'dan (dmg id, some builds)
+	[105174] = { { group = "wildimp", duration = 11 } },            -- Hand of Gul'dan (cast id)
 	[104316] = { { group = "dreadstalker", duration = 12 },
 		{ group = "gloomhound", duration = 12 } },                  -- Call Dreadstalkers
 	[264119] = { { group = "gloomhound", duration = 15 } },         -- Summon Vilefiend
-	[265187] = { { group = "tyrant", duration = 15 } },             -- Summon Demonic Tyrant
+	[265187] = { { group = "tyrant", duration = 18 } },             -- Summon Demonic Tyrant
+	[1276452] = { { group = "implord", duration = 20 } },           -- Grimoire: Imp Lord
 }
 
 -- Name an unattributed pet hit: collect the spells every ACTIVE guardian
