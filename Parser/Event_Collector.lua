@@ -2034,6 +2034,21 @@ local PET_OUTGOING_DEDUP_WINDOW = 0.35
 -- have a non-nil amount and let downstream consumers categorize by context.
 -- UNIT_COMBAT only fires for: WOUND, HEAL, BLOCK, DODGE, PARRY, RESIST, etc.
 -- Only WOUND and HEAL carry meaningful amounts.
+-- Trace units that UNIT_COMBAT reports but the outgoing pipeline cannot
+-- use (non-target nameplates, party/boss tokens, etc.). Minion/pet damage
+-- may arrive under tokens we currently drop silently; this makes them
+-- visible in the ucdrop log. Throttled per unit to bound spam.
+function Collector:_dbgDropUnit(unit)
+	local z = ZSBT.ZBattleText
+	if not (z and z.FileLog) then return end
+	if ZSBT._ucDropTrace ~= true then return end
+	local key = "ucunit_" .. tostring(unit)
+	local t = now()
+	if t - (Collector[key] or -9) < 0.5 then return end
+	Collector[key] = t
+	z:FileLog("UC_UNIT unit=" .. tostring(unit))
+end
+
 function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 	-- Midnight (12.0+): UNIT_COMBAT does not fire for the "target" unit token on some
 	-- clients (confirmed via debug: only UNIT_COMBAT_PLAYER lines appear). It DOES fire
@@ -2060,9 +2075,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				end
 				unit = "target"
 			else
+				self:_dbgDropUnit(unit)
 				return
 			end
 		else
+			self:_dbgDropUnit(unit)
 			return
 		end
 	end
