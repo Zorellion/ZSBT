@@ -270,6 +270,18 @@ function ZB:IsTrusted()
     return ZB._trusted == true
 end
 
+-- True while no classified line has arrived recently. Transient by
+-- design: out-of-combat gaps produce no lines, so a stale feed must not
+-- latch the veto off for the session — it re-engages as soon as lines
+-- resume. _lastLineAt == 0 (nothing seen yet) is NOT stale: early
+-- candidates simply defer and pair once the feed starts.
+local function feedDead()
+    local last = ZB._lastLineAt or 0
+    if last <= 0 then return false end
+    local tNow = GetTime and GetTime() or 0
+    return tNow - last > FEED_DEAD_SEC
+end
+
 -- True only when the ownership veto can actually decide: filter
 -- trusted AND watchdogs have not disabled it. Upstream gates may use this
 -- to route otherwise-dropped candidates through emit() so the
@@ -494,17 +506,6 @@ local DEFER_WINDOW = 0.45
 ZB._pending = ZB._pending or {}
 ZB._flushAt = ZB._flushAt or 0
 
--- True while no classified line has arrived recently. Transient by
--- design: out-of-combat gaps produce no lines, so a stale feed must not
--- latch the veto off for the session — it re-engages as soon as lines
--- resume. _lastLineAt == 0 (nothing seen yet) is NOT stale: early
--- candidates simply defer and pair once the feed starts.
-local function feedDead()
-    local last = ZB._lastLineAt or 0
-    if last <= 0 then return false end
-    local tNow = GetTime and GetTime() or 0
-    return tNow - last > FEED_DEAD_SEC
-end
 
 local function vetoDisabledNow()
     if ZB._vetoDisabled then return true end
