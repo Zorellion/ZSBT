@@ -84,6 +84,43 @@ function mod.petSchoolHitRecent(self, school, lastPlayerSpellId, helpers)
 	return false
 end
 
+-- Pet physical eligibility: hunter pets melee constantly, so a school-1
+-- hit the player's swing does NOT explain is pet-eligible. Only reached
+-- when swingEvidence already ruled out the player's auto.
+function mod.petPhysicalHit(school, helpers)
+	return helpers and helpers.safeNumber and helpers.safeNumber(school)
+		and school == 1
+end
+
+-- Survival is the melee spec: pet and player melee lines are
+-- indistinguishable there, so evidence stays permissive.
+local function isSurvival()
+	if not GetSpecialization then return false end
+	return GetSpecialization() == 3
+end
+
+-- Auto-attack line restriction: BM/MM auto-shots produce RANGE_DAMAGE
+-- lines while pet melee produces SWING_DAMAGE. Restricting auto claims
+-- to ranged frees melee lines for pet-melee naming. SV keeps the
+-- default (its own swings are melee too).
+function mod.autoLineKinds(helpers)
+	if isSurvival() then return nil end
+	return { ranged = true }
+end
+
+-- Swing evidence via palette peek: a ranged line near the hit means
+-- the player's shot explains it (auto). A melee line with no ranged
+-- line means a pet swung — not the player's swing. Neither buffered
+-- yet: nil = permissive (the deferred veto applies autoLineKinds then).
+function mod.swingEvidence(self, t, helpers)
+	if isSurvival() then return nil end
+	local zbt = ZSBT.ZBattleText
+	if not (zbt and zbt.PeekDamageLine) then return nil end
+	if zbt:PeekDamageLine(t, 1.0, { ranged = true }) then return true end
+	if zbt:PeekDamageLine(t, 1.0, { melee = true }) then return false end
+	return nil
+end
+
 -- Name physical pet hits "Auto Attack" (6603) when the user opts in.
 -- Same contract as warlock: the hit must claim a MY_PET palette line
 -- first, so the name can only land on palette-proven pet damage.
