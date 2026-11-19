@@ -10,8 +10,10 @@
 --     Deep Wounds / Thunderous Roar bleeds have no equivalent and stay
 --     generic — honest floor, same as guardian physical on other
 --     classes.
---   * No guardian windows at all. Ravager is guardian-sourced physical
---     ticks -> unnameable by design (same as DK's DRW).
+--   * No guardian windows at all. Ravager is PLAYER-sourced on the
+--     verified client (throw + ticks under the player GUID), so its
+--     cast budget can name what the claim window reaches; ticks
+--     beyond it stay generic physical.
 --   * mod.toggles stays empty: there is no pet melee to name and no
 --     guardian spellbook to resolve, so the Class page shows no
 --     class toggles.
@@ -44,11 +46,15 @@ mod.channels = {
 -- verify against a real warrior combat log; wrong ids simply never
 -- match (safe under-naming). Manual teaching fills any drift.
 mod.castBudget = {
-	[1680]   = 12, -- Whirlwind (hits all nearby)
+	[1680]   = 12, -- Whirlwind cast id (log-verified: emits double cast records)
+	[199658] = 10, -- Whirlwind second cast id (log-verified; dmg ids 199658/199850/411547)
 	[845]    = 6,  -- Cleave (frontal cleave)
 	[6343]   = 10, -- Thunder Clap (AoE direct; bleed is unnameable)
+	[435222] = 10, -- Thunder Blast (Mountain Thane TC replacement, log-verified)
 	[46968]  = 10, -- Shockwave (cone AoE)
-	[6572]   = 10, -- Revenge (frontal AoE)
+	[6572]   = 10, -- Revenge (frontal AoE, log-verified)
+	[385952] = 5,  -- Shield Charge cast id (damage id 385954, drift log-verified)
+	[228920] = 15, -- Ravager (throw + player-sourced ticks 156287, log-verified)
 	[118000] = 10, -- Dragon Roar
 	[397364] = 10, -- Thunderous Roar (direct AoE; bleed is unnameable)
 	[52174]  = 10, -- Heroic Leap (landing AoE)
