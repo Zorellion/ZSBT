@@ -3618,6 +3618,34 @@ function Collector:Enable()
 				end
 			end
 		end
+		-- 12.x combat text is mixin/table-based: the AddMessage globals do not
+		-- exist. Probe function members of the known combat-text tables via
+		-- hooksecurefunc(table, name, fn). pcall-guarded: C_ tables and
+		-- protected mixins can reject hooks.
+		local tableRoots = {
+			"CombatTextMixin", "CombatTextUtil", "C_CombatText", "CombatText",
+			"CombatTextTypeInfo", "CombatTextConstants", "CombatTextFont",
+		}
+		for _, tname in ipairs(tableRoots) do
+			local t = _G[tname]
+			if type(t) == "table" then
+				local fnames = {}
+				for k, v in pairs(t) do
+					if type(v) == "function" then
+						fnames[#fnames + 1] = tostring(k)
+						if hookCount < 80 then
+							local label = tname .. "." .. tostring(k)
+							local ok = pcall(hooksecurefunc, t, k, function(...) record(label, ...) end)
+							if ok then hookCount = hookCount + 1 end
+						end
+					end
+				end
+				table.sort(fnames)
+				local shown = table.concat(fnames, ",")
+				if #shown > 400 then shown = shown:sub(1, 400) .. "..." end
+				discovered[#discovered + 1] = tname .. "={" .. shown .. "}"
+			end
+		end
 		table.sort(discovered)
 		Collector._ctAddDiscovered = discovered
 		ECPrint("CTADD_SCAN hooks=" .. tostring(hookCount) .. " :: " .. table.concat(discovered, ", "))
