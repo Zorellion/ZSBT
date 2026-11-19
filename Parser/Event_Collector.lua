@@ -793,6 +793,12 @@ local function swingExplainsHit(self, t)
 	if ZSBT.ClassDB and ZSBT.ClassDB.VetoAuto and ZSBT.ClassDB.VetoAuto() then
 		return false
 	end
+	-- Class evidence override: e.g. hunter decides auto vs pet melee by
+	-- which line kind (ranged vs melee) the palette buffered nearby.
+	if ZSBT.ClassDB and ZSBT.ClassDB.SwingEvidence then
+		local se = ZSBT.ClassDB.SwingEvidence(self, t)
+		if se ~= nil then return se == true end
+	end
 	if self._swingSupported ~= true then return true end
 	return anySwingRecent(self, t)
 end
@@ -3567,6 +3573,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				local petSidPhysTrusted = petSidPhys ~= nil
 				if petSidPhys == nil and ZSBT.ClassDB and ZSBT.ClassDB.ResolvePetSpellId then
 					petSidPhys = ZSBT.ClassDB.ResolvePetSpellId(self, school, t)
+				end
+				if petSidPhys == nil and ZSBT.ClassDB and ZSBT.ClassDB.ResolvePetMelee then
+					-- Opt-in pet melee naming (6603 "Auto Attack"): the hit
+					-- still must claim a MY_PET line downstream.
+					petSidPhys = ZSBT.ClassDB.ResolvePetMelee(self)
 				end
 			end
 			emit("OUTGOING_DAMAGE_COMBAT", {

@@ -234,6 +234,29 @@ end
 -- (warlock/mage/priest: every school-1 hit is pet melee or foreign). The
 -- collector treats a veto like "no player swing explains this" — hits
 -- route to pet-physical or drop instead of wearing your auto-attack.
+-- Line kinds an auto-attack candidate may claim (nil = default
+-- melee+ranged). Hunter returns {ranged=true}: its auto-shots produce
+-- RANGE_DAMAGE lines while pet melee produces SWING_DAMAGE, so the
+-- restriction keeps auto claims from eating pet-swing lines.
+function ClassDB.AutoLineKinds()
+	local mod = ClassDB.ActiveModule()
+	if mod and mod.autoLineKinds then
+		return mod.autoLineKinds(ClassDB.Helpers())
+	end
+	return nil
+end
+
+-- Class-decided swing evidence for a school-1 hit at time t:
+-- true = player's swing explains it (auto), false = it isn't the
+-- player's swing (pet route), nil = fall back to default behavior.
+function ClassDB.SwingEvidence(self, t)
+	local mod = ClassDB.ActiveModule()
+	if mod and mod.swingEvidence then
+		return mod.swingEvidence(self, t, ClassDB.Helpers())
+	end
+	return nil
+end
+
 function ClassDB.VetoAuto()
 	local mod = ClassDB.ActiveModule()
 	if mod and mod.vetoAuto then

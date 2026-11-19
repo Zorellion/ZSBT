@@ -211,6 +211,23 @@ local function takeDamageLine(tHit, window, kinds)
     return nil
 end
 
+-- Non-consuming look at buffered lines: class modules use this for
+-- swing-evidence decisions (e.g. hunter distinguishes its ranged
+-- auto-shot from pet melee by which line kind is present) without
+-- burning the line an actual claimant still needs.
+function ZB:PeekDamageLine(tHit, window, kinds)
+    if type(tHit) ~= "number" then return nil end
+    for i = 1, #ZB._lines do
+        local l = ZB._lines[i]
+        if DAMAGE_KINDS[l.kind] and not l.consumed
+            and (kinds == nil or kinds[l.kind] == true)
+            and math.abs(l.at - tHit) <= window then
+            return l.kind
+        end
+    end
+    return nil
+end
+
 ------------------------------------------------------------------------
 -- Filter verification
 ------------------------------------------------------------------------
@@ -616,6 +633,20 @@ end
 -- spell damage kinds. Returns nil for "any damage kind" (fallback pass
 -- still runs, so this only reorders, never restricts).
 local MELEE_KINDS = { melee = true, ranged = true }
+
+-- Kinds an auto-attack candidate may claim. Class modules may narrow
+-- this (hunter: ranged only — the player's shots produce RANGE_DAMAGE
+-- lines while pet melee produces SWING_DAMAGE, so freeing melee lines
+-- lets pet swings claim them instead).
+local function autoLineKinds()
+	local cdb = ZSBT.ClassDB
+	if cdb and cdb.AutoLineKinds then
+		local k = cdb.AutoLineKinds()
+		if k then return k end
+	end
+	return MELEE_KINDS
+end
+
 local function preferredKinds(payload)
     local sm = payload and payload.schoolMask
     if sm == 1 then return MELEE_KINDS end
@@ -694,7 +725,7 @@ local function flushPending()
                 else
                     local kind
                     if p.payload and p.payload.isAuto == true then
-                        kind = takeDamageLine(p.t, DEFER_WINDOW, MELEE_KINDS)
+                        kind = takeDamageLine(p.t, DEFER_WINDOW, autoLineKinds())
                     else
                         local pref = preferredKinds(p.payload)
                         kind = takeDamageLine(p.t, DEFER_WINDOW, pref) or takeDamageLine(p.t, DEFER_WINDOW)
@@ -831,7 +862,7 @@ function ZB:OfferOutgoing(payload)
     if candidateTier(payload) == 1 then
         local fastKind
         if payload.isAuto == true then
-            fastKind = takeDamageLine(tHit, VETO_WINDOW, MELEE_KINDS)
+            fastKind = takeDamageLine(tHit, VETO_WINDOW, autoLineKinds())
         else
             fastKind = takeDamageLine(tHit, VETO_WINDOW, preferredKinds(payload)) or takeDamageLine(tHit, VETO_WINDOW)
         end
