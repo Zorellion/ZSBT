@@ -2076,7 +2076,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 	-- previously dropped them here. If a nameplate token refers to the player's current
 	-- target, remap it to "target" so the existing outgoing pipeline handles the hit.
 	if unit ~= "player" and unit ~= "target" and unit ~= "pet" then
-		if type(unit) == "string" and unit:match("^nameplate%d+$") then
+		-- "softenemy" is Retail's soft-target enemy token: UnitIsUnit confirms
+		-- it is the player's target, but the token itself is not "target", so
+		-- its UNIT_COMBAT events were being dropped wholesale.
+		if type(unit) == "string" and (unit:match("^nameplate%d+$") or unit == "softenemy") then
 			local isTarget = false
 			if UnitIsUnit then
 				local okU, res = pcall(UnitIsUnit, unit, "target")
