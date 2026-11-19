@@ -39,6 +39,11 @@ mod.dots = {
 -- NPC (guardian physical), not a player channel.
 mod.channels = {
 	{ names = { "Bladestorm" }, ids = { 227847 }, duration = 6.0, tickMin = 0.6 },
+	-- Ravager: player-sourced ticks (156287) every ~1-2s for ~12s —
+	-- effectively a channel the weapon runs for you. Cast 228920 opens
+	-- the window; tick lines claim inside it. Autos (melee lines) are
+	-- safe: the channel claims tick-kind lines only.
+	{ names = { "Ravager" }, ids = { 228920 }, duration = 12.0, tickMin = 0.8 },
 }
 
 -- Per-cast-instance naming budget: AoE/multi-hit casts may name several
