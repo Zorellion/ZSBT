@@ -479,7 +479,7 @@ local function buildClassPage(pf)
 			("|cFFFFD100Module:|r %s"):format(tostring(tag)),
 			("|cFFFFD100Auto-attacks:|r %s"):format(autoVetoed and "vetoed (class never swings)" or "allowed"),
 			("|cFFFFD100PLAYER_SWING:|r %s"):format(st and st.swingSupported and "available" or "unavailable (Retail)"),
-			("|cFFFFD100Learned spell schools:|r %d"):format(st and st.learnedCount or 0),
+			("|cFFFFD100Inferred spell schools:|r %d"):format(st and st.learnedCount or 0),
 			("|cFFFFD100Casts tracked:|r %d pending / %d pet"):format(
 				st and st.pendingCasts or 0, st and st.petCasts or 0),
 		}
@@ -494,7 +494,8 @@ local function buildClassPage(pf)
 			end
 			table.sort(names)
 			if #names > 0 then
-				d[#d + 1] = L["Learned:"] .. " " .. table.concat(names, ", ")
+				d[#d + 1] = L["Inferred (spells with no static school data):"]
+					.. " " .. table.concat(names, ", ")
 			end
 		end
 		if st and type(st.guardianUntil) == "table" then
