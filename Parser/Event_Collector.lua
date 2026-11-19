@@ -1096,10 +1096,36 @@ local function consumeBestPendingCast(self, tNow, wantSpellId, maxWindowSec, doC
 	if bestI then
 		if doConsume == nil or doConsume == true then
 			table.remove(self._pendingCasts, bestI)
+			-- Per-cast-instance claim count ("sid@castAt"): the recency
+			-- stamps below draw from the same budget, so a consumed cast
+			-- cannot re-claim hits through the make-it-work path.
+			self._castClaims = self._castClaims or {}
+			local ck = tostring(best.spellId) .. "@" .. tostring(best.at)
+			self._castClaims[ck] = (self._castClaims[ck] or 0) + 1
 		end
 		return best
 	end
 	return nil
+end
+
+-- Recency-stamp claim: a cast instance may name at most `budget` hits
+-- total across pending-consume AND recency paths (class modules raise
+-- the budget for known AoE/burst spells; default 1 for single-hit).
+-- Also removes the still-queued record for that cast so it cannot be
+-- consumed a second time by a later hit.
+local function miwClaim(self, lastId, lastAt, t, school)
+	local key = tostring(lastId) .. "@" .. tostring(lastAt)
+	self._castClaims = self._castClaims or {}
+	local n = self._castClaims[key] or 0
+	local budget = 1
+	if ZSBT.ClassDB and ZSBT.ClassDB.CastBudget then
+		local b = ZSBT.ClassDB.CastBudget(lastId)
+		if type(b) == "number" and b > 0 then budget = b end
+	end
+	if n >= budget then return nil end
+	consumeBestPendingCast(self, t, lastId, nil, true, school)
+	self._castClaims[key] = n + 1
+	return true
 end
 
 -- Capture successful casts for downstream correlation.
@@ -3837,7 +3863,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						elseif not isPhysical then
 							maxAge = math.max(maxAge, 1.25)
 						end
-						if age >= 0 and age <= maxAge and castSchoolOk(self, lastId, school) then
+						if age >= 0 and age <= maxAge and castSchoolOk(self, lastId, school)
+							and miwClaim(self, lastId, lastAt, t, school) then
 							matchedCast = { spellId = lastId, eligibleIcon = true }
 						else
 							if zbtVetoActive() then
@@ -3874,7 +3901,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							if lastId == 686 then
 								maxAge = 2.50
 							end
-							if age >= 0 and age <= maxAge and castSchoolOk(self, lastId, school) then
+							if age >= 0 and age <= maxAge and castSchoolOk(self, lastId, school)
+								and miwClaim(self, lastId, lastAt, t, school) then
 								matchedCast = { spellId = lastId, eligibleIcon = true }
 							else
 								-- Quiet/strict: suppress unattributed numbers when we cannot even loosely

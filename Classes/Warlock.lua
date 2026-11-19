@@ -26,6 +26,18 @@ mod.channels = {
 	{ names = { "Drain Soul" }, ids = { 1120, 198590 }, duration = 5.0, tickMin = 0.12 },
 }
 
+-- Per-cast-instance naming budget for the recency-stamp paths: how many
+-- hits one cast may claim. Multi-hit bursts (AoE/splash) claim several;
+-- single-target nukes stay at the default of 1 so one cast can never
+-- wear its icon on every nearby hit.
+mod.castBudget = {
+	[105174] = 4,    -- Hand of Gul'dan (impact + splash)
+	[196277] = 8,    -- Implosion (per-target hits)
+	[434635] = 8,    -- Ruination (AoE)
+	[1276462] = 4,   -- Grimoire: Imp Lord variant
+	[264106] = 6,    -- Bilescourge Bombers
+}
+
 local function isImpPet(helpers)
 	local fam = helpers and helpers.family and helpers.family() or nil
 	return fam ~= nil and fam == "imp"
