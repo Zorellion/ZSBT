@@ -99,6 +99,7 @@ local AUDIT_TYPES = {
 }
 local function auditEmit(eventType, payload)
 	if ZSBT._auditTrace ~= true then return end
+	if AUDIT_TYPES[eventType] ~= true then return end
 	local zbt = ZSBT.ZBattleText
 	if not (zbt and zbt.Audit) then return end
 	local p = payload or {}
