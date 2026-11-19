@@ -155,9 +155,9 @@ local function takeDamageLine(tHit, window)
     end
     if best then
         ZB._lines[best].consumed = true
-        return true
+        return ZB._lines[best].kind
     end
-    return false
+    return nil
 end
 
 ------------------------------------------------------------------------
@@ -538,14 +538,42 @@ local function flushPending()
         local p = pend[i]
         if ZB._vetoDisabled or not ZB._trusted then
             deliverOutgoing(p.payload)
-        elseif takeDamageLine(p.t, DEFER_WINDOW) then
-            ZB._allows = ZB._allows + 1
-            deliverOutgoing(p.payload)
         else
-            ZB._drops = ZB._drops + 1
-            sustainedRejection()
+            local kind = takeDamageLine(p.t, DEFER_WINDOW)
+            if kind then
+                ZB._allows = ZB._allows + 1
+                ZB:FileLog(("ALLOW kind=%s sid=%s"):format(tostring(kind), tostring(p.payload and p.payload.spellId)))
+                deliverOutgoing(p.payload)
+            else
+                ZB._drops = ZB._drops + 1
+                ZB:FileLog(("DROP sid=%s"):format(tostring(p.payload and p.payload.spellId)))
+                sustainedRejection()
+            end
         end
     end
+end
+
+-- File trace for /zsbt ucdrop sessions: every veto decision lands in
+-- Interface/AddOns/ZSBT/zbt_debug.log so it can be read post-session
+-- without chat copy/paste (chat blocks copies containing secret values).
+ZB._logFile = nil
+function ZB:FileLog(msg)
+    if ZSBT._ucDropTrace ~= true then return end
+    local f = ZB._logFile
+    if f == nil then
+        local ok, h = pcall(io.open, "Interface/AddOns/ZSBT/zbt_debug.log", "a")
+        if not ok or h == nil then
+            ZB._logFile = false
+            return
+        end
+        ZB._logFile = h
+        f = h
+    elseif f == false then
+        return
+    end
+    local t = GetTime and GetTime() or 0
+    pcall(f.write, f, ("%.3f %s" .. "\n"):format(t, tostring(msg)))
+    pcall(f.flush, f)
 end
 
 -- Returns true when the caller should emit immediately; false when the
@@ -557,8 +585,10 @@ function ZB:OfferOutgoing(payload)
     if vetoDisabledNow() then return true end
 
     -- Fast path: the line is already buffered (CLM arrived first).
-    if takeDamageLine(tHit, VETO_WINDOW) then
+    local fastKind = takeDamageLine(tHit, VETO_WINDOW)
+    if fastKind then
         ZB._allows = ZB._allows + 1
+        ZB:FileLog(("ALLOW_FAST kind=%s sid=%s"):format(tostring(fastKind), tostring(payload and payload.spellId)))
         return true
     end
 
