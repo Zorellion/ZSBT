@@ -16,11 +16,14 @@ if not ZSBT or not ZSBT.ClassDB then return end
 local mod = {}
 
 mod.dots = {
-	{ names = { "Frost Fever" },           ids = { 55095 },  school = 16 },
-	{ names = { "Blood Plague" },          ids = { 55078 },  school = 32 },
-	{ names = { "Virulent Plague" },       ids = {},         school = 32 }, -- name-primary (id varies)
-	{ names = { "Dread Plague" },          ids = {},         school = 32 }, -- Midnight unholy disease
-	{ names = { "Trollbane's Icy Fury" },  ids = { 444834 }, school = 48 }, -- Rider proc, player-sourced debuff (log-verified school 0x30)
+	{ names = { "Frost Fever" },           ids = { 55095 },   school = 16 },
+	{ names = { "Blood Plague" },          ids = { 55078 },   school = 32 },
+	{ names = { "Virulent Plague" },       ids = { 191587 },  school = 32 }, -- log-verified periodic id
+	{ names = { "Dread Plague" },          ids = { 1240996 }, school = 32 }, -- log-verified periodic id
+	{ names = { "Trollbane's Icy Fury" },  ids = { 444834 },  school = 48 }, -- Rider proc, player-sourced debuff (log-verified school 0x30)
+	{ names = { "Ceaseless Swarm" },       ids = { 450969 },  school = 8 },  -- proc dot, log-verified (117 ticks)
+	{ names = { "Spidersting" },           ids = { 452229 },  school = 8 },  -- proc dot, log-verified
+	{ names = { "Undeath" },               ids = { 444633 },  school = 48 }, -- proc dot, log-verified school 0x30
 }
 
 -- Channeled: Breath of Sindragosa ticks for the channel's duration.
@@ -35,7 +38,8 @@ mod.channels = {
 mod.castBudget = {
 	[43265]  = 15, -- Death and Decay (ground AoE ticks)
 	[52212]  = 15, -- Death and Decay (tick damage id, if cast records land on it)
-	[196770] = 10, -- Remorseless Winter
+	[196770] = 10, -- Remorseless Winter (cast id)
+	[196771] = 10, -- Remorseless Winter (log-verified damage id)
 	[49184]  = 8,  -- Howling Blast
 	[207230] = 8,  -- Frostscythe
 	[279302] = 6,  -- Frostwyrm's Fury
@@ -43,6 +47,11 @@ mod.castBudget = {
 	[206930] = 5,  -- Heart Strike (cleaves up to 5)
 	[207317] = 8,  -- Epidemic
 	[194844] = 8,  -- Bonestorm
+	[195975] = 6,  -- Glacial Advance (line AoE, log-verified)
+	[1242178] = 5, -- Necrotic Coil (shadow, log-verified)
+	[1242172] = 5, -- Necrotic Coil (shadow+physical, log-verified)
+	[390220] = 5,  -- Putrefy (log-verified)
+	[1277016] = 5, -- Putrefy, second id (log-verified)
 	[152279] = 10, -- Breath of Sindragosa (fallback; channel usually catches it)
 }
 
