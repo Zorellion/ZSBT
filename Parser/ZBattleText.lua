@@ -139,7 +139,7 @@ local function recordLine(r, g, b)
         table.remove(lines, 1)
     end
     lines[#lines + 1] = { at = t, kind = kind, consumed = false }
-    ZB:FileLog("LIN kind=" .. tostring(kind))
+    ZB:FileLog(("LIN kind=%s rgb=%.2f,%.2f,%.2f"):format(tostring(kind), r, g, b))
 end
 
 -- Consume the nearest unconsumed damage-kind line within `window` of tHit.
@@ -572,7 +572,7 @@ function ZB:FileLog(msg)
     end
     local t = GetTime and GetTime() or 0
     log[#log + 1] = ("%.3f %s"):format(t, tostring(msg))
-    if #log > 800 then
+    if #log > 4000 then
         table.remove(log, 1)
     end
 end
