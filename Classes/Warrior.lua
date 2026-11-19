@@ -171,6 +171,13 @@ function mod.onPhysicalWound(self, ctx)
 		local dtEmit = t - (st.lastEmitAt or 0)
 		if dtEmit < 0 or dtEmit > 0.80 then
 			st.lastEmitAt = t
+			local lastDotAt = self._lastDotEmitAt or 0
+			if self._lastDotEmitSpellId == (self._rendSpellId or 772)
+				and (t - lastDotAt) >= 0 and (t - lastDotAt) < 0.35 then
+				return
+			end
+			self._lastDotEmitAt = t
+			self._lastDotEmitSpellId = self._rendSpellId or 772
 			local tName = safeUnitName("target")
 			local pipeId = self._rawPipeCount + 1
 			self._rawPipeCount = pipeId
