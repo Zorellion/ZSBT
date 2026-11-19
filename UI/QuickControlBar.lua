@@ -239,6 +239,30 @@ local function buildClassMenu()
 			end,
 			keepShownOnClick = true,
 		},
+		{
+			text = L["Name Guardian Spells"],
+			isNotRadio = true,
+			checked = function() return cm.resolveGuardians ~= false end,
+			func = function()
+				prof.classModule = prof.classModule or {}
+				prof.classModule.resolveGuardians = not (prof.classModule.resolveGuardians ~= false)
+				notifyConfig()
+				refreshActiveDropDown()
+			end,
+			keepShownOnClick = true,
+		},
+		{
+			text = L["Show Pet Melee Hits"],
+			isNotRadio = true,
+			checked = function() return cm.namePetMelee == true end,
+			func = function()
+				prof.classModule = prof.classModule or {}
+				prof.classModule.namePetMelee = not (prof.classModule.namePetMelee == true)
+				notifyConfig()
+				refreshActiveDropDown()
+			end,
+			keepShownOnClick = true,
+		},
 	}
 end
 

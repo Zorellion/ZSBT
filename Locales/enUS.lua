@@ -1198,3 +1198,9 @@ L["Unnamed hits get no combat-log line claim and never display while the filter 
 L["When off, class modules that veto auto-attacks (e.g. Warlock — every white hit is pet melee) suppress them entirely."] = true
 L["ZSBT - Class Module"] = true
 L["none"] = true
+L["Guardian damage (imps, dreadstalkers, tyrant) is named from summon tracking. Off = those hits fall back to generic pet damage."] = true
+L["Name Guardian Spells"] = true
+L["Name guardian spells"] = true
+L["Pet melee verified by a combat-log line displays as 'Auto Attack'. A stolen MY_PET line could still name a foreign swing."] = true
+L["Show Pet Melee Hits"] = true
+L["Show pet melee hits"] = true

@@ -154,6 +154,10 @@ local GUARDIAN_SUMMONS = {
 -- consumePetCast before this hook runs, so this mostly keeps school-32
 -- hits correctly ambiguous between her and the other demons.
 function mod.resolvePetSpellId(self, school, t, helpers)
+	-- profile.classModule.resolveGuardians == false disables guardian
+	-- naming entirely (hits fall back to generic pet / suppression).
+	local cm = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.classModule
+	if cm and cm.resolveGuardians == false then return nil end
 	if not (helpers and helpers.safeNumber and helpers.safeNumber(school)) then
 		return nil
 	end
@@ -179,6 +183,18 @@ function mod.resolvePetSpellId(self, school, t, helpers)
 	end
 	if ambiguous then return nil end
 	return best
+end
+
+-- Name physical pet hits "Auto Attack" (6603) when the user opts in.
+-- The hit still has to claim a MY_PET line, so the name can only appear
+-- on damage the palette already proved came from a pet. No guardian
+-- check needed: a pet melee line existing at all means a pet swung.
+-- profile.classModule.namePetMelee (Class page toggle), default off —
+-- a stolen MY_PET line could otherwise name a foreign swing.
+function mod.resolvePetMelee(self, helpers)
+	local cm = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.classModule
+	if cm and cm.namePetMelee == true then return 6603 end
+	return nil
 end
 
 -- Channel seeding (Drain Life / Drain Soul) + guardian summon tracking.

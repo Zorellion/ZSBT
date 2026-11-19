@@ -12,6 +12,7 @@
 --   module.onMatchedPhysical   = function(self, spellId, t, amount) end
 --   module.onPhysicalWound     = function(self, ctx) end          -- may emit; EC continues
 --   module.onGuardianWound     = function(self, ctx) -> true|nil  -- true = handled, EC returns
+--   module.resolvePetMelee     = function(self, helpers) -> spellId|nil
 --   module.dotGuard            = function(entry, school, helpers) -> false|nil end
 --
 -- Spell identity is NAME-PRIMARY: CleanSpellName strips rank suffixes so a
@@ -250,6 +251,18 @@ function ClassDB.ResolvePetSpellId(self, school, t)
 	local mod = ClassDB.ActiveModule()
 	if mod and mod.resolvePetSpellId then
 		return mod.resolvePetSpellId(self, school, t, ClassDB.Helpers())
+	end
+	return nil
+end
+
+-- Names a physical (school-1) pet hit that produced no cast record.
+-- Warlock uses this to display verified pet melee as "Auto Attack" —
+-- the hit still must claim a MY_PET line first, so the name can only
+-- land on damage the combat-log palette already proved was a pet's.
+function ClassDB.ResolvePetMelee(self)
+	local mod = ClassDB.ActiveModule()
+	if mod and mod.resolvePetMelee then
+		return mod.resolvePetMelee(self, ClassDB.Helpers())
 	end
 	return nil
 end
