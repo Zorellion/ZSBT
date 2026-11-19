@@ -157,8 +157,29 @@ local function taughtEntry(spellId)
 	return nil
 end
 
+-- Best-effort role inference from the spell's description text — the API
+-- exposes no periodic/channel flags on a spellId, so the localized
+-- tooltip string is the only signal. Heuristic: the Class page keeps
+-- manual overrides. Channeled wins over periodic (Mind Flay-style spells
+-- describe both; the channel window is the right mechanism for them).
+function ClassDB.InferRole(spellId)
+	local desc
+	if C_Spell and C_Spell.GetSpellDescription then
+		local ok, d = pcall(C_Spell.GetSpellDescription, spellId)
+		if ok and type(d) == "string" then desc = d end
+	end
+	if type(desc) ~= "string" or desc == "" then return "cast" end
+	local d = desc:lower()
+	if d:find("channel") then return "channel" end
+	if d:find("every") or d:find("over %d+ sec") or d:find("periodic") then
+		return "dot"
+	end
+	return "cast"
+end
+
 function ClassDB.TeachSpell(spellId, name, role, budget)
 	if type(spellId) ~= "number" or spellId <= 0 then return false end
+	if role == "auto" then role = ClassDB.InferRole(spellId) end
 	if role ~= "dot" and role ~= "channel" and role ~= "cast" then return false end
 	local char = ZSBT.db and ZSBT.db.char
 	if type(char) ~= "table" then return false end

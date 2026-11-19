@@ -335,8 +335,9 @@ local function buildClassPage(pf)
 	dropLabel:SetWidth(300)
 	dropLabel:SetJustifyH("LEFT")
 
-	local roleState = { role = "dot" }
+	local roleState = { role = "auto" }
 	local roleDefs = {
+		{ key = "auto",    label = L["Auto (guess)"] },
 		{ key = "dot",     label = L["Damage over Time"] },
 		{ key = "channel", label = L["Channeled"] },
 		{ key = "cast",    label = L["Multi-hit cast"] },
@@ -360,7 +361,7 @@ local function buildClassPage(pf)
 
 	local budgetBox = CreateFrame("EditBox", nil, pf, "InputBoxTemplate")
 	budgetBox:SetSize(44, 20)
-	budgetBox:SetPoint("LEFT", roleCbs[3], "RIGHT", 130, 0)
+	budgetBox:SetPoint("LEFT", roleCbs[4], "RIGHT", 130, 0)
 	budgetBox:SetAutoFocus(false)
 	budgetBox:SetNumeric(true)
 	budgetBox:SetMaxLetters(3)
@@ -370,7 +371,7 @@ local function buildClassPage(pf)
 	budgetLabel:SetPoint("LEFT", budgetBox, "RIGHT", 6, 0)
 
 	local confirmFs = shellFont(pf, 11, COL.text, "")
-	confirmFs:SetPoint("TOPLEFT", roleCbs[3], "BOTTOMLEFT", 4, -10)
+	confirmFs:SetPoint("TOPLEFT", roleCbs[4], "BOTTOMLEFT", 4, -10)
 
 	local taughtTitle = shellFont(pf, 12, COL.accent,
 		L["|cFFFFD100Taught spells|r"])
@@ -399,10 +400,14 @@ local function buildClassPage(pf)
 		if not sid then return end
 		if ClearCursor then ClearCursor() end
 		local budget = tonumber(budgetBox:GetText())
+		local role = roleState.role
+		if role == "auto" and ZSBT.ClassDB and ZSBT.ClassDB.InferRole then
+			role = ZSBT.ClassDB.InferRole(sid)
+		end
 		if ZSBT.ClassDB and ZSBT.ClassDB.TeachSpell
-			and ZSBT.ClassDB.TeachSpell(sid, nm, roleState.role, budget) then
+			and ZSBT.ClassDB.TeachSpell(sid, nm, role, budget) then
 			confirmFs:SetText(("|cFF55FF55+%s|r (%d) → %s")
-				:format(tostring(nm), sid, tostring(roleState.role)))
+				:format(tostring(nm), sid, tostring(role)))
 			local tex = C_Spell and C_Spell.GetSpellTexture
 				and C_Spell.GetSpellTexture(sid)
 			if tex then dropIcon:SetTexture(tex) end
