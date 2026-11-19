@@ -25,19 +25,10 @@ Probe._captureEnds = Probe._captureEnds or 0
 Probe._ticker = Probe._ticker or nil
 
 -- School color lookup (shared with Incoming_Probe)
+-- Shared mask->color lookup (Constants): composite masks resolve to a
+-- dominant school and profile.media.schoolColors is honored.
 local function SchoolColorFromMask(mask)
-    if not ZSBT.IsSafeNumber(mask) then return nil end
-    local band = (bit and bit.band) or (bit32 and bit32.band)
-    if type(band) ~= "function" then return nil end
-    if mask > 0 and band(mask, mask - 1) ~= 0 then return nil end
-    if mask == ZSBT.SCHOOL_PHYSICAL then return nil end
-    if mask == ZSBT.SCHOOL_HOLY    then return {r = 1.00, g = 0.90, b = 0.50} end
-    if mask == ZSBT.SCHOOL_FIRE    then return {r = 1.00, g = 0.35, b = 0.20} end
-    if mask == ZSBT.SCHOOL_NATURE  then return {r = 0.30, g = 1.00, b = 0.30} end
-    if mask == ZSBT.SCHOOL_FROST   then return {r = 0.50, g = 0.85, b = 1.00} end
-    if mask == ZSBT.SCHOOL_SHADOW  then return {r = 0.65, g = 0.45, b = 1.00} end
-    if mask == ZSBT.SCHOOL_ARCANE  then return {r = 0.60, g = 0.60, b = 1.00} end
-    return nil
+    return ZSBT.SchoolColorFromMask(mask)
 end
 
 Probe._maxBuffer = Probe._maxBuffer or 300
