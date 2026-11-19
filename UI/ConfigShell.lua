@@ -309,6 +309,151 @@ local function buildClassPage(pf)
 		detail:SetPoint("TOPLEFT", pf, "TOPLEFT", 20, -200)
 	end
 
+	--------------------------------------------------------------------
+	-- Teach-a-spell: drag a spell from the action bar or spellbook onto
+	-- the drop box to record its real client spellId. The spell stays on
+	-- the bar — ClearCursor ends the drag without a "place" target.
+	-- Role decides pipeline treatment: dot = ticks named, channel =
+	-- tick window on cast, cast = multi-hit naming budget.
+	--------------------------------------------------------------------
+	local teachTitle = shellFont(pf, 14, COL.accent,
+		L["|cFFFFD100Teach a spell|r"])
+	teachTitle:SetPoint("TOPLEFT", detail, "BOTTOMLEFT", 0, -16)
+
+	local drop = CreateFrame("Button", nil, pf, "BackdropTemplate")
+	drop:SetSize(44, 44)
+	drop:SetPoint("TOPLEFT", teachTitle, "BOTTOMLEFT", 2, -6)
+	setBg(drop, COL.track)
+	local dropIcon = drop:CreateTexture(nil, "ARTWORK")
+	dropIcon:SetPoint("TOPLEFT", 3, -3)
+	dropIcon:SetPoint("BOTTOMRIGHT", -3, 3)
+	dropIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+	dropIcon:SetTexture(136235) -- generic empty-slot look
+	local dropLabel = shellFont(pf, 11, COL.dim or COL.text,
+		L["Drag a spell from your bar or spellbook here"])
+	dropLabel:SetPoint("LEFT", drop, "RIGHT", 10, 10)
+	dropLabel:SetWidth(300)
+	dropLabel:SetJustifyH("LEFT")
+
+	local roleState = { role = "dot" }
+	local roleDefs = {
+		{ key = "dot",     label = L["Damage over Time"] },
+		{ key = "channel", label = L["Channeled"] },
+		{ key = "cast",    label = L["Multi-hit cast"] },
+	}
+	local roleCbs = {}
+	for i, rd in ipairs(roleDefs) do
+		local cb = CreateFrame("CheckButton", nil, pf, "InterfaceOptionsCheckButtonTemplate")
+		cb:SetSize(24, 24)
+		cb:SetPoint("TOPLEFT", drop, "BOTTOMLEFT", -4, -10 - (i - 1) * 28)
+		cb.Text:SetText(rd.label)
+		cb.Text:SetTextColor(1, 1, 1)
+		cb:SetScript("OnClick", function(self)
+			roleState.role = rd.key
+			for _, other in ipairs(roleCbs) do
+				other:SetChecked(other == self)
+			end
+		end)
+		cb:SetChecked(rd.key == roleState.role)
+		roleCbs[i] = cb
+	end
+
+	local budgetBox = CreateFrame("EditBox", nil, pf, "InputBoxTemplate")
+	budgetBox:SetSize(44, 20)
+	budgetBox:SetPoint("LEFT", roleCbs[3], "RIGHT", 130, 0)
+	budgetBox:SetAutoFocus(false)
+	budgetBox:SetNumeric(true)
+	budgetBox:SetMaxLetters(3)
+	budgetBox:SetText("5")
+	budgetBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+	local budgetLabel = shellFont(pf, 11, COL.dim or COL.text, L["hits"])
+	budgetLabel:SetPoint("LEFT", budgetBox, "RIGHT", 6, 0)
+
+	local confirmFs = shellFont(pf, 11, COL.text, "")
+	confirmFs:SetPoint("TOPLEFT", roleCbs[3], "BOTTOMLEFT", 4, -10)
+
+	local taughtTitle = shellFont(pf, 12, COL.accent,
+		L["|cFFFFD100Taught spells|r"])
+	taughtTitle:SetPoint("TOPLEFT", confirmFs, "BOTTOMLEFT", -4, -14)
+
+	local taughtRows = {}
+	local refreshTaught
+
+	local function cursorSpell()
+		if type(GetCursorInfo) ~= "function" then return nil end
+		local ctype, a1, a2, a3 = GetCursorInfo()
+		if ctype ~= "spell" then return nil end
+		for _, v in ipairs({ a1, a3, a2 }) do
+			if type(v) == "number" and v > 0 then
+				local nm = ZSBT.CleanSpellName and ZSBT.CleanSpellName(v)
+				if type(nm) == "string" and nm ~= "" then
+					return v, nm
+				end
+			end
+		end
+		return nil
+	end
+
+	local function tryTeach()
+		local sid, nm = cursorSpell()
+		if not sid then return end
+		if ClearCursor then ClearCursor() end
+		local budget = tonumber(budgetBox:GetText())
+		if ZSBT.ClassDB and ZSBT.ClassDB.TeachSpell
+			and ZSBT.ClassDB.TeachSpell(sid, nm, roleState.role, budget) then
+			confirmFs:SetText(("|cFF55FF55+%s|r (%d) → %s")
+				:format(tostring(nm), sid, tostring(roleState.role)))
+			local tex = C_Spell and C_Spell.GetSpellTexture
+				and C_Spell.GetSpellTexture(sid)
+			if tex then dropIcon:SetTexture(tex) end
+			if refreshTaught then refreshTaught() end
+		end
+	end
+	drop:SetScript("OnReceiveDrag", tryTeach)
+	drop:SetScript("OnClick", tryTeach)
+
+	refreshTaught = function()
+		local list = (ZSBT.ClassDB and ZSBT.ClassDB.TaughtList)
+			and ZSBT.ClassDB.TaughtList() or {}
+		local need = math.max(#taughtRows, #list)
+		for i = 1, need do
+			local row = taughtRows[i]
+			local e = list[i]
+			if e then
+				if not row then
+					row = {}
+					row.fs = shellFont(pf, 11, COL.text, "")
+					row.fs:SetPoint("TOPLEFT", taughtTitle, "BOTTOMLEFT", 10, -6 - (i - 1) * 16)
+					row.rm = CreateFrame("Button", nil, pf)
+					row.rm:SetSize(16, 16)
+					row.rm:SetPoint("LEFT", row.fs, "RIGHT", 8, 0)
+					local rmT = shellFont(row.rm, 11, COL.dim or COL.text, "×")
+					rmT:SetAllPoints()
+					row.rm:SetScript("OnClick", function()
+						if row._sid and ZSBT.ClassDB and ZSBT.ClassDB.Unteach then
+							ZSBT.ClassDB.Unteach(row._sid)
+						end
+						refreshTaught()
+					end)
+					taughtRows[i] = row
+				end
+				row._sid = e.sid
+				local label = ("%s (%d) · %s")
+					:format(tostring(e.name), e.sid, tostring(e.role))
+				if e.role == "cast" and e.budget then
+					label = label .. (" ×%d"):format(tonumber(e.budget) or 0)
+				end
+				row.fs:SetText(label)
+				row.fs:Show()
+				row.rm:Show()
+			elseif row then
+				row._sid = nil
+				row.fs:Hide()
+				row.rm:Hide()
+			end
+		end
+	end
+
 	local function refresh()
 		local cdb = ZSBT.ClassDB
 		local mod = cdb and cdb.ActiveModule and cdb.ActiveModule()
@@ -320,6 +465,7 @@ local function buildClassPage(pf)
 			body:SetText(L["No class module is loaded for this character."])
 			for _, t in ipairs(toggles) do t.cb:Hide(); t.hint:Hide() end
 			detail:SetText("")
+			refreshTaught()
 			return
 		end
 		local prof = ZSBT.db and ZSBT.db.profile
@@ -362,7 +508,24 @@ local function buildClassPage(pf)
 			table.sort(g)
 			d[#d + 1] = L["Active guardians:"] .. " " .. (#g > 0 and table.concat(g, ", ") or L["none"])
 		end
+		if mod then
+			local names = {}
+			for _, e in ipairs(mod.dots or {}) do
+				names[#names + 1] = e.names and e.names[1] or "?"
+			end
+			if #names > 0 then
+				d[#d + 1] = L["Dots:"] .. " " .. table.concat(names, ", ")
+			end
+			names = {}
+			for _, e in ipairs(mod.channels or {}) do
+				names[#names + 1] = e.names and e.names[1] or "?"
+			end
+			if #names > 0 then
+				d[#d + 1] = L["Channels:"] .. " " .. table.concat(names, ", ")
+			end
+		end
 		detail:SetText(table.concat(d, "\n"))
+		refreshTaught()
 	end
 	pf:SetScript("OnShow", refresh)
 end

@@ -139,10 +139,75 @@ local function buildChannelIndex(mod)
 	mod._chanIds = ids
 end
 
+---------------------------------------------------------------------------
+-- Player-taught spells (drag-and-drop on the Class page). Stored per
+-- character: db.char.classTaught[spellId] = { name, role, budget? }.
+-- Roles: "dot" = periodic ticks named; "channel" = tick window opens on
+-- cast; "cast" = multi-hit naming budget. Taught entries bypass the
+-- module tables entirely so they work even when a class has no module
+-- or the module predates the spell. Reads are hot-path safe: a miss
+-- allocates nothing.
+---------------------------------------------------------------------------
+local function taughtEntry(spellId)
+	if type(spellId) ~= "number" then return nil end
+	local char = ZSBT.db and ZSBT.db.char
+	local t = char and char.classTaught
+	local e = t and t[spellId]
+	if type(e) == "table" and type(e.role) == "string" then return e end
+	return nil
+end
+
+function ClassDB.TeachSpell(spellId, name, role, budget)
+	if type(spellId) ~= "number" or spellId <= 0 then return false end
+	if role ~= "dot" and role ~= "channel" and role ~= "cast" then return false end
+	local char = ZSBT.db and ZSBT.db.char
+	if type(char) ~= "table" then return false end
+	char.classTaught = char.classTaught or {}
+	char.classTaught[spellId] = {
+		name = (type(name) == "string" and name ~= "") and name or tostring(spellId),
+		role = role,
+		budget = (role == "cast" and tonumber(budget)) or nil,
+	}
+	return true
+end
+
+function ClassDB.Unteach(spellId)
+	local char = ZSBT.db and ZSBT.db.char
+	local t = char and char.classTaught
+	if type(t) == "table" then t[spellId] = nil end
+end
+
+-- Sorted list for the Class page UI (allocates; UI-only, never hot path).
+function ClassDB.TaughtList()
+	local out = {}
+	local char = ZSBT.db and ZSBT.db.char
+	local t = char and char.classTaught
+	if type(t) == "table" then
+		for sid, e in pairs(t) do
+			if type(e) == "table" then
+				out[#out + 1] = { sid = sid, name = e.name, role = e.role, budget = e.budget }
+			end
+		end
+	end
+	table.sort(out, function(a, b) return tostring(a.name) < tostring(b.name) end)
+	return out
+end
+
 -- Resolve a spellId to a dot entry: name-primary (rank/client agnostic),
 -- id-set as fallback when the name cannot be resolved.
 function ClassDB.DotEntry(spellId)
 	if type(spellId) ~= "number" then return nil end
+	local te = taughtEntry(spellId)
+	if te and te.role == "dot" then
+		te._dotEntry = te._dotEntry or {
+			names = { te.name },
+			_canon = te.name,
+			ids = { spellId },
+			school = te.school,
+			_taught = true,
+		}
+		return te._dotEntry
+	end
 	local mod = ClassDB.ActiveModule()
 	if not mod or not mod.dots then return nil end
 	buildDotIndex(mod)
@@ -160,6 +225,16 @@ end
 
 function ClassDB.ChannelMatch(spellId)
 	if type(spellId) ~= "number" then return nil end
+	local te = taughtEntry(spellId)
+	if te and te.role == "channel" then
+		te._chan = te._chan or {
+			names = { te.name },
+			duration = tonumber(te.duration) or 8,
+			tickMin = tonumber(te.tickMin) or 0.4,
+			_taught = true,
+		}
+		return te._chan
+	end
 	local mod = ClassDB.ActiveModule()
 	if not mod or not mod.channels then return nil end
 	buildChannelIndex(mod)
@@ -294,6 +369,12 @@ end
 -- hits one cast of spellId may name. Class knowledge — AoE/burst spells
 -- (Implosion) claim many, single-target nukes default to 1. nil = default.
 function ClassDB.CastBudget(spellId)
+	local te = taughtEntry(spellId)
+	if te and te.role == "cast" then
+		local b = tonumber(te.budget)
+		if b and b >= 1 then return math.floor(b) end
+		return 1
+	end
 	local mod = ClassDB.ActiveModule()
 	if mod and mod.castBudget then
 		return mod.castBudget[spellId]
