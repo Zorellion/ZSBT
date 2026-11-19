@@ -119,6 +119,17 @@ local function dbgDrop(reason, tok, school)
 	end
 end
 
+-- True when the ZBattleText ownership veto can decide emits. Ambiguous
+-- candidates (pet-minion hits, shared-target damage) may then flow to
+-- emit() where OfferOutgoing pairs them with a palette line instead of
+-- dying in the heuristic gates.
+local function zbtVetoActive()
+	local z = ZSBT.ZBattleText
+	if not (z and z.VetoActive) then return false end
+	local ok, res = pcall(z.VetoActive, z)
+	return ok and res == true
+end
+
 
 local function isCritChatMessage(msg)
 	if type(msg) ~= "string" then return false end
@@ -2948,15 +2959,19 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 			-- Physical with a pet is too ambiguous.
 			if isPhysical and hasPet then
-				dbgDrop("PHYS_PET", self._castToken, school)
-				return
+				if zbtVetoActive() then
+					matchedCast = { spellId = nil, eligibleIcon = false }
+				else
+					dbgDrop("PHYS_PET", self._castToken, school)
+					return
+				end
 			end
 			local castWindow = (restrict == true) and 0.55 or 0.85
 			local wantSpellId = nil
 			if restrict == true then
 				wantSpellId = self._lastPlayerSpellId
 			end
-			matchedCast = consumeBestPendingCast(self, t, wantSpellId, castWindow)
+			matchedCast = matchedCast or consumeBestPendingCast(self, t, wantSpellId, castWindow)
 			if not matchedCast then
 				-- Class-module DoT attribution (secret-safe): an unattributed
 				-- non-physical WOUND can be a periodic tick. No amount comparisons
@@ -3098,8 +3113,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- attribution because UNIT_COMBAT(target) has no ownership and will leak
 					-- other players' damage on shared targets.
 					if members and members > 1 then
-						dbgDrop("GROUP_GATE", self._castToken, school)
-						return
+						if zbtVetoActive() then
+							matchedCast = { spellId = nil, eligibleIcon = false }
+						else
+							dbgDrop("GROUP_GATE", self._castToken, school)
+							return
+						end
 					end
 					local lastAt = self._lastPlayerSpellAt
 					local lastId = self._lastPlayerSpellId
@@ -3122,8 +3141,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						return
 					end
 				end
-				local lastAt = self._lastPlayerSpellAt
-				if type(lastAt) == "number" then
+				-- matchedCast may already be set by the PHYS_PET/GROUP_GATE veto
+				-- bypass; the make-it-work tail must not overwrite or re-drop it.
+				if matchedCast == nil then
+					local lastAt = self._lastPlayerSpellAt
+					if type(lastAt) == "number" then
 					local age = t - lastAt
 					if age >= 0 and age <= 1.25 then
 						-- If we have a last spell id, prefer attributing to it over emitting spellId=nil.
@@ -3160,6 +3182,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				else
 					dbgDrop("MIW_NO_CAST", self._castToken, school)
 					return
+				end
 				end
 			end
 		end
