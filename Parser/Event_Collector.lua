@@ -120,6 +120,10 @@ end
 local function dbgDrop(reason, tok, school)
 	if OutDbgLevel() >= 4 or ZSBT._ucDropTrace == true then
 		ECPrint(("UC_DROP reason=%s token=%s school=%s"):format(reason, dbgSafe(tok), dbgSafe(school)))
+		local z = ZSBT.ZBattleText
+		if z and z.FileLog then
+			z:FileLog(("UC_DROP reason=%s token=%s school=%s"):format(tostring(reason), dbgSafe(tok), dbgSafe(school)))
+		end
 	end
 end
 
