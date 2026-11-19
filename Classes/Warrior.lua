@@ -1,8 +1,24 @@
--- Classes/Warrior.lua — Warrior-specific combat attribution
+|-- Classes/Warrior.lua — Warrior-specific combat attribution
 --
--- DoTs: Rend (physical ticks, no spellId on UNIT_COMBAT), Thunder Clap.
--- Rend gets a dedicated tick classifier (onPhysicalWound) ported verbatim
--- from Event_Collector's inline state machine.
+-- Warrior is the pure-physical baseline: no permanent pet, no guardian
+-- summons, nearly every hit school-1. That means:
+--
+--   * Physical periodic ticks CANNOT be school-matched — a school-1 WOUND
+--     is indistinguishable from a melee swing. Rend survives because it
+--     ships a dedicated amount-pattern classifier (onPhysicalWound,
+--     ported verbatim from Event_Collector's inline state machine).
+--     Deep Wounds / Thunderous Roar bleeds have no equivalent and stay
+--     generic — honest floor, same as guardian physical on other
+--     classes.
+--   * No guardian windows at all. Ravager is guardian-sourced physical
+--     ticks -> unnameable by design (same as DK's DRW).
+--   * mod.toggles stays empty: there is no pet melee to name and no
+--     guardian spellbook to resolve, so the Class page shows no
+--     class toggles.
+--
+-- Thunderous Roar is deliberately NOT in mod.dots: cast id == damage
+-- id, and a dots entry would seed it as periodic, which can misroute
+-- its own direct hit (the Blood Boil lesson on DK).
 
 local ADDON_NAME, ZSBT = ...
 if not ZSBT or not ZSBT.ClassDB then return end
@@ -10,11 +26,59 @@ if not ZSBT or not ZSBT.ClassDB then return end
 local mod = {}
 
 mod.dots = {
-	{ names = { "Rend" },           ids = { 772 },  school = 1 },
-	{ names = { "Thunder Clap" },   ids = { 6343 }, school = 1 },
+	{ names = { "Rend" },         ids = { 772 },    school = 1 },
+	{ names = { "Thunder Clap" }, ids = { 6343 },   school = 1 }, -- bleed rider, physical
+	{ names = { "Deep Wounds" },  ids = { 262111 }, school = 1 }, -- mastery proc, never cast directly
 }
 
--- Cast seeding: Rend cast starts tick tracking.
+-- Channeled: Bladestorm ticks every ~1s for the channel duration. Auto
+-- attacks are suppressed while channeling, so the window can't eat a
+-- player swing. Ravager is NOT here: its damage comes from the weapon
+-- NPC (guardian physical), not a player channel.
+mod.channels = {
+	{ names = { "Bladestorm" }, ids = { 227847 }, duration = 6.0, tickMin = 0.6 },
+}
+
+-- Per-cast-instance naming budget: AoE/multi-hit casts may name several
+-- hits; single-target stays at 1. Ids are best-known pre-Midnight —
+-- verify against a real warrior combat log; wrong ids simply never
+-- match (safe under-naming). Manual teaching fills any drift.
+mod.castBudget = {
+	[1680]   = 12, -- Whirlwind (hits all nearby)
+	[845]    = 6,  -- Cleave (frontal cleave)
+	[6343]   = 10, -- Thunder Clap (AoE direct; bleed is unnameable)
+	[46968]  = 10, -- Shockwave (cone AoE)
+	[6572]   = 10, -- Revenge (frontal AoE)
+	[118000] = 10, -- Dragon Roar
+	[397364] = 10, -- Thunderous Roar (direct AoE; bleed is unnameable)
+	[52174]  = 10, -- Heroic Leap (landing AoE)
+	[227847] = 8,  -- Bladestorm (fallback; channel usually catches it)
+	[184367] = 6,  -- Rampage (multi-strike; verify damage ids in log)
+	[315720] = 6,  -- Onslaught (multi-strike Fury; verify)
+	[385059] = 8,  -- Odyn's Fury (multi-component; verify)
+	[376079] = 8,  -- Spear of Bastion (if still in kit; verify)
+}
+
+-- No pet spells to match, no pet physical damage — warrior has no
+-- permanent or controllable pet.
+function mod.petSchoolHit(school, helpers)
+	return false
+end
+
+function mod.petSchoolHitRecent(self, school, lastPlayerSpellId, helpers)
+	return false
+end
+
+function mod.petPhysicalHit(school, helpers)
+	return false
+end
+
+-- The module supports no class toggles: nothing to name for pets or
+-- guardians. ClassDB.SupportsToggle() hides every toggle on the page.
+mod.toggles = {}
+
+-- Cast seeding: Rend cast starts tick tracking; Bladestorm opens the
+-- channel window.
 local function isRendSpell(spellId)
 	local e = ZSBT.ClassDB.DotEntry and ZSBT.ClassDB.DotEntry(spellId)
 	return e ~= nil and e._canon == "Rend"
@@ -27,6 +91,15 @@ function mod.onCast(self, spellId, spellName, t)
 		self._rendNextTickAt = t + 3.0
 		self._rendInitialHitAmt = nil
 		self._rendTickState = nil
+	end
+	local ch = ZSBT.ClassDB.ChannelMatch(spellId)
+	if ch then
+		self._channel = {
+			untilAt = t + (ch.duration or 2.0),
+			lastTickAt = 0,
+			spellId = spellId,
+			tickMin = ch.tickMin or 0.12,
+		}
 	end
 end
 
