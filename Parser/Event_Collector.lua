@@ -390,6 +390,56 @@ local function isDuplicateDotEmit(self, t, spellId)
 	return false
 end
 
+
+-- Per-dot tick cadence gate. Real DoT ticks arrive on a roughly fixed
+-- interval; foreign players' hits on a shared target do not. Only
+-- attribute a hit as a dot tick when it lands in a plausible tick slot:
+-- either the first tick after application, or ~one interval after the
+-- previously attributed tick. Returns false -> caller drops dotSpellId
+-- and lets the normal attribution paths decide instead.
+local DOT_DEFAULT_TICK_INTERVAL = 2.0
+local function dotCadenceOk(self, t, spellId)
+	local iv = DOT_DEFAULT_TICK_INTERVAL
+	local entry = dotEntryForSpellId(spellId)
+	if entry and type(entry.interval) == "number" and entry.interval > 0 then
+		iv = entry.interval
+	end
+	local st = self._dotTickState
+	if type(st) ~= "table" then
+		st = {}
+		self._dotTickState = st
+	end
+	local rec = st[spellId]
+	local lastAt = (type(rec) == "table") and rec.lastAt or nil
+	if type(lastAt) == "number" then
+		local dt = t - lastAt
+		if dt >= (iv * 0.55) and dt <= (iv * 2.1) then
+			rec.lastAt = t
+			return true
+		end
+		-- Stale record (dot expired / long gap): treat as first-tick below.
+		if dt > (iv * 3.5) then
+			rec = nil
+			st[spellId] = nil
+		end
+	end
+	-- First observed tick: must be plausibly after application. _dotAppliedAt
+	-- is stamped on cast only (tick emits refresh _recentPeriodicSpellAt, so
+	-- it cannot be used for this).
+	local appliedAt = self._dotAppliedAt and self._dotAppliedAt[spellId]
+	if type(appliedAt) == "number" then
+		local dt = t - appliedAt
+		if dt >= (iv * 0.4) and dt <= (iv * 3.0) then
+			st[spellId] = { lastAt = t }
+			return true
+		end
+		return false
+	end
+	-- No application record (legacy state): allow once and start cadence.
+	st[spellId] = { lastAt = t }
+	return true
+end
+
 local function arePetsEnabled()
 	local petConf = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.pets
 	return petConf and petConf.enabled == true
@@ -736,6 +786,8 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 		enqueuePendingCast(self, spellId, spellName, self._lastPlayerSpellAt)
 		if isKnownPeriodicSpellId(spellId) then
 			self._recentPeriodicSpellAt[spellId] = self._lastPlayerSpellAt
+			self._dotAppliedAt = self._dotAppliedAt or {}
+			self._dotAppliedAt[spellId] = self._lastPlayerSpellAt
 		end
 
 		-- Prime target health baseline to improve first-hit correlation.
@@ -2263,7 +2315,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							dotSpellId = nil
 						end
 					end
-					if dotSpellId then
+					if dotSpellId and dotCadenceOk(self, t, dotSpellId) then
 						if not isCorroboratedHugeHit(t, amount, dotSpellId) then
 							if dl >= 4 then
 								ECPrint(("BIG_HIT_SUPPRESS src=UNIT_COMBAT_DOT token=%s spellId=%s amt=%s")
@@ -2847,7 +2899,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						end
 					end
 				end
-				if dotSpellId then
+				if dotSpellId and dotCadenceOk(self, t, dotSpellId) then
 					if dl >= 4 and ZSBT.IsSafeNumber(amount) and amount >= BIG_HIT_THRESHOLD then
 						ECPrint(("BIG_HIT DOT token=%s spellId=%s amt=%s")
 							:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(amount)))
@@ -2928,6 +2980,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						end
 					end
 					if dotSpellId and isCorroboratedHugeHit(t, amount, dotSpellId) then
+						-- Cadence gate: reject hits that don't land in a plausible
+						-- tick slot (shared-target bleed-through protection).
+						if not dotCadenceOk(self, t, dotSpellId) then
+							dotSpellId = nil
+						else
 						if isDuplicateDotEmit(self, t, dotSpellId) then
 							return
 						end
@@ -2953,6 +3010,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil,
 						})
 						return
+						end
 					end
 				end
 				if suppressIfUnattributed == true then
