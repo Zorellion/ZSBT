@@ -633,10 +633,20 @@ local function deliverOutgoing(payload)
     end
 end
 
+local function auditQueued(payload)
+    if ZSBT._auditTrace ~= true then return end
+    ZB:Audit(("AUDQ sid=%s school=%s crit=%s"):format(
+        tostring(payload and payload.spellId), tostring(payload and payload.schoolMask),
+        tostring(payload and payload.isCrit == true)))
+end
+
 local function flushPending()
     ZB._flushAt = 0
     local pend = ZB._pending
     ZB._pending = {}
+    if ZSBT._auditTrace == true then
+        ZB:Audit(("AUDFLP n=%d"):format(#pend))
+    end
     for i = 1, #pend do
         local p = pend[i]
         if ZB._vetoDisabled or not ZB._trusted then
@@ -757,7 +767,9 @@ function ZB:OfferOutgoing(payload)
     ZB._pending[#ZB._pending + 1] = { payload = payload, t = tHit }
     if #ZB._pending > 200 then
         table.remove(ZB._pending, 1)
+        ZB:Audit("AUDPENDOVERFLOW")
     end
+    auditQueued(payload)
     local tNow = GetTime and GetTime() or 0
     if ZB._flushAt <= tNow and C_Timer and C_Timer.After then
         ZB._flushAt = tNow + DEFER_SEC
