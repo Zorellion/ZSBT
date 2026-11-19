@@ -2,6 +2,13 @@
 -- Zore's Scrolling Battle Text - Configuration UI
 -- Builds the master AceConfig-3.0 options table with all 8 tabs.
 -- Each tab is constructed in ConfigTabs.lua and assembled here.
+--
+-- NOTE: the classic standalone AceConfigDialog "ZSBT" window is
+-- DISABLED — /zsbt opens UI/ConfigShell.lua only, and Addon:OpenConfig
+-- is a forwarder. The options-table builders and the satellite ACD
+-- apps (ZSBT_SpellRules, ZSBT_BuffRules, ZSBT_Debug, etc.) are still
+-- live shared infrastructure; the retired classic-window-only
+-- presentation paths in this file must not be extended or edited.
 ------------------------------------------------------------------------
 
 local ADDON_NAME, ZSBT = ...

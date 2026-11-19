@@ -1930,29 +1930,20 @@ function Addon:HandleSlashCommand(input)
 	end
 
 	if not cmd or cmd == "" then
-		-- Bare /zsbt opens the ZCT-style shell; the classic AceConfig UI
-		-- stays reachable via "/zsbt classic".
+		-- /zsbt opens the config shell. Period. The classic AceConfig UI
+		-- and the "zctui" alias are DISABLED (see OpenConfig below) —
+		-- do not re-add routes to them.
 		if ZSBT.ConfigShell then
 			ZSBT.ConfigShell:Toggle()
 		else
-			self:OpenConfig()
+			self:Print(L["Config shell not loaded."])
 		end
 		return
 	end
 
     cmd = cmd:lower()
 
-    if cmd == "zctui" then
-        if self.ToggleZCTUI then
-            self:ToggleZCTUI()
-        elseif ZSBT.ConfigShell then
-            ZSBT.ConfigShell:Toggle()
-        end
-        return
-    elseif cmd == "classic" or cmd == "oldui" or cmd == "legacy" then
-        self:OpenConfig()
-        return
-    elseif cmd == "minimap" then
+    if cmd == "minimap" then
 		local mm = ZSBT.Core and ZSBT.Core.Minimap
 		if not (mm and (mm.SetHidden or mm.UpdateVisibility)) then
 			self:Print(L["Minimap button module not available."])
@@ -2078,28 +2069,20 @@ end
 ------------------------------------------------------------------------
 -- Open Configuration Window
 ------------------------------------------------------------------------
+-- DISABLED: the classic AceConfig "ZSBT" window is retired. /zsbt opens
+-- the ConfigShell (UI/ConfigShell.lua) and nothing else. This shim
+-- forwards any stale callers to the shell. DO NOT EDIT the classic UI
+-- path below — it is kept only so legacy call sites cannot error; the
+-- old options-tree rebuild/AceConfigDialog:Open("ZSBT") code has been
+-- removed on purpose.
 function Addon:OpenConfig()
-	-- The options tree is built once in OnInitialize, before unit power
-	-- data is readable — resource buttons (and anything else gated on live
-	-- UnitPower/UnitClass state) would be missing for the whole session.
-	-- Rebuild on open so dynamic args reflect the current character.
-	if ZSBT.BuildOptionsTable then
-		local ok, options = pcall(ZSBT.BuildOptionsTable)
-		if ok and type(options) == "table" then
-			self:InjectDBProfilesOptions(options)
-			local ACR = LibStub("AceConfigRegistry-3.0", true)
-			if ACR then
-				pcall(ACR.RegisterOptionsTable, ACR, "ZSBT", options, true)
-			end
-		end
-	end
-	if self.configDialog then
-		self.configDialog:Open("ZSBT")
+	if ZSBT.ConfigShell then
+		ZSBT.ConfigShell:Open()
 	end
 end
 
--- ZCT-style config shell (left-nav pages). Separate command until the
--- user approves cutover; "/zsbt" keeps opening the classic UI.
+-- DISABLED: legacy alias from the side-by-side period. Kept as a
+-- forwarder so old references don't break; do not extend or edit.
 function Addon:OpenZCTUI()
 	if ZSBT.ConfigShell then
 		ZSBT.ConfigShell:Open()
