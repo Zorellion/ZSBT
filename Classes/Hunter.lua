@@ -53,12 +53,12 @@ mod.castBudget = {
 -- Animal Companion second pet), so the windows currently only support
 -- future school'd spellbook entries — melee stays generic regardless.
 local GUARDIAN_SUMMONS = {
+	[204432] = { { group = "direbeast", duration = 8 },
+		{ group = "darkhound", duration = 8 } },            -- Dire Beast (verified log cast id)
 	[120679] = { { group = "direbeast", duration = 8 },
-		{ group = "darkhound", duration = 8 } },            -- Dire Beast (10% Dark Hound)
+		{ group = "darkhound", duration = 8 } },            -- Dire Beast (pre-Midnight id)
 	[131894] = { { group = "crows",     duration = 15 } },  -- A Murder of Crows
 	[201430] = { { group = "stampede",  duration = 12 } },  -- Stampede
-	[219198] = { { group = "direbeast", duration = 8 },
-		{ group = "darkhound", duration = 8 } },            -- Dire Beast: Frenzy variant
 	[288613] = { { group = "darkminion", duration = 20 } }, -- Trueshot (Wailing Dead)
 }
 
