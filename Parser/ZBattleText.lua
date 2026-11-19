@@ -628,6 +628,7 @@ local function deliverOutgoing(payload)
         if payload and payload._petRoute == true then
             ev = "PET_DAMAGE_COMBAT"
         end
+        ZB:AuditDamageEvent(ev, payload)
         ec._sink(ev, payload)
     end
 end
@@ -698,6 +699,43 @@ function ZB:Audit(msg)
     if #log > 8000 then
         table.remove(log, 1)
     end
+end
+
+-- Formats one attributed combat event for the audit ring. Called from
+-- Event_Collector.emit (untrusted/non-veto path) AND deliverOutgoing
+-- (deferred-veto path, which bypasses emit entirely).
+function ZB:AuditDamageEvent(eventType, payload)
+    if ZSBT._auditTrace ~= true then return end
+    local p = payload or {}
+    local sid = p.spellId
+    local src = "generic"
+    if eventType == "PET_DAMAGE_COMBAT" or eventType == "PET_HEAL_LOG"
+        or eventType == "PET_INCOMING_DAMAGE_COMBAT" or p._petRoute == true then
+        src = "pet"
+        if sid == nil then sid = p.petSpellId end
+    elseif p.isAuto == true then
+        src = "auto"
+    elseif sid ~= nil then
+        src = "spell"
+    end
+    local name = nil
+    if sid ~= nil and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid) and ZSBT.CleanSpellName then
+        local okN, n = pcall(ZSBT.CleanSpellName, sid)
+        if okN and type(n) == "string" and n ~= "" then name = n end
+    end
+    local amt = p.amount
+    local amtStr
+    if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(amt) then
+        amtStr = tostring(amt)
+    elseif type(p.amountText) == "string" and p.amountText ~= "" then
+        amtStr = p.amountText
+    else
+        amtStr = "secret"
+    end
+    ZB:Audit(("AUD ht=%.3f %s sid=%s name=%s school=%s crit=%s amt=%s src=%s tgt=%s"):format(
+        tonumber(p.timestamp) or 0, eventType, tostring(sid), tostring(name),
+        tostring(p.schoolMask), tostring(p.isCrit == true), amtStr, src,
+        tostring(p.targetName)))
 end
 
 -- Returns true when the caller should emit immediately; false when the
