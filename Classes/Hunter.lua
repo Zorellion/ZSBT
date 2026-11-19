@@ -53,24 +53,31 @@ mod.castBudget = {
 -- Animal Companion second pet), so the windows currently only support
 -- future school'd spellbook entries — melee stays generic regardless.
 local GUARDIAN_SUMMONS = {
-	[120679] = { { group = "direbeast", duration = 8 } },   -- Dire Beast
+	[120679] = { { group = "direbeast", duration = 8 },
+		{ group = "darkhound", duration = 8 } },            -- Dire Beast (10% Dark Hound)
 	[131894] = { { group = "crows",     duration = 15 } },  -- A Murder of Crows
 	[201430] = { { group = "stampede",  duration = 12 } },  -- Stampede
-	[219198] = { { group = "direbeast", duration = 8 } },   -- Dire Beast: Frenzy variant
+	[219198] = { { group = "direbeast", duration = 8 },
+		{ group = "darkhound", duration = 8 } },            -- Dire Beast: Frenzy variant
+	[288613] = { { group = "darkminion", duration = 20 } }, -- Trueshot (Wailing Dead)
 }
 
--- Class-module UI toggles this module supports. Guardian naming is
--- excluded: the spellbook is empty (hunter guardian damage is physical
--- melee, unnameable), so the toggle would be decorative.
+-- Class-module UI toggles this module supports.
 mod.toggles = {
 	namePetMelee = true,
+	resolveGuardians = true,
 }
 
--- Non-physical guardian spellbook. Empty until combat-log-verified ids
--- are gathered on a live hunter (Sentinel owls, Dark Ranger hounds,
--- Pack Leader wyvern damage ids need capture, not guessing). When real
--- entries land, also add resolveGuardians to mod.toggles above.
+-- Non-physical guardian spellbook. The only school'd guardian damage in
+-- the kit is Dark Ranger: Shadow Thrash's id doubles as the MM Dark
+-- Minion's "Blighted Arrow" (same spell page lists both). Dire Beast,
+-- Murder of Crows, Stampede, and Pack Leader beasts are all physical —
+-- unnameable by design. Hound/minion basic attacks aren't broadcast in
+-- the combat log at all (documented Blizzard bug), so nothing else can
+-- be captured either.
 local GUARDIAN_SPELLS = {
+	darkhound  = { { sid = 1264485, school = 32 } }, -- Shadow Thrash (BM)
+	darkminion = { { sid = 1264485, school = 32 } }, -- "Blighted Arrow" (MM, same id)
 }
 
 -- Hunter pet damage overlaps every player school — a signature would
@@ -174,6 +181,12 @@ function mod.onCast(self, spellId, spellName, t)
 		for _, g in ipairs(summon) do
 			self._guardianUntil[g.group] = t + g.duration
 		end
+	end
+	-- Black Arrow (Dark Ranger, cast id varies) can proc a Dark Minion
+	-- via Corpsecaller — open its window on every cast.
+	if spellName == "Black Arrow" then
+		self._guardianUntil = self._guardianUntil or {}
+		self._guardianUntil["darkminion"] = t + 20
 	end
 end
 
