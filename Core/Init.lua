@@ -2151,7 +2151,21 @@ function Addon:HandleCTProbeCommand(argStr)
 	local col = ZSBT.Parser and ZSBT.Parser.EventCollector
 	local probe = col and col._ctAddProbe
 	local discovered = col and col._ctAddDiscovered
-	if input == "clear" then
+	if input == "counts" or input == "count" then
+		local counts = col and col._ctAddCounts
+		if type(counts) ~= "table" then
+			self:Print(L["CT probe: not installed."])
+			return
+		end
+		local rows = {}
+		for fn, c in pairs(counts) do rows[#rows + 1] = { fn = fn, c = c } end
+		table.sort(rows, function(a, b) return a.c > b.c end)
+		self:Print(L["CT probe call counts:"])
+		for i = 1, math.min(20, #rows) do
+			self:Print(("  %6d  %s"):format(rows[i].c, tostring(rows[i].fn)))
+		end
+		return
+	end	if input == "clear" then
 		if type(probe) == "table" then
 			wipe(probe)
 			self:Print(L["CT probe buffer cleared."])

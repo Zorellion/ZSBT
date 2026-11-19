@@ -3564,7 +3564,18 @@ function Collector:Enable()
 			"CombatText_AddMessage2",
 			"CombatText_AddMessage2_v2",
 		}
+		local fnCounts = Collector._ctAddCounts
+		if type(fnCounts) ~= "table" then fnCounts = {}; Collector._ctAddCounts = fnCounts end
+		local fnLastAt = Collector._ctAddLastAt
+		if type(fnLastAt) ~= "table" then fnLastAt = {}; Collector._ctAddLastAt = fnLastAt end
 		local function record(fnName, ...)
+			fnCounts[fnName] = (fnCounts[fnName] or 0) + 1
+			local tNow = now()
+			-- Per-function throttle: hot utilities (e.g. EnumerateActiveFontStrings
+			-- fires per frame) must not evict real message-path entries. Count
+			-- every call, but only buffer/print at most one entry per fn per 0.2s.
+			if (tNow - (fnLastAt[fnName] or -10)) < 0.20 then return end
+			fnLastAt[fnName] = tNow
 			local n = select("#", ...)
 			if n > 16 then n = 16 end
 			local parts = {}
@@ -3572,7 +3583,6 @@ function Collector:Enable()
 				parts[i] = i .. "=" .. argDesc((select(i, ...)))
 			end
 			local sig = table.concat(parts, " | ")
-			local tNow = now()
 			probe[#probe + 1] = { at = tNow, fn = fnName, n = select("#", ...), sig = sig }
 			if #probe > PROBE_CAP then
 				table.remove(probe, 1)
