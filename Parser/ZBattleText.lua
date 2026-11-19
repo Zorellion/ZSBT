@@ -633,10 +633,21 @@ local function deliverOutgoing(payload)
     end
 end
 
+-- Secret-safe tostring for audit fields. Midnight KStrings (names, ids)
+-- hard-error on tostring() — a bare tostring here previously killed
+-- emit()/deliverOutgoing outright when targetName was secret.
+local function audSafe(v)
+    if v == nil then return "nil" end
+    if ZSBT.IsSecret and ZSBT.IsSecret(v) then return "<sec>" end
+    local ok, s = pcall(tostring, v)
+    if ok and type(s) == "string" then return s end
+    return "<err>"
+end
+
 local function auditQueued(payload)
     if ZSBT._auditTrace ~= true then return end
     ZB:Audit(("AUDQ sid=%s school=%s crit=%s"):format(
-        tostring(payload and payload.spellId), tostring(payload and payload.schoolMask),
+        audSafe(payload and payload.spellId), audSafe(payload and payload.schoolMask),
         tostring(payload and payload.isCrit == true)))
 end
 
@@ -663,7 +674,7 @@ local function flushPending()
                 ZB:FileLog(("DROP sid=%s"):format(tostring(p.payload and p.payload.spellId)))
                 local dp = p.payload or {}
                 ZB:Audit(("AUDROP ht=%.3f sid=%s school=%s crit=%s src=%s"):format(
-                    tonumber(p.t) or 0, tostring(dp.spellId), tostring(dp.schoolMask),
+                    tonumber(p.t) or 0, audSafe(dp.spellId), audSafe(dp.schoolMask),
                     tostring(dp.isCrit == true),
                     tostring(dp._petRoute == true and "pet" or (dp.isAuto == true and "auto" or (dp.spellId ~= nil and "spell" or "generic")))))
                 sustainedRejection()
@@ -743,9 +754,9 @@ function ZB:AuditDamageEvent(eventType, payload)
         amtStr = "secret"
     end
     ZB:Audit(("AUD ht=%.3f %s sid=%s name=%s school=%s crit=%s amt=%s src=%s tgt=%s"):format(
-        tonumber(p.timestamp) or 0, eventType, tostring(sid), tostring(name),
-        tostring(p.schoolMask), tostring(p.isCrit == true), amtStr, src,
-        tostring(p.targetName)))
+        tonumber(p.timestamp) or 0, eventType, audSafe(sid), audSafe(name),
+        audSafe(p.schoolMask), tostring(p.isCrit == true), amtStr, src,
+        audSafe(p.targetName)))
 end
 
 -- Returns true when the caller should emit immediately; false when the
