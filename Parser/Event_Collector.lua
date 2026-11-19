@@ -3325,12 +3325,22 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						if age >= 0 and age <= maxAge then
 							matchedCast = { spellId = lastId, eligibleIcon = true }
 						else
-							dbgDrop("RESTRICT_AGE", self._castToken, school)
-							return
+							if zbtVetoActive() then
+								dbgDrop("BYPASS_RESTRICT_AGE", self._castToken, school)
+								matchedCast = { spellId = nil, eligibleIcon = false }
+							else
+								dbgDrop("RESTRICT_AGE", self._castToken, school)
+								return
+							end
 						end
 					else
-						dbgDrop("RESTRICT_NOCAST", self._castToken, school)
-						return
+						if zbtVetoActive() then
+							dbgDrop("BYPASS_RESTRICT_NOCAST", self._castToken, school)
+							matchedCast = { spellId = nil, eligibleIcon = false }
+						else
+							dbgDrop("RESTRICT_NOCAST", self._castToken, school)
+							return
+						end
 					end
 				end
 				-- matchedCast may already be set by the PHYS_PET/GROUP_GATE veto
@@ -3355,25 +3365,39 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								-- Quiet/strict: suppress unattributed numbers when we cannot even loosely
 								-- correlate to a recent player cast.
 								if quietMode == true or restrict == true then
-									dbgDrop("MIW_QUIET", self._castToken, school)
-									return
+									if not zbtVetoActive() then
+										dbgDrop("MIW_QUIET", self._castToken, school)
+										return
+									end
 								end
 								matchedCast = { spellId = nil, eligibleIcon = false }
 							end
 						else
 							if quietMode == true or restrict == true then
-								dbgDrop("MIW_QUIET", self._castToken, school)
-								return
+								if not zbtVetoActive() then
+									dbgDrop("MIW_QUIET", self._castToken, school)
+									return
+								end
 							end
 							matchedCast = { spellId = nil, eligibleIcon = false }
 						end
 					else
-						dbgDrop("MIW_AGE", self._castToken, school)
-						return
+						if zbtVetoActive() then
+							dbgDrop("BYPASS_MIW_AGE", self._castToken, school)
+							matchedCast = { spellId = nil, eligibleIcon = false }
+						else
+							dbgDrop("MIW_AGE", self._castToken, school)
+							return
+						end
 					end
 				else
-					dbgDrop("MIW_NO_CAST", self._castToken, school)
-					return
+					if zbtVetoActive() then
+						dbgDrop("BYPASS_MIW_NO_CAST", self._castToken, school)
+						matchedCast = { spellId = nil, eligibleIcon = false }
+					else
+						dbgDrop("MIW_NO_CAST", self._castToken, school)
+						return
+					end
 				end
 				end
 			end
