@@ -872,6 +872,20 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 		end
 	end
 
+	-- Trace casts from units we do not record (enemies, unknown tokens)
+	-- so temporary-pet cast tokens can be identified. Throttled per unit.
+	if unit ~= "player" and unit ~= "target" and unit ~= "pet" then
+		local zc = ZSBT.ZBattleText
+		if zc and zc.FileLog and ZSBT._ucDropTrace == true then
+			local ck = "uccast_" .. tostring(unit)
+			local ct = now()
+			if ct - (self[ck] or -9) >= 0.5 then
+				self[ck] = ct
+				zc:FileLog(("UC_CAST unit=%s sid=%s"):format(tostring(unit), tostring(spellId)))
+			end
+		end
+	end
+
 	if unit == "player" then
 		self._castToken = (self._castToken or 0) + 1
 		self._lastPlayerSpellId = spellId
