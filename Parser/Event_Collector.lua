@@ -2118,6 +2118,23 @@ function Collector:_dbgDropUnit(unit)
 end
 
 function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
+	-- ucdrop raw trace: log every UNIT_COMBAT event shape so we can see
+	-- what Retail actually delivers for target/minion damage (secret
+	-- actions, nil amounts, non-WOUND verbs). Throttled per unit.
+	do
+		local z = ZSBT.ZBattleText
+		if z and z.FileLog and ZSBT._ucDropTrace == true and unit ~= "player" then
+			local key = "ucraw_" .. tostring(unit)
+			local tt = now()
+			if tt - (Collector[key] or -9) >= 0.4 then
+				Collector[key] = tt
+				local aType = type(action)
+				local aPrev = (aType == "string" and ZSBT.IsSafeString and ZSBT.IsSafeString(action)) and action or aType
+				z:FileLog(("UC_RAW unit=%s action=%s amtNil=%s school=%s"):format(
+					tostring(unit), tostring(aPrev), tostring(amount == nil), tostring(school)))
+			end
+		end
+	end
 	-- Midnight (12.0+): UNIT_COMBAT does not fire for the "target" unit token on some
 	-- clients (confirmed via debug: only UNIT_COMBAT_PLAYER lines appear). It DOES fire
 	-- for nameplate tokens (nameplate1..nameplateN) when a nameplated unit takes damage.
