@@ -333,6 +333,29 @@ local function showLostPopup(why)
     StaticPopup_Show("ZSBT_ZBT_FILTER_LOST")
 end
 
+local function showMissingPopup()
+    if ZB._missingPopupShown == true then return end
+    if type(StaticPopupDialogs) ~= "table" or type(StaticPopup_Show) ~= "function" then return end
+    ZB._missingPopupShown = true
+    StaticPopupDialogs["ZSBT_ZBT_FILTER_MISSING"] = {
+        text = ("|cffdd5555ZSBT|r needs one UI reload to finish setup.\n\n"
+            .. "The '%s' combat log filter has not been created yet. It is written when the "
+            .. "UI reloads or you log out, and enables shared-target damage attribution.\n\n"
+            .. "Reload now?")
+            :format(FILTER_NAME),
+        button1 = "Reload UI",
+        button2 = "Later",
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        OnAccept = function()
+            if ReloadUI then ReloadUI() end
+        end,
+        OnCancel = function() end,
+    }
+    StaticPopup_Show("ZSBT_ZBT_FILTER_MISSING")
+end
+
 function ZB:Verify()
     ZB._verified = true
     local ok, why = ZB:IsReady()
@@ -365,6 +388,7 @@ function ZB:Verify()
             say(("|cffdd5555[ZSBT]|r The '%s' combat log filter is installed when you log "
                 .. "out. Log out and back in to enable outgoing text.")
                 :format(FILTER_NAME))
+            showMissingPopup()
         end
     end
     return ZB._trusted
