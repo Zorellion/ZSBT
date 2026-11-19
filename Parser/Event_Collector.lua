@@ -3594,6 +3594,32 @@ function Collector:Enable()
 		if self._combatTextAddHooked then
 			ECPrint("CTADD_PROBE installed on CombatText_AddMessage* (use /zsbt ctprobe to dump)")
 		end
+		-- Widen the net: nameplate text on 12.x may not flow through the four
+		-- AddMessage globals at all. Enumerate every global matching
+		-- CombatText/FloatingCombatText, hook any callable not already
+		-- covered, and log the full discovered list once.
+		local hookedSet = {}
+		for _, fnName in ipairs(hookNames) do hookedSet[fnName] = true end
+		local discovered = {}
+		local hookCount = 0
+		for k, v in pairs(_G) do
+			if type(k) == "string"
+				and (k:find("CombatText") or k:find("FloatingCombatText")) then
+				if type(v) == "function" then
+					discovered[#discovered + 1] = k
+					if not hookedSet[k] and hookCount < 60 then
+						hookCount = hookCount + 1
+						hooksecurefunc(k, (function(name)
+							return function(...) record(name, ...) end
+						end)(k))
+					end
+				else
+					discovered[#discovered + 1] = k .. ":" .. type(v)
+				end
+			end
+		end
+		table.sort(discovered)
+		ECPrint("CTADD_SCAN hooks=" .. tostring(hookCount) .. " :: " .. table.concat(discovered, ", "))
 	end
 
 	-- Create a lightweight OnUpdate watcher once for fall state transitions.
