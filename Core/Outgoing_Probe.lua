@@ -823,6 +823,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 						or evt.amountSource == "UNIT_COMBAT_PHYSICAL"
 				)) or (evt and evt.isPeriodic == true)
 		if prof.showSpellIcons and evt.isAuto ~= true and type(resolvedSpellID) == "number" and trustedForSpellIcon then
+			meta.iconSide = prof.iconSide
 			local tex = ZSBT.CleanSpellIcon(resolvedSpellID)
 			if tex then meta.spellIcon = tex end
 		end
@@ -1041,6 +1042,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 
         -- Attach spell icon if enabled
         if prof.showSpellIcons and evt.spellId then
+            meta.iconSide = prof.iconSide
             local tex = ZSBT.CleanSpellIcon(evt.spellId)
             if tex then meta.spellIcon = tex end
         end
