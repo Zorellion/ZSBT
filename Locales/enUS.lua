@@ -1224,3 +1224,4 @@ L["your pets and guardians"] = true
 L["How many hits one cast of this spell may name."] = true
 L["Spellbook"] = true
 L["Spellbook enumeration unavailable"] = true
+L["Open Class Module"] = true

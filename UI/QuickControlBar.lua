@@ -245,6 +245,19 @@ local function buildClassMenu()
 			}
 		end
 	end
+	-- Always offer a way into the class page: modules with no toggles
+	-- (warrior) still have knowledge + spell teaching there.
+	items[#items + 1] = {
+		text = L["Open Class Module"],
+		isNotRadio = true,
+		func = function()
+			local shell = ZSBT.ConfigShell
+			if shell and shell.Open then
+				shell:Open()
+				if shell.ShowPage then shell:ShowPage("class") end
+			end
+		end,
+	}
 	return items
 end
 
@@ -412,12 +425,12 @@ function QuickBar:Init()
 	end)
 	btnPvP:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
-	-- Class-module button: labeled with the player's class, visible only
-	-- when a class module is loaded AND declares at least one toggle —
-	-- a module with no UI surface gets no empty menu.
+	-- Class-module button: labeled with the player's class, visible when
+	-- a class module is loaded. The menu holds the module's toggles plus
+	-- an "Open Class Module" shortcut, so even a module with no toggles
+	-- (warrior) gets a button — its knowledge/teaching page still exists.
 	local cdb = ZSBT.ClassDB
 	local classModActive = cdb and cdb.ActiveModule and cdb.ActiveModule() ~= nil
-		and #buildClassMenu() > 0
 	local btnAnchor = btnPvP
 	if classModActive then
 		local _, className = UnitClass("player")
