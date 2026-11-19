@@ -1217,3 +1217,4 @@ L["Multi-hit cast"] = true
 L["hits"] = true
 L["Dots:"] = true
 L["Channels:"] = true
+L["Inferred (spells with no static school data):"] = true
