@@ -2179,7 +2179,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- identified, so they emit spellId=nil (pet-routed when a recent
 				-- friendly cast exists).
 				local emitted = false
-				if zbtVetoActive() and amount ~= nil then
+				-- Only offer off-target hits while the target token itself
+				-- has stopped reporting WOUNDs (~1.5s). When target events flow
+				-- normally, hostile nameplate traffic is almost always foreign
+				-- or redundant cleave and stays out of the pipe entirely.
+				local tgtStarved = (now() - (self._lastTargetWoundAt or 0)) > 1.5
+				if zbtVetoActive() and tgtStarved and amount ~= nil then
 					local aStr = (ZSBT.IsSafeString and ZSBT.IsSafeString(action)) and action or nil
 					if aStr == "WOUND" then
 						local hostile = false
@@ -2223,6 +2228,16 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		else
 			self:_dbgDropUnit(unit)
 			return
+		end
+	end
+
+	-- Stamp when UNIT_COMBAT reports a WOUND on the resolved target token.
+	-- The OFFT (off-target) fallback only emits while this goes stale, so
+	-- normal target reporting keeps foreign nameplate hits out of the pipe.
+	if unit == "target" then
+		local aW = (ZSBT.IsSafeString and ZSBT.IsSafeString(action)) and action or nil
+		if aW == "WOUND" then
+			self._lastTargetWoundAt = now()
 		end
 	end
 	if amount == nil then return end
