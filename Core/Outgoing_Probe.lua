@@ -82,7 +82,7 @@ Probe._recentSpellMax = Probe._recentSpellMax or 60
 Probe._spellAgg = Probe._spellAgg or {}
 
 local function isWhirlwindSpellId(spellId)
-	return spellId == 1680 or spellId == 190411
+	return spellId == 1680 or spellId == 190411 or spellId == 199658
 end
 
 local function deepCopyTableShallow(t)
@@ -664,10 +664,10 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			local sr = scChar and scChar.spellRules
 			local sid = evt and evt.spellId
 			local rule = nil
-			if sr and (sid == 1680 or sid == 190411) then
-				rule = sr[sid] or sr[(sid == 1680) and 190411 or 1680]
+			if sr and isWhirlwindSpellId(sid) then
+				rule = sr[sid] or sr[1680] or sr[190411] or sr[199658]
 			else
-				rule = (sr and (sr[190411] or sr[1680])) or nil
+				rule = (sr and (sr[190411] or sr[1680] or sr[199658])) or nil
 			end
 			local agg = rule and rule.aggregate
 			if type(agg) == "table" and type(agg.showCount) == "boolean" then
