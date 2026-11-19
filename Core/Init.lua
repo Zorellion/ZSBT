@@ -2003,6 +2003,10 @@ function Addon:HandleSlashCommand(input)
         return
     elseif cmd == "ucdrop" then
         ZSBT._ucDropTrace = not (ZSBT._ucDropTrace == true)
+        if ZSBT._ucDropTrace == true then
+            local diag = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
+            if type(diag) == "table" then diag.ucdropLog = {} end
+        end
         self:Print("UC_DROP trace " .. (ZSBT._ucDropTrace and "ON" or "OFF"))
         return
     elseif cmd == "dumpcvars" then
