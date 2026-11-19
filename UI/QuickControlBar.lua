@@ -216,30 +216,6 @@ local function buildClassMenu()
 	local cm = prof.classModule or {}
 	return {
 		{
-			text = L["Hide Unattributed Hits"],
-			isNotRadio = true,
-			checked = function() return cm.hideUnattributed == true end,
-			func = function()
-				prof.classModule = prof.classModule or {}
-				prof.classModule.hideUnattributed = not (prof.classModule.hideUnattributed == true)
-				notifyConfig()
-				refreshActiveDropDown()
-			end,
-			keepShownOnClick = true,
-		},
-		{
-			text = L["Show Auto-Attack Swings"],
-			isNotRadio = true,
-			checked = function() return cm.allowAutoAttack == true end,
-			func = function()
-				prof.classModule = prof.classModule or {}
-				prof.classModule.allowAutoAttack = not (prof.classModule.allowAutoAttack == true)
-				notifyConfig()
-				refreshActiveDropDown()
-			end,
-			keepShownOnClick = true,
-		},
-		{
 			text = L["Name Guardian Spells"],
 			isNotRadio = true,
 			checked = function() return cm.resolveGuardians ~= false end,
