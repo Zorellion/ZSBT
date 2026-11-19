@@ -287,6 +287,10 @@ local function flushBestOutgoing(self, token)
 			:format(dbgSafe(token), dbgSafe(bucket.spellId), dbgSafe(bucket.amount), dbgSafe(bucket.schoolMask), dbgSafe(bucket.isCrit), dbgSafe(bucket._seenCount), dbgSafe(bucket._seenMax), dbgSafe(bucket._seenSecond)))
 	end
 
+	local zbt = ZSBT.ZBattleText
+	if zbt and zbt.FileLog then
+		zbt:FileLog(("FLUSH sid=%s school=%s cnt=%s crit=%s"):format(tostring(bucket.spellId), tostring(bucket.schoolMask), tostring(bucket._seenCount), tostring(bucket.isCrit)))
+	end
 	emit("OUTGOING_DAMAGE_COMBAT", {
 		timestamp = bucket.timestamp,
 		rawPipeId = pipeId,
@@ -2439,6 +2443,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						if dl >= 4 then
 							ECPrint(("PET_FALLBACK_EMIT token=%s rawPipeId=%s amt=%s school=%s")
 								:format(dbgSafe(self._castToken), dbgSafe(pipeId), dbgSafe(amount), dbgSafe(school)))
+						end
+						local zbt2 = ZSBT.ZBattleText
+						if zbt2 and zbt2.FileLog then
+							zbt2:FileLog(("PET_EMIT school=%s"):format(tostring(school)))
 						end
 						emit("PET_DAMAGE_COMBAT", {
 							timestamp = t,

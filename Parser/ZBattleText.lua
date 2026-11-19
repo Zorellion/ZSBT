@@ -139,6 +139,7 @@ local function recordLine(r, g, b)
         table.remove(lines, 1)
     end
     lines[#lines + 1] = { at = t, kind = kind, consumed = false }
+    ZB:FileLog("LIN kind=" .. tostring(kind))
 end
 
 -- Consume the nearest unconsumed damage-kind line within `window` of tHit.
