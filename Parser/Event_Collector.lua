@@ -377,6 +377,19 @@ local function getMostRecentPeriodicSpellId(self, tNow)
 	return bestId
 end
 
+-- The same periodic tick can arrive twice in one frame (UNIT_COMBAT fires for
+-- both the "target" token and the nameplate token remapped to target). Dedup
+-- DOT emits per spellId within a short window so ticks don't double-display.
+local function isDuplicateDotEmit(self, t, spellId)
+	local lastAt = self._lastDotEmitAt or 0
+	if self._lastDotEmitSpellId == spellId and (t - lastAt) >= 0 and (t - lastAt) < 0.35 then
+		return true
+	end
+	self._lastDotEmitAt = t
+	self._lastDotEmitSpellId = spellId
+	return false
+end
+
 local function arePetsEnabled()
 	local petConf = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.pets
 	return petConf and petConf.enabled == true
@@ -2258,6 +2271,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							end
 							return
 						end
+						if isDuplicateDotEmit(self, t, dotSpellId) then
+							return
+						end
 						self._recentPeriodicSpellAt[dotSpellId] = t
 						local pipeId = self._rawPipeCount + 1
 						self._rawPipeCount = pipeId
@@ -2836,6 +2852,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						ECPrint(("BIG_HIT DOT token=%s spellId=%s amt=%s")
 							:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(amount)))
 					end
+					if isDuplicateDotEmit(self, t, dotSpellId) then
+						return
+					end
 					self._recentPeriodicSpellAt[dotSpellId] = t
 					local pipeId = self._rawPipeCount + 1
 					self._rawPipeCount = pipeId
@@ -2909,6 +2928,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						end
 					end
 					if dotSpellId and isCorroboratedHugeHit(t, amount, dotSpellId) then
+						if isDuplicateDotEmit(self, t, dotSpellId) then
+							return
+						end
 						if OutDbgLevel() >= 4 then
 							ECPrint(("DOT_ATTRIB src=UNIT_COMBAT_MERGE token=%s spellId=%s amt=%s school=%s")
 								:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(amount), dbgSafe(school)))
