@@ -372,6 +372,11 @@ end
 
 function ZB:Tick()
     local nowT = GetTime and GetTime() or 0
+    -- ucdrop heartbeat: proves the tracer was alive during quiet windows,
+    -- so "no events" can be told apart from "log dead".
+    if ZSBT._ucDropTrace == true then
+        ZB:FileLog("HB")
+    end
     if nowT - (ZB._tickAt or 0) < 1 then return end
     ZB._tickAt = nowT
     if not findOurIndex() then return end
