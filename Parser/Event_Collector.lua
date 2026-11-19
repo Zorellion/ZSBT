@@ -1929,6 +1929,10 @@ function Collector:handleCombatTextUpdate(arg1)
 			end
 		end
 
+		local zC = ZSBT.ZBattleText
+		if zC and zC.FileLog then
+			zC:FileLog(("CT_HEAL sid=%s per=%s"):format(tostring(healSpellId), tostring(isPeriodic == true)))
+		end
 		emit("COMBAT_TEXT_HEAL", {
 			timestamp = now(),
 			rawPipeId = pipeId,
@@ -1945,6 +1949,10 @@ function Collector:handleCombatTextUpdate(arg1)
 
 	-- Misses / Avoidance (incoming)
 	if INCOMING_MISS_TYPES[arg1] then
+		local zM = ZSBT.ZBattleText
+		if zM and zM.FileLog then
+			zM:FileLog(("MISS_EMIT type=%s"):format(tostring(arg1)))
+		end
 		emit("COMBAT_TEXT_MISS", {
 			timestamp = now(),
 			missType = arg1,
@@ -2777,6 +2785,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				return
 			end
 
+			local zH = ZSBT.ZBattleText
+			if zH and zH.FileLog then
+				zH:FileLog(("HEAL_TGT sid=%s restrict=%s"):format(tostring(spellId), tostring(restrict == true)))
+			end
 			emit("OUTGOING_HEAL_COMBAT", {
 				timestamp = t,
 				rawPipeId = pipeId,
