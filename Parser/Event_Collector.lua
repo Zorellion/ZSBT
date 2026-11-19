@@ -2383,7 +2383,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								end
 							end
 							if not okDot then
-								return
+								-- ZBattleText veto-aware bypass: when the trusted palette feed is
+								-- live, OfferOutgoing still requires a nearby combat-log line,
+								-- so unattributed hits can flow as candidates instead of dying
+								-- here during the idle window after the opener's cast ages out.
+								if not zbtVetoActive() then
+									return
+								end
 							end
 						end
 					end
