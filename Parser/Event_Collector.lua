@@ -2168,8 +2168,57 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				end
 				unit = "target"
 			else
-				self:_dbgDropUnit(unit)
-				return
+				-- Not the current target. On Retail group content the target's own
+				-- UNIT_COMBAT may never fire under an accepted token while hostile
+				-- nameplates/softenemy keep reporting WOUNDs with amounts. When the
+				-- ZBattleText veto is live, offer these as generic unattributed
+				-- candidates: OfferOutgoing still requires a nearby palette line,
+				-- and our filter only contains player+pet sources, so other
+				-- players' damage on the same mobs cannot pair and drops safely.
+				-- No cast/dot attribution is attempted — off-target hits cannot be
+				-- identified, so they emit spellId=nil (pet-routed when a recent
+				-- friendly cast exists).
+				local emitted = false
+				if zbtVetoActive() and amount ~= nil then
+					local aStr = (ZSBT.IsSafeString and ZSBT.IsSafeString(action)) and action or nil
+					if aStr == "WOUND" then
+						local hostile = false
+						if UnitCanAttack then
+							local okH, h = pcall(UnitCanAttack, "player", unit)
+							if okH then
+								local okC, eq = pcall(function() return h == true end)
+								if okC and eq == true then hostile = true end
+							end
+						end
+						if hostile then
+							local isCritOff = false
+							if type(descriptor) == "string" then
+								isCritOff = descriptor:upper():find("CRIT", 1, true) ~= nil
+							end
+							local pipeId = self._rawPipeCount + 1
+							self._rawPipeCount = pipeId
+							self._rawPipe[pipeId] = amount
+							local zbtOff = ZSBT.ZBattleText
+							if zbtOff and zbtOff.FileLog then
+								zbtOff:FileLog(("OFFT unit=%s school=%s"):format(tostring(unit), tostring(school)))
+							end
+							emit("OUTGOING_DAMAGE_COMBAT", {
+								timestamp = now(),
+								rawPipeId = pipeId,
+								spellId = nil,
+								amountSource = "COMBAT_LOG",
+								targetName = nil,
+								isCrit = isCritOff,
+								schoolMask = (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) and school or nil,
+							})
+							emitted = true
+						end
+					end
+				end
+				if not emitted then
+					self:_dbgDropUnit(unit)
+				end
+			return
 			end
 		else
 			self:_dbgDropUnit(unit)
