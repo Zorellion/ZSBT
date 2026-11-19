@@ -553,27 +553,23 @@ local function flushPending()
     end
 end
 
--- File trace for /zsbt ucdrop sessions: every veto decision lands in
--- Interface/AddOns/ZSBT/zbt_debug.log so it can be read post-session
--- without chat copy/paste (chat blocks copies containing secret values).
-ZB._logFile = nil
+-- Trace sink for /zsbt ucdrop sessions: appends to a SavedVariables
+-- ring buffer (ZSBTDB -> WTF/.../SavedVariables/ZSBTDB.lua) so decisions can be
+-- read post-session without chat copy/paste (chat blocks secret values).
 function ZB:FileLog(msg)
     if ZSBT._ucDropTrace ~= true then return end
-    local f = ZB._logFile
-    if f == nil then
-        local ok, h = pcall(io.open, "Interface/AddOns/ZSBT/zbt_debug.log", "a")
-        if not ok or h == nil then
-            ZB._logFile = false
-            return
-        end
-        ZB._logFile = h
-        f = h
-    elseif f == false then
-        return
+    local prof = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
+    if type(prof) ~= "table" then return end
+    local log = prof.ucdropLog
+    if type(log) ~= "table" then
+        log = {}
+        prof.ucdropLog = log
     end
     local t = GetTime and GetTime() or 0
-    pcall(f.write, f, ("%.3f %s" .. "\n"):format(t, tostring(msg)))
-    pcall(f.flush, f)
+    log[#log + 1] = ("%.3f %s"):format(t, tostring(msg))
+    if #log > 800 then
+        table.remove(log, 1)
+    end
 end
 
 -- Returns true when the caller should emit immediately; false when the
