@@ -3085,7 +3085,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				end
 				return
 			end
-			if isWhirlwindSpellId(spellId) and wwAggEnabled(spellId) then
+			if isWhirlwindSpellId(spellId) and wwAggEnabled(spellId)
+				and ZSBT.IsSafeNumber(amount) and amount > 0 then
 				-- If we are receiving addon-readable Whirlwind chat hits for this same cast,
 				-- do not double-count the UNIT_COMBAT stream.
 				local chatTok = self._wwAggChatToken
