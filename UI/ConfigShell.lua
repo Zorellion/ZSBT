@@ -288,68 +288,100 @@ local function buildClassPage(pf)
 	body:SetJustifyH("LEFT")
 	body:SetPoint("TOPLEFT", pf, "TOPLEFT", 20, -56)
 
-	-- Toggle set is module-declared (mod.toggles): each entry makes a
-	-- checkbox+hint anchored under the previous one. Classes without a
-	-- given toggle never see it.
+	-- Long descriptions live in hover tooltips so the page stays compact.
+	local function attachTip(f, tipFn)
+		f:SetScript("OnEnter", function(self)
+			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+			GameTooltip:SetText(tipFn(), 1, 1, 1, 1, true)
+			GameTooltip:Show()
+		end)
+		f:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	end
+
+	-- Class-flavored guardian naming for the tooltip (module-declared).
+	local function guardianLabel()
+		local mod = ZSBT.ClassDB and ZSBT.ClassDB.ActiveModule
+			and ZSBT.ClassDB.ActiveModule()
+		return (mod and mod.guardianLabel) or L["your pets and guardians"]
+	end
+
+	-- Toggle set is module-declared (mod.toggles): only supported keys
+	-- render. Hints are tooltips, not inline text.
 	local toggleDefs = {
 		{ key = "resolveGuardians",
 			label = L["Name guardian spells"],
-			hint = L["Guardian damage (imps, dreadstalkers, tyrant) is named from summon tracking. Off = those hits fall back to generic pet damage."],
+			tip = function()
+				return (L["Guardian damage (%s) is named from summon tracking. Off = those hits fall back to generic pet damage."])
+					:format(guardianLabel())
+			end,
 			get = function(prof) return not (prof and prof.classModule and prof.classModule.resolveGuardians == false) end,
 			set = function(prof, v) prof.classModule.resolveGuardians = v end,
 		},
 		{ key = "namePetMelee",
 			label = L["Show pet melee hits"],
-			hint = L["Pet melee verified by a combat-log line displays as 'Auto Attack'. A stolen MY_PET line could still name a foreign swing."],
+			tip = function()
+				return L["Pet melee verified by a combat-log line displays as 'Auto Attack'. A stolen MY_PET line could still name a foreign swing."]
+			end,
 			get = function(prof) return prof and prof.classModule and prof.classModule.namePetMelee == true end,
 			set = function(prof, v) prof.classModule.namePetMelee = v end,
 		},
 	}
 	local toggles = {}
-	local anchor, anchorY = pf, -200
 	for _, def in ipairs(toggleDefs) do
 		if ZSBT.ClassDB and ZSBT.ClassDB.SupportsToggle
 			and ZSBT.ClassDB.SupportsToggle(def.key) then
 			local cb = CreateFrame("CheckButton", nil, pf, "InterfaceOptionsCheckButtonTemplate")
-			cb:SetPoint("TOPLEFT", anchor, "TOPLEFT", 16, anchorY)
+			cb:SetPoint("TOPLEFT", pf, "TOPLEFT", 16, -200 - #toggles * 26)
 			cb.Text:SetText(def.label)
+			cb.Text:SetTextColor(1, 1, 1)
 			cb:SetScript("OnClick", function(self)
 				local prof = ZSBT.db and ZSBT.db.profile
 				if not prof then return end
 				prof.classModule = prof.classModule or {}
 				def.set(prof, self:GetChecked() == true)
 			end)
-			cb.Text:SetTextColor(1, 1, 1)
-			local hint = shellFont(pf, 11, COL.dim or COL.text, def.hint)
-			hint:SetWidth(580)
-			hint:SetJustifyH("LEFT")
-			hint:SetPoint("TOPLEFT", cb, "BOTTOMLEFT", 26, -6)
-			toggles[#toggles + 1] = { def = def, cb = cb, hint = hint }
-			anchor, anchorY = hint, -14
+			attachTip(cb, def.tip)
+			toggles[#toggles + 1] = { def = def, cb = cb }
 		end
 	end
 
+	-- Status detail (inferred schools, active guardians) spans full width
+	-- under the toggles, above the split panes.
 	local detail = shellFont(pf, 12, COL.dim or COL.text, "")
 	detail:SetWidth(620)
 	detail:SetJustifyH("LEFT")
 	if toggles[#toggles] then
-		detail:SetPoint("TOPLEFT", toggles[#toggles].hint, "BOTTOMLEFT", -26, -18)
+		detail:SetPoint("TOPLEFT", toggles[#toggles].cb, "BOTTOMLEFT", -4, -10)
 	else
-		detail:SetPoint("TOPLEFT", pf, "TOPLEFT", 20, -200)
+		detail:SetPoint("TOPLEFT", pf, "TOPLEFT", 20, -270)
 	end
 
 	--------------------------------------------------------------------
-	-- Teach-a-spell: drag a spell from the action bar or spellbook onto
-	-- the drop box to record its real client spellId. The spell stays on
-	-- the bar — ClearCursor ends the drag without a "place" target.
-	-- Role decides pipeline treatment: dot = ticks named, channel =
-	-- tick window on cast, cast = multi-hit naming budget.
+	-- Split panes: module knowledge scrolls on the left; teach-a-spell
+	-- and taught spells sit in a right column. Both panes anchor to the
+	-- page edges so they track the resizable window.
 	--------------------------------------------------------------------
-	local teachTitle = shellFont(pf, 14, COL.accent,
-		L["|cFFFFD100Teach a spell|r"])
-	teachTitle:SetPoint("TOPLEFT", detail, "BOTTOMLEFT", 0, -16)
+	local knowledgeTitle = shellFont(pf, 12, COL.accent,
+		L["|cFFFFD100Module knowledge|r"])
+	knowledgeTitle:SetPoint("TOPLEFT", detail, "BOTTOMLEFT", 0, -16)
 
-	local drop = CreateFrame("Button", nil, pf, "BackdropTemplate")
+	local knowledgeScroll = CreateFrame("ScrollFrame", nil, pf, "UIPanelScrollFrameTemplate")
+	knowledgeScroll:SetPoint("TOPLEFT", knowledgeTitle, "BOTTOMLEFT", 0, -6)
+	knowledgeScroll:SetPoint("BOTTOMRIGHT", pf, "BOTTOM", -10, 8)
+	local knowledgeChild = CreateFrame("Frame", nil, knowledgeScroll)
+	knowledgeChild:SetSize(420, 1)
+	knowledgeScroll:SetScrollChild(knowledgeChild)
+
+	local rightCol = CreateFrame("Frame", nil, pf)
+	rightCol:SetPoint("TOPRIGHT", pf, "TOPRIGHT", -8, 0)
+	rightCol:SetPoint("TOP", knowledgeTitle, "TOP", 0, 0)
+	rightCol:SetPoint("BOTTOMLEFT", pf, "BOTTOM", 10, 8)
+
+	local teachTitle = shellFont(rightCol, 12, COL.accent,
+		L["|cFFFFD100Teach a spell|r"])
+	teachTitle:SetPoint("TOPLEFT", rightCol, "TOPLEFT", 0, 0)
+
+	local drop = CreateFrame("Button", nil, rightCol, "BackdropTemplate")
 	drop:SetSize(44, 44)
 	drop:SetPoint("TOPLEFT", teachTitle, "BOTTOMLEFT", 2, -6)
 	setBg(drop, COL.track)
@@ -357,11 +389,11 @@ local function buildClassPage(pf)
 	dropIcon:SetPoint("TOPLEFT", 3, -3)
 	dropIcon:SetPoint("BOTTOMRIGHT", -3, 3)
 	dropIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-	dropIcon:SetTexture(136235) -- generic empty-slot look
-	local dropLabel = shellFont(pf, 11, COL.dim or COL.text,
+	dropIcon:SetTexture(136235)
+	local dropLabel = shellFont(rightCol, 11, COL.dim or COL.text,
 		L["Drag a spell from your bar or spellbook here"])
-	dropLabel:SetPoint("LEFT", drop, "RIGHT", 10, 10)
-	dropLabel:SetWidth(300)
+	dropLabel:SetPoint("LEFT", drop, "RIGHT", 10, 0)
+	dropLabel:SetWidth(190)
 	dropLabel:SetJustifyH("LEFT")
 
 	local roleState = { role = "auto" }
@@ -373,9 +405,9 @@ local function buildClassPage(pf)
 	}
 	local roleCbs = {}
 	for i, rd in ipairs(roleDefs) do
-		local cb = CreateFrame("CheckButton", nil, pf, "InterfaceOptionsCheckButtonTemplate")
+		local cb = CreateFrame("CheckButton", nil, rightCol, "InterfaceOptionsCheckButtonTemplate")
 		cb:SetSize(24, 24)
-		cb:SetPoint("TOPLEFT", drop, "BOTTOMLEFT", -4, -10 - (i - 1) * 28)
+		cb:SetPoint("TOPLEFT", drop, "BOTTOMLEFT", -4, -8 - (i - 1) * 26)
 		cb.Text:SetText(rd.label)
 		cb.Text:SetTextColor(1, 1, 1)
 		cb:SetScript("OnClick", function(self)
@@ -388,27 +420,31 @@ local function buildClassPage(pf)
 		roleCbs[i] = cb
 	end
 
-	local budgetBox = CreateFrame("EditBox", nil, pf, "InputBoxTemplate")
+	local budgetBox = CreateFrame("EditBox", nil, rightCol, "InputBoxTemplate")
 	budgetBox:SetSize(44, 20)
-	budgetBox:SetPoint("LEFT", roleCbs[4], "RIGHT", 130, 0)
+	budgetBox:SetPoint("LEFT", roleCbs[4], "RIGHT", 120, 0)
 	budgetBox:SetAutoFocus(false)
 	budgetBox:SetNumeric(true)
 	budgetBox:SetMaxLetters(3)
 	budgetBox:SetText("5")
 	budgetBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-	local budgetLabel = shellFont(pf, 11, COL.dim or COL.text, L["hits"])
+	local budgetLabel = shellFont(rightCol, 11, COL.dim or COL.text, L["hits"])
 	budgetLabel:SetPoint("LEFT", budgetBox, "RIGHT", 6, 0)
+	attachTip(budgetBox, function()
+		return L["How many hits one cast of this spell may name."]
+	end)
 
-	local confirmFs = shellFont(pf, 11, COL.text, "")
+	local confirmFs = shellFont(rightCol, 11, COL.text, "")
 	confirmFs:SetPoint("TOPLEFT", roleCbs[4], "BOTTOMLEFT", 4, -10)
+	confirmFs:SetWidth(300)
+	confirmFs:SetJustifyH("LEFT")
 
-	local taughtTitle = shellFont(pf, 12, COL.accent,
+	local taughtTitle = shellFont(rightCol, 12, COL.accent,
 		L["|cFFFFD100Taught spells|r"])
 	taughtTitle:SetPoint("TOPLEFT", confirmFs, "BOTTOMLEFT", -4, -14)
 
 	local taughtRows = {}
 	local refreshTaught
-	local knowledgeScroll
 
 	local function dragNow()
 		return GetTime and GetTime() or 0
@@ -426,9 +462,8 @@ local function buildClassPage(pf)
 		return nil
 	end
 
-	-- Returns spellId, name, sourceSlot(optional). Pickup records win;
-	-- the <3s freshness window keeps a stale pickup from an unrelated
-	-- drag from hijacking this capture.
+	-- Pickup records win (true spellId); cursor args are last resort.
+	-- Returns spellId, name, sourceSlot(optional).
 	local function resolveDrag()
 		local now = dragNow()
 		if dragSpellId and (now - (dragSpellAt or -99)) < 3 then
@@ -465,9 +500,9 @@ local function buildClassPage(pf)
 		local sid, nm, srcSlot = resolveDrag()
 		if not sid then return end
 		if ClearCursor then ClearCursor() end
-		-- Restore a bar-dragged spell into the slot it came from. Not
-		-- needed for spellbook drags (no slot was emptied). PlaceAction
-		-- is protected in combat — pcall keeps the failure silent there.
+		-- Restore a bar-dragged spell into its source slot; a pickup
+		-- empties the slot before our drop fires. PlaceAction is
+		-- protected in combat — pcall keeps the failure silent there.
 		if srcSlot and type(_G.PickupSpell) == "function"
 			and type(_G.PlaceAction) == "function" then
 			pcall(PickupSpell, sid)
@@ -496,22 +531,26 @@ local function buildClassPage(pf)
 	drop:SetScript("OnReceiveDrag", tryTeach)
 	drop:SetScript("OnClick", tryTeach)
 
+	local taughtMore = shellFont(rightCol, 11, COL.dim or COL.text, "")
+	taughtMore:Hide()
+
 	refreshTaught = function()
 		local list = (ZSBT.ClassDB and ZSBT.ClassDB.TaughtList)
 			and ZSBT.ClassDB.TaughtList() or {}
-		local need = math.max(#taughtRows, #list)
+		local MAX_ROWS = 12
+		local need = math.max(#taughtRows, math.min(#list, MAX_ROWS))
 		for i = 1, need do
 			local row = taughtRows[i]
 			local e = list[i]
-			if e then
+			if e and i <= MAX_ROWS then
 				if not row then
 					row = {}
-					row.fs = shellFont(pf, 11, COL.text, "")
+					row.fs = shellFont(rightCol, 11, COL.text, "")
 					row.fs:SetPoint("TOPLEFT", taughtTitle, "BOTTOMLEFT", 10, -6 - (i - 1) * 16)
-					row.rm = CreateFrame("Button", nil, pf)
+					row.rm = CreateFrame("Button", nil, rightCol)
 					row.rm:SetSize(16, 16)
 					row.rm:SetPoint("LEFT", row.fs, "RIGHT", 8, 0)
-					local rmT = shellFont(row.rm, 11, COL.dim or COL.text, "×")
+					local rmT = shellFont(row.rm, 11, COL.dim or COL.text, "x")
 					rmT:SetAllPoints()
 					row.rm:SetScript("OnClick", function()
 						if row._sid and ZSBT.ClassDB and ZSBT.ClassDB.Unteach then
@@ -522,10 +561,10 @@ local function buildClassPage(pf)
 					taughtRows[i] = row
 				end
 				row._sid = e.sid
-				local label = ("%s (%d) · %s")
+				local label = ("%s (%d) . %s")
 					:format(tostring(e.name), e.sid, tostring(e.role))
 				if e.role == "cast" and e.budget then
-					label = label .. (" ×%d"):format(tonumber(e.budget) or 0)
+					label = label .. (" x%d"):format(tonumber(e.budget) or 0)
 				end
 				row.fs:SetText(label)
 				row.fs:Show()
@@ -536,30 +575,14 @@ local function buildClassPage(pf)
 				row.rm:Hide()
 			end
 		end
-		-- Keep the knowledge panel below whatever rows are visible.
-		local last = taughtRows[#list] and taughtRows[#list].fs or taughtTitle
-		knowledgeScroll:ClearAllPoints()
-		knowledgeScroll:SetPoint("TOPLEFT", last, "BOTTOMLEFT", -10, -14)
+		if #list > MAX_ROWS then
+			taughtMore:SetText(("+%d more"):format(#list - MAX_ROWS))
+			taughtMore:SetPoint("TOPLEFT", taughtTitle, "BOTTOMLEFT", 10, -6 - MAX_ROWS * 16)
+			taughtMore:Show()
+		else
+			taughtMore:Hide()
+		end
 	end
-
-	--------------------------------------------------------------------
-	-- Module knowledge: scrollable list of everything the active module
-	-- ships with (dots/channels/budgets/summons/guardian spellbook) so a
-	-- player can see what is already covered before teaching. Rows are
-	-- pooled FontStrings inside a UIPanelScrollFrameTemplate child.
-	--------------------------------------------------------------------
-	local knowledgeTitle = shellFont(pf, 12, COL.accent,
-		L["|cFFFFD100Module knowledge|r"])
-	knowledgeTitle:Hide() -- repositioned with the scroll frame below
-
-	knowledgeScroll = CreateFrame("ScrollFrame", nil, pf, "UIPanelScrollFrameTemplate")
-	knowledgeScroll:SetSize(560, 150)
-	local knowledgeChild = CreateFrame("Frame", nil, knowledgeScroll)
-	knowledgeChild:SetSize(540, 1)
-	knowledgeScroll:SetScrollChild(knowledgeChild)
-	knowledgeTitle:SetParent(knowledgeChild)
-	knowledgeTitle:SetPoint("TOPLEFT", knowledgeChild, "TOPLEFT", 0, 0)
-	knowledgeTitle:Show()
 
 	local knowledgeRows = {}
 	local function refreshKnowledge()
@@ -572,8 +595,8 @@ local function buildClassPage(pf)
 			if e then
 				if not row then
 					row = shellFont(knowledgeChild, 11, COL.text, "")
-					row:SetPoint("TOPLEFT", knowledgeTitle, "BOTTOMLEFT", 8, -4 - (i - 1) * 14)
-					row:SetWidth(520)
+					row:SetPoint("TOPLEFT", knowledgeChild, "TOPLEFT", 8, -4 - (i - 1) * 14)
+					row:SetWidth(400)
 					row:SetJustifyH("LEFT")
 					knowledgeRows[i] = row
 				end
@@ -585,13 +608,13 @@ local function buildClassPage(pf)
 				end
 				row:SetText(("|cFF888888%s|r %s%s%s")
 					:format(tostring(e.kind), tostring(e.name), ids,
-						e.extra and (" — " .. tostring(e.extra)) or ""))
+						e.extra and (" - " .. tostring(e.extra)) or ""))
 				row:Show()
 			elseif row then
 				row:Hide()
 			end
 		end
-		knowledgeChild:SetHeight(math.max(1, 20 + #list * 14))
+		knowledgeChild:SetHeight(math.max(1, 10 + #list * 14))
 	end
 
 	local function refresh()
@@ -603,7 +626,7 @@ local function buildClassPage(pf)
 
 		if not mod then
 			body:SetText(L["No class module is loaded for this character."])
-			for _, t in ipairs(toggles) do t.cb:Hide(); t.hint:Hide() end
+			for _, t in ipairs(toggles) do t.cb:Hide() end
 			detail:SetText("")
 			refreshTaught()
 			refreshKnowledge()
@@ -611,7 +634,7 @@ local function buildClassPage(pf)
 		end
 		local prof = ZSBT.db and ZSBT.db.profile
 		for _, t in ipairs(toggles) do
-			t.cb:Show(); t.hint:Show()
+			t.cb:Show()
 			t.cb:SetChecked(t.def.get(prof))
 		end
 
@@ -624,7 +647,8 @@ local function buildClassPage(pf)
 			("|cFFFFD100Casts tracked:|r %d pending / %d pet"):format(
 				st and st.pendingCasts or 0, st and st.petCasts or 0),
 		}
-		body:SetText(table.concat(lines, "\n"))
+		body:SetText(table.concat(lines, "
+"))
 
 		local d = {}
 		if st and type(st.learned) == "table" then
@@ -650,23 +674,8 @@ local function buildClassPage(pf)
 			table.sort(g)
 			d[#d + 1] = L["Active guardians:"] .. " " .. (#g > 0 and table.concat(g, ", ") or L["none"])
 		end
-		if mod then
-			local names = {}
-			for _, e in ipairs(mod.dots or {}) do
-				names[#names + 1] = e.names and e.names[1] or "?"
-			end
-			if #names > 0 then
-				d[#d + 1] = L["Dots:"] .. " " .. table.concat(names, ", ")
-			end
-			names = {}
-			for _, e in ipairs(mod.channels or {}) do
-				names[#names + 1] = e.names and e.names[1] or "?"
-			end
-			if #names > 0 then
-				d[#d + 1] = L["Channels:"] .. " " .. table.concat(names, ", ")
-			end
-		end
-		detail:SetText(table.concat(d, "\n"))
+		detail:SetText(table.concat(d, "
+"))
 		refreshTaught()
 		refreshKnowledge()
 	end

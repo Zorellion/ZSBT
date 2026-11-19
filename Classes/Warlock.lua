@@ -39,6 +39,7 @@ mod.castBudget = {
 }
 
 -- Class-module UI toggles this module supports (Class page + quick bar).
+mod.guardianLabel = "imps, dreadstalkers, or the tyrant"
 mod.toggles = {
 	resolveGuardians = true,  -- guardian spellbook naming on/off
 	namePetMelee = true,      -- MY_PET-proven melee named "Auto Attack"
