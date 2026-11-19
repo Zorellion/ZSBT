@@ -228,4 +228,22 @@ function ClassDB.DotGuard(entry, school)
 	return nil
 end
 
+-- One-time load confirmation: prints the resolved class tag and whether a
+-- module was found, so "did my class module load?" is answerable in chat.
+local _classCheckFrame = CreateFrame and CreateFrame("Frame") or nil
+if _classCheckFrame then
+	_classCheckFrame:RegisterEvent("PLAYER_LOGIN")
+	_classCheckFrame:SetScript("OnEvent", function()
+		local tag = ClassDB.PlayerTag()
+		local mod = ClassDB.ActiveModule()
+		local msg = ("[ZSBT] Class module: %s -> %s")
+			:format(tostring(tag or "?"), mod and "loaded" or "none (no module for this class)")
+		if ZSBT.Addon and ZSBT.Addon.Print then
+			ZSBT.Addon:Print(msg)
+		else
+			print(msg)
+		end
+	end)
+end
+
 return ClassDB
