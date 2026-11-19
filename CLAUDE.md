@@ -328,3 +328,97 @@ keeping ZSBT look/feel and nested groups. Implemented:
 - `UI/Config.lua`, `UI/ConfigTabs.lua` — Phase 0/1 targets
 - `Locales/*.lua` — new strings
 - `CLAUDE.md` — this masterplan (keep updated with progress)
+
+---
+
+# Masterplan: Forever client (Classic Era) class modules
+
+Status: **planned — not started.** Revisit after the Retail class-module
+work is polished and a real Forever combat log is provided.
+
+## Scope
+
+The `_forever_` client is Classic Era. The ZCT pipeline, bridge, and
+module hook contract port over unchanged; the *data* inside class
+modules does not. Era spell ids, talents, guardian semantics, and the
+class roster all differ from Retail — modules ship as Era-specific
+variants selected at load time, not parameterized Retail tables.
+
+## Roster (9 classes — no DK/Monk/DH/Evoker)
+
+Warrior, Paladin (Alliance), Hunter, Rogue, Priest, Shaman (Horde),
+Mage, Warlock, Druid. `Classes/Registry.lua` must tolerate absent
+modules for nonexistent classes and never register Era-only or
+Retail-only hooks on the wrong client.
+
+## Client detection
+
+`WOW_PROJECT_ID` (`WOW_PROJECT_CLASSIC` = 2 for Era) gates which table
+set registers. Two candidate layouts — decide at implementation:
+
+- **A (preferred):** sibling files — `Classes/Era/<Class>.lua` —
+  loaded only on Era, keeping Retail files untouched.
+- **B:** `mod.retail` / `mod.era` subtables inside each file.
+  A keeps tables clean; the Era modules are genuinely different
+  modules, not configs of the Retail ones.
+
+The `_forever_` install is a CurseForge-synced release copy, so Era
+modules must ship in the package and stay dormant on Retail.
+
+## Known mechanical differences (module-relevant)
+
+- **Warlock:** permanent named minions (Imp/Firebolt, Voidwalker/
+  Torment, Succubus/Lash of Pain, Felhunter) — likely *easier* to
+  attribute than Retail's temporary guardians; guardian-window
+  machinery probably unnecessary. Shadow Bolt = 705-era ids, not 686.
+  DoTs: Corruption, Curse of Agony, Immolate, Siphon Life.
+- **Hunter:** permanent pet (Bite/Claw/Growl); no Kill Command, no
+  hero talents — the Dark Ranger spellbook/window work does not port.
+  DoTs: Serpent Sting, Immolation Trap. Auto-shot vs pet melee
+  ambiguity still applies pending palette verification.
+- **Mage:** Ignite DoT, Blizzard/Arcane Missiles channels.
+- **Priest:** SW:Pain, Holy Fire (direct+dot), Devouring Plague;
+  Mind Flay/Mind Sear channels.
+- **Druid:** Moonfire (direct+dot), Insect Swarm; Hurricane channel.
+- **Shaman:** Flame Shock DoT; Searing/Magma totem pulse damage is
+  summoned-entity damage — totem windows are the Era analogue of
+  guardian windows.
+- **Paladin:** Consecration tick damage (holy dot-like); Judgment/
+  Seal direct hits.
+- **Rogue:** Deadly Poison (nature dot); mostly physical.
+- **Warrior:** Rend/Deep Wounds are *physical* ticks — the same
+  physical-ambiguity problem as Retail hunter; expect generic display
+  for them unless a proven line separates the tick.
+
+## Data verification method (unchanged from Retail)
+
+All spell ids come from real Forever combat logs (`/combatlog` +
+dummy/lowbie fights) — cast ids, damage ids, summon ids, and event
+shapes. Wowhead-era databases are secondary; log-verified only, same
+as the Skalld Dire Beast correction (guess 120679 vs real 204432).
+
+## Open questions (verify before/while building)
+
+1. Whether secret values and `UNIT_COMBAT` restrictions exist on the
+   Forever client (user believes yes — confirm in-game; Era runs a
+   modern engine with secret combat values, but confirm the surface).
+2. Whether combat-log palette lines/`COMBAT_LOG_MESSAGE` colors behave
+   identically (line kinds melee/ranged/tick/direct drive the whole
+   claim pipeline).
+3. Whether `COMBAT_LOG_EVENT_UNFILTERED` is readable there — if it is,
+   attribution possibilities expand significantly and some conservative
+   gates could relax (do NOT assume; the Retail pipeline was built on
+   the secret-client constraint).
+4. Era combat-log spell id conventions (rank-specific ids vs base ids)
+   — affects `name`-keyed vs `id`-keyed table strategy.
+
+## Phases
+
+- **P0** — client detection + registry flavor plumbing; register empty
+  Era tables so the registry shape is identical on both clients.
+- **P1** — Era module scaffolds for the 9 classes with conservative
+  name-keyed DoT tables (name keys survive rank/id variance).
+- **P2** — deep modules by value: Warlock (pet spell naming), Hunter,
+  then Mage/Priest channels + DoTs; Shaman totem-window tracking.
+- **P3** — verification ritual: `/combatlog` + real fights on the Era
+  client, same audit-vs-log diffing used on Retail.
