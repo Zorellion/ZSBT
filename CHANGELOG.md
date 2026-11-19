@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.3.6
+
+### Fixed
+- **Outgoing damage/pet damage stopped scrolling while idle:** a silent group-instance gate dropped `UNIT_COMBAT("target")` hits unless the player had cast within ~0.9s, so opener follow-up, DoT ticks and pet/minion damage vanished until the next attack (and only in group content — which is why a group member pulling "fixed" it). The gate is now bypassed while the trusted RGB combat-log veto is live; ownership is still proven by the palette line before anything displays.
+- **Quiet/strict outgoing modes no longer starve unattributed hits:** `quietOutgoingWhenIdle`, `strictOutgoingCombatLogOnly` and related correlation windows required a recent player cast (~1.25s), which pet and DoT damage can never satisfy. All five drop sites now bypass when the combat-log veto is active.
+- **Off-target fallback for targets that never report `UNIT_COMBAT`:** hostile `nameplateN`/`softenemy` WOUNDS now emit as unattributed candidates, but only while the resolved target has produced no WOUND for ~1.5s — sessions where Retail simply doesn't fire target-token events still show pet/cleave damage, while normal fights produce no extra candidates and foreign hits can't pair.
+- **Incoming damage invisible while heals/misses worked:** secret (tainted) damage amounts were dropped twice — once in `Incoming_Probe` and again when building display text (heals were explicitly exempted both times, which is why only they rendered). Secret damage now flows through the raw pipe to `SetText` exactly like heals.
+- **Whirlwind missing/unattributed:** Retail fires Whirlwind casts as a `199658`+`1680` pair; `199658` is now recognized everywhere (cast attribution, spell-rule lookups, aggregation checks, `Outgoing_Probe`). Spell rules keyed to any Whirlwind ID now match regardless of which ID the client reports.
+- **Whirlwind aggregation swallowed every hit on secret-value clients:** the aggregator required a summable numeric amount, but Retail amounts are secret — the push no-oped while the caller still dropped the hit. Aggregation now only engages for readable amounts; secret hits display individually (per-hit numbers, rule formatting still applied).
+- **Player casts recorded as pet casts:** `targettarget` resolves to the player when the mob is attacking you, so your own casts were logged into pet-cast tracking and could misroute damage styling. Player-alias tokens are now excluded via `UnitIsUnit(unit, "player")`.
+
 ## 3.3.5
 
 ### Changed
