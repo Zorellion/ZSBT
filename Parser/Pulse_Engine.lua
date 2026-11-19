@@ -22,6 +22,11 @@ local function getLCP()
 	return nil
 end
 
+local function traceLog(msg)
+	local z = ZSBT.ZBattleText
+	if z and z.FileLog then z:FileLog(msg) end
+end
+
 Engine._enabled = Engine._enabled or false
 Engine._pulseInterval = 0.020 -- 20ms target pulse (phase 1 requirement)
 Engine._accumulator = Engine._accumulator or 0
@@ -711,6 +716,7 @@ function Engine:_processHealthDamage(sample)
 		end
 		Dbg4("|cFFCC66FF[OUTDBG]|r", ("HEALTH_DAMAGE unit=%s amt=%s periodic=%s bestSpellId=%s conf=%s score=%s")
 			:format(tostring(sample.unit), tostring(sample.amount), tostring(sample.isPeriodic == true), tostring(bestCast and bestCast.spellId), tostring(confidence), tostring(score)))
+		traceLog(("HD_OUT unit=%s sid=%s amt=%s"):format(tostring(sample.unit), tostring(bestCast and bestCast.spellId), tostring(sample.amount)))
 		self:_emitOutgoing(normalized)
 	end
 end
@@ -740,6 +746,7 @@ function Engine:_processHealthHeal(sample)
 	}
 
 	if sample.unit == "player" then
+		traceLog(("HH_IN amt=%s"):format(tostring(sample.amount)))
 		self:_emitIncoming(normalized)
 	elseif bestCast and confidence == CorrelationLogic.CONFIDENCE.HIGH then
 		local strictOutgoing = (ZSBT.Core and ZSBT.Core.IsStrictOutgoingCombatLogOnlyEnabled and ZSBT.Core:IsStrictOutgoingCombatLogOnlyEnabled()) or false
@@ -754,6 +761,7 @@ function Engine:_processHealthHeal(sample)
 		-- Only attribute as outgoing heal if we have high confidence it
 		-- came from one of the player's casts. Otherwise the target may
 		-- just be healing themselves or receiving heals from others.
+		traceLog(("HH_OUT unit=%s sid=%s amt=%s"):format(tostring(sample.unit), tostring(bestCast and bestCast.spellId), tostring(sample.amount)))
 		self:_emitOutgoing(normalized)
 	end
 end
