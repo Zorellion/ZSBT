@@ -103,6 +103,16 @@ function mod.petSchoolHitRecent(self, school, lastPlayerSpellId, helpers)
 	return true
 end
 
+-- A warlock never meaningfully auto-attacks: every school-1 hit is a
+-- demon's melee or a foreign swing. Vetoing auto claims routes them to
+-- pet-physical/generic instead of displaying as your white swing.
+-- profile.classModule.allowAutoAttack (Class page toggle) overrides.
+function mod.vetoAuto(helpers)
+	local cm = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.classModule
+	if cm and cm.allowAutoAttack == true then return false end
+	return true
+end
+
 -- Physical pet melee (Dreadstalker, Gloomhound, etc). Consulted only by the
 -- pet-fallback emit and gated to non-group content by the caller — in
 -- groups, foreign swings are indistinguishable from pet melee.

@@ -229,6 +229,18 @@ function ClassDB.PetPhysicalHit(school)
 	return false
 end
 
+-- True when the class can never produce auto-attack damage worth showing
+-- (warlock/mage/priest: every school-1 hit is pet melee or foreign). The
+-- collector treats a veto like "no player swing explains this" — hits
+-- route to pet-physical or drop instead of wearing your auto-attack.
+function ClassDB.VetoAuto()
+	local mod = ClassDB.ActiveModule()
+	if mod and mod.vetoAuto then
+		return mod.vetoAuto(ClassDB.Helpers()) == true
+	end
+	return false
+end
+
 -- Names an unattributed pet hit from class knowledge: guardian activity
 -- tracked from the player's summon casts + a unique school→spell map.
 -- Guardian casts are invisible to UNIT_SPELLCAST_SUCCEEDED, so this is
