@@ -540,7 +540,11 @@ end
 local function deliverOutgoing(payload)
     local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
     if ec and ec._sink then
-        ec._sink("OUTGOING_DAMAGE_COMBAT", payload)
+        local ev = "OUTGOING_DAMAGE_COMBAT"
+        if payload and payload._petRoute == true then
+            ev = "PET_DAMAGE_COMBAT"
+        end
+        ec._sink(ev, payload)
     end
 end
 

@@ -73,8 +73,16 @@ local function emit(eventType, payload)
 		and not ZSBT.ZBattleText:OfferOutgoing(payload) then
 		return
 	end
+	-- Veto-approved unattributed hits that look like minion/pet damage
+	-- deliver as PET_DAMAGE_COMBAT so they get pet styling. The swap
+	-- happens only after OfferOutgoing has proven ownership (or the
+	-- filter is untrusted, where behaviour is unchanged heuristics).
+	local sinkType = eventType
+	if eventType == "OUTGOING_DAMAGE_COMBAT" and payload and payload._petRoute == true then
+		sinkType = "PET_DAMAGE_COMBAT"
+	end
 	if Collector._sink then
-		Collector._sink(eventType, payload)
+		Collector._sink(sinkType, payload)
 	end
 end
 
@@ -320,6 +328,9 @@ local function flushBestOutgoing(self, token)
 		targetName = bucket.targetName,
 		isCrit = bucket.isCrit,
 		schoolMask = bucket.schoolMask,
+		petSpellId = bucket.petSpellId,
+		petBucket = (bucket.petRoute == true and bucket.schoolMask ~= 1) and "summons" or nil,
+		_petRoute = bucket.petRoute == true or nil,
 	})
 end
 
@@ -3326,6 +3337,19 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 
 		local schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil
 
+		-- Unattributed non-physical hit + a recent friendly/minion cast =
+		-- likely temporary-pet (imp/dreadstalker) damage. Route through the
+		-- veto first, then display as pet damage with the pet's spell id.
+		-- Physical (school 1) stays generic: melee swings are indistinguishable
+		-- from the player's own auto attacks.
+		local petRoute, petSid = nil, nil
+		if spellId == nil and schoolMask ~= 1 then
+			local psid = recentPetCast(self, t, 1.2)
+			if psid ~= nil then
+				petRoute, petSid = true, psid
+			end
+		end
+
 		-- Merge window: multiple UNIT_COMBAT(target) hits can arrive per cast.
 		-- Keep only the largest amount in a short window to avoid showing tiny
 		-- proc/secondary values (the root cause of the "300-900 Shadow Bolt" bug).
@@ -3344,6 +3368,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				timestamp = t,
 				token = token,
 				spellId = spellId,
+				petRoute = petRoute,
+				petSpellId = petSid,
 				targetName = targetName,
 				amount = amount,
 				_seenCount = 1,
