@@ -624,6 +624,11 @@ end
 local function deliverOutgoing(payload)
     local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
     if ec and ec._sink then
+        -- Deferred delivery only happens after a palette line confirmed
+        -- ownership: teach the spell's school (FCT Trust equivalent).
+        if payload and type(payload.spellId) == "number" and ec.LearnConfirmedSchool then
+            ec:LearnConfirmedSchool(payload.spellId, payload.schoolMask)
+        end
         local ev = "OUTGOING_DAMAGE_COMBAT"
         if payload and payload._petRoute == true then
             ev = "PET_DAMAGE_COMBAT"
@@ -771,6 +776,7 @@ function ZB:OfferOutgoing(payload)
     local fastKind = takeDamageLine(tHit, VETO_WINDOW, preferredKinds(payload)) or takeDamageLine(tHit, VETO_WINDOW)
     if fastKind then
         ZB._allows = ZB._allows + 1
+        if payload then payload._vetoConfirmed = true end
         ZB:FileLog(("ALLOW_FAST kind=%s sid=%s"):format(tostring(fastKind), tostring(payload and payload.spellId)))
         return true
     end
