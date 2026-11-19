@@ -65,6 +65,14 @@ end
 
 -- Forward parsed events to the configured sink callback.
 local function emit(eventType, payload)
+	-- ZBattleText ownership veto: when the combat-log filter is trusted,
+	-- ambiguous outgoing damage must be corroborated by a palette line.
+	-- Untrusted => OfferOutgoing returns true and nothing changes.
+	if eventType == "OUTGOING_DAMAGE_COMBAT"
+		and ZSBT.ZBattleText and ZSBT.ZBattleText.OfferOutgoing
+		and not ZSBT.ZBattleText:OfferOutgoing(payload) then
+		return
+	end
 	if Collector._sink then
 		Collector._sink(eventType, payload)
 	end
