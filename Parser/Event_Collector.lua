@@ -3523,29 +3523,76 @@ function Collector:Enable()
 
 	-- Blizzard 12.0 combat text pipeline: COMBAT_TEXT_UPDATE may not carry damage
 	-- tokens in some environments, even though Blizzard is rendering damage.
-	-- Hook the known entry points for diagnostics (trace-only for now).
+	-- Probe the known entry points: record full arg signatures (count, type,
+	-- secret status, safe previews) into a ring buffer for "/zsbt ctprobe".
 	if not self._combatTextAddHooked and type(hooksecurefunc) == "function" then
+		local probe = Collector._ctAddProbe or {}
+		Collector._ctAddProbe = probe
+		local PROBE_CAP = 300
+		local function argDesc(v)
+			local tv = type(v)
+			if tv == "nil" then return "nil" end
+			if tv == "number" then
+				if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(v) then
+					return "num:" .. tostring(v)
+				end
+				return "num:?"
+			end
+			if tv == "string" then
+				if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then
+					local s = v
+					pcall(function()
+						s = (v:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", "<icon>"))
+					end)
+					if type(s) ~= "string" then s = v end
+					if #s > 48 then s = s:sub(1, 48) .. "..." end
+					return "str:" .. s
+				end
+				return "str:?"
+			end
+			if tv == "boolean" then return "bool:" .. tostring(v) end
+			local ok, s = pcall(tostring, v)
+			if ok and type(s) == "string" then
+				if #s > 32 then s = s:sub(1, 32) .. "..." end
+				return tv .. ":" .. s
+			end
+			return tv
+		end
 		local hookNames = {
 			"CombatText_AddMessage",
 			"CombatText_AddMessage_v2",
 			"CombatText_AddMessage2",
 			"CombatText_AddMessage2_v2",
 		}
+		local function record(fnName, ...)
+			local n = select("#", ...)
+			if n > 16 then n = 16 end
+			local parts = {}
+			for i = 1, n do
+				parts[i] = i .. "=" .. argDesc((select(i, ...)))
+			end
+			local sig = table.concat(parts, " | ")
+			local tNow = now()
+			probe[#probe + 1] = { at = tNow, fn = fnName, n = select("#", ...), sig = sig }
+			if #probe > PROBE_CAP then
+				table.remove(probe, 1)
+			end
+			local dl = OutDbgLevel()
+			if dl >= 4 then
+				if (tNow - (Collector._dbgLastCombatTextAddAt or 0)) > 0.20 then
+					Collector._dbgLastCombatTextAddAt = tNow
+					ECPrint("CT_ADD " .. fnName .. " n=" .. tostring(select("#", ...)) .. " " .. sig)
+				end
+			end
+		end
 		for _, fnName in ipairs(hookNames) do
 			if type(_G[fnName]) == "function" then
 				self._combatTextAddHooked = true
-				hooksecurefunc(fnName, function(message, scrollFunction, r, g, b, displayType, isSticky)
-					local dl = OutDbgLevel()
-					if dl >= 4 then
-						local tNow = now()
-						if (tNow - (Collector._dbgLastCombatTextAddAt or 0)) > 0.20 then
-							Collector._dbgLastCombatTextAddAt = tNow
-							ECPrint(("CT_ADD fn=%s msg=%s type=%s sticky=%s")
-								:format(dbgSafe(fnName), dbgSafe(message), dbgSafe(displayType), dbgSafe(isSticky)))
-						end
-					end
-				end)
+				hooksecurefunc(fnName, function(...) record(fnName, ...) end)
 			end
+		end
+		if self._combatTextAddHooked then
+			ECPrint("CTADD_PROBE installed on CombatText_AddMessage* (use /zsbt ctprobe to dump)")
 		end
 	end
 

@@ -1995,6 +1995,9 @@ function Addon:HandleSlashCommand(input)
             self:Print(L["Restored Blizzard Floating Combat Text settings."])
         end
         return
+    elseif cmd == "ctprobe" then
+        self:HandleCTProbeCommand(rest)
+        return
     elseif cmd == "dumpcvars" then
 		local function safeGet(name)
 			if type(GetCVar) ~= "function" then return nil end
@@ -2050,7 +2053,7 @@ function Addon:HandleSlashCommand(input)
 	end
 
     self:Print(L["|cFF808C9EUnknown command:|r "] .. cmd)
-	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | reset | version | auratest | restorefct | dumpcvars]"])
+	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | reset | version | auratest | restorefct | dumpcvars | ctprobe]"])
 end
 
 ------------------------------------------------------------------------
@@ -2139,6 +2142,43 @@ end
 ------------------------------------------------------------------------
 -- Debug Level Command
 ------------------------------------------------------------------------
+------------------------------------------------------------------------
+-- CombatText AddMessage Probe Dump
+------------------------------------------------------------------------
+function Addon:HandleCTProbeCommand(argStr)
+	local input = (type(argStr) == "string") and argStr or ""
+	input = input:gsub("^%s+", ""):gsub("%s+$", "")
+	local col = ZSBT.Parser and ZSBT.Parser.EventCollector
+	local probe = col and col._ctAddProbe
+	if input == "clear" then
+		if type(probe) == "table" then
+			wipe(probe)
+			self:Print(L["CT probe buffer cleared."])
+		else
+			self:Print(L["CT probe not installed."])
+		end
+		return
+	end
+	if type(probe) ~= "table" or #probe == 0 then
+		self:Print(L["CT probe: no data. Hooks install on combat start; fight something first."])
+		return
+	end
+	local total = #probe
+	local startIdx = 1
+	local n = tonumber(input)
+	if n and n > 0 and n < total then
+		startIdx = total - n + 1
+	end
+	local base = probe[1] and probe[1].at or 0
+	self:Print(("CT probe: %d entries (showing %d-%d)"):format(total, startIdx, total))
+	for i = startIdx, total do
+		local e = probe[i]
+		if e then
+			self:Print(("  +%.2fs %s n=%d %s"):format((e.at or 0) - base, tostring(e.fn), tonumber(e.n) or 0, tostring(e.sig)))
+		end
+	end
+end
+
 function Addon:HandleDebugCommand(levelStr)
 	local function usage()
 		self:Print(L["Usage:"])
