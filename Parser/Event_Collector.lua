@@ -319,6 +319,9 @@ local function flushBestOutgoing(self, token)
 	local zbt = ZSBT.ZBattleText
 	if zbt and zbt.FileLog then
 		zbt:FileLog(("FLUSH sid=%s school=%s cnt=%s crit=%s"):format(tostring(bucket.spellId), tostring(bucket.schoolMask), tostring(bucket._seenCount), tostring(bucket.isCrit)))
+		if bucket.petRoute == true then
+			zbt:FileLog(("PET_ROUTE petSid=%s school=%s"):format(tostring(bucket.petSpellId), tostring(bucket.schoolMask)))
+		end
 	end
 	emit("OUTGOING_DAMAGE_COMBAT", {
 		timestamp = bucket.timestamp,
