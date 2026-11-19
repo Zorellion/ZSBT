@@ -229,6 +229,19 @@ function ClassDB.PetPhysicalHit(school)
 	return false
 end
 
+-- Names an unattributed pet hit from class knowledge: guardian activity
+-- tracked from the player's summon casts + a unique school→spell map.
+-- Guardian casts are invisible to UNIT_SPELLCAST_SUCCEEDED, so this is
+-- the only way Wild Imp bolts etc. can be named. Returns nil when
+-- ambiguous — generic pet display beats a wrong name.
+function ClassDB.ResolvePetSpellId(self, school, t)
+	local mod = ClassDB.ActiveModule()
+	if mod and mod.resolvePetSpellId then
+		return mod.resolvePetSpellId(self, school, t, ClassDB.Helpers())
+	end
+	return nil
+end
+
 -- Returns false when the module vetoes this dot attribution (e.g. warlock
 -- Imp fire hits are pet damage, never DoT ticks). nil/true = allowed.
 function ClassDB.DotGuard(entry, school)
