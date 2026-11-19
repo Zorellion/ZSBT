@@ -907,26 +907,44 @@ end
 -- school. Called from emit()'s fast path and ZBattleText's deferred
 -- delivery — both mean a MINE/MY_PET palette line confirmed ownership.
 -- Vote-guarded (FCT): a single confirmed hit is still a guess — a school
--- is only taught once it has the majority with >= 2 confirmations, so one
--- stolen line can't poison the learned school.
+-- is only taught once it leads the vote with >= 2 confirmations, so one
+-- stolen line can't poison the table. Learned values persist to the
+-- profile so the ratchet survives /reload.
 local SCHOOL_LEARN_VOTES = 2
+function Collector:_persistLearnedSchool(spellId, schoolMask)
+	local prof = ZSBT.db and ZSBT.db.profile
+	if type(prof) ~= "table" then return end
+	prof.learnedSpellSchools = prof.learnedSpellSchools or {}
+	prof.learnedSpellSchools[spellId] = schoolMask
+end
+
 function Collector:LearnConfirmedSchool(spellId, schoolMask)
 	if type(spellId) ~= "number" then return end
 	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(schoolMask)) then return end
-	local learned = self._learnedSpellSchool[spellId]
-	if learned == schoolMask then return end
 	local votes = self._schoolVotes[spellId]
 	if type(votes) ~= "table" then
 		votes = {}
 		self._schoolVotes[spellId] = votes
 	end
 	votes[schoolMask] = (votes[schoolMask] or 0) + 1
+	local learned = self._learnedSpellSchool[spellId]
+	if learned ~= nil then
+		if learned == schoolMask then return end
+		-- A contradicting school may flip the learned value only after it
+		-- out-votes the incumbent (poisoned bootstrap / patched spells).
+		if votes[schoolMask] >= (votes[learned] or 0) + 2 then
+			self._learnedSpellSchool[spellId] = schoolMask
+			self:_persistLearnedSchool(spellId, schoolMask)
+		end
+		return
+	end
 	local against = 0
 	for other, n in pairs(votes) do
 		if other ~= schoolMask then against = against + n end
 	end
 	if votes[schoolMask] >= SCHOOL_LEARN_VOTES and votes[schoolMask] > against then
 		self._learnedSpellSchool[spellId] = schoolMask
+		self:_persistLearnedSchool(spellId, schoolMask)
 	end
 end
 
@@ -2669,6 +2687,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			if zbtc and zbtc.FileLog then
 				zbtc:FileLog(("CAND school=%s crit=%s"):format((ZSBT.IsSafeNumber(school) and tostring(school)) or "sec", tostring(isCrit == true)))
 			end
+			if not self._auditCapNoted then
+				self._auditCapNoted = true
+				auditNote(("AUDCAP swing=%s"):format(tostring(self._swingSupported == true)))
+			end
 			auditNote(("AUDCAND school=%s crit=%s"):format(
 				(ZSBT.IsSafeNumber(school) and tostring(school)) or "sec", tostring(isCrit == true)))
 		elseif actionStr then
@@ -4341,7 +4363,23 @@ function Collector:Enable()
 	-- an unsupported client marks _swingSupported false and auto claims
 	-- keep the legacy permissive path.
 	self._swingSupported = pcall(function() self._frame:RegisterEvent("PLAYER_SWING") end) == true
-	auditNote(("AUDCAP swing=%s"):format(tostring(self._swingSupported == true)))
+	-- Restore learned spell schools from the profile so the school gate
+	-- keeps its ratchet across /reload. Votes seed at threshold so a saved
+	-- school isn't instantly flippable.
+	do
+		local prof = ZSBT.db and ZSBT.db.profile
+		local saved = type(prof) == "table" and prof.learnedSpellSchools or nil
+		if type(saved) == "table" then
+			for sid, school in pairs(saved) do
+				if type(sid) == "number" and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school) then
+					self._learnedSpellSchool[sid] = school
+					local v = self._schoolVotes[sid]
+					if type(v) ~= "table" then v = {} self._schoolVotes[sid] = v end
+					v[school] = math.max(v[school] or 0, SCHOOL_LEARN_VOTES)
+				end
+			end
+		end
+	end
 	for evtName in pairs(CHAT_OUTGOING_EVENTS) do
 		pcall(function() self._frame:RegisterEvent(evtName) end)
 	end
