@@ -738,6 +738,36 @@ local function flushPending()
                             tostring(kind)))
                         ZB:FileLog(("ALLOW kind=%s sid=%s"):format(tostring(kind), tostring(p.payload and p.payload.spellId)))
                         deliverOutgoing(p.payload)
+                    elseif p.payload and p.payload.isAuto == true and p.payload.spellId == nil then
+                        -- Rescue: a module that restricts auto kinds
+                        -- (hunter: ranged only) can flag pet melee isAuto
+                        -- when the hit outran its SWING_DAMAGE line. A
+                        -- waiting melee line proves a pet swung — claim
+                        -- it as pet damage instead of dropping the hit.
+                        local cdb = ZSBT.ClassDB
+                        local mk = (cdb and cdb.AutoLineKinds and cdb.AutoLineKinds() ~= nil)
+                            and takeDamageLine(p.t, DEFER_WINDOW, { melee = true }) or nil
+                        if mk then
+                            local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
+                            p.payload.isAuto = nil
+                            p.payload._petRoute = true
+                            if ec and cdb.ResolvePetMelee then
+                                p.payload.petSpellId = cdb.ResolvePetMelee(ec)
+                            end
+                            ZB._allows = ZB._allows + 1
+                            ZB:Audit(("AUDCLAIM tier=%d sid=%s kind=%s rescue=pet"):format(
+                                pass, audSafe(p.payload.petSpellId), tostring(mk)))
+                            deliverOutgoing(p.payload)
+                        else
+                            ZB._drops = ZB._drops + 1
+                            ZB:FileLog(("DROP sid=%s"):format(tostring(p.payload and p.payload.spellId)))
+                            local dp = p.payload or {}
+                            ZB:Audit(("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=%s"):format(
+                                tonumber(p.t) or 0, pass, audSafe(dp.spellId), audSafe(dp.schoolMask),
+                                tostring(dp.isCrit == true),
+                                tostring(dp._petRoute == true and "pet" or (dp.isAuto == true and "auto" or (dp.spellId ~= nil and "spell" or "generic")))))
+                            sustainedRejection()
+                        end
                     else
                         ZB._drops = ZB._drops + 1
                         ZB:FileLog(("DROP sid=%s"):format(tostring(p.payload and p.payload.spellId)))
