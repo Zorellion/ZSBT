@@ -52,6 +52,14 @@ local KIND_COLORS = {
     hot        = { 0.50, 0.85, 0.60 },  -- light green
     shield     = { 1.00, 0.60, 0.25 }, -- amber
     shieldMiss = { 0.72, 0.58, 0.45 }, -- dull amber
+    interrupt  = { 1.00, 0.45, 0.10 }, -- orange-red
+    purge      = { 0.30, 0.85, 1.00 }, -- cyan
+    cleanse    = { 0.40, 0.95, 0.80 }, -- teal
+    steal      = { 0.60, 0.80, 1.00 }, -- light blue
+    dispelFailed = { 0.55, 0.72, 0.82 }, -- steel
+    broke      = { 1.00, 0.35, 0.35 }, -- red
+    kill       = { 1.00, 1.00, 1.00 }, -- white
+    extra      = { 0.15, 0.85, 0.85 }, -- aqua
 }
 
 local EVENT_KINDS = {
@@ -75,6 +83,24 @@ local EVENT_KINDS = {
     SWING_MISSED           = "meleeMiss",
     RANGE_MISSED           = "rangedMiss",
     DAMAGE_SHIELD_MISSED   = "shieldMiss",
+    -- Utility events (MSBT parity): kept in the filter so interrupts,
+    -- dispels, steals, breaks and kills stay visible but color-coded.
+    SPELL_INTERRUPT        = "interrupt",
+    SPELL_DISPEL            = "purge",
+    SPELL_DISPEL_BUFF       = "purge",
+    SPELL_DISPEL_DEBUFF     = "cleanse",
+    SPELL_STOLEN            = "steal",
+    SPELL_STOLEN_BUFF       = "steal",
+    SPELL_STOLEN_DEBUFF     = "steal",
+    SPELL_DISPEL_FAILED     = "dispelFailed",
+    SPELL_AURA_BROKEN       = "broke",
+    SPELL_AURA_BROKEN_SPELL = "broke",
+    SPELL_AURA_BROKEN_BUFF  = "broke",
+    SPELL_AURA_BROKEN_DEBUFF = "broke",
+    SPELL_AURA_BROKEN_SPELL_BUFF = "broke",
+    SPELL_AURA_BROKEN_SPELL_DEBUFF = "broke",
+    PARTY_KILL              = "kill",
+    SPELL_EXTRA_ATTACKS     = "extra",
 }
 
 local MISS_TYPES = {
@@ -95,6 +121,15 @@ end
 local DAMAGE_KINDS = {
     direct = true, tick = true, melee = true, ranged = true, shield = true,
 }
+
+-- Explicit whitelist for the filter's eventList (MSBT-style): only the
+-- combat events we color. Everything else — aura applications, fades,
+-- refreshes, energy/rage gains, summons, etc. — is excluded so the
+-- combat log shows only actionable combat text.
+local FILTER_EVENTS = {}
+for event in pairs(EVENT_KINDS) do
+    FILTER_EVENTS[event] = true
+end
 
 local COLOR_TOLERANCE = 0.02
 local LINE_KEEP_SEC = 2.5
@@ -140,6 +175,10 @@ local function recordLine(r, g, b)
 
     local t = GetTime and GetTime() or 0
     ZB._lastLineAt = t
+    ZB:FileLog(("LIN kind=%s rgb=%.2f,%.2f,%.2f"):format(tostring(kind), r, g, b))
+    -- Only damage kinds feed the veto buffer; heal/miss/utility lines are
+    -- classified for completeness but would just crowd the ring.
+    if not DAMAGE_KINDS[kind] then return end
     local lines = ZB._lines
     while #lines > 0 and t - lines[1].at > LINE_KEEP_SEC do
         table.remove(lines, 1)
@@ -148,7 +187,6 @@ local function recordLine(r, g, b)
         table.remove(lines, 1)
     end
     lines[#lines + 1] = { at = t, kind = kind, consumed = false }
-    ZB:FileLog(("LIN kind=%s rgb=%.2f,%.2f,%.2f"):format(tostring(kind), r, g, b))
 end
 
 -- Consume the nearest unconsumed damage-kind line within `window` of tHit.
@@ -190,10 +228,21 @@ local function colorMatches(got, want)
         and math.abs((got.b or -1) - want[3]) <= 0.03
 end
 
+-- Utility kinds are cosmetic (color-coded log lines only); the veto never
+-- pairs them, so they are excluded from palette verification. This keeps
+-- filters written before these kinds existed verifying as trusted.
+local COSMETIC_KINDS = {
+    interrupt = true, purge = true, cleanse = true, steal = true,
+    dispelFailed = true, broke = true, kill = true, extra = true,
+}
+
 local function paletteMatches(ec)
     if type(ec) ~= "table" then return false end
     for event, kind in pairs(EVENT_KINDS) do
-        if not colorMatches(ec[event], KIND_COLORS[kind]) then return false end
+        if not COSMETIC_KINDS[kind]
+            and not colorMatches(ec[event], KIND_COLORS[kind]) then
+            return false
+        end
     end
     return true
 end
@@ -448,30 +497,23 @@ function ZB:InstallAtLogout()
     end
     filter.colors.highlightedEvents = filter.colors.highlightedEvents or {}
 
-    -- Single source part: sourceFlags = you+pet, eventList = union of the
-    -- template's event lists (nil = all events). No dest part: incoming
+    -- Single source part: sourceFlags = you+pet, eventList = explicit
+    -- whitelist of colored combat events only. No dest part: incoming
     -- lines must never enter the veto buffer.
     local mineFlag = COMBATLOG_FILTER_MINE
     local petFlag = COMBATLOG_FILTER_MY_PET
     if type(mineFlag) == "number" and type(petFlag) == "number" then
-        local srcEvents
-        if type(filter.filters) == "table" then
-            for _, p in ipairs(filter.filters) do
-                if type(p) == "table" and type(p.eventList) == "table" then
-                    srcEvents = srcEvents or {}
-                    for ev, on in pairs(p.eventList) do
-                        if on then srcEvents[ev] = true end
-                    end
-                end
-            end
-        end
+        local evList = {}
+        for ev in pairs(FILTER_EVENTS) do evList[ev] = true end
         filter.filters = {
             {
                 sourceFlags = { [mineFlag] = true, [petFlag] = true },
-                eventList = srcEvents,
+                eventList = evList,
             },
         }
     end
+    filter.settings.hideDebuffs = false
+    filter.quickButtonDisplay = { solo = true, party = true, raid = true }
 
     local index
     for i, f in ipairs(saved.filters) do
