@@ -2123,7 +2123,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 	-- actions, nil amounts, non-WOUND verbs). Throttled per unit.
 	do
 		local z = ZSBT.ZBattleText
-		if z and z.FileLog and ZSBT._ucDropTrace == true and unit ~= "player" then
+		if z and z.FileLog and ZSBT._ucDropTrace == true then
 			local key = "ucraw_" .. tostring(unit)
 			local tt = now()
 			if tt - (Collector[key] or -9) >= 0.4 then
@@ -3567,7 +3567,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 	-- Dedup: if COMBAT_TEXT_UPDATE already provided clean data for this
 	-- hit within the last 100ms, skip to avoid duplicate text.
 	local t = now()
-	if (t - self._lastCombatTextDamageAt) < DEDUP_WINDOW then return end
+	if (t - self._lastCombatTextDamageAt) < DEDUP_WINDOW then
+		local zI = ZSBT.ZBattleText
+		if zI and zI.FileLog and ZSBT._ucDropTrace == true then
+			zI:FileLog("INC_DROP reason=CT_DEDUP")
+		end
+		return
+	end
 	if unit == "player" and action == "WOUND" then
 		if OutDbgLevel() >= 3 then
 			if ZSBT.Addon and ZSBT.Addon.Print and (t - (Collector._dbgLastUnitCombatPlayerAt or 0)) > 0.25 then
@@ -3577,7 +3583,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 		end
 	end
-	if (t - self._lastCombatTextHealAt) < DEDUP_WINDOW then return end
+	if (t - self._lastCombatTextHealAt) < DEDUP_WINDOW then
+		local zI2 = ZSBT.ZBattleText
+		if zI2 and zI2.FileLog and ZSBT._ucDropTrace == true then
+			zI2:FileLog("INC_DROP reason=HEAL_DEDUP")
+		end
+		return
+	end
 
 	local numAmount, amountText, secret = launderAmount(amount)
 
@@ -3657,7 +3669,15 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			})
 		else
 			if not playerHealthDropped() then
+				local zI3 = ZSBT.ZBattleText
+				if zI3 and zI3.FileLog and ZSBT._ucDropTrace == true then
+					zI3:FileLog("INC_DROP reason=HP_NODROP action=" .. tostring(actionStr))
+				end
 				return
+			end
+			local zI4 = ZSBT.ZBattleText
+			if zI4 and zI4.FileLog and ZSBT._ucDropTrace == true then
+				zI4:FileLog("INC_EMIT WOUND")
 			end
 			self._lastUnitCombatPlayerDamageAt = now()
 			local dmgPipeId = self._rawPipeCount + 1
