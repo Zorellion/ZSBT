@@ -553,7 +553,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 		end
 
 		if evt and evt._zsbtAggSkip ~= true and type(resolvedSpellID) == "number" and type(rule) == "table" and rule.enabled ~= false then
-			local wwRuleExists = (sr and (type(sr[1680]) == "table" or type(sr[190411]) == "table")) and true or false
+			local wwRuleExists = (sr and (type(sr[1680]) == "table" or type(sr[190411]) == "table" or type(sr[199658]) == "table")) and true or false
 			if not (wwRuleExists and isWhirlwindSpellId(resolvedSpellID)) then
 				local aggWin = aggWindowFromRule(rule)
 				if aggWin then
@@ -689,7 +689,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 		-- Generic per-spell aggregation (spell rule): append (xN) marker.
 		if evt and evt.aggCount and type(resolvedSpellID) == "number" and type(rule) == "table" and ZSBT.IsSafeString(text) then
 			local sr2 = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl and ZSBT.db.char.spamControl.spellRules
-			local wwRuleExists = (sr2 and (type(sr2[1680]) == "table" or type(sr2[190411]) == "table")) and true or false
+			local wwRuleExists = (sr2 and (type(sr2[1680]) == "table" or type(sr2[190411]) == "table" or type(sr2[199658]) == "table")) and true or false
 			if not (wwRuleExists and isWhirlwindSpellId(resolvedSpellID)) then
 				local show = aggShowCountFromRule(rule)
 				local n = tonumber(evt.aggCount)
