@@ -258,40 +258,8 @@ local function buildClassPage(pf)
 	body:SetJustifyH("LEFT")
 	body:SetPoint("TOPLEFT", pf, "TOPLEFT", 20, -56)
 
-	local cb = CreateFrame("CheckButton", nil, pf, "InterfaceOptionsCheckButtonTemplate")
-	cb:SetPoint("TOPLEFT", pf, "TOPLEFT", 16, -200)
-	cb.Text:SetText(L["Show auto-attack swings"])
-	cb:SetScript("OnClick", function(self)
-		local prof = ZSBT.db and ZSBT.db.profile
-		if not prof then return end
-		prof.classModule = prof.classModule or {}
-		prof.classModule.allowAutoAttack = self:GetChecked() == true
-	end)
-	cb.Text:SetTextColor(1, 1, 1)
-	local cbHint = shellFont(pf, 11, COL.dim or COL.text,
-		L["When off, class modules that veto auto-attacks (e.g. Warlock — every white hit is pet melee) suppress them entirely."])
-	cbHint:SetWidth(580)
-	cbHint:SetJustifyH("LEFT")
-	cbHint:SetPoint("TOPLEFT", cb, "BOTTOMLEFT", 26, -6)
-
-	local cb2 = CreateFrame("CheckButton", nil, pf, "InterfaceOptionsCheckButtonTemplate")
-	cb2:SetPoint("TOPLEFT", cbHint, "BOTTOMLEFT", -26, -14)
-	cb2.Text:SetText(L["Hide unattributed hits"])
-	cb2:SetScript("OnClick", function(self)
-		local prof = ZSBT.db and ZSBT.db.profile
-		if not prof then return end
-		prof.classModule = prof.classModule or {}
-		prof.classModule.hideUnattributed = self:GetChecked() == true
-	end)
-	cb2.Text:SetTextColor(1, 1, 1)
-	local cb2Hint = shellFont(pf, 11, COL.dim or COL.text,
-		L["Unnamed hits get no combat-log line claim and never display while the filter is trusted. Kills foreign bleed; also quiets own hits that earned no name."])
-	cb2Hint:SetWidth(580)
-	cb2Hint:SetJustifyH("LEFT")
-	cb2Hint:SetPoint("TOPLEFT", cb2, "BOTTOMLEFT", 26, -6)
-
 	local cb3 = CreateFrame("CheckButton", nil, pf, "InterfaceOptionsCheckButtonTemplate")
-	cb3:SetPoint("TOPLEFT", cb2Hint, "BOTTOMLEFT", -26, -14)
+	cb3:SetPoint("TOPLEFT", pf, "TOPLEFT", 16, -200)
 	cb3.Text:SetText(L["Name guardian spells"])
 	cb3:SetScript("OnClick", function(self)
 		local prof = ZSBT.db and ZSBT.db.profile
@@ -336,12 +304,10 @@ local function buildClassPage(pf)
 
 		if not mod then
 			body:SetText(L["No class module is loaded for this character."])
-			cb:Hide(); cbHint:Hide(); cb2:Hide(); cb2Hint:Hide()
 			cb3:Hide(); cb3Hint:Hide(); cb4:Hide(); cb4Hint:Hide()
 			detail:SetText("")
 			return
 		end
-		cb:Show(); cbHint:Show(); cb2:Show(); cb2Hint:Show()
 		cb3:Show(); cb3Hint:Show(); cb4:Show(); cb4Hint:Show()
 
 		local autoVetoed = cdb.VetoAuto and cdb.VetoAuto() == true
@@ -381,8 +347,6 @@ local function buildClassPage(pf)
 		detail:SetText(table.concat(d, "\n"))
 
 		local prof = ZSBT.db and ZSBT.db.profile
-		cb:SetChecked(prof and prof.classModule and prof.classModule.allowAutoAttack == true)
-		cb2:SetChecked(prof and prof.classModule and prof.classModule.hideUnattributed == true)
 		cb3:SetChecked(not prof or not prof.classModule or prof.classModule.resolveGuardians ~= false)
 		cb4:SetChecked(prof and prof.classModule and prof.classModule.namePetMelee == true)
 	end
