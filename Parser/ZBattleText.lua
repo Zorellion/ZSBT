@@ -269,6 +269,14 @@ function ZB:IsTrusted()
     return ZB._trusted == true
 end
 
+-- True only when the ownership veto can actually decide: filter
+-- trusted AND watchdogs have not disabled it. Upstream gates may use this
+-- to route otherwise-dropped candidates through emit() so the
+-- deferred line pairing can prove them.
+function ZB:VetoActive()
+    return ZB._trusted == true and ZB._vetoDisabled ~= true
+end
+
 local function say(msg)
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
         DEFAULT_CHAT_FRAME:AddMessage(msg)
