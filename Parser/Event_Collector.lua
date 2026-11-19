@@ -793,7 +793,33 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 		if trg and trg.OnSpellcastSucceeded then
 			pcall(function() trg:OnSpellcastSucceeded(unit, spellId) end)
 		end
+		-- Track friendly non-player casts (pet, imps, guardians) for pet-hit
+		-- attribution. Also records non-pet friendly units so we can learn
+		-- which unit token temporary pets cast under.
+		self._petCasts = self._petCasts or {}
+		local tCast = now()
+		self._petCasts[#self._petCasts + 1] = { unit = unit, spellId = spellId, at = tCast }
+		if #self._petCasts > 24 then table.remove(self._petCasts, 1) end
+		local zbtc = ZSBT.ZBattleText
+		if zbtc and zbtc.FileLog then
+			zbtc:FileLog(("PET_CAST unit=%s sid=%s"):format(tostring(unit), tostring(spellId)))
+		end
 		return
+	end
+	-- Other friendly units (temporary pets like Wild Imps may cast under
+	-- their own unit token): record them too, filtered to friends only.
+	if unit ~= "player" and unit ~= "target" and UnitIsFriend then
+		local okF, isFriend = pcall(UnitIsFriend, "player", unit)
+		if okF and isFriend == true then
+			self._petCasts = self._petCasts or {}
+			local tCast2 = now()
+			self._petCasts[#self._petCasts + 1] = { unit = unit, spellId = spellId, at = tCast2 }
+			if #self._petCasts > 24 then table.remove(self._petCasts, 1) end
+			local zbtc2 = ZSBT.ZBattleText
+			if zbtc2 and zbtc2.FileLog then
+				zbtc2:FileLog(("FRIEND_CAST unit=%s sid=%s"):format(tostring(unit), tostring(spellId)))
+			end
+		end
 	end
 
 	if unit == "player" then
