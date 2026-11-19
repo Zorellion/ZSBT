@@ -378,6 +378,8 @@ local function flushBestOutgoing(self, token)
 		zbt:FileLog(("FLUSH sid=%s school=%s cnt=%s crit=%s"):format(tostring(bucket.spellId), tostring(bucket.schoolMask), tostring(bucket._seenCount), tostring(bucket.isCrit)))
 
 	end
+	auditNote(("AUDFLUSH sid=%s school=%s cnt=%s crit=%s"):format(
+		tostring(bucket.spellId), tostring(bucket.schoolMask), tostring(bucket._seenCount), tostring(bucket.isCrit == true)))
 	emit("OUTGOING_DAMAGE_COMBAT", {
 		timestamp = bucket.timestamp,
 		rawPipeId = pipeId,
@@ -3605,6 +3607,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		end
 
 		local schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil
+		auditNote(("AUDMB school=%s crit=%s spellId=%s"):format(dbgSafe(school), tostring(isCrit == true), dbgSafe(spellId)))
 
 
 		-- Merge window: multiple UNIT_COMBAT(target) hits can arrive per cast.
