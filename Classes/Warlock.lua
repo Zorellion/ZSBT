@@ -111,16 +111,80 @@ function mod.petPhysicalHit(school, helpers)
 		and school == 1
 end
 
--- Channel seeding (Drain Life / Drain Soul).
+-- Guardian spellbook (spellIds verified from WoWCombatLog). Guardian casts
+-- never reach UNIT_SPELLCAST_SUCCEEDED — they have no unit token — so the
+-- only way to name their hits is this table plus summon-activity tracking.
+-- school is the exact schoolMask the hit reports.
+local GUARDIAN_SPELLS = {
+	wildimp = { { sid = 104318, school = 4 } },                     -- Fel Firebolt
+	dreadstalker = { { sid = 271971, school = 32 } },               -- Dreadbite
+	gloomhound = { { sid = 455491, school = 32 },                   -- Gloom Slash
+		{ sid = 267997, school = 8 } },                             -- Bile Spit
+	tyrant = { { sid = 1264093, school = 36 } },                    -- Burning Cleave
+}
+
+-- Player summon casts → which guardian groups go out, and for how long.
+local GUARDIAN_SUMMONS = {
+	[86040] = { { group = "wildimp", duration = 11 } },             -- Hand of Gul'dan
+	[104316] = { { group = "dreadstalker", duration = 12 },
+		{ group = "gloomhound", duration = 12 } },                  -- Call Dreadstalkers
+	[264119] = { { group = "gloomhound", duration = 15 } },         -- Summon Vilefiend
+	[265187] = { { group = "tyrant", duration = 15 } },             -- Summon Demonic Tyrant
+}
+
+-- Name an unattributed pet hit: collect the spells every ACTIVE guardian
+-- could have produced at this school; exactly one match names the hit,
+-- anything else stays generic (a wrong name is worse than no name).
+-- The succubus main pet contributes Lash of Pain (7814) as a shadow
+-- candidate whenever she is out — real Lash casts are claimed by
+-- consumePetCast before this hook runs, so this mostly keeps school-32
+-- hits correctly ambiguous between her and the other demons.
+function mod.resolvePetSpellId(self, school, t, helpers)
+	if not (helpers and helpers.safeNumber and helpers.safeNumber(school)) then
+		return nil
+	end
+	if school == 1 then return nil end -- melee swings stay generic
+	local best, ambiguous = nil, false
+	for group, spells in pairs(GUARDIAN_SPELLS) do
+		local active = self._guardianUntil and (self._guardianUntil[group] or 0) >= t
+		if active then
+			for _, sp in ipairs(spells) do
+				if sp.school == school then
+					if best == nil then best = sp.sid
+					elseif best ~= sp.sid then ambiguous = true end
+				end
+			end
+		end
+	end
+	if not ambiguous then
+		local fam = helpers and helpers.family and helpers.family() or nil
+		if fam == "succubus" and school == 32 then
+			if best == nil then best = 7814
+			elseif best ~= 7814 then ambiguous = true end
+		end
+	end
+	if ambiguous then return nil end
+	return best
+end
+
+-- Channel seeding (Drain Life / Drain Soul) + guardian summon tracking.
 function mod.onCast(self, spellId, spellName, t)
 	local ch = ZSBT.ClassDB.ChannelMatch(spellId)
-	if not ch then return end
-	self._channel = {
-		untilAt = t + (ch.duration or 6.0),
-		lastTickAt = 0,
-		spellId = spellId,
-		tickMin = ch.tickMin or 0.12,
-	}
+	if ch then
+		self._channel = {
+			untilAt = t + (ch.duration or 6.0),
+			lastTickAt = 0,
+			spellId = spellId,
+			tickMin = ch.tickMin or 0.12,
+		}
+	end
+	local summon = GUARDIAN_SUMMONS[spellId]
+	if summon then
+		self._guardianUntil = self._guardianUntil or {}
+		for _, g in ipairs(summon) do
+			self._guardianUntil[g.group] = t + g.duration
+		end
+	end
 end
 
 ZSBT.ClassDB.Register("WARLOCK", mod)

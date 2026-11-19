@@ -90,6 +90,7 @@ local function consumePetCast(self, t, window, hitSchool)
 		if age > w then break end
 		if age >= 0
 			and (c.claims or 0) < PET_CAST_MAX_CLAIMS
+			and (not ZSBT.IsSafeNumber or ZSBT.IsSafeNumber(c.spellId))
 			and castSchoolOk(self, c.spellId, hitSchool) then
 			c.claims = (c.claims or 0) + 1
 			return c.spellId, c.unit
@@ -120,7 +121,10 @@ local SPELL_SCHOOL_WORDS = {
 }
 local spellFactsCache = {}
 local function SpellFacts(spellId)
+	-- type() is safe on secrets ("number"), but indexing a table with a
+	-- secret key throws — IsSafeNumber is the real gate.
 	if type(spellId) ~= "number" then return nil end
+	if ZSBT.IsSafeNumber and not ZSBT.IsSafeNumber(spellId) then return nil end
 	local c = spellFactsCache[spellId]
 	if c ~= nil then return c or nil end
 	local facts
@@ -165,6 +169,8 @@ end
 -- This is what stops "Consecration shown as Shadow Bolt".
 castSchoolOk = function(self, spellId, school)
 	if type(spellId) ~= "number" then return true end
+	-- Secret spellIds can't index or compare — permissive, like unknown.
+	if ZSBT.IsSafeNumber and not ZSBT.IsSafeNumber(spellId) then return true end
 	local facts = SpellFacts(spellId)
 	if facts and facts.damages == false then return false end
 	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) then return true end
@@ -218,10 +224,17 @@ local function emit(eventType, payload)
 			-- Consume-style match: newest school-fitting pet cast claims the
 			-- hit (budgeted), and the stamp counts as trusted provenance.
 			local psid = consumePetCast(Collector, payload.timestamp or now(), 1.2, payload.schoolMask)
+			local resolved = nil
+			if psid == nil and ZSBT.ClassDB and ZSBT.ClassDB.ResolvePetSpellId then
+				-- Guardian casts are invisible; the class module names the
+				-- hit only when one active guardian spell fits the school.
+				psid = ZSBT.ClassDB.ResolvePetSpellId(Collector, payload.schoolMask, payload.timestamp or now())
+				resolved = psid ~= nil
+			end
 			if psid ~= nil then
 				payload._petRoute = true
 				payload.petSpellId = psid
-				payload._petSidLearn = true
+				payload._petSidLearn = (not resolved) or nil
 				payload.petBucket = "summons"
 			end
 		end
@@ -1005,6 +1018,7 @@ end
 
 function Collector:LearnConfirmedSchool(spellId, schoolMask, trusted)
 	if type(spellId) ~= "number" then return end
+	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(spellId)) then return end
 	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(schoolMask)) then return end
 	-- Provenance gate (FCT Trust): only a sid bound to a consumed cast
 	-- record may teach. Recency/fallback stamps are guesses — a foreign
@@ -1088,6 +1102,9 @@ end
 
 function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 	if not spellId then return end
+	-- Secret spellIds can't index tables or be compared downstream —
+	-- a secret sid is useless to every correlation path, so drop early.
+	if ZSBT.IsSafeNumber and not ZSBT.IsSafeNumber(spellId) then return end
 
 	-- Pet casts are used for custom triggers (e.g. Growl), but should not
 	-- participate in the player cast correlation pipeline.
@@ -2996,6 +3013,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							zbt2:FileLog(("PET_EMIT school=%s"):format(tostring(school)))
 						end
 						local petSid, petUnit = consumePetCast(self, t, 1.5, school)
+						local petSidTrusted = petSid ~= nil
+						if petSid == nil and ZSBT.ClassDB and ZSBT.ClassDB.ResolvePetSpellId then
+							petSid = ZSBT.ClassDB.ResolvePetSpellId(self, school, t)
+						end
 						if ZSBT.IsSafeNumber(school) and school == 1 and zbtVetoActive() then
 							-- Physical pet hits go through the ownership veto:
 							-- a MY_PET melee line must confirm them (the
@@ -3006,7 +3027,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								rawPipeId = pipeId,
 								spellId = nil,
 								petSpellId = petSid,
-								_petSidLearn = petSid ~= nil or nil,
+								_petSidLearn = petSidTrusted or nil,
 								petUnit = petUnit,
 								_petRoute = true,
 								amount = amount,
@@ -3020,7 +3041,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							timestamp = t,
 							rawPipeId = pipeId,
 							petSpellId = petSid,
-							_petSidLearn = petSid ~= nil or nil,
+							_petSidLearn = petSidTrusted or nil,
 							petUnit = petUnit,
 							amount = amount,
 							amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
@@ -3461,6 +3482,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				and (zbtVetoActive() or not members or members <= 1) then
 				petRoutePhys = true
 				petSidPhys = consumePetCast(self, t, 1.5, school)
+				local petSidPhysTrusted = petSidPhys ~= nil
+				if petSidPhys == nil and ZSBT.ClassDB and ZSBT.ClassDB.ResolvePetSpellId then
+					petSidPhys = ZSBT.ClassDB.ResolvePetSpellId(self, school, t)
+				end
 			end
 			emit("OUTGOING_DAMAGE_COMBAT", {
 				timestamp = t,
@@ -3470,7 +3495,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				isAuto = (spellId == nil and swingOk),
 				_petRoute = petRoutePhys,
 				petSpellId = petSidPhys,
-				_petSidLearn = petSidPhys ~= nil or nil,
+				_petSidLearn = petSidPhysTrusted or nil,
 				amountSource = "UNIT_COMBAT_PHYSICAL",
 				targetName = safeUnitName("target"),
 				isCrit = isCrit,
