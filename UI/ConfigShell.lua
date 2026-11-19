@@ -381,20 +381,27 @@ local function buildClassPage(pf)
 		L["|cFFFFD100Teach a spell|r"])
 	teachTitle:SetPoint("TOPLEFT", rightCol, "TOPLEFT", 0, 0)
 
-	local drop = CreateFrame("Button", nil, rightCol, "BackdropTemplate")
-	drop:SetSize(44, 44)
-	drop:SetPoint("TOPLEFT", teachTitle, "BOTTOMLEFT", 2, -6)
-	setBg(drop, COL.track)
-	local dropIcon = drop:CreateTexture(nil, "ARTWORK")
-	dropIcon:SetPoint("TOPLEFT", 3, -3)
-	dropIcon:SetPoint("BOTTOMRIGHT", -3, 3)
-	dropIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-	dropIcon:SetTexture(136235)
-	local dropLabel = shellFont(rightCol, 11, COL.dim or COL.text,
+	-- Drop row: label text left, drop target right styled as a Blizzard
+	-- empty action-bar slot (reads as "a spell goes here" instead of a
+	-- random ability icon). A taught spell's icon shows inside the slot.
+	local dropRow = CreateFrame("Frame", nil, rightCol)
+	dropRow:SetPoint("TOPLEFT", teachTitle, "BOTTOMLEFT", 0, -6)
+	dropRow:SetSize(240, 48)
+	local dropLabel = shellFont(dropRow, 11, COL.dim or COL.text,
 		L["Drag a spell from your bar or spellbook here"])
-	dropLabel:SetPoint("LEFT", drop, "RIGHT", 10, 0)
-	dropLabel:SetWidth(190)
+	dropLabel:SetPoint("TOPLEFT", dropRow, "TOPLEFT", 0, -4)
+	dropLabel:SetWidth(170)
 	dropLabel:SetJustifyH("LEFT")
+	local drop = CreateFrame("Button", nil, dropRow)
+	drop:SetSize(44, 44)
+	drop:SetPoint("LEFT", dropLabel, "RIGHT", 6, 4)
+	local dropSlot = drop:CreateTexture(nil, "BACKGROUND")
+	dropSlot:SetAllPoints()
+	dropSlot:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+	local dropIcon = drop:CreateTexture(nil, "ARTWORK")
+	dropIcon:SetPoint("TOPLEFT", 6, -6)
+	dropIcon:SetPoint("BOTTOMRIGHT", -6, 6)
+	dropIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 
 	local roleState = { role = "auto" }
 	local roleDefs = {
@@ -407,7 +414,7 @@ local function buildClassPage(pf)
 	for i, rd in ipairs(roleDefs) do
 		local cb = CreateFrame("CheckButton", nil, rightCol, "InterfaceOptionsCheckButtonTemplate")
 		cb:SetSize(24, 24)
-		cb:SetPoint("TOPLEFT", drop, "BOTTOMLEFT", -4, -8 - (i - 1) * 26)
+		cb:SetPoint("TOPLEFT", dropRow, "BOTTOMLEFT", -4, -4 - (i - 1) * 26)
 		cb.Text:SetText(rd.label)
 		cb.Text:SetTextColor(1, 1, 1)
 		cb:SetScript("OnClick", function(self)
