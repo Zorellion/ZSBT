@@ -580,6 +580,14 @@ local function isLikelyPetSchoolHitGivenRecentPlayerSpell(self, school, lastPlay
 	return false
 end
 
+local function isLikelyPetPhysicalHit(school)
+	local ClassDB = ZSBT.ClassDB
+	if ClassDB and ClassDB.PetPhysicalHit then
+		return ClassDB.PetPhysicalHit(school)
+	end
+	return false
+end
+
 -- Forward declaration needed so the cache wrapper defined below can reference it.
 local hasTargetDebuffSpellId
 
@@ -2671,6 +2679,15 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					local petEligibleHit = true
 					if ZSBT.IsSafeNumber(school) and not isLikelyPetSchoolHit(school) then
 						petEligibleHit = false
+						-- Class hook: some classes' pets deal physical damage the
+						-- school signature can't cover (warlock Dreadstalker/
+						-- Gloomhound melee). Solo-only — in groups, foreign
+						-- swings are indistinguishable and must not leak as
+						-- pet damage (PET_DAMAGE_COMBAT bypasses the veto).
+						if school == 1 and (not members or members <= 1)
+							and isLikelyPetPhysicalHit(school) then
+							petEligibleHit = true
+						end
 					end
 					if not recentPlayerCast and petEligibleHit then
 						if not isCorroboratedHugePetHit(t, amount) then

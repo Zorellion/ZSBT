@@ -218,6 +218,17 @@ function ClassDB.PetSchoolHitRecent(self, school, lastPlayerSpellId)
 	return false
 end
 
+-- Physical pet damage (school 1) can't live in petSchoolHit: that signature
+-- also gates restrict bypasses, where treating melee as pet would leak
+-- foreign swings. This hook is consulted ONLY by the pet-fallback emit.
+function ClassDB.PetPhysicalHit(school)
+	local mod = ClassDB.ActiveModule()
+	if mod and mod.petPhysicalHit then
+		return mod.petPhysicalHit(school, ClassDB.Helpers()) == true
+	end
+	return false
+end
+
 -- Returns false when the module vetoes this dot attribution (e.g. warlock
 -- Imp fire hits are pet damage, never DoT ticks). nil/true = allowed.
 function ClassDB.DotGuard(entry, school)
