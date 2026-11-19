@@ -56,22 +56,59 @@ function mod.petSchoolHit(school, helpers)
 	return false
 end
 
--- Recent-cast variant: fire hits near a recent DoT/nuke cast still belong
--- to the Imp (prevents pet fire from being claimed as player damage).
+-- Warlock spells whose damage carries the fire bit and therefore must NOT
+-- be pet-claimed when they are the recent cast: direct fire nukes, the
+-- Immolate family, and fire-bit hybrid nukes (HoG/Implosion/Ruination are
+-- Shadowflame). Everything else a lock casts (shadow nukes, dots, summons,
+-- defensives) means a nearby fire hit is almost certainly an Imp bolt or
+-- Mother of Chaos Chaos Salvo.
+local WARLOCK_FIRE_PLAYER_SPELLS = {
+	["Immolate"] = true,
+	["Incinerate"] = true,
+	["Conflagrate"] = true,
+	["Firebolt"] = true,
+	["Rain of Fire"] = true,
+	["Cataclysm"] = true,
+	["Infernal Bolt"] = true,
+	["Hand of Gul'dan"] = true,
+	["Implosion"] = true,
+	["Ruination"] = true,
+	["Eye of Gul'dan"] = true,
+	["Diabolic Gaze"] = true,
+	["Rune of Unleashed Fire"] = true,
+	["Summon Infernal"] = true,
+}
+
+-- Recent-cast variant: a fire-bit hit near a recent cast belongs to the
+-- Imp/pets UNLESS that cast is a known warlock fire damage spell (then it
+-- may be the player's own Incinerate/Immolate/etc). Shadow (32) hits are
+-- never pet-claimed here — they overlap player DoTs/nukes.
 function mod.petSchoolHitRecent(self, school, lastPlayerSpellId, helpers)
 	if not (helpers and helpers.safeNumber and helpers.safeNumber(school)) then
 		return false
 	end
 	if not hasFireBit(school) then return false end
 	if type(lastPlayerSpellId) ~= "number" then return false end
-	-- Recent cast was a known warlock dot or Shadow Bolt -> keep fire as pet.
-	local e = ZSBT.ClassDB.DotEntry and ZSBT.ClassDB.DotEntry(lastPlayerSpellId)
-	if e and e.school == 32 then
-		return true
-	end
 	local sn = helpers.cleanName and helpers.cleanName(lastPlayerSpellId) or nil
-	if sn == "Shadow Bolt" then return true end
-	return false
+	if sn == nil then
+		-- Name resolution failed: fall back to the old shadow-dot check so
+		-- Imp fire near Corruption/Shadow Bolt still routes to the pet.
+		local e = ZSBT.ClassDB.DotEntry and ZSBT.ClassDB.DotEntry(lastPlayerSpellId)
+		if e and e.school == 32 then
+			return true
+		end
+		return false
+	end
+	if WARLOCK_FIRE_PLAYER_SPELLS[sn] then return false end
+	return true
+end
+
+-- Physical pet melee (Dreadstalker, Gloomhound, etc). Consulted only by the
+-- pet-fallback emit and gated to non-group content by the caller — in
+-- groups, foreign swings are indistinguishable from pet melee.
+function mod.petPhysicalHit(school, helpers)
+	return helpers and helpers.safeNumber and helpers.safeNumber(school)
+		and school == 1
 end
 
 -- Channel seeding (Drain Life / Drain Soul).
