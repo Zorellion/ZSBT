@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.3.7
+
+### Fixed
+- **Doubled dodge/parry/miss text:** `UNIT_COMBAT` fires once per unit token, so a miss on your target arrived as both `nameplateN` (remapped to target) and `target`, and each event emitted its own miss line. Non-damage actions now collapse same-action twins within 50ms before reaching the emit branches, matching the dedup damage already had.
+- **Green outgoing numbers from mob self-heals:** `UNIT_COMBAT("target")` heals were emitted as outgoing regardless of who healed — mob HoTs (e.g. Owlbeast Regrowth) displayed as green outgoing text, doubled by the same token duplication. Heals on attackable (hostile) units are now suppressed since players cannot heal them; heals on friendly targets are unaffected.
+
 ## 3.3.6
 
 ### Fixed
