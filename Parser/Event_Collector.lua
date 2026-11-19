@@ -2268,6 +2268,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		local t = now()
 		local actionStr = ZSBT.IsSafeString(action) and action or nil
 		local isPhysicalEarly = ZSBT.IsSafeNumber(school) and school == 1
+		if actionStr == "WOUND" then
+			local zbtc = ZSBT.ZBattleText
+			if zbtc and zbtc.FileLog then
+				zbtc:FileLog(("CAND school=%s crit=%s"):format((ZSBT.IsSafeNumber(school) and tostring(school)) or "sec", tostring(isCrit == true)))
+			end
+		end
 		if dl >= 4 and ZSBT.IsSafeNumber(amount) and amount >= getAdaptiveBigHitThreshold(t) then
 			local members = nil
 			if type(GetNumGroupMembers) == "function" then
