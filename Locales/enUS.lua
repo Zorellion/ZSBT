@@ -1204,3 +1204,7 @@ L["Name guardian spells"] = true
 L["Pet melee verified by a combat-log line displays as 'Auto Attack'. A stolen MY_PET line could still name a foreign swing."] = true
 L["Show Pet Melee Hits"] = true
 L["Show pet melee hits"] = true
+L["Icon Position"] = true
+L["Show the spell icon to the left or right of the text."] = true
+L["Left"] = true
+L["Right"] = true

@@ -714,6 +714,7 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
     end
 
     if prof.showSpellIcons then
+        meta.iconSide = prof.iconSide
         local allowResolved = (prof.showSpellIconsResolved ~= false)
         local allowFallback = (prof.showSpellIconsFallback ~= false)
         if allowResolved and sid then

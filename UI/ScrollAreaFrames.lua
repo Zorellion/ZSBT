@@ -2783,6 +2783,7 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
     local hasInlineIcon = false
 
     if meta and meta.spellIcon then
+        local iconRight = (meta.iconSide == "right")
         -- For Center alignment, keep the TEXT centered by itself.
         -- Inline icons become part of the string width and shift the letters to the right.
         -- Use a separate icon FontString instead.
@@ -2791,14 +2792,23 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             iconFS:SetFont(fontFace, effectiveFontSize, outlineFlag or "OUTLINE")
             local iconStr = "|T" .. meta.spellIcon .. ":" .. iconSize .. ":" .. iconSize .. "|t"
             iconFS:SetText(iconStr)
-            iconFS:SetPoint("RIGHT", fs, "LEFT", -2, 0)
+            if iconRight then
+                iconFS:SetPoint("LEFT", fs, "RIGHT", 2, 0)
+            else
+                iconFS:SetPoint("RIGHT", fs, "LEFT", -2, 0)
+            end
             iconFS:SetAlpha(fontAlpha or 1.0)
             iconFS:Show()
         else
             if ZSBT.IsSafeString(text) then
                 -- Clean text: inline icon escape
-                local iconStr = "|T" .. meta.spellIcon .. ":" .. iconSize .. ":" .. iconSize .. L["|t "]
-                fs:SetText(iconStr .. text)
+                if iconRight then
+                    local iconStr = "|T" .. meta.spellIcon .. ":" .. iconSize .. ":" .. iconSize .. "|t"
+                    fs:SetText(text .. " " .. iconStr)
+                else
+                    local iconStr = "|T" .. meta.spellIcon .. ":" .. iconSize .. ":" .. iconSize .. L["|t "]
+                    fs:SetText(iconStr .. text)
+                end
                 hasInlineIcon = true
             else
                 -- Tainted: use separate icon FontString with embedded texture escape
@@ -2806,7 +2816,11 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
                 iconFS:SetFont(fontFace, effectiveFontSize, outlineFlag or "OUTLINE")
                 local iconStr = "|T" .. meta.spellIcon .. ":" .. iconSize .. ":" .. iconSize .. "|t"
                 iconFS:SetText(iconStr)
-                iconFS:SetPoint("RIGHT", fs, "LEFT", -2, 0)
+                if iconRight then
+                    iconFS:SetPoint("LEFT", fs, "RIGHT", 2, 0)
+                else
+                    iconFS:SetPoint("RIGHT", fs, "LEFT", -2, 0)
+                end
                 iconFS:SetAlpha(fontAlpha or 1.0)
                 iconFS:Show()
             end
@@ -3317,12 +3331,20 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
         -- Position icon to the left of text, matching alpha
         if iconTex then
             iconTex:ClearAllPoints()
-            iconTex:SetPoint("RIGHT", fs, "LEFT", -2, 0)
+            if meta and meta.iconSide == "right" then
+                iconTex:SetPoint("LEFT", fs, "RIGHT", 2, 0)
+            else
+                iconTex:SetPoint("RIGHT", fs, "LEFT", -2, 0)
+            end
             iconTex:SetAlpha(fs:GetAlpha())
         end
         if iconFS then
             iconFS:ClearAllPoints()
-            iconFS:SetPoint("RIGHT", fs, "LEFT", -2, 0)
+            if meta and meta.iconSide == "right" then
+                iconFS:SetPoint("LEFT", fs, "RIGHT", 2, 0)
+            else
+                iconFS:SetPoint("RIGHT", fs, "LEFT", -2, 0)
+            end
             iconFS:SetAlpha(fs:GetAlpha())
         end
     end)
