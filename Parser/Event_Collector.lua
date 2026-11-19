@@ -131,6 +131,27 @@ end
 -- candidates (pet-minion hits, shared-target damage) may then flow to
 -- emit() where OfferOutgoing pairs them with a palette line instead of
 -- dying in the heuristic gates.
+-- Most recent friendly non-player cast (pet slot, imps, guardians) within
+-- `window` seconds. Returns spellId, unit or nil. Used to tag pet-fallback
+-- emits with the pet spell that likely produced the hit.
+local function recentPetCast(self, t, window)
+	local casts = self._petCasts
+	if type(casts) ~= "table" then return nil end
+	local best, bestUnit
+	for i = #casts, 1, -1 do
+		local c = casts[i]
+		local age = t - (c.at or 0)
+		if age >= 0 and age <= (window or 1.5) then
+			best = c.spellId
+			bestUnit = c.unit
+			break
+		elseif age > (window or 1.5) then
+			break
+		end
+	end
+	return best, bestUnit
+end
+
 local function zbtVetoActive()
 	local z = ZSBT.ZBattleText
 	if not (z and z.VetoActive) then return false end
@@ -2480,9 +2501,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						if zbt2 and zbt2.FileLog then
 							zbt2:FileLog(("PET_EMIT school=%s"):format(tostring(school)))
 						end
+						local petSid, petUnit = recentPetCast(self, t, 1.5)
 						emit("PET_DAMAGE_COMBAT", {
 							timestamp = t,
 							rawPipeId = pipeId,
+							petSpellId = petSid,
+							petUnit = petUnit,
 							amount = amount,
 							amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
 							isCrit = isCrit,

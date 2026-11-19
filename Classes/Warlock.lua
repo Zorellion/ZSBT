@@ -40,10 +40,17 @@ function mod.dotGuard(entry, school, helpers)
 	return nil
 end
 
--- Pet signature: Imp damage is fire (school 4).
+-- Pet signature: warlock-pet damage carries the fire bit. UNIT_COMBAT
+-- reports composite school masks for minion pets (imp firebolts arrive as
+-- 4, 12, 36 etc.), so match the fire bit rather than exact school 4.
+-- Shadow (32) is deliberately excluded — it overlaps player DoTs/nukes.
+local function hasFireBit(school)
+	return math.floor(school / 4) % 2 == 1
+end
+
 function mod.petSchoolHit(school, helpers)
 	if helpers and helpers.safeNumber and helpers.safeNumber(school)
-		and school == 4 then
+		and hasFireBit(school) then
 		return true
 	end
 	return false
@@ -55,7 +62,7 @@ function mod.petSchoolHitRecent(self, school, lastPlayerSpellId, helpers)
 	if not (helpers and helpers.safeNumber and helpers.safeNumber(school)) then
 		return false
 	end
-	if school ~= 4 then return false end
+	if not hasFireBit(school) then return false end
 	if type(lastPlayerSpellId) ~= "number" then return false end
 	-- Recent cast was a known warlock dot or Shadow Bolt -> keep fire as pet.
 	local e = ZSBT.ClassDB.DotEntry and ZSBT.ClassDB.DotEntry(lastPlayerSpellId)
