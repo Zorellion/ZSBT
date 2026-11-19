@@ -203,6 +203,109 @@ function ClassDB.Unteach(spellId)
 	if type(t) == "table" then t[spellId] = nil end
 end
 
+-- Structured view of everything the active module ships with: dots,
+-- channels, cast budgets, guardian summon triggers, guardian spellbook.
+-- Modules expose the last two as mod.guardianSummons/mod.guardianSpells
+-- (aliases to their file-local tables). UI-only: allocates freely.
+function ClassDB.KnowledgeList()
+	local out = {}
+	local mod = ClassDB.ActiveModule()
+	if not mod then return out end
+	local clean = ZSBT.CleanSpellName
+	local function nameOf(sid)
+		local nm = clean and clean(sid)
+		return (type(nm) == "string" and nm ~= "") and nm or tostring(sid)
+	end
+	for _, e in ipairs(mod.dots or {}) do
+		out[#out + 1] = {
+			kind = "DoT",
+			name = (e.names and e.names[1]) or "?",
+			ids = e.ids,
+			extra = type(e.school) == "number" and ("school " .. e.school) or nil,
+		}
+	end
+	for _, e in ipairs(mod.channels or {}) do
+		out[#out + 1] = {
+			kind = "Channel",
+			name = (e.names and e.names[1]) or "?",
+			ids = e.ids,
+			extra = type(e.duration) == "number" and (e.duration .. "s") or nil,
+		}
+	end
+	for sid, budget in pairs(mod.castBudget or {}) do
+		out[#out + 1] = {
+			kind = "Cast",
+			name = nameOf(sid),
+			ids = { sid },
+			extra = "x" .. tostring(budget),
+		}
+	end
+	for sid, wins in pairs(mod.guardianSummons or {}) do
+		local groups = {}
+		for _, g in ipairs(wins) do groups[#groups + 1] = tostring(g.group) end
+		out[#out + 1] = {
+			kind = "Summon",
+			name = nameOf(sid),
+			ids = { sid },
+			extra = table.concat(groups, "/"),
+		}
+	end
+	for group, spells in pairs(mod.guardianSpells or {}) do
+		for _, sp in ipairs(spells) do
+			out[#out + 1] = {
+				kind = "Guardian",
+				name = nameOf(sp.sid),
+				ids = { sp.sid },
+				extra = tostring(group) .. "/sch" .. tostring(sp.school),
+			}
+		end
+	end
+	table.sort(out, function(a, b)
+		if a.kind ~= b.kind then return a.kind < b.kind end
+		return tostring(a.name) < tostring(b.name)
+	end)
+	return out
+end
+
+-- Does the active module already know this spellId? Returns a short
+-- kind string ("dot"/"channel"/"cast"/"summon"/"guardian") so the teach
+-- UI can flag a redundant drop. Name check included so a cast-id
+-- different from the table id still matches its dot/channel entry.
+function ClassDB.KnowsSpell(spellId)
+	if type(spellId) ~= "number" then return nil end
+	local mod = ClassDB.ActiveModule()
+	if not mod then return nil end
+	local sn = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or nil
+	for _, e in ipairs(mod.dots or {}) do
+		for _, id in ipairs(e.ids or {}) do
+			if id == spellId then return "dot" end
+		end
+		if type(sn) == "string" then
+			for _, n in ipairs(e.names or {}) do
+				if n == sn then return "dot" end
+			end
+		end
+	end
+	for _, e in ipairs(mod.channels or {}) do
+		for _, id in ipairs(e.ids or {}) do
+			if id == spellId then return "channel" end
+		end
+		if type(sn) == "string" then
+			for _, n in ipairs(e.names or {}) do
+				if n == sn then return "channel" end
+			end
+		end
+	end
+	if mod.castBudget and mod.castBudget[spellId] then return "cast" end
+	if mod.guardianSummons and mod.guardianSummons[spellId] then return "summon" end
+	for _, spells in pairs(mod.guardianSpells or {}) do
+		for _, sp in ipairs(spells) do
+			if sp.sid == spellId then return "guardian" end
+		end
+	end
+	return nil
+end
+
 -- Sorted list for the Class page UI (allocates; UI-only, never hot path).
 function ClassDB.TaughtList()
 	local out = {}

@@ -1219,3 +1219,4 @@ L["Dots:"] = true
 L["Channels:"] = true
 L["Inferred (spells with no static school data):"] = true
 L["Auto (guess)"] = true
+L["|cFFFFD100Module knowledge|r"] = true
