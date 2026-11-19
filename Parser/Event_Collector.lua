@@ -111,6 +111,14 @@ local function ECPrint(msg)
 	end
 end
 
+-- Pipeline drop tracer: every silent return on the unattributed
+-- target-WOUND path prints UC_DROP so we can see exactly where hits die.
+local function dbgDrop(reason, tok, school)
+	if OutDbgLevel() >= 4 or ZSBT._ucDropTrace == true then
+		ECPrint(("UC_DROP reason=%s token=%s school=%s"):format(reason, dbgSafe(tok), dbgSafe(school)))
+	end
+end
+
 
 local function isCritChatMessage(msg)
 	if type(msg) ~= "string" then return false end
@@ -2940,6 +2948,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 			-- Physical with a pet is too ambiguous.
 			if isPhysical and hasPet then
+				dbgDrop("PHYS_PET", self._castToken, school)
 				return
 			end
 			local castWindow = (restrict == true) and 0.55 or 0.85
@@ -3073,6 +3082,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							return
 						end
 					end
+					dbgDrop("SUPPRESS_UNATTR", self._castToken, school)
 					return
 				end
 				-- "Make it work" mode: if we cannot confidently attribute to a specific spell,
@@ -3088,6 +3098,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- attribution because UNIT_COMBAT(target) has no ownership and will leak
 					-- other players' damage on shared targets.
 					if members and members > 1 then
+						dbgDrop("GROUP_GATE", self._castToken, school)
 						return
 					end
 					local lastAt = self._lastPlayerSpellAt
@@ -3103,9 +3114,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						if age >= 0 and age <= maxAge then
 							matchedCast = { spellId = lastId, eligibleIcon = true }
 						else
+							dbgDrop("RESTRICT_AGE", self._castToken, school)
 							return
 						end
 					else
+						dbgDrop("RESTRICT_NOCAST", self._castToken, school)
 						return
 					end
 				end
@@ -3128,20 +3141,24 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								-- Quiet/strict: suppress unattributed numbers when we cannot even loosely
 								-- correlate to a recent player cast.
 								if quietMode == true or restrict == true then
+									dbgDrop("MIW_QUIET", self._castToken, school)
 									return
 								end
 								matchedCast = { spellId = nil, eligibleIcon = false }
 							end
 						else
 							if quietMode == true or restrict == true then
+								dbgDrop("MIW_QUIET", self._castToken, school)
 								return
 							end
 							matchedCast = { spellId = nil, eligibleIcon = false }
 						end
 					else
+						dbgDrop("MIW_AGE", self._castToken, school)
 						return
 					end
 				else
+					dbgDrop("MIW_NO_CAST", self._castToken, school)
 					return
 				end
 			end

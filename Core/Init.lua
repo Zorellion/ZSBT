@@ -2001,6 +2001,10 @@ function Addon:HandleSlashCommand(input)
     elseif cmd == "filter" then
         self:HandleFilterCommand(rest)
         return
+    elseif cmd == "ucdrop" then
+        ZSBT._ucDropTrace = not (ZSBT._ucDropTrace == true)
+        self:Print("UC_DROP trace " .. (ZSBT._ucDropTrace and "ON" or "OFF"))
+        return
     elseif cmd == "dumpcvars" then
 		local function safeGet(name)
 			if type(GetCVar) ~= "function" then return nil end
@@ -2056,7 +2060,7 @@ function Addon:HandleSlashCommand(input)
 	end
 
     self:Print(L["|cFF808C9EUnknown command:|r "] .. cmd)
-	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | reset | version | auratest | restorefct | dumpcvars | ctprobe]"])
+	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | reset | version | auratest | restorefct | dumpcvars | ctprobe | ucdrop]"])
 end
 
 ------------------------------------------------------------------------
