@@ -127,7 +127,16 @@ local function recordLine(r, g, b)
         return
     end
     local kind = classifyColor(r, g, b)
-    if not kind then return end
+    if not kind then
+        -- Unclassified colour: possibly minion/pet damage under a palette
+        -- colour we do not emit. Log throttled so its RGB can be identified.
+        local t0 = GetTime and GetTime() or 0
+        if t0 - (ZB._lastOddLineAt or 0) >= 0.10 then
+            ZB._lastOddLineAt = t0
+            ZB:FileLog(("ODD rgb=%.2f,%.2f,%.2f"):format(r, g, b))
+        end
+        return
+    end
 
     local t = GetTime and GetTime() or 0
     ZB._lastLineAt = t
