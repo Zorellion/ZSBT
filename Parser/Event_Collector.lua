@@ -2259,9 +2259,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							return
 						end
 						self._recentPeriodicSpellAt[dotSpellId] = t
+						local pipeId = self._rawPipeCount + 1
+						self._rawPipeCount = pipeId
+						self._rawPipe[pipeId] = amount
 						local tName = safeUnitName("target")
 						emit("OUTGOING_DAMAGE_COMBAT", {
 							timestamp = t,
+							rawPipeId = pipeId,
 							amount = amount,
 							amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
 							spellId = dotSpellId,
@@ -2833,9 +2837,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(amount)))
 					end
 					self._recentPeriodicSpellAt[dotSpellId] = t
+					local pipeId = self._rawPipeCount + 1
+					self._rawPipeCount = pipeId
+					self._rawPipe[pipeId] = amount
 					local tName = safeUnitName("target")
 					emit("OUTGOING_DAMAGE_COMBAT", {
 						timestamp = t,
+						rawPipeId = pipeId,
 						amount = amount,
 						amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
 						spellId = dotSpellId,
@@ -2862,6 +2870,69 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 			matchedCast = consumeBestPendingCast(self, t, wantSpellId, castWindow)
 			if not matchedCast then
+				-- Class-module DoT attribution (secret-safe): an unattributed
+				-- non-physical WOUND can be a periodic tick. No amount comparisons
+				-- are needed — the amount goes straight into the raw pipe, which is
+				-- the only display-safe path for secret values on Retail 12.x.
+				local dotSpellId = getMostRecentPeriodicSpellId(self, t)
+				-- Don't let a DoT steal a hit that probably belongs to a nuke cast
+				-- moments ago: if the last cast was a non-dot spell within ~1.5s,
+				-- leave attribution to the make-it-work window below.
+				local dotBlockedByRecentCast = false
+				local lastCastAt = self._lastPlayerSpellAt
+				local lastCastId = self._lastPlayerSpellId
+				if type(lastCastAt) == "number" and type(lastCastId) == "number"
+					and (t - lastCastAt) >= 0 and (t - lastCastAt) <= 1.50
+					and not dotEntryForSpellId(lastCastId) then
+					dotBlockedByRecentCast = true
+				end
+				if dotSpellId and not dotBlockedByRecentCast then
+					if ZSBT.ClassDB and ZSBT.ClassDB.DotGuard then
+						if ZSBT.ClassDB.DotGuard(dotEntryForSpellId(dotSpellId), school) == false then
+							dotSpellId = nil
+						end
+					end
+					local dotEntry = dotSpellId and dotEntryForSpellId(dotSpellId) or nil
+					if dotEntry and dotEntry.school and ZSBT.IsSafeNumber(school) and school ~= dotEntry.school then
+						dotSpellId = nil
+					end
+					if dotSpellId then
+						local debuffOk = cachedHasTargetDebuffSpellId(dotSpellId)
+						if debuffOk ~= true then
+							local allowDot = false
+							if dotEntry and dotEntry.school and ZSBT.IsSafeNumber(school) and school == dotEntry.school then
+								allowDot = true
+							end
+							if not allowDot then
+								dotSpellId = nil
+							end
+						end
+					end
+					if dotSpellId and isCorroboratedHugeHit(t, amount, dotSpellId) then
+						if OutDbgLevel() >= 4 then
+							ECPrint(("DOT_ATTRIB src=UNIT_COMBAT_MERGE token=%s spellId=%s amt=%s school=%s")
+								:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(amount), dbgSafe(school)))
+						end
+						self._recentPeriodicSpellAt[dotSpellId] = t
+						local pipeId = self._rawPipeCount + 1
+						self._rawPipeCount = pipeId
+						self._rawPipe[pipeId] = amount
+						local tName = safeUnitName("target")
+						self._lastOutgoingCombatAt = t
+						self._lastOutgoingCombatTargetName = tName
+						emit("OUTGOING_DAMAGE_COMBAT", {
+							timestamp = t,
+							rawPipeId = pipeId,
+							spellId = dotSpellId,
+							amountSource = "UNIT_COMBAT_DOT",
+							targetName = tName,
+							isCrit = isCrit,
+							isPeriodic = true,
+							schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil,
+						})
+						return
+					end
+				end
 				if suppressIfUnattributed == true then
 					-- Midnight: the school field is unreliable (physical abilities like
 					-- Sinister Strike report school=32), so auto-attacks land in this
