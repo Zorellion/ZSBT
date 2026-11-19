@@ -3469,6 +3469,15 @@ function ZSBT.BuildDebugOptionsTable()
 				end
 			end,
 		},
+		ucDropTrace = {
+			type = "toggle",
+			name = L["Outgoing Drop Trace"],
+			desc = L["Prints UC_DROP for every unattributed target-WOUND event dropped by the outgoing pipeline. Runtime only; resets on reload. Also: /zsbt ucdrop"],
+			order = 3.3,
+			width = "full",
+			get = function() return ZSBT._ucDropTrace == true end,
+			set = function(_, val) ZSBT._ucDropTrace = (val == true) end,
+		},
 		allOff = {
 			type = "execute",
 			name = L["All Off"],
