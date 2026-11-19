@@ -79,11 +79,15 @@ local function emit(eventType, payload)
 end
 
 local function OutDbgLevel()
+	local lvl = 0
 	local Addon = ZSBT and ZSBT.Addon
 	if Addon and Addon.GetDebugLevel then
-		return tonumber(Addon:GetDebugLevel("outgoing")) or 0
+		lvl = tonumber(Addon:GetDebugLevel("outgoing")) or 0
+	else
+		lvl = (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (tonumber(ZSBT.db.profile.diagnostics.debugLevel) or 0)) or 0
 	end
-	return (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (tonumber(ZSBT.db.profile.diagnostics.debugLevel) or 0)) or 0
+	if ZSBT._ucDropTrace == true and lvl < 4 then lvl = 4 end
+	return lvl
 end
 
 -- AceConsole's Print() concatenates varargs; passing a Secret Value will
@@ -2722,7 +2726,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				end
 			end
 			if restrict and not matchedCast then
-				return
+				if zbtVetoActive() then
+					dbgDrop("BYPASS_RESTRICT_PHYS", self._castToken, school)
+					matchedCast = { spellId = nil, eligibleIcon = false }
+				else
+					dbgDrop("RESTRICT_PHYS", self._castToken, school)
+					return
+				end
 			end
 			if hasPet and not matchedCast then
 				-- With a pet out, unattributed physical hits were assumed to be the
@@ -2730,7 +2740,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- claim this hit (school signature match); otherwise it's the
 				-- player's own swing and should continue to the white-hit path.
 				if isLikelyPetSchoolHit(school) then
-					return
+					if zbtVetoActive() then
+						dbgDrop("BYPASS_PET_SCHOOL_PHYS", self._castToken, school)
+						matchedCast = { spellId = nil, eligibleIcon = false }
+					else
+						dbgDrop("PET_SCHOOL_PHYS", self._castToken, school)
+						return
+					end
 				end
 			end
 			local spellId = nil
@@ -2960,6 +2976,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- Physical with a pet is too ambiguous.
 			if isPhysical and hasPet then
 				if zbtVetoActive() then
+					dbgDrop("BYPASS_PHYS_PET", self._castToken, school)
 					matchedCast = { spellId = nil, eligibleIcon = false }
 				else
 					dbgDrop("PHYS_PET", self._castToken, school)
@@ -3114,6 +3131,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- other players' damage on shared targets.
 					if members and members > 1 then
 						if zbtVetoActive() then
+							dbgDrop("BYPASS_GROUP_GATE", self._castToken, school)
 							matchedCast = { spellId = nil, eligibleIcon = false }
 						else
 							dbgDrop("GROUP_GATE", self._castToken, school)
