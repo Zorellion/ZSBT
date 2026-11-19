@@ -211,6 +211,37 @@ local function buildOpenWorldMenu()
 	}
 end
 
+local function buildClassMenu()
+	local prof = ZSBT.db and ZSBT.db.profile or {}
+	local cm = prof.classModule or {}
+	return {
+		{
+			text = L["Hide Unattributed Hits"],
+			isNotRadio = true,
+			checked = function() return cm.hideUnattributed == true end,
+			func = function()
+				prof.classModule = prof.classModule or {}
+				prof.classModule.hideUnattributed = not (prof.classModule.hideUnattributed == true)
+				notifyConfig()
+				refreshActiveDropDown()
+			end,
+			keepShownOnClick = true,
+		},
+		{
+			text = L["Show Auto-Attack Swings"],
+			isNotRadio = true,
+			checked = function() return cm.allowAutoAttack == true end,
+			func = function()
+				prof.classModule = prof.classModule or {}
+				prof.classModule.allowAutoAttack = not (prof.classModule.allowAutoAttack == true)
+				notifyConfig()
+				refreshActiveDropDown()
+			end,
+			keepShownOnClick = true,
+		},
+	}
+end
+
 local function showMenu(anchor, which)
 	if not anchor or not which then return end
 	if not QuickBar._dropDown then return end
@@ -267,6 +298,8 @@ function QuickBar:Init()
 			menu = buildOpenWorldMenu()
 		elseif which == "pvp" then
 			menu = buildPvPMenu()
+		elseif which == "class" then
+			menu = buildClassMenu()
 		end
 		if type(menu) ~= "table" then return end
 		for _, item in ipairs(menu) do
@@ -275,7 +308,7 @@ function QuickBar:Init()
 	end, "MENU")
 
 	local f = CreateFrame("Frame", "ZSBT_QuickControlBar", UIParent, "BackdropTemplate")
-	f:SetSize(346, 28)
+	f:SetSize(430, 28)
 	f:SetFrameStrata("DIALOG")
 	f:SetFrameLevel(50)
 	f:SetBackdrop({
@@ -373,9 +406,33 @@ function QuickBar:Init()
 	end)
 	btnPvP:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
+	-- Class-module button: labeled with the player's class, visible only
+	-- when a class module is loaded for this character.
+	local cdb = ZSBT.ClassDB
+	local classModActive = cdb and cdb.ActiveModule and cdb.ActiveModule() ~= nil
+	local btnAnchor = btnPvP
+	if classModActive then
+		local _, className = UnitClass("player")
+		local btnClass = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+		btnClass:SetSize(80, 22)
+		btnClass:SetPoint("LEFT", btnPvP, "RIGHT", 4, 0)
+		btnClass:SetText(className or L["Class"])
+		btnClass:SetScript("OnClick", function()
+			showMenu(btnClass, "class")
+		end)
+		btnClass:SetScript("OnEnter", function()
+			GameTooltip:SetOwner(btnClass, "ANCHOR_TOP")
+			GameTooltip:SetText(L["ZSBT - Class Module"])
+			GameTooltip:AddLine(L["Quick toggle class-module attribution tweaks."], 0.8, 0.8, 0.8, true)
+			GameTooltip:Show()
+		end)
+		btnClass:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+		btnAnchor = btnClass
+	end
+
 	local btnUnlock = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
 	btnUnlock:SetSize(60, 22)
-	btnUnlock:SetPoint("LEFT", btnPvP, "RIGHT", 4, 0)
+	btnUnlock:SetPoint("LEFT", btnAnchor, "RIGHT", 4, 0)
 	btnUnlock:SetText(L["Unlock"])
 	btnUnlock:SetScript("OnClick", function()
 		if ZSBT.IsScrollAreasUnlocked and ZSBT.IsScrollAreasUnlocked() then

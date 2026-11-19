@@ -274,10 +274,26 @@ local function buildClassPage(pf)
 	cbHint:SetJustifyH("LEFT")
 	cbHint:SetPoint("TOPLEFT", cb, "BOTTOMLEFT", 26, -6)
 
+	local cb2 = CreateFrame("CheckButton", nil, pf, "InterfaceOptionsCheckButtonTemplate")
+	cb2:SetPoint("TOPLEFT", cbHint, "BOTTOMLEFT", -26, -14)
+	cb2.Text:SetText(L["Hide unattributed hits"])
+	cb2:SetScript("OnClick", function(self)
+		local prof = ZSBT.db and ZSBT.db.profile
+		if not prof then return end
+		prof.classModule = prof.classModule or {}
+		prof.classModule.hideUnattributed = self:GetChecked() == true
+	end)
+	cb2.Text:SetTextColor(1, 1, 1)
+	local cb2Hint = shellFont(pf, 11, COL.dim or COL.text,
+		L["Unnamed hits get no combat-log line claim and never display while the filter is trusted. Kills foreign bleed; also quiets own hits that earned no name."])
+	cb2Hint:SetWidth(580)
+	cb2Hint:SetJustifyH("LEFT")
+	cb2Hint:SetPoint("TOPLEFT", cb2, "BOTTOMLEFT", 26, -6)
+
 	local detail = shellFont(pf, 12, COL.dim or COL.text, "")
 	detail:SetWidth(620)
 	detail:SetJustifyH("LEFT")
-	detail:SetPoint("TOPLEFT", cbHint, "BOTTOMLEFT", -26, -18)
+	detail:SetPoint("TOPLEFT", cb2Hint, "BOTTOMLEFT", -26, -18)
 
 	local function refresh()
 		local cdb = ZSBT.ClassDB
@@ -288,10 +304,10 @@ local function buildClassPage(pf)
 
 		if not mod then
 			body:SetText(L["No class module is loaded for this character."])
-			cb:Hide(); cbHint:Hide(); detail:SetText("")
+			cb:Hide(); cbHint:Hide(); cb2:Hide(); cb2Hint:Hide(); detail:SetText("")
 			return
 		end
-		cb:Show(); cbHint:Show()
+		cb:Show(); cbHint:Show(); cb2:Show(); cb2Hint:Show()
 
 		local autoVetoed = cdb.VetoAuto and cdb.VetoAuto() == true
 		local lines = {
@@ -331,6 +347,7 @@ local function buildClassPage(pf)
 
 		local prof = ZSBT.db and ZSBT.db.profile
 		cb:SetChecked(prof and prof.classModule and prof.classModule.allowAutoAttack == true)
+		cb2:SetChecked(prof and prof.classModule and prof.classModule.hideUnattributed == true)
 	end
 	pf:SetScript("OnShow", refresh)
 end

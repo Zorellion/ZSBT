@@ -807,6 +807,21 @@ function ZB:OfferOutgoing(payload)
     if type(tHit) ~= "number" then return true end
     if vetoDisabledNow() then return true end
 
+    -- Strict toggle (Class page / quick bar): unattributed candidates get
+    -- no line claim and no display while the filter is trusted. This is
+    -- the correctness-first trade — foreign bleed dies entirely, but own
+    -- hits that earned no identity go quiet too. Not a veto rejection:
+    -- it must not feed sustainedRejection.
+    if candidateTier(payload) == 2 then
+        local prof = ZSBT.db and ZSBT.db.profile
+        if prof and type(prof.classModule) == "table" and prof.classModule.hideUnattributed == true then
+            ZB:Audit(("AUDSUPP ht=%.3f school=%s crit=%s src=%s"):format(
+                tonumber(tHit) or 0, audSafe(payload.schoolMask), tostring(payload.isCrit == true),
+                tostring(payload._petRoute == true and "pet" or "generic")))
+            return false
+        end
+    end
+
     -- Fast path: the line is already buffered (CLM arrived first).
     -- Restricted to tier-1 (sid-bearing) candidates — an unattributed
     -- generic must defer into the sorted batch so it cannot grab a line

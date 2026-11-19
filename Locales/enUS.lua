@@ -1182,3 +1182,19 @@ L["|cFFFFD100Master Font|r"] = true
 L["|cFFFFD100Numbers|r"] = true
 L["|cFFFFD100Resource Counter|r"] = true
 L["|cFFFFD100Resource Tracker|r"] = true
+
+-- Class module page + quick-control-bar class button
+L["|cFFFFD100Class Module|r"] = true
+L["Active guardians:"] = true
+L["Class"] = true
+L["Hide Unattributed Hits"] = true
+L["Hide unattributed hits"] = true
+L["Learned:"] = true
+L["No class module is loaded for this character."] = true
+L["Quick toggle class-module attribution tweaks."] = true
+L["Show Auto-Attack Swings"] = true
+L["Show auto-attack swings"] = true
+L["Unnamed hits get no combat-log line claim and never display while the filter is trusted. Kills foreign bleed; also quiets own hits that earned no name."] = true
+L["When off, class modules that veto auto-attacks (e.g. Warlock — every white hit is pet melee) suppress them entirely."] = true
+L["ZSBT - Class Module"] = true
+L["none"] = true
