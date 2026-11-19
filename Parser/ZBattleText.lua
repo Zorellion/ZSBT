@@ -621,6 +621,18 @@ local function preferredKinds(payload)
     if sm == 1 then return MELEE_KINDS end
     return nil
 end
+
+-- Provenance tier for line claiming. Tier 1 = sid-bearing (the hit
+-- consumed a real cast/pet record or a class-resolved identity — all
+-- school-gated, overwhelmingly ours). Tier 2 = unattributed generic;
+-- foreign bleed lives here. sid nil-checks are secret-safe (existence,
+-- not value comparison).
+local function candidateTier(payload)
+    if payload and (payload.spellId ~= nil or payload.petSpellId ~= nil) then
+        return 1
+    end
+    return 2
+end
 local function deliverOutgoing(payload)
     local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
     if ec and ec._sink then
@@ -669,31 +681,43 @@ local function flushPending()
     if ZSBT._auditTrace == true then
         ZB:Audit(("AUDFLP n=%d"):format(#pend))
     end
-    for i = 1, #pend do
-        local p = pend[i]
-        if ZB._vetoDisabled or not ZB._trusted then
-            deliverOutgoing(p.payload)
-        else
-            local kind
-            if p.payload and p.payload.isAuto == true then
-                kind = takeDamageLine(p.t, DEFER_WINDOW, MELEE_KINDS)
-            else
-                local pref = preferredKinds(p.payload)
-                kind = takeDamageLine(p.t, DEFER_WINDOW, pref) or takeDamageLine(p.t, DEFER_WINDOW)
-            end
-            if kind then
-                ZB._allows = ZB._allows + 1
-                ZB:FileLog(("ALLOW kind=%s sid=%s"):format(tostring(kind), tostring(p.payload and p.payload.spellId)))
-                deliverOutgoing(p.payload)
-            else
-                ZB._drops = ZB._drops + 1
-                ZB:FileLog(("DROP sid=%s"):format(tostring(p.payload and p.payload.spellId)))
-                local dp = p.payload or {}
-                ZB:Audit(("AUDROP ht=%.3f sid=%s school=%s crit=%s src=%s"):format(
-                    tonumber(p.t) or 0, audSafe(dp.spellId), audSafe(dp.schoolMask),
-                    tostring(dp.isCrit == true),
-                    tostring(dp._petRoute == true and "pet" or (dp.isAuto == true and "auto" or (dp.spellId ~= nil and "spell" or "generic")))))
-                sustainedRejection()
+    -- Provenance-tiered claiming: sid-bearing candidates (real cast/pet
+    -- record or class-resolved identity) claim lines before unattributed
+    -- generics, so a foreign generic can no longer take the line a proven
+    -- hit needed merely because it queued first. FIFO within each tier.
+    for pass = 1, 2 do
+        for i = 1, #pend do
+            local p = pend[i]
+            if p and candidateTier(p.payload) == pass then
+                if ZB._vetoDisabled or not ZB._trusted then
+                    deliverOutgoing(p.payload)
+                else
+                    local kind
+                    if p.payload and p.payload.isAuto == true then
+                        kind = takeDamageLine(p.t, DEFER_WINDOW, MELEE_KINDS)
+                    else
+                        local pref = preferredKinds(p.payload)
+                        kind = takeDamageLine(p.t, DEFER_WINDOW, pref) or takeDamageLine(p.t, DEFER_WINDOW)
+                    end
+                    if kind then
+                        ZB._allows = ZB._allows + 1
+                        ZB:Audit(("AUDCLAIM tier=%d sid=%s kind=%s"):format(
+                            pass,
+                            audSafe(p.payload and (p.payload.spellId or p.payload.petSpellId)),
+                            tostring(kind)))
+                        ZB:FileLog(("ALLOW kind=%s sid=%s"):format(tostring(kind), tostring(p.payload and p.payload.spellId)))
+                        deliverOutgoing(p.payload)
+                    else
+                        ZB._drops = ZB._drops + 1
+                        ZB:FileLog(("DROP sid=%s"):format(tostring(p.payload and p.payload.spellId)))
+                        local dp = p.payload or {}
+                        ZB:Audit(("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=%s"):format(
+                            tonumber(p.t) or 0, pass, audSafe(dp.spellId), audSafe(dp.schoolMask),
+                            tostring(dp.isCrit == true),
+                            tostring(dp._petRoute == true and "pet" or (dp.isAuto == true and "auto" or (dp.spellId ~= nil and "spell" or "generic")))))
+                        sustainedRejection()
+                    end
+                end
             end
         end
     end
@@ -784,25 +808,41 @@ function ZB:OfferOutgoing(payload)
     if vetoDisabledNow() then return true end
 
     -- Fast path: the line is already buffered (CLM arrived first).
+    -- Restricted to tier-1 (sid-bearing) candidates — an unattributed
+    -- generic must defer into the sorted batch so it cannot grab a line
+    -- a proven candidate arriving moments later will need.
     -- An auto-attack claim may ONLY be confirmed by a melee/ranged line —
     -- it must not steal a spell line (pet spells produce lines constantly).
-    local fastKind
-    if payload and payload.isAuto == true then
-        fastKind = takeDamageLine(tHit, VETO_WINDOW, MELEE_KINDS)
-    else
-        fastKind = takeDamageLine(tHit, VETO_WINDOW, preferredKinds(payload)) or takeDamageLine(tHit, VETO_WINDOW)
-    end
-    if fastKind then
-        ZB._allows = ZB._allows + 1
-        if payload then payload._vetoConfirmed = true end
-        ZB:FileLog(("ALLOW_FAST kind=%s sid=%s"):format(tostring(fastKind), tostring(payload and payload.spellId)))
-        return true
+    if candidateTier(payload) == 1 then
+        local fastKind
+        if payload.isAuto == true then
+            fastKind = takeDamageLine(tHit, VETO_WINDOW, MELEE_KINDS)
+        else
+            fastKind = takeDamageLine(tHit, VETO_WINDOW, preferredKinds(payload)) or takeDamageLine(tHit, VETO_WINDOW)
+        end
+        if fastKind then
+            ZB._allows = ZB._allows + 1
+            payload._vetoConfirmed = true
+            ZB:Audit(("AUDCLAIM tier=1 sid=%s kind=%s fast=1"):format(
+                audSafe(payload.spellId or payload.petSpellId), tostring(fastKind)))
+            ZB:FileLog(("ALLOW_FAST kind=%s sid=%s"):format(tostring(fastKind), tostring(payload.spellId)))
+            return true
+        end
     end
 
     ZB._pending[#ZB._pending + 1] = { payload = payload, t = tHit }
     if #ZB._pending > 200 then
-        table.remove(ZB._pending, 1)
-        ZB:Audit("AUDPENDOVERFLOW")
+        -- Evict the oldest unattributed candidate first; a proven
+        -- (sid-bearing) candidate must never lose its slot to a generic.
+        local dropIdx = 1
+        for i = 1, #ZB._pending do
+            if candidateTier(ZB._pending[i].payload) == 2 then dropIdx = i; break end
+        end
+        local evicted = ZB._pending[dropIdx]
+        table.remove(ZB._pending, dropIdx)
+        ZB:Audit(("AUDPENDOVERFLOW tier=%d sid=%s"):format(
+            candidateTier(evicted and evicted.payload),
+            audSafe(evicted and evicted.payload and evicted.payload.spellId)))
     end
     auditQueued(payload)
     local tNow = GetTime and GetTime() or 0
