@@ -71,9 +71,11 @@ local NAV = {
 		  if not (sc and sc.args) then return nil end
 		  return wrapGroup(L["|cFFFFD100Spam Control|r"], sc.args)
 	  end },
-	{ id = "help",      label = L["|cFFFFD100Help and Support|r"], order = 9,
+	{ id = "class",     label = L["|cFFFFD100Class|r"],            order = 9,
+	  customPage = true },
+	{ id = "help",      label = L["|cFFFFD100Help and Support|r"], order = 10,
 	  getArgs = function(a) return a.maintenance end },
-	{ id = "donate",    label = L["|cFFFFD100Donate|r"],           order = 10,
+	{ id = "donate",    label = L["|cFFFFD100Donate|r"],           order = 11,
 	  customPage = true },
 }
 
@@ -242,6 +244,97 @@ end
 -- API for opening external URLs, so the Ko-fi link is shown in a
 -- selectable edit box for copy/paste.
 ------------------------------------------------------------------------
+-- Class page: custom content (no AceConfig options). Shows the active
+-- class module, its live attribution state (learned schools, guardian
+-- activity, tracked casts), and the class tweaks the module exposes.
+-- Refreshes on every show — guardian windows count down in real time.
+local function buildClassPage(pf)
+	local title = shellFont(pf, 18, COL.accent,
+		L["|cFFFFD100Class Module|r"])
+	title:SetPoint("TOP", pf, "TOP", 0, -20)
+
+	local body = shellFont(pf, 13, COL.text, "")
+	body:SetWidth(620)
+	body:SetJustifyH("LEFT")
+	body:SetPoint("TOPLEFT", pf, "TOPLEFT", 20, -56)
+
+	local cb = CreateFrame("CheckButton", nil, pf, "InterfaceOptionsCheckButtonTemplate")
+	cb:SetPoint("TOPLEFT", pf, "TOPLEFT", 16, -200)
+	cb.Text:SetText(L["Show auto-attack swings"])
+	cb:SetScript("OnClick", function(self)
+		local prof = ZSBT.db and ZSBT.db.profile
+		if not prof then return end
+		prof.classModule = prof.classModule or {}
+		prof.classModule.allowAutoAttack = self:GetChecked() == true
+	end)
+	cb.Text:SetTextColor(1, 1, 1)
+	local cbHint = shellFont(pf, 11, COL.dim or COL.text,
+		L["When off, class modules that veto auto-attacks (e.g. Warlock — every white hit is pet melee) suppress them entirely."])
+	cbHint:SetWidth(580)
+	cbHint:SetJustifyH("LEFT")
+	cbHint:SetPoint("TOPLEFT", cb, "BOTTOMLEFT", 26, -6)
+
+	local detail = shellFont(pf, 12, COL.dim or COL.text, "")
+	detail:SetWidth(620)
+	detail:SetJustifyH("LEFT")
+	detail:SetPoint("TOPLEFT", cbHint, "BOTTOMLEFT", -26, -18)
+
+	local function refresh()
+		local cdb = ZSBT.ClassDB
+		local mod = cdb and cdb.ActiveModule and cdb.ActiveModule()
+		local tag = cdb and cdb.PlayerTag and cdb.PlayerTag() or "?"
+		local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
+		local st = ec and ec.ClassModuleState and ec:ClassModuleState() or nil
+
+		if not mod then
+			body:SetText(L["No class module is loaded for this character."])
+			cb:Hide(); cbHint:Hide(); detail:SetText("")
+			return
+		end
+		cb:Show(); cbHint:Show()
+
+		local autoVetoed = cdb.VetoAuto and cdb.VetoAuto() == true
+		local lines = {
+			("|cFFFFD100Module:|r %s"):format(tostring(tag)),
+			("|cFFFFD100Auto-attacks:|r %s"):format(autoVetoed and "vetoed (class never swings)" or "allowed"),
+			("|cFFFFD100PLAYER_SWING:|r %s"):format(st and st.swingSupported and "available" or "unavailable (Retail)"),
+			("|cFFFFD100Learned spell schools:|r %d"):format(st and st.learnedCount or 0),
+			("|cFFFFD100Casts tracked:|r %d pending / %d pet"):format(
+				st and st.pendingCasts or 0, st and st.petCasts or 0),
+		}
+		body:SetText(table.concat(lines, "\n"))
+
+		local d = {}
+		if st and type(st.learned) == "table" then
+			local names = {}
+			for sid, school in pairs(st.learned) do
+				local nm = ZSBT.CleanSpellName and ZSBT.CleanSpellName(sid) or tostring(sid)
+				names[#names + 1] = ("%s=%s"):format(tostring(nm), tostring(school))
+			end
+			table.sort(names)
+			if #names > 0 then
+				d[#d + 1] = L["Learned:"] .. " " .. table.concat(names, ", ")
+			end
+		end
+		if st and type(st.guardianUntil) == "table" then
+			local t = GetTime and GetTime() or 0
+			local g = {}
+			for group, untilAt in pairs(st.guardianUntil) do
+				if type(untilAt) == "number" and untilAt > t then
+					g[#g + 1] = ("%s %.1fs"):format(tostring(group), untilAt - t)
+				end
+			end
+			table.sort(g)
+			d[#d + 1] = L["Active guardians:"] .. " " .. (#g > 0 and table.concat(g, ", ") or L["none"])
+		end
+		detail:SetText(table.concat(d, "\n"))
+
+		local prof = ZSBT.db and ZSBT.db.profile
+		cb:SetChecked(prof and prof.classModule and prof.classModule.allowAutoAttack == true)
+	end
+	pf:SetScript("OnShow", refresh)
+end
+
 local function buildDonatePage(pf)
 	local title = shellFont(pf, 18, COL.accent,
 		L["|cFFFFD100Support Zore's Scrolling Battle Text|r"])
@@ -390,6 +483,8 @@ function Shell:Open()
 			pageFrames[nav.id] = pf
 			if nav.id == "donate" then
 				buildDonatePage(pf)
+			elseif nav.id == "class" then
+				buildClassPage(pf)
 			end
 		end
 	end

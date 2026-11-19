@@ -760,8 +760,12 @@ end
 
 -- true when a player swing plausibly produced this hit. When PLAYER_SWING
 -- is unavailable on this client we cannot verify — stay permissive
--- (legacy behavior) rather than eating all auto-attacks.
+-- (legacy behavior) rather than eating all auto-attacks, unless the
+-- class module knows the class never swings (warlock/mage/priest).
 local function swingExplainsHit(self, t)
+	if ZSBT.ClassDB and ZSBT.ClassDB.VetoAuto and ZSBT.ClassDB.VetoAuto() then
+		return false
+	end
 	if self._swingSupported ~= true then return true end
 	return anySwingRecent(self, t)
 end
@@ -1098,6 +1102,23 @@ function Collector:handlePlayerSwing(swingType)
 	if type(swingType) == "string" and swingType ~= "" then hand = swingType end
 	self._swingAt[hand] = t
 	auditNote(("AUDSWING hand=%s"):format(dbgSafe(hand)))
+end
+
+-- Live module/collector state for the config UI's Class page.
+function Collector:ClassModuleState()
+	local prof = ZSBT.db and ZSBT.db.profile
+	local learned = 0
+	for _ in pairs(self._learnedSpellSchool or {}) do learned = learned + 1 end
+	return {
+		learnedCount = learned,
+		learned = self._learnedSpellSchool,
+		guardianUntil = self._guardianUntil,
+		swingSupported = self._swingSupported == true,
+		petCasts = self._petCasts and #self._petCasts or 0,
+		pendingCasts = self._pendingCasts and #self._pendingCasts or 0,
+		allowAuto = type(prof) == "table" and type(prof.classModule) == "table"
+			and prof.classModule.allowAutoAttack or nil,
+	}
 end
 
 function Collector:handleSpellcastSucceeded(unit, guid, spellId)
