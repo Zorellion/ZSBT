@@ -503,19 +503,7 @@ local function buildClassPage(pf)
 		return nil
 	end
 
-	local function tryTeach()
-		local sid, nm, srcSlot = resolveDrag()
-		if not sid then return end
-		if ClearCursor then ClearCursor() end
-		-- Restore a bar-dragged spell into its source slot; a pickup
-		-- empties the slot before our drop fires. PlaceAction is
-		-- protected in combat — pcall keeps the failure silent there.
-		if srcSlot and type(_G.PickupSpell) == "function"
-			and type(_G.PlaceAction) == "function" then
-			pcall(PickupSpell, sid)
-			pcall(PlaceAction, srcSlot)
-		end
-		dragActionSlot, dragSpellId = nil, nil
+	local function applyTeach(sid, nm)
 		local budget = tonumber(budgetBox:GetText())
 		local role = roleState.role
 		if role == "auto" and ZSBT.ClassDB and ZSBT.ClassDB.InferRole then
@@ -534,6 +522,22 @@ local function buildClassPage(pf)
 			if tex then dropIcon:SetTexture(tex) end
 			if refreshTaught then refreshTaught() end
 		end
+	end
+
+	local function tryTeach()
+		local sid, nm, srcSlot = resolveDrag()
+		if not sid then return end
+		if ClearCursor then ClearCursor() end
+		-- Restore a bar-dragged spell into its source slot; a pickup
+		-- empties the slot before our drop fires. PlaceAction is
+		-- protected in combat — pcall keeps the failure silent there.
+		if srcSlot and type(_G.PickupSpell) == "function"
+			and type(_G.PlaceAction) == "function" then
+			pcall(PickupSpell, sid)
+			pcall(PlaceAction, srcSlot)
+		end
+		dragActionSlot, dragSpellId = nil, nil
+		applyTeach(sid, nm)
 	end
 	drop:SetScript("OnReceiveDrag", tryTeach)
 	drop:SetScript("OnClick", tryTeach)
@@ -590,6 +594,130 @@ local function buildClassPage(pf)
 			taughtMore:Hide()
 		end
 	end
+
+	--------------------------------------------------------------------
+	-- Spellbook flyout: a movable pop-out panel listing the player's
+	-- spellbook entries, anchored just outside the page's right edge.
+	-- Parented to the class page so it hides when the page does. Rows
+	-- drag via C_Spell.PickupSpell — the pickup hook captures the exact
+	-- id and no bar slot is emptied. Clicking a row teaches directly.
+	--------------------------------------------------------------------
+	local flyout = CreateFrame("Frame", nil, pf, "BackdropTemplate")
+	flyout:SetSize(230, 380)
+	flyout:SetPoint("TOPLEFT", pf, "TOPRIGHT", 10, 0)
+	flyout:SetMovable(true)
+	flyout:EnableMouse(true)
+	flyout:RegisterForDrag("LeftButton")
+	flyout:SetScript("OnDragStart", function(self) self:StartMoving() end)
+	flyout:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+	flyout:Hide()
+	setBg(flyout, COL.sidebar)
+	local flyTitle = shellFont(flyout, 12, COL.accent, L["Spellbook"])
+	flyTitle:SetPoint("TOP", flyout, "TOP", 0, -8)
+
+	local flyScroll = CreateFrame("ScrollFrame", nil, flyout, "UIPanelScrollFrameTemplate")
+	flyScroll:SetPoint("TOPLEFT", flyout, "TOPLEFT", 4, -30)
+	flyScroll:SetPoint("BOTTOMRIGHT", flyout, "BOTTOMRIGHT", -24, 8)
+	local flyChild = CreateFrame("Frame", nil, flyScroll)
+	flyChild:SetSize(190, 1)
+	flyScroll:SetScrollChild(flyChild)
+
+	local flyRows = {}
+	local flyEmpty
+	local function buildSpellList()
+		local entries = {}
+		if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines
+			and C_SpellBook.GetSpellBookItemInfo and Enum
+			and Enum.SpellBookSpellBank and Enum.SpellBookItemType then
+			local n = C_SpellBook.GetNumSpellBookSkillLines() or 0
+			for li = 1, n do
+				local info = C_SpellBook.GetSpellBookSkillLineInfo
+					and C_SpellBook.GetSpellBookSkillLineInfo(li)
+				local count = info and (info.numSpellBookItems or 0) or 0
+				local base = info and (info.itemOffsetIndex or 0) or 0
+				for j = 1, count do
+					local ok, it = pcall(C_SpellBook.GetSpellBookItemInfo,
+						base + j, Enum.SpellBookSpellBank.Player)
+					if ok and type(it) == "table" and it.spellID
+						and it.itemType == Enum.SpellBookItemType.Spell then
+						entries[#entries + 1] = {
+							sid = it.spellID,
+							name = it.name or "?",
+							icon = it.iconID or it.iconFileID,
+						}
+					end
+				end
+			end
+		end
+		table.sort(entries, function(a, b)
+			return tostring(a.name) < tostring(b.name)
+		end)
+		for i, e in ipairs(entries) do
+			local row = flyRows[i]
+			if not row then
+				local btn = CreateFrame("Button", nil, flyChild)
+				btn:SetSize(190, 24)
+				btn:RegisterForDrag("LeftButton")
+				local tex = btn:CreateTexture(nil, "ARTWORK")
+				tex:SetSize(20, 20)
+				tex:SetPoint("LEFT", btn, "LEFT", 2, 0)
+				local fs = shellFont(btn, 11, COL.text, "")
+				fs:SetPoint("LEFT", tex, "RIGHT", 6, 0)
+				fs:SetWidth(158)
+				fs:SetJustifyH("LEFT")
+				row = { btn = btn, tex = tex, fs = fs }
+				row.btn:SetScript("OnDragStart", function()
+					if row._sid then
+						local pick = (C_Spell and C_Spell.PickupSpell) or _G.PickupSpell
+						if type(pick) == "function" then pcall(pick, row._sid) end
+					end
+				end)
+				row.btn:SetScript("OnClick", function()
+					if row._sid then
+						local nm = nameFor(row._sid) or tostring(row._sid)
+						applyTeach(row._sid, nm)
+					end
+				end)
+				flyRows[i] = row
+			end
+			row._sid = e.sid
+			row.btn:SetPoint("TOPLEFT", flyChild, "TOPLEFT", 0, -(i - 1) * 26)
+			row.tex:SetTexture(e.icon or 134400)
+			row.fs:SetText(tostring(e.name))
+			row.btn:Show()
+		end
+		for i = #entries + 1, #flyRows do
+			flyRows[i].btn:Hide()
+		end
+		flyChild:SetHeight(math.max(1, #entries * 26))
+		if #entries == 0 then
+			if not flyEmpty then
+				flyEmpty = shellFont(flyChild, 11, COL.dim or COL.text,
+					L["Spellbook enumeration unavailable"])
+				flyEmpty:SetPoint("TOPLEFT", flyChild, "TOPLEFT", 4, -4)
+			end
+			flyEmpty:Show()
+		elseif flyEmpty then
+			flyEmpty:Hide()
+		end
+	end
+
+	local flyoutBuilt = false
+	local spellBtn = CreateFrame("Button", nil, rightCol, "UIPanelButtonTemplate")
+	spellBtn:SetSize(90, 22)
+	spellBtn:SetPoint("TOPRIGHT", rightCol, "TOPRIGHT", 0, 0)
+	spellBtn:SetText(L["Spellbook"])
+	spellBtn:SetScript("OnClick", function()
+		if flyout:IsShown() then
+			flyout:Hide()
+		else
+			if not flyoutBuilt then
+				flyoutBuilt = true
+				buildSpellList()
+			end
+			flyout:Show()
+		end
+	end)
 
 	local knowledgeRows = {}
 	local function refreshKnowledge()
