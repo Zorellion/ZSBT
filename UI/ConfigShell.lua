@@ -386,18 +386,20 @@ local function buildClassPage(pf)
 	-- random ability icon). A taught spell's icon shows inside the slot.
 	local dropRow = CreateFrame("Frame", nil, rightCol)
 	dropRow:SetPoint("TOPLEFT", teachTitle, "BOTTOMLEFT", 0, -6)
-	dropRow:SetSize(240, 48)
+	dropRow:SetSize(240, 64)
 	local dropLabel = shellFont(dropRow, 11, COL.dim or COL.text,
 		L["Drag a spell from your bar or spellbook here"])
-	dropLabel:SetPoint("TOPLEFT", dropRow, "TOPLEFT", 0, -4)
-	dropLabel:SetWidth(170)
+	dropLabel:SetPoint("TOPLEFT", dropRow, "TOPLEFT", 0, -8)
+	dropLabel:SetWidth(160)
 	dropLabel:SetJustifyH("LEFT")
 	local drop = CreateFrame("Button", nil, dropRow)
-	drop:SetSize(44, 44)
+	drop:SetSize(56, 56)
 	drop:SetPoint("LEFT", dropLabel, "RIGHT", 6, 4)
 	local dropSlot = drop:CreateTexture(nil, "BACKGROUND")
 	dropSlot:SetAllPoints()
 	dropSlot:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+	local dropText = shellFont(drop, 10, COL.dim or COL.text, "DROP")
+	dropText:SetPoint("CENTER", drop, "CENTER", 0, 0)
 	local dropIcon = drop:CreateTexture(nil, "ARTWORK")
 	dropIcon:SetPoint("TOPLEFT", 6, -6)
 	dropIcon:SetPoint("BOTTOMRIGHT", -6, 6)
@@ -519,7 +521,10 @@ local function buildClassPage(pf)
 				:format(tostring(nm), sid, tostring(role), suffix))
 			local tex = C_Spell and C_Spell.GetSpellTexture
 				and C_Spell.GetSpellTexture(sid)
-			if tex then dropIcon:SetTexture(tex) end
+			if tex then
+				dropIcon:SetTexture(tex)
+				dropText:Hide()
+			end
 			if refreshTaught then refreshTaught() end
 		end
 	end
@@ -603,7 +608,7 @@ local function buildClassPage(pf)
 	-- id and no bar slot is emptied. Clicking a row teaches directly.
 	--------------------------------------------------------------------
 	local flyout = CreateFrame("Frame", nil, pf, "BackdropTemplate")
-	flyout:SetSize(230, 380)
+	flyout:SetSize(250, 420)
 	flyout:SetPoint("TOPLEFT", pf, "TOPRIGHT", 10, 0)
 	flyout:SetMovable(true)
 	flyout:EnableMouse(true)
@@ -619,13 +624,32 @@ local function buildClassPage(pf)
 	flyScroll:SetPoint("TOPLEFT", flyout, "TOPLEFT", 4, -30)
 	flyScroll:SetPoint("BOTTOMRIGHT", flyout, "BOTTOMRIGHT", -24, 8)
 	local flyChild = CreateFrame("Frame", nil, flyScroll)
-	flyChild:SetSize(190, 1)
+	flyChild:SetSize(200, 1)
 	flyScroll:SetScrollChild(flyChild)
 
+	-- Grid layout matching the in-game spellbook: labeled section per
+	-- skill line, larger icon cells. Only class + current-spec lines —
+	-- "General" and other-spec lines are skipped; entries dedup by
+	-- spellID (the same spell appears under multiple skill lines).
 	local flyRows = {}
+	local flyHeaders = {}
 	local flyEmpty
+	local GRID_COLS = 4
+	local GRID_CELL = 48
+
+	local function currentSpecId()
+		if not (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization
+			and C_SpecializationInfo.GetSpecializationInfo) then return nil end
+		local idx = C_SpecializationInfo.GetSpecialization()
+		if not idx then return nil end
+		local ok, id = pcall(C_SpecializationInfo.GetSpecializationInfo, idx)
+		return (ok and type(id) == "number") and id or nil
+	end
+
 	local function buildSpellList()
-		local entries = {}
+		local curSpec = currentSpecId()
+		local seen = {}
+		local sections = {}
 		if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines
 			and C_SpellBook.GetSpellBookItemInfo and Enum
 			and Enum.SpellBookSpellBank and Enum.SpellBookItemType then
@@ -633,64 +657,98 @@ local function buildClassPage(pf)
 			for li = 1, n do
 				local info = C_SpellBook.GetSpellBookSkillLineInfo
 					and C_SpellBook.GetSpellBookSkillLineInfo(li)
-				local count = info and (info.numSpellBookItems or 0) or 0
-				local base = info and (info.itemOffsetIndex or 0) or 0
-				for j = 1, count do
-					local ok, it = pcall(C_SpellBook.GetSpellBookItemInfo,
-						base + j, Enum.SpellBookSpellBank.Player)
-					if ok and type(it) == "table" and it.spellID
-						and it.itemType == Enum.SpellBookItemType.Spell then
-						entries[#entries + 1] = {
-							sid = it.spellID,
-							name = it.name or "?",
-							icon = it.iconID or it.iconFileID,
-						}
+				local name = info and info.name
+				local specID = info and info.specID
+				local skip = (type(name) == "string" and name == "General")
+					or (type(specID) == "number" and specID > 0
+						and curSpec and specID ~= curSpec)
+				if not skip then
+					local sec = { name = tostring(name or "?"), items = {} }
+					local count = info and (info.numSpellBookItems or 0) or 0
+					local base = info and (info.itemOffsetIndex or 0) or 0
+					for j = 1, count do
+						local ok, it = pcall(C_SpellBook.GetSpellBookItemInfo,
+							base + j, Enum.SpellBookSpellBank.Player)
+						if ok and type(it) == "table" and it.spellID
+							and it.itemType == Enum.SpellBookItemType.Spell
+							and not seen[it.spellID] then
+							seen[it.spellID] = true
+							sec.items[#sec.items + 1] = {
+								sid = it.spellID,
+								name = it.name or "?",
+								icon = it.iconID or it.iconFileID,
+							}
+						end
 					end
+					if #sec.items > 0 then sections[#sections + 1] = sec end
 				end
 			end
 		end
-		table.sort(entries, function(a, b)
-			return tostring(a.name) < tostring(b.name)
-		end)
-		for i, e in ipairs(entries) do
-			local row = flyRows[i]
-			if not row then
-				local btn = CreateFrame("Button", nil, flyChild)
-				btn:SetSize(190, 24)
-				btn:RegisterForDrag("LeftButton")
-				local tex = btn:CreateTexture(nil, "ARTWORK")
-				tex:SetSize(20, 20)
-				tex:SetPoint("LEFT", btn, "LEFT", 2, 0)
-				local fs = shellFont(btn, 11, COL.text, "")
-				fs:SetPoint("LEFT", tex, "RIGHT", 6, 0)
-				fs:SetWidth(158)
-				fs:SetJustifyH("LEFT")
-				row = { btn = btn, tex = tex, fs = fs }
-				row.btn:SetScript("OnDragStart", function()
-					if row._sid then
-						local pick = (C_Spell and C_Spell.PickupSpell) or _G.PickupSpell
-						if type(pick) == "function" then pcall(pick, row._sid) end
-					end
-				end)
-				row.btn:SetScript("OnClick", function()
-					if row._sid then
-						local nm = nameFor(row._sid) or tostring(row._sid)
-						applyTeach(row._sid, nm)
-					end
-				end)
-				flyRows[i] = row
+
+		local y, r, h = -4, 0, 0
+		for _, sec in ipairs(sections) do
+			h = h + 1
+			local hdr = flyHeaders[h]
+			if not hdr then
+				hdr = shellFont(flyChild, 12, COL.accent, "")
+				flyHeaders[h] = hdr
 			end
-			row._sid = e.sid
-			row.btn:SetPoint("TOPLEFT", flyChild, "TOPLEFT", 0, -(i - 1) * 26)
-			row.tex:SetTexture(e.icon or 134400)
-			row.fs:SetText(tostring(e.name))
-			row.btn:Show()
+			hdr:SetPoint("TOPLEFT", flyChild, "TOPLEFT", 2, y)
+			hdr:SetText(sec.name)
+			hdr:Show()
+			y = y - 18
+			table.sort(sec.items, function(a, b)
+				return tostring(a.name) < tostring(b.name)
+			end)
+			for i, e in ipairs(sec.items) do
+				r = r + 1
+				local row = flyRows[r]
+				if not row then
+					local btn = CreateFrame("Button", nil, flyChild)
+					btn:SetSize(40, 40)
+					btn:RegisterForDrag("LeftButton")
+					local tex = btn:CreateTexture(nil, "ARTWORK")
+					tex:SetAllPoints()
+					tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+					row = { btn = btn, tex = tex }
+					row.btn:SetScript("OnDragStart", function()
+						if row._sid then
+							local pick = (C_Spell and C_Spell.PickupSpell) or _G.PickupSpell
+							if type(pick) == "function" then pcall(pick, row._sid) end
+						end
+					end)
+					row.btn:SetScript("OnClick", function()
+						if row._sid then
+							local nm = nameFor(row._sid) or tostring(row._sid)
+							applyTeach(row._sid, nm)
+						end
+					end)
+					row.btn:SetScript("OnEnter", function(self)
+						if row._sid then
+							GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+							GameTooltip:SetText(tostring(row._name or "?"))
+							GameTooltip:AddLine(tostring(row._sid), 0.6, 0.6, 0.6)
+							GameTooltip:Show()
+						end
+					end)
+					row.btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+					flyRows[r] = row
+				end
+				row._sid = e.sid
+				row._name = e.name
+				local col = (i - 1) % GRID_COLS
+				local ri = math.floor((i - 1) / GRID_COLS)
+				row.btn:SetPoint("TOPLEFT", flyChild, "TOPLEFT",
+					2 + col * GRID_CELL, y - ri * GRID_CELL)
+				row.tex:SetTexture(e.icon or 134400)
+				row.btn:Show()
+			end
+			y = y - math.ceil(#sec.items / GRID_COLS) * GRID_CELL - 10
 		end
-		for i = #entries + 1, #flyRows do
-			flyRows[i].btn:Hide()
-		end
-		flyChild:SetHeight(math.max(1, #entries * 26))
-		if #entries == 0 then
+		for i = r + 1, #flyRows do flyRows[i].btn:Hide() end
+		for i = h + 1, #flyHeaders do flyHeaders[i]:Hide() end
+		flyChild:SetHeight(math.max(1, -y + 6))
+		if r == 0 then
 			if not flyEmpty then
 				flyEmpty = shellFont(flyChild, 11, COL.dim or COL.text,
 					L["Spellbook enumeration unavailable"])
