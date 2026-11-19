@@ -150,6 +150,8 @@ local GUARDIAN_SPELLS = {
 		{ sid = 267997, school = 8 } },                             -- Bile Spit
 	tyrant = { { sid = 1264093, school = 36 } },                    -- Burning Cleave
 }
+mod.guardianSummons = GUARDIAN_SUMMONS
+mod.guardianSpells = GUARDIAN_SPELLS
 
 -- Player summon casts → which guardian groups go out, and for how long.
 -- Keyed on the CAST spellId (UNIT_SPELLCAST_SUCCEEDED), which differs

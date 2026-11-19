@@ -121,6 +121,8 @@ local GUARDIAN_SPELLS = {
 		-- unnameable like all guardian physical damage.
 	},
 }
+mod.guardianSummons = GUARDIAN_SUMMONS
+mod.guardianSpells = GUARDIAN_SPELLS
 
 -- School signature OFF: DK player and ghoul damage share school-1 (and
 -- player shadow overlaps ghoul Sweeping Claws). Naming comes from cast

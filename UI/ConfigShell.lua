@@ -408,6 +408,7 @@ local function buildClassPage(pf)
 
 	local taughtRows = {}
 	local refreshTaught
+	local knowledgeScroll
 
 	local function dragNow()
 		return GetTime and GetTime() or 0
@@ -480,8 +481,12 @@ local function buildClassPage(pf)
 		end
 		if ZSBT.ClassDB and ZSBT.ClassDB.TeachSpell
 			and ZSBT.ClassDB.TeachSpell(sid, nm, role, budget) then
-			confirmFs:SetText(("|cFF55FF55+%s|r (%d) → %s")
-				:format(tostring(nm), sid, tostring(role)))
+			local known = ZSBT.ClassDB.KnowsSpell
+				and ZSBT.ClassDB.KnowsSpell(sid) or nil
+			local suffix = known
+				and (" |cFFFFAA00(known: %s)|r"):format(tostring(known)) or ""
+			confirmFs:SetText(("|cFF55FF55+%s|r (%d) → %s%s")
+				:format(tostring(nm), sid, tostring(role), suffix))
 			local tex = C_Spell and C_Spell.GetSpellTexture
 				and C_Spell.GetSpellTexture(sid)
 			if tex then dropIcon:SetTexture(tex) end
@@ -531,6 +536,62 @@ local function buildClassPage(pf)
 				row.rm:Hide()
 			end
 		end
+		-- Keep the knowledge panel below whatever rows are visible.
+		local last = taughtRows[#list] and taughtRows[#list].fs or taughtTitle
+		knowledgeScroll:ClearAllPoints()
+		knowledgeScroll:SetPoint("TOPLEFT", last, "BOTTOMLEFT", -10, -14)
+	end
+
+	--------------------------------------------------------------------
+	-- Module knowledge: scrollable list of everything the active module
+	-- ships with (dots/channels/budgets/summons/guardian spellbook) so a
+	-- player can see what is already covered before teaching. Rows are
+	-- pooled FontStrings inside a UIPanelScrollFrameTemplate child.
+	--------------------------------------------------------------------
+	local knowledgeTitle = shellFont(pf, 12, COL.accent,
+		L["|cFFFFD100Module knowledge|r"])
+	knowledgeTitle:Hide() -- repositioned with the scroll frame below
+
+	knowledgeScroll = CreateFrame("ScrollFrame", nil, pf, "UIPanelScrollFrameTemplate")
+	knowledgeScroll:SetSize(560, 150)
+	local knowledgeChild = CreateFrame("Frame", nil, knowledgeScroll)
+	knowledgeChild:SetSize(540, 1)
+	knowledgeScroll:SetScrollChild(knowledgeChild)
+	knowledgeTitle:SetParent(knowledgeChild)
+	knowledgeTitle:SetPoint("TOPLEFT", knowledgeChild, "TOPLEFT", 0, 0)
+	knowledgeTitle:Show()
+
+	local knowledgeRows = {}
+	local function refreshKnowledge()
+		local list = (ZSBT.ClassDB and ZSBT.ClassDB.KnowledgeList)
+			and ZSBT.ClassDB.KnowledgeList() or {}
+		local need = math.max(#knowledgeRows, #list)
+		for i = 1, need do
+			local row = knowledgeRows[i]
+			local e = list[i]
+			if e then
+				if not row then
+					row = shellFont(knowledgeChild, 11, COL.text, "")
+					row:SetPoint("TOPLEFT", knowledgeTitle, "BOTTOMLEFT", 8, -4 - (i - 1) * 14)
+					row:SetWidth(520)
+					row:SetJustifyH("LEFT")
+					knowledgeRows[i] = row
+				end
+				local ids = ""
+				if type(e.ids) == "table" and #e.ids > 0 then
+					local parts = {}
+					for _, id in ipairs(e.ids) do parts[#parts + 1] = tostring(id) end
+					ids = " (" .. table.concat(parts, ",") .. ")"
+				end
+				row:SetText(("|cFF888888%s|r %s%s%s")
+					:format(tostring(e.kind), tostring(e.name), ids,
+						e.extra and (" — " .. tostring(e.extra)) or ""))
+				row:Show()
+			elseif row then
+				row:Hide()
+			end
+		end
+		knowledgeChild:SetHeight(math.max(1, 20 + #list * 14))
 	end
 
 	local function refresh()
@@ -545,6 +606,7 @@ local function buildClassPage(pf)
 			for _, t in ipairs(toggles) do t.cb:Hide(); t.hint:Hide() end
 			detail:SetText("")
 			refreshTaught()
+			refreshKnowledge()
 			return
 		end
 		local prof = ZSBT.db and ZSBT.db.profile
@@ -606,6 +668,7 @@ local function buildClassPage(pf)
 		end
 		detail:SetText(table.concat(d, "\n"))
 		refreshTaught()
+		refreshKnowledge()
 	end
 	pf:SetScript("OnShow", refresh)
 end

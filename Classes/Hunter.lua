@@ -79,6 +79,8 @@ local GUARDIAN_SPELLS = {
 	darkhound  = { { sid = 1264485, school = 32 } }, -- Shadow Thrash (BM)
 	darkminion = { { sid = 1264485, school = 32 } }, -- "Blighted Arrow" (MM, same id)
 }
+mod.guardianSummons = GUARDIAN_SUMMONS
+mod.guardianSpells = GUARDIAN_SPELLS
 
 -- Hunter pet damage overlaps every player school — a signature would
 -- claim the player's own auto-shots and physical nukes. OFF entirely:
