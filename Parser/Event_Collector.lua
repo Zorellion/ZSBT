@@ -448,7 +448,7 @@ isPlayerClassTag = _G.isPlayerClassTag
 
 if type(_G.isWhirlwindSpellId) ~= "function" then
 	_G.isWhirlwindSpellId = function(spellId)
-		return spellId == 1680 or spellId == 190411
+		return spellId == 1680 or spellId == 190411 or spellId == 199658
 	end
 end
 
@@ -969,7 +969,7 @@ isPlayerClassTag = function(tag)
 end
 
 local function isWhirlwindSpellId(spellId)
-	return spellId == 1680 or spellId == 190411
+	return spellId == 1680 or spellId == 190411 or spellId == 199658
 end
 
 local function wwSimilarHitsEnabled(spellId)
