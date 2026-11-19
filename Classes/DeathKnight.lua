@@ -45,12 +45,16 @@ mod.castBudget = {
 	[152279] = 10, -- Breath of Sindragosa (fallback; channel usually catches it)
 }
 
--- Player summon casts → guardian activity windows.
+-- Player summon casts → guardian activity windows. Ids verified on
+-- Grimbook's combat log (Rider of the Apocalypse, 2026-11-19).
 local GUARDIAN_SUMMONS = {
-	[46584]  = { { group = "ghoul",     duration = 60 } }, -- Raise Dead
-	[46585]  = { { group = "ghoul",     duration = 60 } }, -- Raise Dead (variant)
+	[52150]  = { { group = "ghoul",     duration = 60 } }, -- Raise Dead (verified)
+	[46584]  = { { group = "ghoul",     duration = 60 } }, -- Raise Dead (legacy id)
+	[46585]  = { { group = "ghoul",     duration = 60 } }, -- Raise Dead (legacy id)
 	[42650]  = { { group = "army",      duration = 30 },
-		{ group = "magus", duration = 15 } },               -- Army of the Dead (+Magus)
+		{ group = "magus", duration = 15 },
+		{ group = "horsemen", duration = 30 } },            -- Army of the Dead (+Magus +Riders)
+	[444251] = { { group = "horsemen",  duration = 30 } }, -- Summon Whitemane (Rider proc)
 	[275699] = { { group = "apoc",      duration = 15 } }, -- Apocalypse (modern id)
 	[220143] = { { group = "apoc",      duration = 15 } }, -- Apocalypse (older id)
 	[63560]  = { { group = "darktrans", duration = 15 },
@@ -74,11 +78,14 @@ local GUARDIAN_SPELLS = {
 		{ sid = 51963,  school = 32 }, -- Gargoyle Strike (shadow, older clients)
 	},
 	magus     = {
-		{ sid = 317791, school = 32 }, -- Shadow Bolt (verified wowhead)
-		{ sid = 317792, school = 16 }, -- Frostbolt (verified wowhead)
+		{ sid = 317791, school = 32 }, -- Shadow Bolt (log-verified)
+		{ sid = 1292107, school = 16 }, -- Frostbolt (log-verified; wowhead's 317792 never fired)
 	},
 	darktrans = {
-		{ sid = 91778,  school = 32 }, -- Sweeping Claws (ghoul empowered Claw)
+		{ sid = 1278150, school = 32 }, -- Sweeping Claws (log-verified dominant id; 91778 also fires)
+	},
+	horsemen  = {
+		{ sid = 445513, school = 32 }, -- Whitemane's Death Coil (log-verified)
 	},
 }
 
@@ -166,6 +173,14 @@ function mod.onCast(self, spellId, spellName, t)
 	end
 	if type(spellId) == "number" and GHOUL_SUMMONS[spellId] then
 		self._dkGhoulSummonAt = t
+	end
+	-- Dark Transformation's cast id varies by client build — key on name
+	-- (same approach as hunter's Black Arrow) so the empowered-ghoul
+	-- and Magus windows always open.
+	if spellName == "Dark Transformation" then
+		self._guardianUntil = self._guardianUntil or {}
+		self._guardianUntil["darktrans"] = t + 15
+		self._guardianUntil["magus"] = t + 15
 	end
 end
 
