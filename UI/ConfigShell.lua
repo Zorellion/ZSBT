@@ -647,8 +647,7 @@ local function buildClassPage(pf)
 			("|cFFFFD100Casts tracked:|r %d pending / %d pet"):format(
 				st and st.pendingCasts or 0, st and st.petCasts or 0),
 		}
-		body:SetText(table.concat(lines, "
-"))
+		body:SetText(table.concat(lines, "\n"))
 
 		local d = {}
 		if st and type(st.learned) == "table" then
@@ -674,8 +673,7 @@ local function buildClassPage(pf)
 			table.sort(g)
 			d[#d + 1] = L["Active guardians:"] .. " " .. (#g > 0 and table.concat(g, ", ") or L["none"])
 		end
-		detail:SetText(table.concat(d, "
-"))
+		detail:SetText(table.concat(d, "\n"))
 		refreshTaught()
 		refreshKnowledge()
 	end
