@@ -63,6 +63,7 @@ local GUARDIAN_SUMMONS = {
 }
 
 -- Class-module UI toggles this module supports.
+mod.guardianLabel = "dire beasts or dark hounds"
 mod.toggles = {
 	namePetMelee = true,
 	resolveGuardians = true,

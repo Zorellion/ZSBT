@@ -1220,3 +1220,5 @@ L["Channels:"] = true
 L["Inferred (spells with no static school data):"] = true
 L["Auto (guess)"] = true
 L["|cFFFFD100Module knowledge|r"] = true
+L["your pets and guardians"] = true
+L["How many hits one cast of this spell may name."] = true
