@@ -26,6 +26,35 @@ local ACR = LibStub("AceConfigRegistry-3.0", true)
 local AceGUI = LibStub("AceGUI-3.0", true)
 
 ------------------------------------------------------------------------
+-- Teach-a-spell drag capture state (file scope so a page rebuild never
+-- orphans the hook closures). Cursor args are ambiguous — GetCursorInfo
+-- returns slot/book indices alongside the spellId, and any small number
+-- validates as *a* spell name. The pickups carry the true spellId; the
+-- action slot is recorded so a bar drag can be restored — the pickup
+-- empties the slot before our drop fires, so without the restore the
+-- spell would be deleted from the bar.
+------------------------------------------------------------------------
+local dragActionSlot, dragActionAt, dragSpellId, dragSpellAt
+if type(hooksecurefunc) == "function" then
+	if type(_G.PickupAction) == "function" then
+		hooksecurefunc("PickupAction", function(slot)
+			if type(slot) == "number" then
+				dragActionSlot = slot
+				dragActionAt = GetTime and GetTime() or 0
+			end
+		end)
+	end
+	if type(_G.PickupSpell) == "function" then
+		hooksecurefunc("PickupSpell", function(id)
+			if type(id) == "number" then
+				dragSpellId = id
+				dragSpellAt = GetTime and GetTime() or 0
+			end
+		end)
+	end
+end
+
+------------------------------------------------------------------------
 -- Nav pages (ZCT flow order). getArgs resolves into BuildOptionsTable()
 -- output and must return a GROUP table (not bare args): AceConfig only
 -- adds a ScrollFrame for mixed leaf+group content one level below a
@@ -380,25 +409,70 @@ local function buildClassPage(pf)
 	local taughtRows = {}
 	local refreshTaught
 
-	local function cursorSpell()
+	local function dragNow()
+		return GetTime and GetTime() or 0
+	end
+	local function nameFor(sid)
+		local nm = ZSBT.CleanSpellName and ZSBT.CleanSpellName(sid)
+		return (type(nm) == "string" and nm ~= "") and nm or nil
+	end
+	local function slotSpell(slot)
+		if type(_G.GetActionInfo) ~= "function" then return nil end
+		local ok, at, aid = pcall(GetActionInfo, slot)
+		if ok and at == "spell" and type(aid) == "number" and aid > 0 then
+			return aid
+		end
+		return nil
+	end
+
+	-- Returns spellId, name, sourceSlot(optional). Pickup records win;
+	-- the <3s freshness window keeps a stale pickup from an unrelated
+	-- drag from hijacking this capture.
+	local function resolveDrag()
+		local now = dragNow()
+		if dragSpellId and (now - (dragSpellAt or -99)) < 3 then
+			local nm = nameFor(dragSpellId)
+			if nm then
+				local slot = (dragActionAt and (now - dragActionAt) < 3)
+					and dragActionSlot or nil
+				return dragSpellId, nm, slot
+			end
+		end
+		if dragActionSlot and dragActionAt and (now - dragActionAt) < 3 then
+			local aid = slotSpell(dragActionSlot)
+			local nm = aid and nameFor(aid)
+			if nm then return aid, nm, dragActionSlot end
+		end
 		if type(GetCursorInfo) ~= "function" then return nil end
 		local ctype, a1, a2, a3 = GetCursorInfo()
+		if ctype == "action" and type(a1) == "number" then
+			local aid = slotSpell(a1)
+			local nm = aid and nameFor(aid)
+			if nm then return aid, nm, a1 end
+		end
 		if ctype ~= "spell" then return nil end
-		for _, v in ipairs({ a1, a3, a2 }) do
+		for _, v in ipairs({ a3, a2, a1 }) do
 			if type(v) == "number" and v > 0 then
-				local nm = ZSBT.CleanSpellName and ZSBT.CleanSpellName(v)
-				if type(nm) == "string" and nm ~= "" then
-					return v, nm
-				end
+				local nm = nameFor(v)
+				if nm then return v, nm, nil end
 			end
 		end
 		return nil
 	end
 
 	local function tryTeach()
-		local sid, nm = cursorSpell()
+		local sid, nm, srcSlot = resolveDrag()
 		if not sid then return end
 		if ClearCursor then ClearCursor() end
+		-- Restore a bar-dragged spell into the slot it came from. Not
+		-- needed for spellbook drags (no slot was emptied). PlaceAction
+		-- is protected in combat — pcall keeps the failure silent there.
+		if srcSlot and type(_G.PickupSpell) == "function"
+			and type(_G.PlaceAction) == "function" then
+			pcall(PickupSpell, sid)
+			pcall(PlaceAction, srcSlot)
+		end
+		dragActionSlot, dragSpellId = nil, nil
 		local budget = tonumber(budgetBox:GetText())
 		local role = roleState.role
 		if role == "auto" and ZSBT.ClassDB and ZSBT.ClassDB.InferRole then
