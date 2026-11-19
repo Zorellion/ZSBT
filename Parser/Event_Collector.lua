@@ -2533,6 +2533,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			if zbtc and zbtc.FileLog then
 				zbtc:FileLog(("CAND school=%s crit=%s"):format((ZSBT.IsSafeNumber(school) and tostring(school)) or "sec", tostring(isCrit == true)))
 			end
+		elseif actionStr then
+			-- Same non-damage event (HEAL, MISS/DODGE/PARRY/...) reported through
+			-- a second unit token (target + nameplate remap) in the same frame.
+			-- Damage dedups via _lastTargetWoundSig; these actions emit
+			-- immediately downstream, so collapse same-action twins here.
+			local sig = self._lastTargetActionSig
+			if sig and (t - sig.t) >= 0 and (t - sig.t) < 0.05
+				and sig.action == actionStr then
+				return
+			end
+			self._lastTargetActionSig = { t = t, action = actionStr }
 		end
 		if dl >= 4 and ZSBT.IsSafeNumber(amount) and amount >= getAdaptiveBigHitThreshold(t) then
 			local members = nil
@@ -2769,6 +2780,19 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- Suppress to prevent green outgoing noise (especially for non-healer classes).
 			if isPvPStrictActive() then
 				return
+			end
+			-- Mob self-heals: the player cannot heal an attackable (hostile)
+			-- unit, so a HEAL on the target token is never outgoing when the
+			-- target can be attacked (e.g. Owlbeast HoTs). Friendly targets
+			-- (healers' allies, pets) are not attackable and pass through.
+			if UnitCanAttack then
+				local okA, canAtk = pcall(UnitCanAttack, "player", "target")
+				if okA then
+					local okC, eq = pcall(function() return canAtk == true end)
+					if okC and eq == true then
+						return
+					end
+				end
 			end
 			local pipeId = self._rawPipeCount + 1
 			self._rawPipeCount = pipeId
