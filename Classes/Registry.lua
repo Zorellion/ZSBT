@@ -171,7 +171,12 @@ function ClassDB.InferRole(spellId)
 	if type(desc) ~= "string" or desc == "" then return "cast" end
 	local d = desc:lower()
 	if d:find("channel") then return "channel" end
-	if d:find("every") or d:find("over %d+ sec") or d:find("periodic") then
+	-- Dot requires tick language ("every N sec"), not just duration
+	-- language: direct casts with DoT riders (Blood Boil -> Blood
+	-- Plague "over 24 sec") also say "over N sec" and a wrong "dot"
+	-- guess misroutes the spell's own direct hits — a wrong "cast"
+	-- guess is benign, so under-guess dot.
+	if d:find("every") or d:find("periodic") or d:find("over time") then
 		return "dot"
 	end
 	return "cast"
