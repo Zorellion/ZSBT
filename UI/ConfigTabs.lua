@@ -5735,6 +5735,7 @@ local COMBAT_BUCKET_KEYS = {
 			damageMinThreshold=1, thresholdTip=1,
 			useSchoolColors=1, customDamageColor=1,
 			showSpellIcons=1, showSpellIconsResolved=1, showSpellIconsFallback=1,
+			iconSide=1,
 		},
 		heal = {
 			healingEnabled=1, healingScrollArea=1, healingShowHoTs=1,
@@ -5745,7 +5746,7 @@ local COMBAT_BUCKET_KEYS = {
 	},
 	outgoing = {
 		damage = {
-			damageEnabled=1, showSpellNames=1, showSpellIcons=1,
+			damageEnabled=1, showSpellNames=1, showSpellIcons=1, iconSide=1,
 			useSchoolColors=1, customDamageColor=1, damageScrollArea=1,
 			showTargets=1, autoAttackMode=1,
 			damageMinThreshold=1, thresholdTip=1,
@@ -5765,7 +5766,7 @@ local COMBAT_BUCKET_KEYS = {
 ZSBT._BUCKET_ORDER = {
 	incomingDamage = {
 		"damageEnabled", "damageScrollArea", "damageShowFlags",
-		"showSpellIcons", "showSpellIconsResolved", "showSpellIconsFallback",
+		"showSpellIcons", "showSpellIconsResolved", "showSpellIconsFallback", "iconSide",
 		"damageMinThreshold", "thresholdTip",
 		"useSchoolColors", "customDamageColor",
 	},
@@ -5783,7 +5784,7 @@ ZSBT._BUCKET_ORDER = {
 	},
 	outgoingDamage = {
 		"damageEnabled", "damageScrollArea",
-		"showSpellNames", "showSpellIcons",
+		"showSpellNames", "showSpellIcons", "iconSide",
 		"showTargets", "autoAttackMode",
 		"damageMinThreshold", "thresholdTip",
 		"useSchoolColors", "customDamageColor",
