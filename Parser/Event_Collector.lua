@@ -215,6 +215,19 @@ local function emit(eventType, payload)
 	-- ambiguous outgoing damage must be corroborated by a palette line.
 	-- Untrusted => OfferOutgoing returns true and nothing changes.
 	if eventType == "OUTGOING_DAMAGE_COMBAT" and payload then
+		-- Last shot for the player's own cast before pet-claiming: nuke
+		-- hits with travel time (HoG/Implosion/Demonbolt) can miss the
+		-- 0.85s candidate window upstream and would otherwise die
+		-- unattributed in the pet bucket. A still-queued record means no
+		-- hit has claimed this cast yet, so consuming it here is always
+		-- that cast's first legitimate outcome.
+		if payload.spellId == nil and payload.schoolMask ~= 1 and payload._petRoute ~= false then
+			local mc = consumeBestPendingCast(Collector, payload.timestamp or now(), nil, 2.0, true, payload.schoolMask)
+			if mc and mc.spellId ~= nil then
+				payload.spellId = mc.spellId
+				payload._sidLearn = true
+			end
+		end
 		-- Unattributed non-physical hit + a recent friendly/minion cast =
 		-- likely temporary-pet damage. Flag it here so EVERY emit path
 		-- (bucket flush, physical direct, auto fallback) can deliver as
