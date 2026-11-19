@@ -506,6 +506,13 @@ local function buildClassPage(pf)
 	end
 
 	local function applyTeach(sid, nm)
+		local known = ZSBT.ClassDB and ZSBT.ClassDB.KnowsSpell
+			and ZSBT.ClassDB.KnowsSpell(sid) or nil
+		if known then
+			confirmFs:SetText(("|cFFFFAA00%s|r (%d) already known: %s")
+				:format(tostring(nm), sid, tostring(known)))
+			return
+		end
 		local budget = tonumber(budgetBox:GetText())
 		local role = roleState.role
 		if role == "auto" and ZSBT.ClassDB and ZSBT.ClassDB.InferRole then
@@ -513,12 +520,8 @@ local function buildClassPage(pf)
 		end
 		if ZSBT.ClassDB and ZSBT.ClassDB.TeachSpell
 			and ZSBT.ClassDB.TeachSpell(sid, nm, role, budget) then
-			local known = ZSBT.ClassDB.KnowsSpell
-				and ZSBT.ClassDB.KnowsSpell(sid) or nil
-			local suffix = known
-				and (" |cFFFFAA00(known: %s)|r"):format(tostring(known)) or ""
-			confirmFs:SetText(("|cFF55FF55+%s|r (%d) → %s%s")
-				:format(tostring(nm), sid, tostring(role), suffix))
+			confirmFs:SetText(("|cFF55FF55+%s|r (%d) → %s")
+				:format(tostring(nm), sid, tostring(role)))
 			local tex = C_Spell and C_Spell.GetSpellTexture
 				and C_Spell.GetSpellTexture(sid)
 			if tex then
