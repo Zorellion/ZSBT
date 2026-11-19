@@ -2046,7 +2046,23 @@ function Collector:_dbgDropUnit(unit)
 	local t = now()
 	if t - (Collector[key] or -9) < 0.5 then return end
 	Collector[key] = t
-	z:FileLog("UC_UNIT unit=" .. tostring(unit))
+	local hostile = "?"
+	if UnitCanAttack then
+		local okH, h = pcall(UnitCanAttack, "player", unit)
+		if okH then hostile = tostring(h == true) end
+	end
+	local istarget = "?"
+	if UnitIsUnit then
+		local okI, r = pcall(UnitIsUnit, unit, "target")
+		if okI then istarget = tostring(r == true) end
+	end
+	local uname = "?"
+	if UnitName then
+		local okN, n = pcall(UnitName, unit)
+		if okN and type(n) == "string" then uname = n end
+	end
+	z:FileLog(("UC_UNIT unit=%s hostile=%s istarget=%s name=%s"):format(
+		tostring(unit), hostile, istarget, tostring(uname)))
 end
 
 function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
