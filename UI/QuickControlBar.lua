@@ -211,35 +211,41 @@ local function buildOpenWorldMenu()
 	}
 end
 
+-- Module-declared toggles only (mod.toggles): a class never sees an
+-- option its module doesn't support.
+local CLASS_MENU_TOGGLES = {
+	{ key = "resolveGuardians", text = L["Name Guardian Spells"],
+		get = function(cm) return cm.resolveGuardians ~= false end,
+		flip = function(cm) return not (cm.resolveGuardians ~= false) end },
+	{ key = "namePetMelee", text = L["Show Pet Melee Hits"],
+		get = function(cm) return cm.namePetMelee == true end,
+		flip = function(cm) return not (cm.namePetMelee == true) end },
+}
+
 local function buildClassMenu()
 	local prof = ZSBT.db and ZSBT.db.profile or {}
-	local cm = prof.classModule or {}
-	return {
-		{
-			text = L["Name Guardian Spells"],
-			isNotRadio = true,
-			checked = function() return cm.resolveGuardians ~= false end,
-			func = function()
-				prof.classModule = prof.classModule or {}
-				prof.classModule.resolveGuardians = not (prof.classModule.resolveGuardians ~= false)
-				notifyConfig()
-				refreshActiveDropDown()
-			end,
-			keepShownOnClick = true,
-		},
-		{
-			text = L["Show Pet Melee Hits"],
-			isNotRadio = true,
-			checked = function() return cm.namePetMelee == true end,
-			func = function()
-				prof.classModule = prof.classModule or {}
-				prof.classModule.namePetMelee = not (prof.classModule.namePetMelee == true)
-				notifyConfig()
-				refreshActiveDropDown()
-			end,
-			keepShownOnClick = true,
-		},
-	}
+	local items = {}
+	for _, def in ipairs(CLASS_MENU_TOGGLES) do
+		if ZSBT.ClassDB and ZSBT.ClassDB.SupportsToggle
+			and ZSBT.ClassDB.SupportsToggle(def.key) then
+			items[#items + 1] = {
+				text = def.text,
+				isNotRadio = true,
+				checked = function()
+					local c = prof.classModule or {}
+					return def.get(c)
+				end,
+				func = function()
+					prof.classModule = prof.classModule or {}
+					prof.classModule[def.key] = def.flip(prof.classModule)
+					notifyConfig()
+					refreshActiveDropDown()
+				end,
+				keepShownOnClick = true,
+			}
+		end
+	end
+	return items
 end
 
 local function showMenu(anchor, which)
@@ -407,9 +413,11 @@ function QuickBar:Init()
 	btnPvP:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
 	-- Class-module button: labeled with the player's class, visible only
-	-- when a class module is loaded for this character.
+	-- when a class module is loaded AND declares at least one toggle —
+	-- a module with no UI surface gets no empty menu.
 	local cdb = ZSBT.ClassDB
 	local classModActive = cdb and cdb.ActiveModule and cdb.ActiveModule() ~= nil
+		and #buildClassMenu() > 0
 	local btnAnchor = btnPvP
 	if classModActive then
 		local _, className = UnitClass("player")

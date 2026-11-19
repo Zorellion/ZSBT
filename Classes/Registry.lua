@@ -288,6 +288,15 @@ function ClassDB.DotGuard(entry, school)
 	return nil
 end
 
+-- Which class-module UI toggles apply to this class. Modules declare
+-- mod.toggles = { key = true }; the Class page and quick-bar menu only
+-- render toggles the active module supports, so e.g. a warrior never
+-- sees "Show pet melee hits". Unknown/absent = unsupported.
+function ClassDB.SupportsToggle(key)
+	local mod = ClassDB.ActiveModule()
+	return mod ~= nil and mod.toggles ~= nil and mod.toggles[key] == true
+end
+
 -- One-time load confirmation: prints the resolved class tag and whether a
 -- module was found, so "did my class module load?" is answerable in chat.
 local _classCheckFrame = CreateFrame and CreateFrame("Frame") or nil
