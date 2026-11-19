@@ -85,6 +85,54 @@ local function recentPetCast(self, t, window)
 end
 
 -- Forward parsed events to the configured sink callback.
+-- /zsbt audit: one line per attributed combat event, written to
+-- prof.auditLog in SavedVariables. Fields mirror what the combat-log
+-- filter shows (name/school/crit/amount-when-safe) plus ZSBT's own
+-- attribution (sid, src bucket) so sessions can be diffed line-by-line.
+local AUDIT_TYPES = {
+	OUTGOING_DAMAGE_COMBAT = true,
+	PET_DAMAGE_COMBAT = true,
+	OUTGOING_MISS_COMBAT = true,
+	OUTGOING_HEAL_COMBAT = true,
+	PET_HEAL_LOG = true,
+	PET_INCOMING_DAMAGE_COMBAT = true,
+}
+local function auditEmit(eventType, payload)
+	if ZSBT._auditTrace ~= true then return end
+	local zbt = ZSBT.ZBattleText
+	if not (zbt and zbt.Audit) then return end
+	local p = payload or {}
+	local sid = p.spellId
+	local src = "generic"
+	if eventType == "PET_DAMAGE_COMBAT" or eventType == "PET_HEAL_LOG"
+		or eventType == "PET_INCOMING_DAMAGE_COMBAT" or p._petRoute == true then
+		src = "pet"
+		if sid == nil then sid = p.petSpellId end
+	elseif p.isAuto == true then
+		src = "auto"
+	elseif sid ~= nil then
+		src = "spell"
+	end
+	local name = nil
+	if sid ~= nil and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid) and ZSBT.CleanSpellName then
+		local okN, n = pcall(ZSBT.CleanSpellName, sid)
+		if okN and type(n) == "string" and n ~= "" then name = n end
+	end
+	local amt = p.amount
+	local amtStr
+	if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(amt) then
+		amtStr = tostring(amt)
+	elseif type(p.amountText) == "string" and p.amountText ~= "" then
+		amtStr = p.amountText
+	else
+		amtStr = "secret"
+	end
+	zbt:Audit(("AUD ht=%.3f %s sid=%s name=%s school=%s crit=%s amt=%s src=%s tgt=%s"):format(
+		tonumber(p.timestamp) or 0, eventType, tostring(sid), tostring(name),
+		tostring(p.schoolMask), tostring(p.isCrit == true), amtStr, src,
+		tostring(p.targetName)))
+end
+
 local function emit(eventType, payload)
 	-- ZBattleText ownership veto: when the combat-log filter is trusted,
 	-- ambiguous outgoing damage must be corroborated by a palette line.
@@ -122,6 +170,7 @@ local function emit(eventType, payload)
 		end
 	end
 	if Collector._sink then
+		auditEmit(sinkType, payload)
 		Collector._sink(sinkType, payload)
 		-- Hit->display latency for the ucdrop trace: timestamp is the
 		-- UNIT_COMBAT hit time, so dly captures veto defer + merge +

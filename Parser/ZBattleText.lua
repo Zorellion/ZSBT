@@ -650,6 +650,11 @@ local function flushPending()
             else
                 ZB._drops = ZB._drops + 1
                 ZB:FileLog(("DROP sid=%s"):format(tostring(p.payload and p.payload.spellId)))
+                local dp = p.payload or {}
+                ZB:Audit(("AUDROP ht=%.3f sid=%s school=%s crit=%s src=%s"):format(
+                    tonumber(p.t) or 0, tostring(dp.spellId), tostring(dp.schoolMask),
+                    tostring(dp.isCrit == true),
+                    tostring(dp._petRoute == true and "pet" or (dp.isAuto == true and "auto" or (dp.spellId ~= nil and "spell" or "generic")))))
                 sustainedRejection()
             end
         end
@@ -671,6 +676,26 @@ function ZB:FileLog(msg)
     local t = GetTime and GetTime() or 0
     log[#log + 1] = ("%.3f %s"):format(t, tostring(msg))
     if #log > 4000 then
+        table.remove(log, 1)
+    end
+end
+
+-- Attribution audit sink for /zsbt audit sessions: one record per damage
+-- event ZSBT attributes (and per veto rejection), written to a separate
+-- SavedVariables ring (prof.auditLog) so it can be diffed line-by-line
+-- against the /combatlog filter output after a session.
+function ZB:Audit(msg)
+    if ZSBT._auditTrace ~= true then return end
+    local prof = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
+    if type(prof) ~= "table" then return end
+    local log = prof.auditLog
+    if type(log) ~= "table" then
+        log = {}
+        prof.auditLog = log
+    end
+    local t = GetTime and GetTime() or 0
+    log[#log + 1] = ("%.3f %s"):format(t, tostring(msg))
+    if #log > 8000 then
         table.remove(log, 1)
     end
 end

@@ -2009,6 +2009,14 @@ function Addon:HandleSlashCommand(input)
         end
         self:Print("UC_DROP trace " .. (ZSBT._ucDropTrace and "ON" or "OFF"))
         return
+    elseif cmd == "audit" then
+        ZSBT._auditTrace = not (ZSBT._auditTrace == true)
+        if ZSBT._auditTrace == true then
+            local diag = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
+            if type(diag) == "table" then diag.auditLog = {} end
+        end
+        self:Print("AUDIT trace " .. (ZSBT._auditTrace and "ON" or "OFF"))
+        return
     elseif cmd == "dumpcvars" then
 		local function safeGet(name)
 			if type(GetCVar) ~= "function" then return nil end
