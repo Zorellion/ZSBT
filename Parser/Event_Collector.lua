@@ -3194,7 +3194,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			local spellId = nil
 			if self._lastPlayerSpellAt and self._lastPlayerSpellId then
 				local age = t - (self._lastPlayerSpellAt or 0)
-				if age >= 0 and age <= 1.5 then
+				if age >= 0 and age <= 1.5
+					and miwClaim(self, self._lastPlayerSpellId, self._lastPlayerSpellAt, t, school) then
 					spellId = self._lastPlayerSpellId
 				end
 			end
@@ -3225,7 +3226,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				local spellId = nil
 				if self._lastPlayerSpellAt and self._lastPlayerSpellId then
 					local age = t - self._lastPlayerSpellAt
-					if age >= 0 and age <= 1.5 then
+					if age >= 0 and age <= 1.5
+						and miwClaim(self, self._lastPlayerSpellId, self._lastPlayerSpellAt, t, school) then
 						spellId = self._lastPlayerSpellId
 					end
 				end
