@@ -152,11 +152,14 @@ local function recordLine(r, g, b)
 end
 
 -- Consume the nearest unconsumed damage-kind line within `window` of tHit.
-local function takeDamageLine(tHit, window)
+-- `kinds` optionally restricts which line kinds may match (kind-aware
+-- pairing keeps melee candidates from stealing spell lines and vice versa).
+local function takeDamageLine(tHit, window, kinds)
     local best, bestDt
     for i = 1, #ZB._lines do
         local l = ZB._lines[i]
-        if DAMAGE_KINDS[l.kind] and not l.consumed then
+        local kindOk = DAMAGE_KINDS[l.kind] and (kinds == nil or kinds[l.kind] == true)
+        if kindOk and not l.consumed then
             local dt = math.abs(l.at - tHit)
             if dt <= window and (bestDt == nil or dt < bestDt) then
                 best, bestDt = i, dt
@@ -537,6 +540,16 @@ local function sustainedRejection()
     return false
 end
 
+-- Line kinds a candidate should claim first. Physical hits (school 1,
+-- including bows) pair with melee/ranged lines; everything else prefers
+-- spell damage kinds. Returns nil for "any damage kind" (fallback pass
+-- still runs, so this only reorders, never restricts).
+local MELEE_KINDS = { melee = true, ranged = true }
+local function preferredKinds(payload)
+    local sm = payload and payload.schoolMask
+    if sm == 1 then return MELEE_KINDS end
+    return nil
+end
 local function deliverOutgoing(payload)
     local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
     if ec and ec._sink then
@@ -557,7 +570,8 @@ local function flushPending()
         if ZB._vetoDisabled or not ZB._trusted then
             deliverOutgoing(p.payload)
         else
-            local kind = takeDamageLine(p.t, DEFER_WINDOW)
+            local pref = preferredKinds(p.payload)
+            local kind = takeDamageLine(p.t, DEFER_WINDOW, pref) or takeDamageLine(p.t, DEFER_WINDOW)
             if kind then
                 ZB._allows = ZB._allows + 1
                 ZB:FileLog(("ALLOW kind=%s sid=%s"):format(tostring(kind), tostring(p.payload and p.payload.spellId)))
@@ -599,7 +613,7 @@ function ZB:OfferOutgoing(payload)
     if vetoDisabledNow() then return true end
 
     -- Fast path: the line is already buffered (CLM arrived first).
-    local fastKind = takeDamageLine(tHit, VETO_WINDOW)
+    local fastKind = takeDamageLine(tHit, VETO_WINDOW, preferredKinds(payload)) or takeDamageLine(tHit, VETO_WINDOW)
     if fastKind then
         ZB._allows = ZB._allows + 1
         ZB:FileLog(("ALLOW_FAST kind=%s sid=%s"):format(tostring(fastKind), tostring(payload and payload.spellId)))

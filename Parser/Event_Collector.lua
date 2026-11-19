@@ -2403,6 +2403,19 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		local actionStr = ZSBT.IsSafeString(action) and action or nil
 		local isPhysicalEarly = ZSBT.IsSafeNumber(school) and school == 1
 		if actionStr == "WOUND" then
+			-- Same hit reported through a second unit token (target /
+			-- softenemy / nameplate remap) arrives within a frame or two.
+			-- Collapse exact school+crit twins inside 50ms so duplicates
+			-- cannot steal palette lines from distinct hits. Only dedups
+			-- safe-number schools; secret schools always pass through.
+			if ZSBT.IsSafeNumber(school) then
+				local sig = self._lastTargetWoundSig
+				if sig and (t - sig.t) >= 0 and (t - sig.t) < 0.05
+					and sig.school == school and sig.crit == isCrit then
+					return
+				end
+				self._lastTargetWoundSig = { t = t, school = school, crit = isCrit }
+			end
 			local zbtc = ZSBT.ZBattleText
 			if zbtc and zbtc.FileLog then
 				zbtc:FileLog(("CAND school=%s crit=%s"):format((ZSBT.IsSafeNumber(school) and tostring(school)) or "sec", tostring(isCrit == true)))
