@@ -331,7 +331,7 @@ local function buildClassPage(pf)
 		if ZSBT.ClassDB and ZSBT.ClassDB.SupportsToggle
 			and ZSBT.ClassDB.SupportsToggle(def.key) then
 			local cb = CreateFrame("CheckButton", nil, pf, "InterfaceOptionsCheckButtonTemplate")
-			cb:SetPoint("TOPLEFT", pf, "TOPLEFT", 16, -200 - #toggles * 26)
+			cb:SetPoint("TOPLEFT", body, "BOTTOMLEFT", -4, -8 - #toggles * 26)
 			cb.Text:SetText(def.label)
 			cb.Text:SetTextColor(1, 1, 1)
 			cb:SetScript("OnClick", function(self)
@@ -353,7 +353,7 @@ local function buildClassPage(pf)
 	if toggles[#toggles] then
 		detail:SetPoint("TOPLEFT", toggles[#toggles].cb, "BOTTOMLEFT", -4, -10)
 	else
-		detail:SetPoint("TOPLEFT", pf, "TOPLEFT", 20, -270)
+		detail:SetPoint("TOPLEFT", body, "BOTTOMLEFT", 4, -16)
 	end
 
 	--------------------------------------------------------------------
