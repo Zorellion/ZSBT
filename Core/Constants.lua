@@ -221,6 +221,33 @@ function ZSBT.IsSafeString(v)
     return not hasSecret(v)
 end
 
+-- Shared damage-school -> color lookup. Honors profile.media.schoolColors
+-- when configured; composite masks resolve to a dominant school (cosmic/
+-- chaos -> arcane, shadowflame -> shadow). Pure physical returns nil so
+-- callers keep their neutral/white fallback.
+function ZSBT.SchoolColorFromMask(mask)
+    if not ZSBT.IsSafeNumber(mask) or mask <= 0 then return nil end
+    local band = (bit and bit.band) or (bit32 and bit32.band)
+    if type(band) ~= "function" then return nil end
+    local colors = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.media
+        and ZSBT.db.profile.media.schoolColors
+    local function col(name, r, g, b)
+        local c = colors and colors[name]
+        if type(c) == "table" and type(c.r) == "number"
+            and type(c.g) == "number" and type(c.b) == "number" then
+            return { r = c.r, g = c.g, b = c.b }
+        end
+        return { r = r, g = g, b = b }
+    end
+    if band(mask, 64) ~= 0 then return col("arcane", 1.00, 0.50, 1.00) end
+    if band(mask, 32) ~= 0 then return col("shadow", 0.60, 0.20, 1.00) end
+    if band(mask, 16) ~= 0 then return col("frost",  0.40, 0.80, 1.00) end
+    if band(mask, 8)  ~= 0 then return col("nature", 0.30, 1.00, 0.30) end
+    if band(mask, 4)  ~= 0 then return col("fire",   1.00, 0.30, 0.00) end
+    if band(mask, 2)  ~= 0 then return col("holy",   1.00, 0.90, 0.50) end
+    return nil
+end
+
 -- "Midnight Proxy" pattern: re-fetch a CLEAN, UNTAINTED spell name
 -- from the local game client cache using the spell ID.
 function ZSBT.CleanSpellName(spellId)

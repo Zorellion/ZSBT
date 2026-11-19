@@ -1420,14 +1420,23 @@ function Engine:flushBucket()
 						local color
 						local baseCol = petConf and petConf.outgoingDamageColor
 						local critCol = petConf and petConf.outgoingCritColor
+						-- School colors apply to pet damage too — Fel
+						-- Firebolt should burn orange, Dreadbite shadow
+						-- purple. Physical stays neutral. Pet crit color
+						-- still wins, same as the player path.
+						if prof.outgoing and prof.outgoing.useSchoolColors then
+							color = ZSBT.SchoolColorFromMask(sample.schoolMask)
+						end
 						if sample.isCrit and type(critCol) == "table" then
 							color = { r = critCol.r or 1, g = critCol.g or 1, b = critCol.b or 0 }
-						elseif type(baseCol) == "table" then
-							color = { r = baseCol.r or 1, g = baseCol.g or 1, b = baseCol.b or 1 }
-						elseif sample.isCrit then
-							color = _PET_DMG2_COLOR_CRIT
-						else
-							color = _PET_DMG2_COLOR_BASE
+						elseif color == nil then
+							if type(baseCol) == "table" then
+								color = { r = baseCol.r or 1, g = baseCol.g or 1, b = baseCol.b or 1 }
+							elseif sample.isCrit then
+								color = _PET_DMG2_COLOR_CRIT
+							else
+								color = _PET_DMG2_COLOR_BASE
+							end
 						end
 						local meta = { kind = "pet", isCrit = sample.isCrit == true, school = sample.schoolMask }
 						if ZSBT.Core and ZSBT.Core.Display and ZSBT.Core.Display.Emit then
