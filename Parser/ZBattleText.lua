@@ -625,10 +625,15 @@ local function deliverOutgoing(payload)
     local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
     if ec and ec._sink then
         -- Deferred delivery only happens after a palette line confirmed
-        -- ownership: teach the spell's school (FCT Trust equivalent).
+        -- ownership: teach the spell's school (FCT Trust equivalent), but
+        -- only when the sid came from a consumed cast record — recency
+        -- stamps are guesses and must not learn from a stolen line.
         local learnSid = payload and (payload.spellId or payload.petSpellId)
+        local learnTrust = payload and (
+            (payload.spellId ~= nil and payload._sidLearn == true)
+            or (payload.spellId == nil and payload.petSpellId ~= nil and payload._petSidLearn == true))
         if type(learnSid) == "number" and ec.LearnConfirmedSchool then
-            ec:LearnConfirmedSchool(learnSid, payload.schoolMask)
+            ec:LearnConfirmedSchool(learnSid, payload.schoolMask, learnTrust == true)
         end
         local ev = "OUTGOING_DAMAGE_COMBAT"
         if payload and payload._petRoute == true then
