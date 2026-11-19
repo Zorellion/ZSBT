@@ -16,10 +16,11 @@ if not ZSBT or not ZSBT.ClassDB then return end
 local mod = {}
 
 mod.dots = {
-	{ names = { "Frost Fever" },      ids = { 55095 }, school = 16 },
-	{ names = { "Blood Plague" },     ids = { 55078 }, school = 32 },
-	{ names = { "Virulent Plague" },  ids = {},        school = 32 }, -- name-primary (id varies)
-	{ names = { "Dread Plague" },     ids = {},        school = 32 }, -- Midnight unholy disease
+	{ names = { "Frost Fever" },           ids = { 55095 },  school = 16 },
+	{ names = { "Blood Plague" },          ids = { 55078 },  school = 32 },
+	{ names = { "Virulent Plague" },       ids = {},         school = 32 }, -- name-primary (id varies)
+	{ names = { "Dread Plague" },          ids = {},         school = 32 }, -- Midnight unholy disease
+	{ names = { "Trollbane's Icy Fury" },  ids = { 444834 }, school = 48 }, -- Rider proc, player-sourced debuff (log-verified school 0x30)
 }
 
 -- Channeled: Breath of Sindragosa ticks for the channel's duration.
@@ -55,6 +56,14 @@ local GUARDIAN_SUMMONS = {
 		{ group = "magus", duration = 15 },
 		{ group = "horsemen", duration = 30 } },            -- Army of the Dead (+Magus +Riders)
 	[444251] = { { group = "horsemen",  duration = 30 } }, -- Summon Whitemane (Rider proc)
+	[444254] = { { group = "horsemen",  duration = 30 } }, -- Summon Trollbane (log-verified)
+	[444252] = { { group = "horsemen",  duration = 30 } }, -- Summon Nazgrim (log-verified)
+	[444248] = { { group = "horsemen",  duration = 30 } }, -- Summon Mograine (log-verified)
+	[288853] = { { group = "ghoul",     duration = 60 } }, -- Raise Abomination (log-verified)
+	[317776] = { { group = "magus",     duration = 15 } }, -- Army of the Damned proc summon (log-verified)
+	[1242294] = { { group = "magus",    duration = 15 } }, -- Army of the Damned, second id (log-verified)
+	[1292072] = { { group = "army",     duration = 15 },
+		{ group = "magus", duration = 15 } },               -- Lord of the Dead (log-verified summon)
 	[275699] = { { group = "apoc",      duration = 15 } }, -- Apocalypse (modern id)
 	[220143] = { { group = "apoc",      duration = 15 } }, -- Apocalypse (older id)
 	[63560]  = { { group = "darktrans", duration = 15 },
@@ -86,6 +95,11 @@ local GUARDIAN_SPELLS = {
 	},
 	horsemen  = {
 		{ sid = 445513, school = 32 }, -- Whitemane's Death Coil (log-verified)
+		-- Nazgrim's Scourge Strike shadow component (445509, school 32) is
+		-- deliberately NOT listed: it shares school 32 with Whitemane's DC in
+		-- the same window, which would make both ambiguous under the
+		-- one-match rule. Its physical component (445508, school 1) is
+		-- unnameable like all guardian physical damage.
 	},
 }
 
