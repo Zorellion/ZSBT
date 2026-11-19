@@ -9,8 +9,9 @@
 -- widget reparented inside the page frame. All get/set/hidden logic
 -- stays verbatim — this is presentation-only.
 --
--- Opened via "/zsbt zctui". The classic AceConfig UI ("ZSBT" app) is
--- untouched and remains the default for bare "/zsbt".
+-- This shell IS the UI. "/zsbt" opens it. The classic AceConfigDialog
+-- "ZSBT" window and the "/zsbt zctui" alias are DISABLED — see
+-- Addon:OpenConfig in Core/Init.lua.
 ------------------------------------------------------------------------
 
 local ADDON_NAME, ZSBT = ...
