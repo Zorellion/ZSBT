@@ -239,6 +239,19 @@ local function emit(eventType, payload)
 			end
 		end
 	end
+	-- Strict toggle also covers direct pet-path emits: PET_DAMAGE_COMBAT
+	-- bypasses the veto queue entirely, so without this check unnamed pet
+	-- hits would display even with hideUnattributed on.
+	if eventType == "PET_DAMAGE_COMBAT" and payload
+		and payload.spellId == nil and payload.petSpellId == nil then
+		local prof = ZSBT.db and ZSBT.db.profile
+		if prof and type(prof.classModule) == "table" and prof.classModule.hideUnattributed == true then
+			auditNote(("AUDSUPP ht=%.3f school=%s crit=%s src=pet"):format(
+				tonumber(payload.timestamp) or 0, tostring(payload.schoolMask),
+				tostring(payload.isCrit == true)))
+			return
+		end
+	end
 	if eventType == "OUTGOING_DAMAGE_COMBAT"
 		and ZSBT.ZBattleText and ZSBT.ZBattleText.OfferOutgoing
 		and not ZSBT.ZBattleText:OfferOutgoing(payload) then
@@ -3037,6 +3050,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						local petSidTrusted = petSid ~= nil
 						if petSid == nil and ZSBT.ClassDB and ZSBT.ClassDB.ResolvePetSpellId then
 							petSid = ZSBT.ClassDB.ResolvePetSpellId(self, school, t)
+						end
+						if petSid == nil and ZSBT.IsSafeNumber(school) and school == 1
+							and ZSBT.ClassDB and ZSBT.ClassDB.ResolvePetMelee then
+							-- Class may name verified pet melee (warlock:
+							-- "Auto Attack"). Class-guess, not provenance.
+							petSid = ZSBT.ClassDB.ResolvePetMelee(self)
 						end
 						if ZSBT.IsSafeNumber(school) and school == 1 and zbtVetoActive() then
 							-- Physical pet hits go through the ownership veto:

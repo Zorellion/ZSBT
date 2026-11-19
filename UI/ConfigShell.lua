@@ -290,10 +290,42 @@ local function buildClassPage(pf)
 	cb2Hint:SetJustifyH("LEFT")
 	cb2Hint:SetPoint("TOPLEFT", cb2, "BOTTOMLEFT", 26, -6)
 
+	local cb3 = CreateFrame("CheckButton", nil, pf, "InterfaceOptionsCheckButtonTemplate")
+	cb3:SetPoint("TOPLEFT", cb2Hint, "BOTTOMLEFT", -26, -14)
+	cb3.Text:SetText(L["Name guardian spells"])
+	cb3:SetScript("OnClick", function(self)
+		local prof = ZSBT.db and ZSBT.db.profile
+		if not prof then return end
+		prof.classModule = prof.classModule or {}
+		prof.classModule.resolveGuardians = self:GetChecked() == true
+	end)
+	cb3.Text:SetTextColor(1, 1, 1)
+	local cb3Hint = shellFont(pf, 11, COL.dim or COL.text,
+		L["Guardian damage (imps, dreadstalkers, tyrant) is named from summon tracking. Off = those hits fall back to generic pet damage."])
+	cb3Hint:SetWidth(580)
+	cb3Hint:SetJustifyH("LEFT")
+	cb3Hint:SetPoint("TOPLEFT", cb3, "BOTTOMLEFT", 26, -6)
+
+	local cb4 = CreateFrame("CheckButton", nil, pf, "InterfaceOptionsCheckButtonTemplate")
+	cb4:SetPoint("TOPLEFT", cb3Hint, "BOTTOMLEFT", -26, -14)
+	cb4.Text:SetText(L["Show pet melee hits"])
+	cb4:SetScript("OnClick", function(self)
+		local prof = ZSBT.db and ZSBT.db.profile
+		if not prof then return end
+		prof.classModule = prof.classModule or {}
+		prof.classModule.namePetMelee = self:GetChecked() == true
+	end)
+	cb4.Text:SetTextColor(1, 1, 1)
+	local cb4Hint = shellFont(pf, 11, COL.dim or COL.text,
+		L["Pet melee verified by a combat-log line displays as 'Auto Attack'. A stolen MY_PET line could still name a foreign swing."])
+	cb4Hint:SetWidth(580)
+	cb4Hint:SetJustifyH("LEFT")
+	cb4Hint:SetPoint("TOPLEFT", cb4, "BOTTOMLEFT", 26, -6)
+
 	local detail = shellFont(pf, 12, COL.dim or COL.text, "")
 	detail:SetWidth(620)
 	detail:SetJustifyH("LEFT")
-	detail:SetPoint("TOPLEFT", cb2Hint, "BOTTOMLEFT", -26, -18)
+	detail:SetPoint("TOPLEFT", cb4Hint, "BOTTOMLEFT", -26, -18)
 
 	local function refresh()
 		local cdb = ZSBT.ClassDB
@@ -304,10 +336,13 @@ local function buildClassPage(pf)
 
 		if not mod then
 			body:SetText(L["No class module is loaded for this character."])
-			cb:Hide(); cbHint:Hide(); cb2:Hide(); cb2Hint:Hide(); detail:SetText("")
+			cb:Hide(); cbHint:Hide(); cb2:Hide(); cb2Hint:Hide()
+			cb3:Hide(); cb3Hint:Hide(); cb4:Hide(); cb4Hint:Hide()
+			detail:SetText("")
 			return
 		end
 		cb:Show(); cbHint:Show(); cb2:Show(); cb2Hint:Show()
+		cb3:Show(); cb3Hint:Show(); cb4:Show(); cb4Hint:Show()
 
 		local autoVetoed = cdb.VetoAuto and cdb.VetoAuto() == true
 		local lines = {
@@ -348,6 +383,8 @@ local function buildClassPage(pf)
 		local prof = ZSBT.db and ZSBT.db.profile
 		cb:SetChecked(prof and prof.classModule and prof.classModule.allowAutoAttack == true)
 		cb2:SetChecked(prof and prof.classModule and prof.classModule.hideUnattributed == true)
+		cb3:SetChecked(not prof or not prof.classModule or prof.classModule.resolveGuardians ~= false)
+		cb4:SetChecked(prof and prof.classModule and prof.classModule.namePetMelee == true)
 	end
 	pf:SetScript("OnShow", refresh)
 end
