@@ -565,9 +565,9 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
             -- the outgoing heal path). Merged bursts still collapse to
             -- "Heals xN" / "Hits xN" in the merge buffer.
             mergeMode = "secret"
-            if kind == "heal" then
-                text = rawPipeValue
-            end
+            -- Damage needs the raw value too: without it text stays nil
+            -- and Display:Emit drops the event before any scroll area sees it.
+            text = rawPipeValue
         end
     else
         text = displayText
