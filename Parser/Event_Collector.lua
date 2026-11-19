@@ -84,6 +84,24 @@ local function recentPetCast(self, t, window)
 	return best, bestUnit
 end
 
+-- Chaos school (127) tooltips cover every school; hits may report the
+-- composite masks 124/126 (MSBT/FCT SchoolFits).
+local function spellSchoolFits(learned, school)
+	if learned == nil or school == nil then return true end
+	if learned == school then return true end
+	return learned == 127 and (school == 124 or school == 126)
+end
+
+-- A cast may only claim a hit whose school fits what confirmed hits taught
+-- about that spell. Unknown stays permissive (a guess, like FCT); a
+-- known-wrong school is refused — this is what stops "Consecration shown
+-- as Shadow Bolt".
+local function castSchoolOk(self, spellId, school)
+	if type(spellId) ~= "number" then return true end
+	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) then return true end
+	return spellSchoolFits(self._learnedSpellSchool[spellId], school)
+end
+
 -- Forward parsed events to the configured sink callback.
 -- /zsbt audit: one line per attributed combat event, written to
 -- prof.auditLog in SavedVariables. Fields mirror what the combat-log
@@ -126,7 +144,9 @@ local function emit(eventType, payload)
 		-- hits stay generic: melee is indistinguishable from autos.
 		if payload.spellId == nil and payload.schoolMask ~= 1 and payload._petRoute ~= false then
 			local psid = recentPetCast(Collector, payload.timestamp or now(), 1.2)
-			if psid ~= nil then
+			-- School gate: a recent pet cast may only tag a hit whose school
+			-- fits what confirmed hits taught about that pet spell.
+			if psid ~= nil and castSchoolOk(Collector, psid, payload.schoolMask) then
 				payload._petRoute = true
 				payload.petSpellId = psid
 				payload.petBucket = "summons"
@@ -140,9 +160,8 @@ local function emit(eventType, payload)
 	end
 	-- OfferOutgoing sets _vetoConfirmed when a palette line proved
 	-- ownership (fast match): teach the spell's school for future stamps.
-	if eventType == "OUTGOING_DAMAGE_COMBAT" and payload
-		and payload._vetoConfirmed == true and type(payload.spellId) == "number" then
-		Collector:LearnConfirmedSchool(payload.spellId, payload.schoolMask)
+	if eventType == "OUTGOING_DAMAGE_COMBAT" and payload and payload._vetoConfirmed == true then
+		Collector:LearnConfirmedSchool(payload.spellId or payload.petSpellId, payload.schoolMask)
 	end
 	-- Veto-approved unattributed hits that look like minion/pet damage
 	-- deliver as PET_DAMAGE_COMBAT so they get pet styling. The swap
@@ -446,6 +465,7 @@ Collector._pendingCastNextToken = Collector._pendingCastNextToken or 0
 -- outgoing hits. Unconfirmed hits never teach (FCT Trust/Doubt): a foreign
 -- hit that slips past heuristics cannot write a bad school.
 Collector._learnedSpellSchool = Collector._learnedSpellSchool or {}
+Collector._schoolVotes = Collector._schoolVotes or {}
 local PENDING_CAST_WINDOW_SEC = 2.5
 local PENDING_CAST_MAX = 12
 
@@ -883,31 +903,31 @@ local function enqueuePendingCast(self, spellId, spellName, tNow)
 	end
 end
 
--- Chaos school (127) tooltips cover every school; hits may report the
--- composite masks 124/126 (MSBT/FCT SchoolFits).
-local function spellSchoolFits(learned, school)
-	if learned == nil or school == nil then return true end
-	if learned == school then return true end
-	return learned == 127 and (school == 124 or school == 126)
-end
-
--- A cast may only claim a hit whose school fits what confirmed hits taught
--- about that spell. Unknown stays permissive (a guess, like FCT); a
--- known-wrong school is refused — this is what stops "Consecration shown
--- as Shadow Bolt".
-local function castSchoolOk(self, spellId, school)
-	if type(spellId) ~= "number" then return true end
-	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) then return true end
-	return spellSchoolFits(self._learnedSpellSchool[spellId], school)
-end
-
 -- Veto-confirmed (line-paired) outgoing hits teach the spell's damage
 -- school. Called from emit()'s fast path and ZBattleText's deferred
 -- delivery — both mean a MINE/MY_PET palette line confirmed ownership.
+-- Vote-guarded (FCT): a single confirmed hit is still a guess — a school
+-- is only taught once it has the majority with >= 2 confirmations, so one
+-- stolen line can't poison the learned school.
+local SCHOOL_LEARN_VOTES = 2
 function Collector:LearnConfirmedSchool(spellId, schoolMask)
 	if type(spellId) ~= "number" then return end
 	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(schoolMask)) then return end
-	self._learnedSpellSchool[spellId] = schoolMask
+	local learned = self._learnedSpellSchool[spellId]
+	if learned == schoolMask then return end
+	local votes = self._schoolVotes[spellId]
+	if type(votes) ~= "table" then
+		votes = {}
+		self._schoolVotes[spellId] = votes
+	end
+	votes[schoolMask] = (votes[schoolMask] or 0) + 1
+	local against = 0
+	for other, n in pairs(votes) do
+		if other ~= schoolMask then against = against + n end
+	end
+	if votes[schoolMask] >= SCHOOL_LEARN_VOTES and votes[schoolMask] > against then
+		self._learnedSpellSchool[spellId] = schoolMask
+	end
 end
 
 local function consumeBestPendingCast(self, tNow, wantSpellId, maxWindowSec, doConsume, hitSchool)
@@ -952,6 +972,7 @@ function Collector:handlePlayerSwing(swingType)
 	local hand = "main"
 	if type(swingType) == "string" and swingType ~= "" then hand = swingType end
 	self._swingAt[hand] = t
+	auditNote(("AUDSWING hand=%s"):format(dbgSafe(hand)))
 end
 
 function Collector:handleSpellcastSucceeded(unit, guid, spellId)
@@ -2860,6 +2881,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							zbt2:FileLog(("PET_EMIT school=%s"):format(tostring(school)))
 						end
 						local petSid, petUnit = recentPetCast(self, t, 1.5)
+						if petSid ~= nil and not castSchoolOk(self, petSid, school) then
+							petSid = nil
+						end
 						if ZSBT.IsSafeNumber(school) and school == 1 and zbtVetoActive() then
 							-- Physical pet hits go through the ownership veto:
 							-- a MY_PET melee line must confirm them (the
@@ -3317,10 +3341,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- veto then verifies a MY_PET line when trusted).
 			local swingOk = swingExplainsHit(self, t)
 			local petRoutePhys = nil
+			local petSidPhys = nil
 			if spellId == nil and not swingOk
 				and isLikelyPetPhysicalHit(school)
 				and (zbtVetoActive() or not members or members <= 1) then
 				petRoutePhys = true
+				local ps = recentPetCast(self, t, 1.5)
+				if castSchoolOk(self, ps, school) then petSidPhys = ps end
 			end
 			emit("OUTGOING_DAMAGE_COMBAT", {
 				timestamp = t,
@@ -3328,7 +3355,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				spellId = spellId,
 				isAuto = (spellId == nil and swingOk),
 				_petRoute = petRoutePhys,
-				petSpellId = petRoutePhys and recentPetCast(self, t, 1.5) or nil,
+				petSpellId = petSidPhys,
 				amountSource = "UNIT_COMBAT_PHYSICAL",
 				targetName = safeUnitName("target"),
 				isCrit = isCrit,
@@ -4314,6 +4341,7 @@ function Collector:Enable()
 	-- an unsupported client marks _swingSupported false and auto claims
 	-- keep the legacy permissive path.
 	self._swingSupported = pcall(function() self._frame:RegisterEvent("PLAYER_SWING") end) == true
+	auditNote(("AUDCAP swing=%s"):format(tostring(self._swingSupported == true)))
 	for evtName in pairs(CHAT_OUTGOING_EVENTS) do
 		pcall(function() self._frame:RegisterEvent(evtName) end)
 	end

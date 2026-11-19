@@ -626,8 +626,9 @@ local function deliverOutgoing(payload)
     if ec and ec._sink then
         -- Deferred delivery only happens after a palette line confirmed
         -- ownership: teach the spell's school (FCT Trust equivalent).
-        if payload and type(payload.spellId) == "number" and ec.LearnConfirmedSchool then
-            ec:LearnConfirmedSchool(payload.spellId, payload.schoolMask)
+        local learnSid = payload and (payload.spellId or payload.petSpellId)
+        if type(learnSid) == "number" and ec.LearnConfirmedSchool then
+            ec:LearnConfirmedSchool(learnSid, payload.schoolMask)
         end
         local ev = "OUTGOING_DAMAGE_COMBAT"
         if payload and payload._petRoute == true then
@@ -668,8 +669,13 @@ local function flushPending()
         if ZB._vetoDisabled or not ZB._trusted then
             deliverOutgoing(p.payload)
         else
-            local pref = preferredKinds(p.payload)
-            local kind = takeDamageLine(p.t, DEFER_WINDOW, pref) or takeDamageLine(p.t, DEFER_WINDOW)
+            local kind
+            if p.payload and p.payload.isAuto == true then
+                kind = takeDamageLine(p.t, DEFER_WINDOW, MELEE_KINDS)
+            else
+                local pref = preferredKinds(p.payload)
+                kind = takeDamageLine(p.t, DEFER_WINDOW, pref) or takeDamageLine(p.t, DEFER_WINDOW)
+            end
             if kind then
                 ZB._allows = ZB._allows + 1
                 ZB:FileLog(("ALLOW kind=%s sid=%s"):format(tostring(kind), tostring(p.payload and p.payload.spellId)))
@@ -773,7 +779,14 @@ function ZB:OfferOutgoing(payload)
     if vetoDisabledNow() then return true end
 
     -- Fast path: the line is already buffered (CLM arrived first).
-    local fastKind = takeDamageLine(tHit, VETO_WINDOW, preferredKinds(payload)) or takeDamageLine(tHit, VETO_WINDOW)
+    -- An auto-attack claim may ONLY be confirmed by a melee/ranged line —
+    -- it must not steal a spell line (pet spells produce lines constantly).
+    local fastKind
+    if payload and payload.isAuto == true then
+        fastKind = takeDamageLine(tHit, VETO_WINDOW, MELEE_KINDS)
+    else
+        fastKind = takeDamageLine(tHit, VETO_WINDOW, preferredKinds(payload)) or takeDamageLine(tHit, VETO_WINDOW)
+    end
     if fastKind then
         ZB._allows = ZB._allows + 1
         if payload then payload._vetoConfirmed = true end
