@@ -2046,20 +2046,23 @@ function Collector:_dbgDropUnit(unit)
 	local t = now()
 	if t - (Collector[key] or -9) < 0.5 then return end
 	Collector[key] = t
+	-- Unit predicates/names can be secret on Retail: probe each inside
+	-- its own pcall and report "secret" rather than killing the event.
+	local function probeBool(fn, ...)
+		local ok, res = pcall(fn, ...)
+		if not ok then return "err" end
+		local ok2, eq = pcall(function() return res == true end)
+		if not ok2 then return "secret" end
+		return tostring(res)
+	end
 	local hostile = "?"
-	if UnitCanAttack then
-		local okH, h = pcall(UnitCanAttack, "player", unit)
-		if okH then hostile = tostring(h == true) end
-	end
+	if UnitCanAttack then hostile = probeBool(UnitCanAttack, "player", unit) end
 	local istarget = "?"
-	if UnitIsUnit then
-		local okI, r = pcall(UnitIsUnit, unit, "target")
-		if okI then istarget = tostring(r == true) end
-	end
+	if UnitIsUnit then istarget = probeBool(UnitIsUnit, unit, "target") end
 	local uname = "?"
 	if UnitName then
 		local okN, n = pcall(UnitName, unit)
-		if okN and type(n) == "string" then uname = n end
+		if okN and ZSBT.IsSafeString(n) then uname = n end
 	end
 	z:FileLog(("UC_UNIT unit=%s hostile=%s istarget=%s name=%s"):format(
 		tostring(unit), hostile, istarget, tostring(uname)))
@@ -2077,7 +2080,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			local isTarget = false
 			if UnitIsUnit then
 				local okU, res = pcall(UnitIsUnit, unit, "target")
-				if okU and res == true then isTarget = true end
+				-- res can be a secret boolean on Retail: compare inside pcall
+				-- so a secret result cannot kill the whole UNIT_COMBAT event.
+				if okU then
+					local okC, eq = pcall(function() return res == true end)
+					if okC and eq == true then isTarget = true end
+				end
 			end
 			if isTarget then
 				local dl = OutDbgLevel()
