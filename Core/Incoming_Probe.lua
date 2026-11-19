@@ -485,25 +485,10 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
         end
     end
 
-    -- Instance/readability policy: if the value is a secret (tainted) raw pipe
-    -- and we have no safe numeric amount to filter against AND no threshold to
-    -- run secret-threshold evaluation, hide it to avoid unfilterable spam.
-    -- Heals are exempt: on secret-value clients (e.g. WoW Forever) EVERY heal
-    -- amount is tainted, so this policy would suppress all incoming healing.
-    -- The raw value still renders via SetText and merges collapse to "Heals xN".
-    if rawPipeValue ~= nil and not ZSBT.IsSafeNumber(rawPipeValue) and thresholdAmt == nil and kind ~= "heal" then
-        local catMin = tonumber(conf.minThreshold) or 0
-        local spam = ZSBT.db.profile.spamControl and ZSBT.db.profile.spamControl.throttling
-        local globalMin = 0
-        if spam then
-            if kind == "damage" then globalMin = tonumber(spam.minDamage) or 0 end
-            if kind == "heal" then globalMin = tonumber(spam.minHealing) or 0 end
-        end
-        local effectiveThreshold = math.max(catMin, globalMin)
-        if effectiveThreshold <= 0 and evt.isCrit ~= true then
-            return
-        end
-    end
+    -- Secret amounts (Retail group/boss content) cannot be compared against
+    -- thresholds, but the raw pipe value still renders via SetText — same as
+    -- incoming heals, which were always exempt. Spam merging collapses
+    -- repeats when enabled, so do not suppress unfilterable damage here.
 
     local function maybePlayCritSound(critConf, rawPipeValue, isTainted)
         if not (evt and evt.isCrit == true) then return end
