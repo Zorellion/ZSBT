@@ -138,6 +138,12 @@ local function emit(eventType, payload)
 		and not ZSBT.ZBattleText:OfferOutgoing(payload) then
 		return
 	end
+	-- OfferOutgoing sets _vetoConfirmed when a palette line proved
+	-- ownership (fast match): teach the spell's school for future stamps.
+	if eventType == "OUTGOING_DAMAGE_COMBAT" and payload
+		and payload._vetoConfirmed == true and type(payload.spellId) == "number" then
+		Collector:LearnConfirmedSchool(payload.spellId, payload.schoolMask)
+	end
 	-- Veto-approved unattributed hits that look like minion/pet damage
 	-- deliver as PET_DAMAGE_COMBAT so they get pet styling. The swap
 	-- happens only after OfferOutgoing has proven ownership (or the
@@ -436,6 +442,10 @@ Limitations:
 
 Collector._pendingCasts = Collector._pendingCasts or {}
 Collector._pendingCastNextToken = Collector._pendingCastNextToken or 0
+-- spellId -> damage school, learned ONLY from veto-confirmed (line-paired)
+-- outgoing hits. Unconfirmed hits never teach (FCT Trust/Doubt): a foreign
+-- hit that slips past heuristics cannot write a bad school.
+Collector._learnedSpellSchool = Collector._learnedSpellSchool or {}
 local PENDING_CAST_WINDOW_SEC = 2.5
 local PENDING_CAST_MAX = 12
 
@@ -620,6 +630,29 @@ local function isLikelyPetPhysicalHit(school)
 		return ClassDB.PetPhysicalHit(school)
 	end
 	return false
+end
+
+-- PLAYER_SWING gives a public per-swing report (melee/ranged) on 12.x.
+-- A melee hit lands ~0.45s after its swing; ranged shots fly up to ~2s
+-- (FCT measured values).
+local SWING_HIT_WINDOW, RANGED_HIT_WINDOW = 0.9, 2.0
+local function anySwingRecent(self, t)
+	local sw = self._swingAt
+	if type(sw) ~= "table" then return false end
+	for hand, at in pairs(sw) do
+		local w = (hand == "ranged" or hand == "RANGED") and RANGED_HIT_WINDOW or SWING_HIT_WINDOW
+		local dt = t - at
+		if dt >= 0 and dt <= w then return true end
+	end
+	return false
+end
+
+-- true when a player swing plausibly produced this hit. When PLAYER_SWING
+-- is unavailable on this client we cannot verify — stay permissive
+-- (legacy behavior) rather than eating all auto-attacks.
+local function swingExplainsHit(self, t)
+	if self._swingSupported ~= true then return true end
+	return anySwingRecent(self, t)
 end
 
 -- Forward declaration needed so the cache wrapper defined below can reference it.
@@ -850,7 +883,34 @@ local function enqueuePendingCast(self, spellId, spellName, tNow)
 	end
 end
 
-local function consumeBestPendingCast(self, tNow, wantSpellId, maxWindowSec, doConsume)
+-- Chaos school (127) tooltips cover every school; hits may report the
+-- composite masks 124/126 (MSBT/FCT SchoolFits).
+local function spellSchoolFits(learned, school)
+	if learned == nil or school == nil then return true end
+	if learned == school then return true end
+	return learned == 127 and (school == 124 or school == 126)
+end
+
+-- A cast may only claim a hit whose school fits what confirmed hits taught
+-- about that spell. Unknown stays permissive (a guess, like FCT); a
+-- known-wrong school is refused — this is what stops "Consecration shown
+-- as Shadow Bolt".
+local function castSchoolOk(self, spellId, school)
+	if type(spellId) ~= "number" then return true end
+	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) then return true end
+	return spellSchoolFits(self._learnedSpellSchool[spellId], school)
+end
+
+-- Veto-confirmed (line-paired) outgoing hits teach the spell's damage
+-- school. Called from emit()'s fast path and ZBattleText's deferred
+-- delivery — both mean a MINE/MY_PET palette line confirmed ownership.
+function Collector:LearnConfirmedSchool(spellId, schoolMask)
+	if type(spellId) ~= "number" then return end
+	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(schoolMask)) then return end
+	self._learnedSpellSchool[spellId] = schoolMask
+end
+
+local function consumeBestPendingCast(self, tNow, wantSpellId, maxWindowSec, doConsume, hitSchool)
 	expirePendingCasts(self, tNow)
 	local window = maxWindowSec or PENDING_CAST_WINDOW_SEC
 	local bestI, best, bestDt
@@ -858,12 +918,14 @@ local function consumeBestPendingCast(self, tNow, wantSpellId, maxWindowSec, doC
 		local c = self._pendingCasts[i]
 		if c and c.at and c.spellId then
 			if (not wantSpellId) or c.spellId == wantSpellId then
-				local dt = tNow - c.at
-				if dt >= 0 and dt <= window then
-					if not bestDt or dt < bestDt then
-						bestDt = dt
-						bestI = i
-						best = c
+				if castSchoolOk(self, c.spellId, hitSchool) then
+					local dt = tNow - c.at
+					if dt >= 0 and dt <= window then
+						if not bestDt or dt < bestDt then
+							bestDt = dt
+							bestI = i
+							best = c
+						end
 					end
 				end
 			end
@@ -881,6 +943,17 @@ end
 -- Capture successful casts for downstream correlation.
 -- Player casts: used for outgoing spell icons.
 -- Target/enemy casts: used for incoming spell icons.
+-- PLAYER_SWING (swingType, swingDuration): each player weapon swing is a
+-- public report — melee and ranged. Pet/follower/teammate melee never
+-- produces one, so auto-attack claims can require a matching swing.
+function Collector:handlePlayerSwing(swingType)
+	local t = now()
+	self._swingAt = self._swingAt or {}
+	local hand = "main"
+	if type(swingType) == "string" and swingType ~= "" then hand = swingType end
+	self._swingAt[hand] = t
+end
+
 function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 	if not spellId then return end
 
@@ -2717,13 +2790,15 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					local petEligibleHit = true
 					if ZSBT.IsSafeNumber(school) and not isLikelyPetSchoolHit(school) then
 						petEligibleHit = false
-						-- Class hook: some classes' pets deal physical damage the
-						-- school signature can't cover (warlock Dreadstalker/
-						-- Gloomhound melee). Solo-only — in groups, foreign
-						-- swings are indistinguishable and must not leak as
-						-- pet damage (PET_DAMAGE_COMBAT bypasses the veto).
-						if school == 1 and (not members or members <= 1)
-							and isLikelyPetPhysicalHit(school) then
+						-- Class hook: physical pets (warlock Dreadstalker/
+						-- Gloomhound melee). A school-1 hit the player's own
+						-- swing explains is never the pet's. With the veto
+						-- trusted, group content is safe — a MY_PET melee
+						-- line must confirm the hit downstream; untrusted
+						-- stays solo-only (foreign swings are unverifiable).
+						if school == 1 and isLikelyPetPhysicalHit(school)
+							and not (self._swingSupported == true and anySwingRecent(self, t))
+							and (zbtVetoActive() or not members or members <= 1) then
 							petEligibleHit = true
 						end
 					end
@@ -2785,6 +2860,25 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							zbt2:FileLog(("PET_EMIT school=%s"):format(tostring(school)))
 						end
 						local petSid, petUnit = recentPetCast(self, t, 1.5)
+						if ZSBT.IsSafeNumber(school) and school == 1 and zbtVetoActive() then
+							-- Physical pet hits go through the ownership veto:
+							-- a MY_PET melee line must confirm them (the
+							-- sinkType swap delivers PET_DAMAGE_COMBAT after
+							-- pairing). Foreign melee produces no such line.
+							emit("OUTGOING_DAMAGE_COMBAT", {
+								timestamp = t,
+								rawPipeId = pipeId,
+								spellId = nil,
+								petSpellId = petSid,
+								petUnit = petUnit,
+								_petRoute = true,
+								amount = amount,
+								amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
+								isCrit = isCrit,
+								schoolMask = 1,
+								targetName = safeUnitName("target"),
+							})
+						else
 						emit("PET_DAMAGE_COMBAT", {
 							timestamp = t,
 							rawPipeId = pipeId,
@@ -2797,6 +2891,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
 							targetName = safeUnitName("target"),
 						})
+						end
 						return
 					end
 				end
@@ -3039,7 +3134,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- keep the pending cast available so multiple hits can still be attributed.
 				doConsume = false
 			end
-			local matchedCast = consumeBestPendingCast(self, t, wantSpellId, castWindow, doConsume)
+			local matchedCast = consumeBestPendingCast(self, t, wantSpellId, castWindow, doConsume, school)
 			-- Strict/restricted mode normally requires a pending-cast match. For Whirlwind,
 			-- the UNIT_COMBAT(target) stream can contain more hits than we can reliably
 			-- match; allow a short post-cast window to still attribute as Whirlwind.
@@ -3073,6 +3168,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					if (t - lastAt) < minGap then
 						canShow = false
 					end
+				end
+				-- PLAYER_SWING: a real swing must back an auto claim, or pet/
+				-- follower melee gets shown as your auto-attack.
+				if canShow and not swingExplainsHit(self, t) then
+					canShow = false
 				end
 				if canShow then
 					self._lastAutoRestrictAt = t
@@ -3212,11 +3312,23 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			self._rawPipe[pipeId] = amount
 			self._lastOutgoingCombatAt = t
 			self._lastOutgoingCombatTargetName = safeUnitName("target")
+			-- A physical hit with no cast and no player swing is not your
+			-- auto — pet melee claims it when the class hook allows (the
+			-- veto then verifies a MY_PET line when trusted).
+			local swingOk = swingExplainsHit(self, t)
+			local petRoutePhys = nil
+			if spellId == nil and not swingOk
+				and isLikelyPetPhysicalHit(school)
+				and (zbtVetoActive() or not members or members <= 1) then
+				petRoutePhys = true
+			end
 			emit("OUTGOING_DAMAGE_COMBAT", {
 				timestamp = t,
 				rawPipeId = pipeId,
 				spellId = spellId,
-				isAuto = (spellId == nil),
+				isAuto = (spellId == nil and swingOk),
+				_petRoute = petRoutePhys,
+				petSpellId = petRoutePhys and recentPetCast(self, t, 1.5) or nil,
 				amountSource = "UNIT_COMBAT_PHYSICAL",
 				targetName = safeUnitName("target"),
 				isCrit = isCrit,
@@ -3358,7 +3470,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			if restrict == true then
 				wantSpellId = self._lastPlayerSpellId
 			end
-			matchedCast = matchedCast or consumeBestPendingCast(self, t, wantSpellId, castWindow)
+			matchedCast = matchedCast or consumeBestPendingCast(self, t, wantSpellId, castWindow, nil, school)
 			if not matchedCast then
 				-- Class-module DoT attribution (secret-safe): an unattributed
 				-- non-physical WOUND can be a periodic tick. No amount comparisons
@@ -3458,7 +3570,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							local okA, a = pcall(UnitCanAttack, "player", "target")
 							if okA and a == false then canAtk = false end
 						end
-						if inPlayerCombat and canAtk and (not (members and members > 1)) then
+						if inPlayerCombat and canAtk and (not (members and members > 1)) and swingExplainsHit(self, t) then
 							-- Same dedup as the physical branch: the fallback and
 							-- physical paths can both fire for one white swing.
 							local lastAuto = self._lastAutoOutgoingAt or 0
@@ -3518,7 +3630,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						elseif not isPhysical then
 							maxAge = math.max(maxAge, 1.25)
 						end
-						if age >= 0 and age <= maxAge then
+						if age >= 0 and age <= maxAge and castSchoolOk(self, lastId, school) then
 							matchedCast = { spellId = lastId, eligibleIcon = true }
 						else
 							if zbtVetoActive() then
@@ -3555,7 +3667,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							if lastId == 686 then
 								maxAge = 2.50
 							end
-							if age >= 0 and age <= maxAge then
+							if age >= 0 and age <= maxAge and castSchoolOk(self, lastId, school) then
 								matchedCast = { spellId = lastId, eligibleIcon = true }
 							else
 								-- Quiet/strict: suppress unattributed numbers when we cannot even loosely
@@ -3646,6 +3758,24 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				flushBestOutgoing(self, token)
 			end
 		else
+			-- A foreign hit must not ride a real spell's merge bucket: when the
+			-- bucket's spell has a learned school and this hit contradicts it,
+			-- emit generic instead of wearing the wrong name and amount.
+			if bucket.spellId and not castSchoolOk(self, bucket.spellId, schoolMask) then
+				local pipeIdM = self._rawPipeCount + 1
+				self._rawPipeCount = pipeIdM
+				self._rawPipe[pipeIdM] = amount
+				emit("OUTGOING_DAMAGE_COMBAT", {
+					timestamp = t,
+					rawPipeId = pipeIdM,
+					spellId = nil,
+					amountSource = "UNIT_COMBAT_SCHOOL_MISMATCH",
+					targetName = targetName,
+					isCrit = isCrit,
+					schoolMask = schoolMask,
+				})
+				return
+			end
 			if ZSBT.IsSafeNumber(amount) then
 				bucket._seenCount = (bucket._seenCount or 0) + 1
 				local maxA = bucket._seenMax
@@ -3983,6 +4113,8 @@ function Collector:Enable()
 				Collector:handleCombatTextUpdate(...)
 			elseif event == "UNIT_COMBAT" then
 				Collector:handleUnitCombat(...)
+			elseif event == "PLAYER_SWING" then
+				Collector:handlePlayerSwing(...)
 			elseif CHAT_OUTGOING_EVENTS[event] then
 				local dl = OutDbgLevel()
 				local msg = select(1, ...)
@@ -4178,6 +4310,10 @@ function Collector:Enable()
 	pcall(function() self._frame:RegisterEvent("UNIT_HEALTH_FREQUENT") end)
 	self._frame:RegisterEvent("COMBAT_TEXT_UPDATE")
 	self._frame:RegisterEvent("UNIT_COMBAT")
+	-- PLAYER_SWING: public per-swing report on 12.x. Registered in a pcall —
+	-- an unsupported client marks _swingSupported false and auto claims
+	-- keep the legacy permissive path.
+	self._swingSupported = pcall(function() self._frame:RegisterEvent("PLAYER_SWING") end) == true
 	for evtName in pairs(CHAT_OUTGOING_EVENTS) do
 		pcall(function() self._frame:RegisterEvent(evtName) end)
 	end
@@ -4195,6 +4331,7 @@ function Collector:Disable()
 		pcall(function() self._frame:UnregisterEvent("UNIT_HEALTH_FREQUENT") end)
 		self._frame:UnregisterEvent("COMBAT_TEXT_UPDATE")
 		self._frame:UnregisterEvent("UNIT_COMBAT")
+		pcall(function() self._frame:UnregisterEvent("PLAYER_SWING") end)
 		for evtName in pairs(CHAT_OUTGOING_EVENTS) do
 			pcall(function() self._frame:UnregisterEvent(evtName) end)
 		end
