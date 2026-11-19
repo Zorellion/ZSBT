@@ -59,9 +59,17 @@ local GUARDIAN_SUMMONS = {
 	[219198] = { { group = "direbeast", duration = 8 } },   -- Dire Beast: Frenzy variant
 }
 
+-- Class-module UI toggles this module supports. Guardian naming is
+-- excluded: the spellbook is empty (hunter guardian damage is physical
+-- melee, unnameable), so the toggle would be decorative.
+mod.toggles = {
+	namePetMelee = true,
+}
+
 -- Non-physical guardian spellbook. Empty until combat-log-verified ids
 -- are gathered on a live hunter (Sentinel owls, Dark Ranger hounds,
--- Pack Leader wyvern damage ids need capture, not guessing).
+-- Pack Leader wyvern damage ids need capture, not guessing). When real
+-- entries land, also add resolveGuardians to mod.toggles above.
 local GUARDIAN_SPELLS = {
 }
 

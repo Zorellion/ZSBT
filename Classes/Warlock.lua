@@ -38,6 +38,12 @@ mod.castBudget = {
 	[264106] = 6,    -- Bilescourge Bombers
 }
 
+-- Class-module UI toggles this module supports (Class page + quick bar).
+mod.toggles = {
+	resolveGuardians = true,  -- guardian spellbook naming on/off
+	namePetMelee = true,      -- MY_PET-proven melee named "Auto Attack"
+}
+
 local function isImpPet(helpers)
 	local fam = helpers and helpers.family and helpers.family() or nil
 	return fam ~= nil and fam == "imp"

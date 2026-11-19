@@ -258,42 +258,55 @@ local function buildClassPage(pf)
 	body:SetJustifyH("LEFT")
 	body:SetPoint("TOPLEFT", pf, "TOPLEFT", 20, -56)
 
-	local cb3 = CreateFrame("CheckButton", nil, pf, "InterfaceOptionsCheckButtonTemplate")
-	cb3:SetPoint("TOPLEFT", pf, "TOPLEFT", 16, -200)
-	cb3.Text:SetText(L["Name guardian spells"])
-	cb3:SetScript("OnClick", function(self)
-		local prof = ZSBT.db and ZSBT.db.profile
-		if not prof then return end
-		prof.classModule = prof.classModule or {}
-		prof.classModule.resolveGuardians = self:GetChecked() == true
-	end)
-	cb3.Text:SetTextColor(1, 1, 1)
-	local cb3Hint = shellFont(pf, 11, COL.dim or COL.text,
-		L["Guardian damage (imps, dreadstalkers, tyrant) is named from summon tracking. Off = those hits fall back to generic pet damage."])
-	cb3Hint:SetWidth(580)
-	cb3Hint:SetJustifyH("LEFT")
-	cb3Hint:SetPoint("TOPLEFT", cb3, "BOTTOMLEFT", 26, -6)
-
-	local cb4 = CreateFrame("CheckButton", nil, pf, "InterfaceOptionsCheckButtonTemplate")
-	cb4:SetPoint("TOPLEFT", cb3Hint, "BOTTOMLEFT", -26, -14)
-	cb4.Text:SetText(L["Show pet melee hits"])
-	cb4:SetScript("OnClick", function(self)
-		local prof = ZSBT.db and ZSBT.db.profile
-		if not prof then return end
-		prof.classModule = prof.classModule or {}
-		prof.classModule.namePetMelee = self:GetChecked() == true
-	end)
-	cb4.Text:SetTextColor(1, 1, 1)
-	local cb4Hint = shellFont(pf, 11, COL.dim or COL.text,
-		L["Pet melee verified by a combat-log line displays as 'Auto Attack'. A stolen MY_PET line could still name a foreign swing."])
-	cb4Hint:SetWidth(580)
-	cb4Hint:SetJustifyH("LEFT")
-	cb4Hint:SetPoint("TOPLEFT", cb4, "BOTTOMLEFT", 26, -6)
+	-- Toggle set is module-declared (mod.toggles): each entry makes a
+	-- checkbox+hint anchored under the previous one. Classes without a
+	-- given toggle never see it.
+	local toggleDefs = {
+		{ key = "resolveGuardians",
+			label = L["Name guardian spells"],
+			hint = L["Guardian damage (imps, dreadstalkers, tyrant) is named from summon tracking. Off = those hits fall back to generic pet damage."],
+			get = function(prof) return not (prof and prof.classModule and prof.classModule.resolveGuardians == false) end,
+			set = function(prof, v) prof.classModule.resolveGuardians = v end,
+		},
+		{ key = "namePetMelee",
+			label = L["Show pet melee hits"],
+			hint = L["Pet melee verified by a combat-log line displays as 'Auto Attack'. A stolen MY_PET line could still name a foreign swing."],
+			get = function(prof) return prof and prof.classModule and prof.classModule.namePetMelee == true end,
+			set = function(prof, v) prof.classModule.namePetMelee = v end,
+		},
+	}
+	local toggles = {}
+	local anchor, anchorY = pf, -200
+	for _, def in ipairs(toggleDefs) do
+		if ZSBT.ClassDB and ZSBT.ClassDB.SupportsToggle
+			and ZSBT.ClassDB.SupportsToggle(def.key) then
+			local cb = CreateFrame("CheckButton", nil, pf, "InterfaceOptionsCheckButtonTemplate")
+			cb:SetPoint("TOPLEFT", anchor, "TOPLEFT", 16, anchorY)
+			cb.Text:SetText(def.label)
+			cb:SetScript("OnClick", function(self)
+				local prof = ZSBT.db and ZSBT.db.profile
+				if not prof then return end
+				prof.classModule = prof.classModule or {}
+				def.set(prof, self:GetChecked() == true)
+			end)
+			cb.Text:SetTextColor(1, 1, 1)
+			local hint = shellFont(pf, 11, COL.dim or COL.text, def.hint)
+			hint:SetWidth(580)
+			hint:SetJustifyH("LEFT")
+			hint:SetPoint("TOPLEFT", cb, "BOTTOMLEFT", 26, -6)
+			toggles[#toggles + 1] = { def = def, cb = cb, hint = hint }
+			anchor, anchorY = hint, -14
+		end
+	end
 
 	local detail = shellFont(pf, 12, COL.dim or COL.text, "")
 	detail:SetWidth(620)
 	detail:SetJustifyH("LEFT")
-	detail:SetPoint("TOPLEFT", cb4Hint, "BOTTOMLEFT", -26, -18)
+	if toggles[#toggles] then
+		detail:SetPoint("TOPLEFT", toggles[#toggles].hint, "BOTTOMLEFT", -26, -18)
+	else
+		detail:SetPoint("TOPLEFT", pf, "TOPLEFT", 20, -200)
+	end
 
 	local function refresh()
 		local cdb = ZSBT.ClassDB
@@ -304,11 +317,15 @@ local function buildClassPage(pf)
 
 		if not mod then
 			body:SetText(L["No class module is loaded for this character."])
-			cb3:Hide(); cb3Hint:Hide(); cb4:Hide(); cb4Hint:Hide()
+			for _, t in ipairs(toggles) do t.cb:Hide(); t.hint:Hide() end
 			detail:SetText("")
 			return
 		end
-		cb3:Show(); cb3Hint:Show(); cb4:Show(); cb4Hint:Show()
+		local prof = ZSBT.db and ZSBT.db.profile
+		for _, t in ipairs(toggles) do
+			t.cb:Show(); t.hint:Show()
+			t.cb:SetChecked(t.def.get(prof))
+		end
 
 		local autoVetoed = cdb.VetoAuto and cdb.VetoAuto() == true
 		local lines = {
@@ -345,10 +362,6 @@ local function buildClassPage(pf)
 			d[#d + 1] = L["Active guardians:"] .. " " .. (#g > 0 and table.concat(g, ", ") or L["none"])
 		end
 		detail:SetText(table.concat(d, "\n"))
-
-		local prof = ZSBT.db and ZSBT.db.profile
-		cb3:SetChecked(not prof or not prof.classModule or prof.classModule.resolveGuardians ~= false)
-		cb4:SetChecked(prof and prof.classModule and prof.classModule.namePetMelee == true)
 	end
 	pf:SetScript("OnShow", refresh)
 end
