@@ -2679,9 +2679,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								ECPrint(("BIG_HIT_SUPPRESS src=UNIT_COMBAT_DOT token=%s spellId=%s amt=%s")
 									:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(amount)))
 							end
+							auditNote(("AUDD reason=DOT_HUGE_SUPPRESS spellId=%s school=%s"):format(dbgSafe(dotSpellId), dbgSafe(school)))
 							return
 						end
 						if isDuplicateDotEmit(self, t, dotSpellId) then
+							auditNote(("AUDD reason=DOT_DUP spellId=%s"):format(dbgSafe(dotSpellId)))
 							return
 						end
 						self._recentPeriodicSpellAt[dotSpellId] = t
@@ -2729,6 +2731,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								ECPrint(("BIG_HIT_SUPPRESS src=PET_FALLBACK token=%s amt=%s")
 									:format(dbgSafe(self._castToken), dbgSafe(amount)))
 							end
+							auditNote(("AUDD reason=PET_HUGE_SUPPRESS school=%s"):format(dbgSafe(school)))
 							return
 						end
 						-- Group-aware pet gate: when restrict is active (Quiet/Strict/PvP/Instance-Aware)
@@ -2741,6 +2744,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 									ECPrint(("PET_FALLBACK_GROUP_SUPPRESS restrict=%s members=%s school=%s amt=%s")
 										:format(dbgSafe(restrict), dbgSafe(members), dbgSafe(school), dbgSafe(amount)))
 								end
+								auditNote(("AUDD reason=PET_GROUP_SUPPRESS school=%s"):format(dbgSafe(school)))
 								return
 							end
 						end
@@ -2749,9 +2753,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						local lastPetFb = self._lastPetFallbackAt or 0
 						local lastPetChat = self._lastPetChatAt or 0
 						if (t - lastPetFb) >= 0 and (t - lastPetFb) < PET_OUTGOING_DEDUP_WINDOW then
+							auditNote("AUDD reason=PET_FB_DEDUP")
 							return
 						end
 						if (t - lastPetChat) >= 0 and (t - lastPetChat) < PET_OUTGOING_DEDUP_WINDOW then
+							auditNote("AUDD reason=PET_CHAT_DEDUP")
 							return
 						end
 						self._lastPetFallbackAt = t
@@ -2821,6 +2827,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		if UnitCanAttack and actionStr ~= "HEAL" then
 			local okH2, h2 = pcall(UnitCanAttack, "player", "target")
 			if okH2 and h2 == false then
+				auditNote("AUDD reason=NOT_ATTACKABLE")
 				return
 			end
 		end
@@ -3612,6 +3619,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					ECPrint(("BIG_HIT_SUPPRESS src=UNIT_COMBAT_BEST_START token=%s spellId=%s amt=%s")
 						:format(dbgSafe(self._castToken), dbgSafe(spellId), dbgSafe(amount)))
 				end
+				auditNote(("AUDD reason=BUCKET_HUGE_SUPPRESS spellId=%s school=%s"):format(dbgSafe(spellId), dbgSafe(schoolMask)))
 				return
 			end
 			bucket = {
