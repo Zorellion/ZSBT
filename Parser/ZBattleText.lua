@@ -849,7 +849,9 @@ function ZB:AuditDamageEvent(eventType, payload)
     local amtStr
     if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(amt) then
         amtStr = tostring(amt)
-    elseif type(p.amountText) == "string" and p.amountText ~= "" then
+    elseif type(p.amountText) == "string"
+        and (not ZSBT.IsSafeString or ZSBT.IsSafeString(p.amountText))
+        and p.amountText ~= "" then
         amtStr = p.amountText
     else
         amtStr = "secret"
