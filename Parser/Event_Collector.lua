@@ -123,6 +123,12 @@ local function emit(eventType, payload)
 	end
 	if Collector._sink then
 		Collector._sink(sinkType, payload)
+		-- Hit->display latency for the ucdrop trace: timestamp is the
+		-- UNIT_COMBAT hit time, so dly captures veto defer + merge +
+		-- dispatch cost. Anything above ~0.5s is pipeline, not scroll anim.
+		if ZSBT.ZBattleText and ZSBT.ZBattleText.FileLog and payload and payload.timestamp then
+			ZSBT.ZBattleText:FileLog(("SHOW %s sid=%s dly=%.2f"):format(sinkType, tostring(payload.spellId), now() - payload.timestamp))
+		end
 	end
 end
 
