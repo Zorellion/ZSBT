@@ -637,17 +637,7 @@ local function buildClassPage(pf)
 	local GRID_COLS = 4
 	local GRID_CELL = 48
 
-	local function currentSpecId()
-		if not (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization
-			and C_SpecializationInfo.GetSpecializationInfo) then return nil end
-		local idx = C_SpecializationInfo.GetSpecialization()
-		if not idx then return nil end
-		local ok, id = pcall(C_SpecializationInfo.GetSpecializationInfo, idx)
-		return (ok and type(id) == "number") and id or nil
-	end
-
 	local function buildSpellList()
-		local curSpec = currentSpecId()
 		local seen = {}
 		local sections = {}
 		if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines
@@ -658,23 +648,25 @@ local function buildClassPage(pf)
 				local info = C_SpellBook.GetSpellBookSkillLineInfo
 					and C_SpellBook.GetSpellBookSkillLineInfo(li)
 				local name = info and info.name
-				local specID = info and info.specID
-				local skip = (type(name) == "string" and name == "General")
-					or (type(specID) == "number" and specID > 0
-						and curSpec and specID ~= curSpec)
+				local skip = not info
+					or info.shouldHide
+					or type(info.offSpecID) == "number"
+					or (type(name) == "string" and name == "General")
 				if not skip then
 					local sec = { name = tostring(name or "?"), items = {} }
 					local count = info and (info.numSpellBookItems or 0) or 0
-					local base = info and (info.itemOffsetIndex or 0) or 0
+					local base = info and (info.itemIndexOffset or 0) or 0
 					for j = 1, count do
 						local ok, it = pcall(C_SpellBook.GetSpellBookItemInfo,
 							base + j, Enum.SpellBookSpellBank.Player)
-						if ok and type(it) == "table" and it.spellID
+						local sid = ok and type(it) == "table"
 							and it.itemType == Enum.SpellBookItemType.Spell
-							and not seen[it.spellID] then
-							seen[it.spellID] = true
+							and not it.isOffSpec
+							and (it.spellID or it.actionID) or nil
+						if sid and not seen[sid] then
+							seen[sid] = true
 							sec.items[#sec.items + 1] = {
-								sid = it.spellID,
+								sid = sid,
 								name = it.name or "?",
 								icon = it.iconID or it.iconFileID,
 							}
