@@ -1998,6 +1998,9 @@ function Addon:HandleSlashCommand(input)
     elseif cmd == "ctprobe" then
         self:HandleCTProbeCommand(rest)
         return
+    elseif cmd == "filter" then
+        self:HandleFilterCommand(rest)
+        return
     elseif cmd == "dumpcvars" then
 		local function safeGet(name)
 			if type(GetCVar) ~= "function" then return nil end
@@ -2197,6 +2200,42 @@ function Addon:HandleCTProbeCommand(argStr)
 			self:Print(("  +%.2fs %s n=%d %s"):format((e.at or 0) - base, tostring(e.fn), tonumber(e.n) or 0, tostring(e.sig)))
 		end
 	end
+end
+
+------------------------------------------------------------------------
+-- ZBattleText combat-log filter status / rebuild
+------------------------------------------------------------------------
+function Addon:HandleFilterCommand(argStr)
+	local input = (type(argStr) == "string") and argStr or ""
+	input = input:gsub("^%s+", ""):gsub("%s+$", "")
+	local zb = ZSBT.ZBattleText
+	if input == "rebuild" then
+		if not zb then
+			self:Print(L["ZBattleText module not loaded."])
+			return
+		end
+		local ok, removed = zb:RebuildNow()
+		if ok then
+			self:Print(("ZBattleText filter rebuilt (%d stale removed). Reload UI to apply."):format(removed or 0))
+			if ReloadUI then ReloadUI() end
+		else
+			self:Print(L["ZBattleText rebuild failed: no combat-log filter data."])
+		end
+		return
+	end
+	if not zb then
+		self:Print(L["ZBattleText module not loaded."])
+		return
+	end
+	local st = zb:Status()
+	self:Print(("ZBattleText filter: trusted=%s verified=%s vetoDisabled=%s"):format(
+		tostring(st.trusted), tostring(st.verified), tostring(st.vetoDisabled)))
+	if st.reason then
+		self:Print("  reason: " .. tostring(st.reason))
+	end
+	self:Print(("  lines buffered=%d pending=%d allows=%d drops=%d"):format(
+		tonumber(st.bufferedLines) or 0, tonumber(st.pending) or 0,
+		tonumber(st.allows) or 0, tonumber(st.drops) or 0))
 end
 
 function Addon:HandleDebugCommand(levelStr)

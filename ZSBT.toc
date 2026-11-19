@@ -79,6 +79,7 @@ Classes\Paladin.lua
 Classes\Monk.lua
 Classes\DemonHunter.lua
 Classes\Evoker.lua
+Parser\ZBattleText.lua
 Parser\Event_Collector.lua
 Parser\Pulse_Engine.lua
 
