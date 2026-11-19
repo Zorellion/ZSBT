@@ -552,7 +552,7 @@ Both bugs only reproduce in group instanced content where Blizzard's secret valu
 ## 1.2.12
 
 ### Added
-- Added MSBT-style Trade Skill notifications (Skill Ups and Learned Recipes/Spells) routed through the Notifications system, with per-category scroll area routing and message templates.
+- Added Trade Skill notifications (Skill Ups and Learned Recipes/Spells) routed through the Notifications system, with per-category scroll area routing and message templates.
 
 ## 1.2.11
 
@@ -615,7 +615,7 @@ Both bugs only reproduce in group instanced content where Blizzard's secret valu
 ## 1.2.2
 
 ### Added
-- Added MSBT-style Loot Alerts parity: separate notifications for Loot Items, Loot Money, and Loot Currency.
+- Added Loot Alerts: separate notifications for Loot Items, Loot Money, and Loot Currency.
 - Added Loot Alerts templates for loot items, money, and currency with template codes (%e/%a/%t).
 - Added loot filtering options: quality exclusions, item allow/deny lists, always-show quest items, and optional show created/pushed items.
 

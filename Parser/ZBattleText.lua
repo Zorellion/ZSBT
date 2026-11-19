@@ -83,7 +83,7 @@ local EVENT_KINDS = {
     SWING_MISSED           = "meleeMiss",
     RANGE_MISSED           = "rangedMiss",
     DAMAGE_SHIELD_MISSED   = "shieldMiss",
-    -- Utility events (MSBT parity): kept in the filter so interrupts,
+    -- Utility events: kept in the filter so interrupts,
     -- dispels, steals, breaks and kills stay visible but color-coded.
     SPELL_INTERRUPT        = "interrupt",
     SPELL_DISPEL            = "purge",
@@ -122,7 +122,7 @@ local DAMAGE_KINDS = {
     direct = true, tick = true, melee = true, ranged = true, shield = true,
 }
 
--- Explicit whitelist for the filter's eventList (MSBT-style): only the
+-- Explicit whitelist for the filter's eventList: only the
 -- combat events we color. Everything else — aura applications, fades,
 -- refreshes, energy/rage gains, summons, etc. — is excluded so the
 -- combat log shows only actionable combat text.

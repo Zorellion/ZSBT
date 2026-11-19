@@ -95,7 +95,7 @@ extend it with the evicted tier.
 
 - Generic own hits (real damage that got no sid) may starve in saturated
   fights — they defer and can lose every line. They'd previously have
-  displayed; now some drop. MSBT accepts the same trade: generic beats
+  displayed; now some drop. The same trade holds here: generic beats
   wrong, and dropped beats stolen.
 - Sort is O(n log n) per flush on ≤200 items — negligible.
 - `school=nil` sid-bearing hits are still tier-1 (unverifiable but
