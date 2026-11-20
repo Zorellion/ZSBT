@@ -655,6 +655,21 @@ local function preferredKinds(payload)
     return NONAUTO_KINDS
 end
 
+-- Kinds a queued/offered candidate may claim, from its own evidence.
+-- Autos and swing-proven wounds own melee/ranged lines; pet-route
+-- wounds own whatever line the pet produced (melee pet -> melee line,
+-- caster pet -> direct) so they get the full set; everything else is
+-- a spell wound and melee stays off-limits (auto-line theft).
+local function candidateKinds(payload)
+    if payload and (payload.isAuto == true or payload._swingProven == true) then
+        return autoLineKinds()
+    end
+    if payload and payload._petRoute == true then
+        return nil
+    end
+    return preferredKinds(payload)
+end
+
 -- Provenance tier for line claiming. Tier 1 = sid-bearing (the hit
 -- consumed a real cast/pet record or a class-resolved identity — all
 -- school-gated, overwhelmingly ours). Tier 2 = unattributed generic;
@@ -749,11 +764,7 @@ local function flushPending()
                     -- unattributed wound must not reach a leftover line as
                     -- far out as a proven hit can.
                     local window = (p._retried and pass == 1) and RETRY_WINDOW or DEFER_WINDOW
-                    if p.payload and p.payload.isAuto == true then
-                        kind = takeDamageLine(p.t, window, autoLineKinds())
-                    else
-                        kind = takeDamageLine(p.t, window, preferredKinds(p.payload))
-                    end
+                    kind = takeDamageLine(p.t, window, candidateKinds(p.payload))
                     if kind then
                         ZB._allows = ZB._allows + 1
                         ZB:Audit(("AUDCLAIM tier=%d sid=%s kind=%s"):format(
@@ -967,12 +978,7 @@ function ZB:OfferOutgoing(payload)
     -- An auto-attack claim may ONLY be confirmed by a melee/ranged line —
     -- it must not steal a spell line (pet spells produce lines constantly).
     if candidateTier(payload) == 1 then
-        local fastKind
-        if payload.isAuto == true then
-            fastKind = takeDamageLine(tHit, VETO_WINDOW, autoLineKinds())
-        else
-            fastKind = takeDamageLine(tHit, VETO_WINDOW, preferredKinds(payload))
-        end
+        local fastKind = takeDamageLine(tHit, VETO_WINDOW, candidateKinds(payload))
         if fastKind then
             ZB._allows = ZB._allows + 1
             payload._vetoConfirmed = true
