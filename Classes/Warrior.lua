@@ -43,7 +43,9 @@ mod.channels = {
 	-- effectively a channel the weapon runs for you. Cast 228920 opens
 	-- the window; tick lines claim inside it. Autos (melee lines) are
 	-- safe: the channel claims tick-kind lines only.
-	{ names = { "Ravager" }, ids = { 228920 }, duration = 12.0, tickMin = 0.8 },
+	-- Ravager is NOT here: it fires with no SPELL_CAST_SUCCESS on this
+	-- client (verified on the prot log), so a channel window would never
+	-- open. Its ticks are caught by the debuff-gated classifier below.
 }
 
 -- Per-cast-instance naming budget: AoE/multi-hit casts may name several
@@ -59,7 +61,6 @@ mod.castBudget = {
 	[46968]  = 10, -- Shockwave (cone AoE)
 	[6572]   = 10, -- Revenge (frontal AoE, log-verified)
 	[385952] = 5,  -- Shield Charge cast id (damage id 385954, drift log-verified)
-	[228920] = 15, -- Ravager (throw + player-sourced ticks 156287, log-verified)
 	[118000] = 10, -- Dragon Roar
 	[397364] = 10, -- Thunderous Roar (direct AoE; bleed is unnameable)
 	[52174]  = 10, -- Heroic Leap (landing AoE)
@@ -288,6 +289,73 @@ function mod.onPhysicalWound(self, ctx)
 			self._lastOutgoingCombatTargetName = tName
 		end
 	end
+end
+
+-- Ravager tick classifier. Ravager produces NO cast record client-side
+-- (prot log-verified: 228920 throw + "Ravaged" debuff 1299405 appear
+-- with no SPELL_CAST_SUCCESS), so cast pairing, budgets, and channel
+-- windows all miss it. The Ravaged debuff is visible on the target —
+-- gate on it: ticks are a stable ~2.0s school-1 cadence, so a wound
+-- landing 1.8-2.4s after the last named tick while the debuff is up
+-- claims the Ravager name (156287). The first tick has no anchor and
+-- stays generic; Devastator/Phalanx procs colliding on cadence can
+-- steal a single name — bounded, and better than the all-generic floor.
+local RAVAGER_DEBUFF = 1299405
+local RAVAGER_TICK_SID = 156287
+
+local function ravagerWound(self, ctx)
+	local t = ctx.t
+	local amount = ctx.amount
+	local isCrit = ctx.isCrit
+	local actionStr = ctx.actionStr
+	local cachedHasTargetDebuffSpellId = ctx.hasTargetDebuff
+	local safeUnitName = ctx.safeUnitName
+	local emit = ctx.emit
+	local IsSafeNumber = ZSBT.IsSafeNumber
+
+	if actionStr ~= "WOUND" then return end
+	local ravDebuff = cachedHasTargetDebuffSpellId(RAVAGER_DEBUFF)
+	if ravDebuff ~= true then
+		self._ravTickAt = nil
+		return
+	end
+	local last = self._ravTickAt
+	if type(last) ~= "number" then
+		-- No anchor yet: mark the debuff window so the NEXT hit at tick
+		-- cadence can claim. First tick stays generic by design.
+		self._ravTickAt = t
+		return
+	end
+	local dt = t - last
+	if dt < 1.8 or dt > 2.4 then return end
+	self._ravTickAt = t
+	local pipeId = self._rawPipeCount + 1
+	self._rawPipeCount = pipeId
+	self._rawPipe[pipeId] = amount
+	local tName = safeUnitName("target")
+	emit("OUTGOING_DAMAGE_COMBAT", {
+		timestamp = t,
+		rawPipeId = pipeId,
+		amount = amount,
+		amountText = (IsSafeNumber(amount) and tostring(amount)) or nil,
+		spellId = RAVAGER_TICK_SID,
+		amountSource = "UNIT_COMBAT_DOT",
+		targetName = tName,
+		isCrit = isCrit,
+		isPeriodic = true,
+		schoolMask = 1,
+	})
+	self._lastOutgoingCombatAt = t
+	self._lastOutgoingCombatTargetName = tName
+end
+
+-- onPhysicalWound entry: run the Ravager check BEFORE the Rend block —
+-- the Rend classifier early-returns when no Rend cast exists, which is
+-- always true for prot/fury, and would starve the Ravager check.
+local physicalWoundInner = mod.onPhysicalWound
+function mod.onPhysicalWound(self, ctx)
+	ravagerWound(self, ctx)
+	return physicalWoundInner(self, ctx)
 end
 
 ZSBT.ClassDB.Register("WARRIOR", mod)
