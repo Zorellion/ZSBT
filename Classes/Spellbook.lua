@@ -314,15 +314,15 @@ local function enumTalentSpells(sink, have)
 		and C_Traits and C_Traits.GetConfigInfo and C_Traits.GetTreeInfo
 		and C_Traits.GetNodeInfo and C_Traits.GetEntryInfo
 		and C_Traits.GetDefinitionInfo) then
-		return 0
+		return nil
 	end
 	local configID = C_ClassTalents.GetActiveConfigID()
-	if type(configID) ~= "number" then return 0 end
+	if type(configID) ~= "number" then return nil end
 	local okC, cInfo = pcall(C_Traits.GetConfigInfo, configID)
 	if not (okC and type(cInfo) == "table" and type(cInfo.treeIDs) == "table") then
-		return 0
+		return nil
 	end
-	local added = 0
+	local tset = {}
 	for _, treeID in ipairs(cInfo.treeIDs) do
 		local okT, nodeIDs = pcall(C_Traits.GetTreeNodes, treeID)
 		if okT and type(nodeIDs) == "table" then
@@ -339,6 +339,12 @@ local function enumTalentSpells(sink, have)
 					local defID = okE and type(eInfo) == "table" and eInfo.definitionID or nil
 					local okD, dInfo = defID and pcall(C_Traits.GetDefinitionInfo, defID) or nil
 					local sid = okD and type(dInfo) == "table" and tonumber(dInfo.spellID) or nil
+					if type(sid) == "number" and sid > 0 then
+						-- Coverage set: every granted spell, whether or
+						-- not the book already has it. Also the pick-list
+						-- a future teach UI would want.
+						tset[sid] = true
+					end
 					if type(sid) == "number" and sid > 0 and not have[sid] then
 						have[sid] = true
 						-- Definition override text is the node's own
@@ -365,13 +371,12 @@ local function enumTalentSpells(sink, have)
 							end
 						end
 						sink[#sink + 1] = { sid = sid, name = name, talent = true, desc = desc }
-						added = added + 1
 					end
 				end
 			end
 		end
 	end
-	return added
+	return tset
 end
 
 function Spellbook:Scan()
@@ -380,13 +385,15 @@ function Spellbook:Scan()
 	enumBank(Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player, raw)
 	local have = {}
 	for _, e in ipairs(raw) do have[e.sid] = true end
-	enumTalentSpells(raw, have)
+	local tset = enumTalentSpells(raw, have)
+	self._talents = tset
 	local petRaw = {}
 	enumBank(Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Pet, petRaw)
 
 	local entries, byName, masks, petEntries = {}, {}, {}, {}
 	for _, e in ipairs(raw) do
-		local rec = { sid = e.sid, name = e.name, role = "cast", talent = e.talent or nil }
+		local rec = { sid = e.sid, name = e.name, role = "cast",
+			talent = e.talent or (tset and tset[e.sid]) or nil }
 		-- Node override text wins when present; else the spell's own
 		-- description. Name isn't required — sid-keyed records still
 		-- feed the school gate either way.
