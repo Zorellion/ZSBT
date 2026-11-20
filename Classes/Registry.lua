@@ -646,6 +646,16 @@ function ClassDB.DotGuard(entry, school)
 	return nil
 end
 
+-- Era multi-dot disambiguation: when the module declares
+-- mod.dotCadenceDisambig, unattributed periodic wounds are evaluated
+-- against EVERY active same-school dot (debuff check + tighter tick-
+-- cadence prediction) instead of blindly naming the most recent cast.
+-- Retail modules leave this unset: single-most-recent behavior stays.
+function ClassDB.DotCadenceDisambig()
+	local mod = ClassDB.ActiveModule()
+	return mod ~= nil and mod.dotCadenceDisambig == true
+end
+
 -- Which class-module UI toggles apply to this class. Modules declare
 -- mod.toggles = { key = true }; the Class page and quick-bar menu only
 -- render toggles the active module supports, so e.g. a warrior never

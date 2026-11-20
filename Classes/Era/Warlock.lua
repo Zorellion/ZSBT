@@ -17,19 +17,25 @@ if not ZSBT or not ZSBT.ClassDB then return end
 local mod = {}
 mod.client = "era"
 
+-- Era dots tick at DIFFERENT intervals (Bane 2s vs the 3s pack), which is
+-- what makes cadence disambiguation work at all. interval is the seconds
+-- between ticks; entries sharing school AND interval can't be split by
+-- cadence — wounds matching both stay generic rather than misname.
+mod.dotCadenceDisambig = true
+
 mod.dots = {
-	{ names = { "Corruption" },          school = 32 },
+	{ names = { "Corruption" },          school = 32, interval = 3 },
 	-- Forever uses the Cataclysm curse names: Bane of Agony (980),
 	-- Bane of Doom — keep the classic aliases for name-primary match.
-	{ names = { "Curse of Agony", "Bane of Agony" }, school = 32 },
-	{ names = { "Curse of Doom", "Bane of Doom" },   school = 32 },
-	{ names = { "Siphon Life" },         school = 32 },
-	{ names = { "Immolate" },            school = 4 },
+	{ names = { "Curse of Agony", "Bane of Agony" }, school = 32, interval = 2 },
+	{ names = { "Curse of Doom", "Bane of Doom" },   school = 32, interval = 60 },
+	{ names = { "Siphon Life" },         school = 32, interval = 3 },
+	{ names = { "Immolate" },            school = 4,  interval = 3 },
 	-- Later-era additions: harmless if Forever lacks them (name match
 	-- only fires on a real cast), correct if a custom build has them.
-	{ names = { "Unstable Affliction" }, school = 32 },
+	{ names = { "Unstable Affliction" }, school = 32, interval = 3 },
 	{ names = { "Seed of Corruption" },  school = 32 },
-	{ names = { "Haunt" },               school = 32 },
+	{ names = { "Haunt" },               school = 32, interval = 3 },
 }
 
 mod.channels = {

@@ -769,6 +769,36 @@ local function dotCadenceOk(self, t, spellId)
 	return true
 end
 
+-- Non-mutating cadence prediction: would this sid's dot cadence accept a
+-- tick at t? Same interval logic as dotCadenceOk but no state writes, and
+-- a tighter band — era ticks are server-exact, so a narrow window is what
+-- lets two same-school dots be told apart at all.
+local function dotCadencePredict(self, t, spellId)
+	local iv = DOT_DEFAULT_TICK_INTERVAL
+	local entry = dotEntryForSpellId(spellId)
+	if entry and type(entry.interval) == "number" and entry.interval > 0 then
+		iv = entry.interval
+	end
+	local st = self._dotTickState
+	local rec = (type(st) == "table") and st[spellId] or nil
+	local lastAt = (type(rec) == "table") and rec.lastAt or nil
+	if type(lastAt) == "number" then
+		local dt = t - lastAt
+		if dt >= (iv * 0.7) and dt <= (iv * 1.45) then return true end
+		if dt > (iv * 3.5) then
+			-- Stale record: fall through to first-tick check.
+		else
+			return false
+		end
+	end
+	local appliedAt = self._dotAppliedAt and self._dotAppliedAt[spellId]
+	if type(appliedAt) == "number" then
+		local dt = t - appliedAt
+		return dt >= (iv * 0.4) and dt <= (iv * 3.0)
+	end
+	return true -- no records: allow (legacy state)
+end
+
 local function arePetsEnabled()
 	local petConf = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.pets
 	return petConf and petConf.enabled == true
@@ -901,6 +931,40 @@ local function cachedHasTargetDebuffSpellId(spellId)
 	entry.result = result
 	entry.expiry = t + 1.5
 	return result
+end
+
+-- Era multi-dot picker (mod.dotCadenceDisambig): instead of naming the
+-- most recent dot, evaluate every periodic sid in the window against the
+-- wound's school, target-debuff presence, and per-dot cadence. Exactly
+-- one survivor names the hit; zero or multiple stay generic — with two
+-- same-school dots up, a wound that fits both cadences cannot be proven
+-- and "never wrong" beats "sometimes named".
+local function pickDotByCadenceDisambig(self, t, school)
+	local m = self and self._recentPeriodicSpellAt
+	if type(m) ~= "table" then return nil end
+	local pick, count = nil, 0
+	for sid, at in pairs(m) do
+		if type(sid) == "number" and type(at) == "number"
+			and (t - at) >= 0 and (t - at) <= PERIODIC_OUTGOING_WINDOW_SEC then
+			local entry = dotEntryForSpellId(sid)
+			if entry and (not (entry.school and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) or entry.school == school)
+				and cachedHasTargetDebuffSpellId(sid)
+				and dotCadencePredict(self, t, sid) then
+				pick = sid
+				count = count + 1
+			end
+		end
+	end
+	if count == 1 then return pick end
+	return nil
+end
+
+local function pickDotForWound(self, t, school)
+	if ZSBT.ClassDB and ZSBT.ClassDB.DotCadenceDisambig
+		and ZSBT.ClassDB.DotCadenceDisambig() then
+		return pickDotByCadenceDisambig(self, t, school)
+	end
+	return getMostRecentPeriodicSpellId(self, t)
 end
 
 hasTargetDebuffSpellId = function(spellId)
@@ -2147,7 +2211,7 @@ function Collector:handleCombatTextUpdate(arg1)
 			end
 		end
 		if (not outgoingSpellId) and isPeriodic and (not ctSpellId) then
-			outgoingSpellId = getMostRecentPeriodicSpellId(self, tNow)
+			outgoingSpellId = pickDotForWound(self, tNow, school)
 		end
 
 		local pipeId = self._rawPipeCount + 1
@@ -3012,7 +3076,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- this as player periodic damage instead of pet damage.
 					local dotSpellId = nil
 					if not isPhysicalEarly then
-						dotSpellId = getMostRecentPeriodicSpellId(self, t)
+						dotSpellId = pickDotForWound(self, t, school)
 					end
 					-- Class-module dot guard: e.g. Warlock Imp fire hits are pet damage,
 					-- never player DoT ticks.
@@ -3749,7 +3813,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- DoT ticks often show up as small UNIT_COMBAT(target) magic WOUND events.
 				-- If we recently cast a periodic-capable spell, treat this as outgoing
 				-- periodic damage.
-				local dotSpellId = getMostRecentPeriodicSpellId(self, t)
+				local dotSpellId = pickDotForWound(self, t, school)
 				-- Safety: only treat it as a DoT tick if the target actually has the debuff.
 				local debuffOk = nil
 				if dotSpellId then
@@ -3821,7 +3885,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- non-physical WOUND can be a periodic tick. No amount comparisons
 				-- are needed — the amount goes straight into the raw pipe, which is
 				-- the only display-safe path for secret values on Retail 12.x.
-				local dotSpellId = getMostRecentPeriodicSpellId(self, t)
+				local dotSpellId = pickDotForWound(self, t, school)
 				-- Don't let a DoT steal a hit that probably belongs to a nuke cast
 				-- moments ago: if the last cast was a non-dot spell within ~1.5s,
 				-- leave attribution to the make-it-work window below.
