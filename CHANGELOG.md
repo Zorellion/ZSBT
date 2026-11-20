@@ -1,5 +1,26 @@
 # Changelog
 
+## 3.3.9-beta
+
+### Added
+- **Death Knight class module (Blood + Frost, log-verified):** channels (Breath of Sindragosa), per-cast hit budgets, guardian spellbook and summon windows (Dancing Rune Weapon, Rider of the Apocalypse horsemen), and disease/proc DoT coverage including Remorseless Winter's damage id.
+- **Warrior class module:** Fury multi-strike budgets (Raging Blow family and empowered variants, dual-wield Execute MH+OH, Rampage), Whirlwind `190411`, Odyn's Fury four-cast pattern; Protection Thunder Blast and Whirlwind dual-cast handling; Ravager tick window via a debuff-gated classifier seeded from its cast.
+- **Live spellbook-derived knowledge layer:** the addon now enumerates the player and pet spellbooks, resolves current spell IDs by name (self-healing across Midnight's re-ids), and parses descriptions for role (DoT/channel/cast), tick cadence, and damage-school masks — school names resolve through localized client strings. Module tables stay authoritative; derived knowledge only fills gaps. `/zsbt sb` dumps the derived view.
+- **Teach-a-spell on the Class page:** drag a spell from your action bar or the new spellbook flyout (class + current-spec icon grid) onto the drop slot. Auto role inference guesses dot/channel/cast; entries the module already knows are flagged redundant; taught spells take precedence over derived knowledge.
+- **School-colored module knowledge:** the Class page's knowledge list renders spell names in their damage-school color — the same palette as the scroll (honors `media.schoolColors`) — so masks like "school 36" read as shadowflame purple.
+
+### Fixed
+- **Foreign-school veto:** unattributed hits carrying a school the active class module cannot produce are provably foreign (follower/party damage on shared targets) and are dropped instead of displaying.
+- **Succubus pet-routing:** the pet fallback no longer claims player shadow-school hits, and fire-bit pet claims now require an actual imp — Destruction's fire/chaos kit no longer lands in the pet scroll.
+- **Pet-route integrity, three layers:** hits whose school no class minion can produce strip the pet route (the damage still shows as honest outgoing); a real player spell ID on a pet-routed payload strips it on both the immediate and deferred delivery paths; and player-spellbook IDs can no longer enter the pet-cast pool at all.
+- **Channel school verification:** channel tick claims (Rain of Fire, Drain Life, Bladestorm, Rapid Fire, Breath of Sindragosa) now verify the wound's school — foreign ticks inside a channel window no longer wear the channel's name.
+- **Per-pet-cast claim budgets:** single-target pet casts stop pulling same-school strays into the pet scroll.
+- **Derived-knowledge guards:** summon/self-drain descriptions (Summon Infernal, Burning Rush) no longer seed DoT windows.
+- **Warlock Affliction + Destruction coverage** from verified logs: Wither (`445468`), Rain of Fire's Midnight cast (`1214467`), Chaos Bolt's chromatic mask (`124`), Malevolence, Curse of the Satyr.
+- Secret-string compare crash in the attribution audit sink.
+- Teach-a-spell capture stores the true spell ID and restores the dragged action-bar slot.
+- QCB class button now appears for any class with an active module.
+
 ## 3.3.8-beta
 
 ### Changed
