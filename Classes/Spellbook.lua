@@ -339,6 +339,16 @@ function Spellbook:Masks()
 	return self._masks
 end
 
+-- True when the current book derives at least one dot or channel —
+-- the module-less era fallback gate for cadence disambiguation.
+function Spellbook:HasPeriodic()
+	ensureScanned(self)
+	for _, rec in pairs(self._entries) do
+		if rec.role == "dot" or rec.role == "channel" then return true end
+	end
+	return false
+end
+
 ---------------------------------------------------------------------------
 -- Rescan triggers: spellbook contents change on spec/talent/glyph and
 -- pet-summon transitions. Debounced so a talent swap's event burst costs
