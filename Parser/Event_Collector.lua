@@ -1006,6 +1006,20 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 	-- whenever an imp was active.
 	local pendingPet = pendingPetCast(self, t, 1.5, school)
 	local woundTgt = safeUnitName("target")
+	-- Typed-line evidence (FCT model): the combat-log filter classifies
+	-- MINE/MY_PET lines by kind — a "tick" line near this wound means the
+	-- client itself logged a periodic hit. Peek only; the real pairing
+	-- consumes the line downstream. Both lines present = ambiguous
+	-- environment, evidence cancels out.
+	local tickLine, directLine = nil, nil
+	local zbt = ZSBT.ZBattleText
+	if zbt and zbt.PeekDamageLine then
+		tickLine = zbt:PeekDamageLine(t, 0.30, { tick = true })
+		if not tickLine then
+			directLine = zbt:PeekDamageLine(t, 0.30,
+				{ direct = true, melee = true, ranged = true, shield = true })
+		end
+	end
 	local pick, count = nil, 0
 	-- Survivor pool + scores for the scored race (reused tables — no
 	-- per-wound allocation).
@@ -1013,7 +1027,7 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 	if pool then wipe(pool) else pool = {} ; self._disambigPool = pool end
 	local scores = self._disambigScores
 	if scores then wipe(scores) else scores = {} ; self._disambigScores = scores end
-	local rejNoEntry, rejSchool, rejCadence, rejChan, rejTarget, scanned = 0, 0, 0, 0, 0, 0
+	local rejNoEntry, rejSchool, rejCadence, rejChan, rejTarget, rejRescued, scanned = 0, 0, 0, 0, 0, 0, 0
 	-- Target-debuff presence is a TIEBREAKER, not a gate: era aura APIs
 	-- may not expose the data at all, and multi-target DoTing means a real
 	-- tick from another mob arrives while this target lacks the debuff.
@@ -1092,7 +1106,18 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 				if not tgtOk then
 					rejTarget = rejTarget + 1
 				elseif not dotCadencePredict(self, t, sid, appliedOv) then
-					rejCadence = rejCadence + 1
+					-- A typed "tick" line with no competing direct line is
+					-- the client's own confirmation a periodic hit fired —
+					-- rescue the candidate at a score penalty. Real ticks
+					-- that wandered off-schedule recover their names.
+					if tickLine ~= nil then
+						count = count + 1
+						pool[count] = sid
+						scores[count] = candidateScore(sid, entry) + 0.4
+						rejRescued = (rejRescued or 0) + 1
+					else
+						rejCadence = rejCadence + 1
+					end
 				else
 					count = count + 1
 					pool[count] = sid
@@ -1127,7 +1152,7 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 		local elapsed = t - ch.startedAt
 		if not chSchoolOk then
 			rejSchool = rejSchool + 1
-		elseif elapsed < (iv * 0.5) then
+		elseif not tickLine and elapsed < (iv * 0.5) then
 			rejCadence = rejCadence + 1
 		else
 			-- Interval-proportional jitter: era drain channels tick at 1s,
@@ -1145,10 +1170,11 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 					phaseOk = dt >= (iv * 0.7) and dt <= (iv * 1.45)
 				end
 			end
-			if phaseOk then
+			if phaseOk or (tickLine ~= nil and chSchoolOk) then
 				count = count + 1
 				pool[count] = ch.spellId
 				scores[count] = candidateScore(ch.spellId, nil)
+					+ (phaseOk and 0 or 0.4)
 				if cachedHasTargetDebuffSpellId(ch.spellId) then
 					debuffPick = ch.spellId
 					debuffCount = debuffCount + 1
@@ -1182,6 +1208,13 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 		if ret == nil and debuffCount == 1 then
 			ret, retWhy = debuffPick, "debuff"
 		end
+		-- Typed-line veto: a MINE-sourced direct/melee line near the wound
+		-- with no tick line is counter-evidence — suppress a weak pick
+		-- (score >= 0.75 = no beat and no amount fit). Strong picks stand:
+		-- a bolt landing mid-tick-stream must not starve real ticks.
+		if ret ~= nil and directLine ~= nil and scores[bestI] >= 0.75 then
+			ret, retWhy = nil, "lineveto"
+		end
 	end
 	-- Stamp the channel's tick anchor only on an actual pick: it feeds the
 	-- distance-from-last-tick check next wound (self-correcting cadence).
@@ -1189,9 +1222,10 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 		ch.lastTickAt = t
 	end
 	if auditNote then
-		auditNote(("AUDD reason=DOTDISAMBIG scan=%s surv=%s ret=%s why=%s debuffpass=%s pet=%s noentry=%s school=%s chan=%s tgt=%s cadence=%s")
+		auditNote(("AUDD reason=DOTDISAMBIG scan=%s surv=%s ret=%s why=%s debuffpass=%s pet=%s line=%s rescued=%s noentry=%s school=%s chan=%s tgt=%s cadence=%s")
 			:format(dbgSafe(scanned), dbgSafe(count), dbgSafe(ret), dbgSafe(retWhy), dbgSafe(debuffCount),
-				dbgSafe(pendingPet), dbgSafe(rejNoEntry), dbgSafe(rejSchool), dbgSafe(rejChan),
+				dbgSafe(pendingPet), dbgSafe(tickLine and "tick" or (directLine and "direct" or nil)),
+				dbgSafe(rejRescued), dbgSafe(rejNoEntry), dbgSafe(rejSchool), dbgSafe(rejChan),
 				dbgSafe(rejTarget), dbgSafe(rejCadence)))
 	end
 	return ret
