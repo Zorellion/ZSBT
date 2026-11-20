@@ -47,13 +47,16 @@ mod.dots = {
 }
 
 mod.channels = {
-	{ names = { "Drain Life" },   duration = 6.0,  tickMin = 0.5, school = 32 },
-	{ names = { "Drain Soul" },   duration = 16.0, tickMin = 0.5, school = 32 },
-	{ names = { "Drain Mana" },   duration = 6.0,  tickMin = 0.5, school = 32 },
+	-- interval is the era tick period: the disambiguation picker phase-
+	-- locks channel ticks to it, so DoT ticks landing mid-channel keep
+	-- their own names instead of being eaten by the channel.
+	{ names = { "Drain Life" },   duration = 6.0,  tickMin = 0.5, school = 32, interval = 1 },
+	{ names = { "Drain Soul" },   duration = 16.0, tickMin = 0.5, school = 32, interval = 1 },
+	{ names = { "Drain Mana" },   duration = 6.0,  tickMin = 0.5, school = 32, interval = 1 },
 	-- Era Rain of Fire is channeled: 4 waves over ~8s. tickMin is kept
 	-- proportional so foreign fire ticks can't ride a wide window.
-	{ names = { "Rain of Fire" }, duration = 9.0,  tickMin = 1.2, school = 4 },
-	{ names = { "Hellfire" },     duration = 16.0, tickMin = 0.5, school = 4 },
+	{ names = { "Rain of Fire" }, duration = 9.0,  tickMin = 1.2, school = 4,  interval = 2 },
+	{ names = { "Hellfire" },     duration = 16.0, tickMin = 0.5, school = 4,  interval = 1 },
 	-- Health Funnel deliberately absent: it drains the CASTER's health,
 	-- not a target's — nothing here for it to honestly name.
 }
@@ -98,22 +101,10 @@ function mod.petSchoolHitRecent(self, school, lastPlayerSpellId, helpers)
 	return false
 end
 
--- Same reasoning inverted: a school-4 wound must not claim a player DoT
--- window while an imp is out (it could be a bolt whose record was
--- already consumed). dotGuard keeps the veto so the wound drops to
--- honest generic instead of wearing Immolate's name.
-local function isImpPet(helpers)
-	local fam = helpers and helpers.family and helpers.family() or nil
-	return fam ~= nil and fam == "imp"
-end
-
-function mod.dotGuard(entry, school, helpers)
-	if helpers and helpers.safeNumber and helpers.safeNumber(school)
-		and school == 4 and isImpPet(helpers) then
-		return false
-	end
-	return nil
-end
+-- A pending pet cast record already outranks dot picks in the
+-- disambiguation picker (proven > inferred), so the old blanket school-4
+-- veto is gone: Immolate ticks name whenever no bolt is actually in
+-- flight, and contested wounds fall to the pet path or generic.
 
 -- Era warlocks still don't meaningfully melee: school-1 hits are demon
 -- swings or foreign traffic. Wand "Shoot" is unaffected (not physical,
@@ -139,10 +130,12 @@ function mod.onCast(self, spellId, spellName, t)
 	if ch then
 		self._channel = {
 			untilAt = t + (ch.duration or 6.0),
+			startedAt = t,
 			lastTickAt = 0,
 			spellId = spellId,
 			tickMin = ch.tickMin or 0.12,
 			school = ch.school,
+			interval = ch.interval,
 		}
 	end
 end

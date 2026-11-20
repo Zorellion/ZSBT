@@ -121,6 +121,33 @@ local function consumePetCast(self, t, window, hitSchool)
 	return nil
 end
 
+-- Non-mutating variant: does a school-matching pet cast record sit
+-- unclaimed in the window? Used by the disambiguation picker — a pending
+-- record is PROOF a pet spell is in flight, which outranks inferred dot
+-- attribution for the next school-matching wound.
+local function pendingPetCast(self, t, window, hitSchool)
+	local casts = self._petCasts
+	if type(casts) ~= "table" then return nil end
+	local w = window or 1.5
+	for i = #casts, 1, -1 do
+		local c = casts[i]
+		local age = t - (c.at or 0)
+		if age > w then break end
+		local maxClaims = PET_CAST_MAX_CLAIMS
+		if ZSBT.ClassDB and ZSBT.ClassDB.PetCastBudget then
+			maxClaims = ZSBT.ClassDB.PetCastBudget(c.spellId) or maxClaims
+		end
+		if age >= 0
+			and (c.claims or 0) < maxClaims
+			and not isPlayerSpellId(c.spellId)
+			and (not ZSBT.IsSafeNumber or ZSBT.IsSafeNumber(c.spellId))
+			and castSchoolOk(self, c.spellId, hitSchool) then
+			return c.spellId, c.unit
+		end
+	end
+	return nil
+end
+
 -- Spell facts read from the spell's own description (adapted from
 -- Forever Combat Text, MIT).
 -- C_Spell.GetSpellDescription is plain for your spells even on secret-
@@ -738,6 +765,14 @@ local function dotTickInterval(spellId, entry)
 	if entry and type(entry.interval) == "number" and entry.interval > 0 then
 		return entry.interval
 	end
+	-- Channel-owned sids: the module's channel interval is the tick period
+	-- (era drains tick at 1s; a 2.0 default would reject real ticks).
+	if ZSBT.ClassDB and ZSBT.ClassDB.ChannelMatch then
+		local ch = ZSBT.ClassDB.ChannelMatch(spellId)
+		if ch and type(ch.interval) == "number" and ch.interval > 0 then
+			return ch.interval
+		end
+	end
 	return DOT_DEFAULT_TICK_INTERVAL
 end
 
@@ -949,6 +984,12 @@ end
 local function pickDotByCadenceDisambig(self, t, school)
 	local m = self and self._recentPeriodicSpellAt
 	if type(m) ~= "table" then return nil end
+	-- A pending pet cast record is PROOF a pet spell is in flight — the
+	-- next school-matching wound is most likely that bolt, not a dot tick.
+	-- Proven claims outrank inferred ones; this replaces the era module's
+	-- old blanket school-4 veto, which suppressed Immolate entirely
+	-- whenever an imp was active.
+	local pendingPet = pendingPetCast(self, t, 1.5, school)
 	local pick, count = nil, 0
 	local rejNoEntry, rejSchool, rejCadence, rejChan, scanned = 0, 0, 0, 0, 0
 	-- Target-debuff presence is a TIEBREAKER, not a gate: era aura APIs
@@ -972,6 +1013,10 @@ local function pickDotByCadenceDisambig(self, t, school)
 				rejChan = rejChan + 1
 			elseif entry.school and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school) and entry.school ~= school then
 				rejSchool = rejSchool + 1
+			elseif pendingPet ~= nil and entry.school and ZSBT.IsSafeNumber(school) and entry.school == school then
+				-- Wound is contested by a proven pet claim: don't let a
+				-- same-school dot steal it. Falls through to the pet path.
+				rejSchool = rejSchool + 1
 			elseif not dotCadencePredict(self, t, sid) then
 				rejCadence = rejCadence + 1
 			else
@@ -984,6 +1029,48 @@ local function pickDotByCadenceDisambig(self, t, school)
 			end
 		end
 	end
+	-- A live channel joins the candidate pool instead of greedily claiming
+	-- every same-school wound: its ticks phase-lock to channel start, so a
+	-- DoT tick landing between channel ticks is no longer eaten by the
+	-- channel — and a wound both could explain goes generic, not wrong.
+	local ch = self._channel
+	if type(ch) == "table" and type(ch.startedAt) == "number"
+		and type(ch.untilAt) == "number" and t <= ch.untilAt
+		and ch.spellId == self._lastPlayerSpellId then
+		scanned = scanned + 1
+		local chSchoolOk = true
+		if ch.school ~= nil and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school) then
+			if type(ch.school) == "table" then
+				chSchoolOk = ch.school[school] == true
+			else
+				chSchoolOk = school == ch.school
+			end
+		end
+		local iv = (type(ch.interval) == "number" and ch.interval > 0) and ch.interval
+			or dotTickInterval(ch.spellId)
+		local elapsed = t - ch.startedAt
+		if not chSchoolOk then
+			rejSchool = rejSchool + 1
+		elseif elapsed < (iv * 0.5) then
+			rejCadence = rejCadence + 1
+		else
+			-- Interval-proportional jitter: era drain channels tick at 1s,
+			-- where a fixed 0.45s band accepts ~90% of all wounds and
+			-- manufactures collisions.
+			local jitter = math.min(0.45, math.max(0.20, iv * 0.30))
+			local phase = elapsed % iv
+			if phase <= jitter or phase >= (iv - jitter) then
+				count = count + 1
+				pick = ch.spellId
+				if cachedHasTargetDebuffSpellId(ch.spellId) then
+					debuffPick = ch.spellId
+					debuffCount = debuffCount + 1
+				end
+			else
+				rejCadence = rejCadence + 1
+			end
+		end
+	end
 	local ret = nil
 	if count == 1 then
 		ret = pick
@@ -991,9 +1078,9 @@ local function pickDotByCadenceDisambig(self, t, school)
 		ret = debuffPick
 	end
 	if auditNote then
-		auditNote(("AUDD reason=DOTDISAMBIG scan=%s surv=%s ret=%s debuffpass=%s noentry=%s school=%s chan=%s cadence=%s")
+		auditNote(("AUDD reason=DOTDISAMBIG scan=%s surv=%s ret=%s debuffpass=%s pet=%s noentry=%s school=%s chan=%s cadence=%s")
 			:format(dbgSafe(scanned), dbgSafe(count), dbgSafe(ret), dbgSafe(debuffCount),
-				dbgSafe(rejNoEntry), dbgSafe(rejSchool), dbgSafe(rejChan), dbgSafe(rejCadence)))
+				dbgSafe(pendingPet), dbgSafe(rejNoEntry), dbgSafe(rejSchool), dbgSafe(rejChan), dbgSafe(rejCadence)))
 	end
 	return ret
 end
@@ -3777,8 +3864,14 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- Channeled periodic spells (Drain Life/Soul etc.): the class module
 			-- seeds self._channel on cast; emit each tick while the channel is live
 			-- and the channel spell is still the most recent player cast.
+			-- With cadence disambiguation the channel competes in the
+			-- picker's candidate pool instead of greedily claiming every
+			-- same-school wound (which ate real DoT ticks mid-channel).
 			local ch = self._channel
-			if type(ch) == "table" and type(ch.untilAt) == "number" and t <= ch.untilAt then
+			local disambigOn = ZSBT.ClassDB and ZSBT.ClassDB.DotCadenceDisambig
+				and ZSBT.ClassDB.DotCadenceDisambig() == true
+			if not disambigOn
+				and type(ch) == "table" and type(ch.untilAt) == "number" and t <= ch.untilAt then
 				local wantSid = self._lastPlayerSpellId
 				if wantSid == ch.spellId then
 					-- School check: a channel's ticks arrive at one mask
