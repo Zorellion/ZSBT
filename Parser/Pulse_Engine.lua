@@ -1344,7 +1344,9 @@ function Engine:flushBucket()
 						end
 					end
 					if not prefix then
-						if aggMode:find("Generic") then
+						if aggMode:find("None") then
+							prefix = ""
+						elseif aggMode:find("Generic") then
 							prefix = "Pet"
 						elseif petName then
 							prefix = petName
@@ -1406,7 +1408,7 @@ function Engine:flushBucket()
 						if val ~= nil and not ZSBT.IsSafeNumber(val)
 							and not (ZSBT.IsSafeString and ZSBT.IsSafeString(val)) then
 							text = val
-						else
+						elseif val ~= nil then
 							local okS, s = pcall(tostring, val)
 							if okS and type(s) == "string" and s ~= "" then
 								if prefix == "" then
