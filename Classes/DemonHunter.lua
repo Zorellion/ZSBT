@@ -33,7 +33,6 @@ mod.channels = {
 -- not via dot pools, channels, pending-cast stamps, or the make-it-work
 -- recency claim. NEVER list a dot/channel name.
 mod.exclude = {
-	"Vengeful Retreat",
 	"Disrupt",
 	"Consume Magic",
 	"Reverse Magic",
@@ -52,7 +51,11 @@ mod.exclude = {
 -- Per-cast-instance naming budget: AoE/splash casts may name several
 -- hits; unlisted casts stay at the default of 1.
 mod.castBudget = {
-	[185123] = 4,   -- Throw Glaive (ricochet, 2-3 targets)
+	[185123] = 4,   -- Throw Glaive (Havoc cast; ricochet, 2-3 targets)
+	[204157] = 4,   -- Throw Glaive (Vengeance cast; verified SB)
+	[189110] = 8,   -- Infernal Strike (landing AoE, fire)
+	[198793] = 8,   -- Vengeful Retreat (vault AoE, physical; verified SB)
+	[390163] = 8,   -- Sigil of Spite (AoE sigil, chaos; verified SB)
 	[188499] = 8,   -- Blade Dance
 	[210152] = 8,   -- Death Sweep (meta-upgraded Blade Dance)
 	[179057] = 8,   -- Chaos Nova (AoE)
@@ -71,11 +74,12 @@ mod.castBudget = {
 }
 
 -- Provable damage schools: 1 physical (melee, Blade Dance, glaives),
--- 4 fire (Immolation/Sigil/Fiery Brand/Fel Devastation), 8 nature
--- (procs/trinkets), 32 shadow (procs, The Hunt variants), 36 shadowflame,
--- 127 chaos (Eye Beam, Chaos Strike, Annihilation, Fel Barrage).
+-- 4 fire (Immolation/Sigil/Fiery Brand/Fel Devastation/Felblade/
+-- Infernal Strike/Spirit Bomb), 8 nature (procs/trinkets), 32 shadow
+-- (procs, The Hunt variants), 36 shadowflame, 124/127 chaos — the book
+-- reports chaos spells under both masks (Chaos Nova, Sigil of Spite).
 mod.schools = { [1] = true, [4] = true, [8] = true, [32] = true,
-	[36] = true, [127] = true }
+	[36] = true, [64] = true, [124] = true, [127] = true }
 
 ZSBT.ClassDB.Register("DEMONHUNTER", mod)
 return mod
