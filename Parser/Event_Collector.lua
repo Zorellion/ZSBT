@@ -1343,7 +1343,7 @@ end
 -- is a strong discriminator when phase-locking leaves collisions. Only
 -- feeds the tiebreak where the module opted in — amounts stay unread
 -- (possibly secret) on clients that don't.
-local function noteDotTickAmount(self, spellId, amount, isCrit, t)
+local function noteDotTickAmount(self, spellId, amount, isCrit, t, tgtName)
 	if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(amount) then
 		if isCrit == true then amount = amount * 0.5 end
 		if amount > 0 then
@@ -1363,7 +1363,22 @@ local function noteDotTickAmount(self, spellId, amount, isCrit, t)
 	if type(st) ~= "table" then st = {} ; self._dotTickState = st end
 	local rec = st[spellId]
 	if type(rec) ~= "table" then rec = {} ; st[spellId] = rec end
-	if type(rec.confirmedAt) == "number" then
+	-- Learn gaps only between ticks on the SAME mob: tab-dotting
+	-- interleaves two targets' beats into one record and drags the
+	-- learned interval below the true beat (Immolate learned 1.69s on
+	-- a 3s beat). Secret names can't compare — those ticks still stamp
+	-- confirmedAt/nextAt but never teach, which is safe not loss.
+	local sameTgt = false
+	if ZSBT.IsSafeString and ZSBT.IsSafeString(tgtName) then
+		if type(rec.lastTgt) ~= "string" then
+			sameTgt = true
+		else
+			local okEq, eq = pcall(function() return tgtName == rec.lastTgt end)
+			sameTgt = okEq and eq == true
+		end
+		rec.lastTgt = tgtName
+	end
+	if type(rec.confirmedAt) == "number" and sameTgt then
 		local gap = t - rec.confirmedAt
 		local iv = rec.period or dotTickInterval(spellId)
 		-- A gap near 1x period refines the learned interval; a gap at 2x+
@@ -3157,6 +3172,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						end
 						if hostile then
 							local offSid = nil
+							local offTgtName = safeUnitName(unit)
 							if offTargetDotsEnabled() then
 								offSid = resolveOffTargetDot(self, unit, now())
 							end
@@ -3164,6 +3180,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								local isCritOff = false
 								if type(descriptor) == "string" then
 									isCritOff = descriptor:upper():find("CRIT", 1, true) ~= nil
+								end
+								if offSid ~= nil then
+									self._recentPeriodicSpellAt[offSid] = now()
+									noteDotTickAmount(self, offSid, amount, isCritOff, now(), offTgtName)
 								end
 								local pipeId = self._rawPipeCount + 1
 								self._rawPipeCount = pipeId
@@ -3178,7 +3198,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 									rawPipeId = pipeId,
 									spellId = offSid,
 									amountSource = "COMBAT_LOG",
-									targetName = safeUnitName(unit),
+									targetName = offTgtName,
 									isCrit = isCritOff,
 									isPeriodic = (offSid ~= nil) or nil,
 									schoolMask = (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) and school or nil,
@@ -3604,11 +3624,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							return
 						end
 						self._recentPeriodicSpellAt[dotSpellId] = t
-						noteDotTickAmount(self, dotSpellId, amount, isCrit, t)
+						local tName = safeUnitName("target")
+						noteDotTickAmount(self, dotSpellId, amount, isCrit, t, tName)
 						local pipeId = self._rawPipeCount + 1
 						self._rawPipeCount = pipeId
 						self._rawPipe[pipeId] = amount
-						local tName = safeUnitName("target")
 						emit("OUTGOING_DAMAGE_COMBAT", {
 							timestamp = t,
 							rawPipeId = pipeId,
@@ -4333,11 +4353,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						return
 					end
 					self._recentPeriodicSpellAt[dotSpellId] = t
-					noteDotTickAmount(self, dotSpellId, amount, isCrit, t)
+					local tName = safeUnitName("target")
+					noteDotTickAmount(self, dotSpellId, amount, isCrit, t, tName)
 					local pipeId = self._rawPipeCount + 1
 					self._rawPipeCount = pipeId
 					self._rawPipe[pipeId] = amount
-					local tName = safeUnitName("target")
 					emit("OUTGOING_DAMAGE_COMBAT", {
 						timestamp = t,
 						rawPipeId = pipeId,
@@ -4427,11 +4447,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(amount), dbgSafe(school)))
 						end
 						self._recentPeriodicSpellAt[dotSpellId] = t
-						noteDotTickAmount(self, dotSpellId, amount, isCrit, t)
+						local tName = safeUnitName("target")
+						noteDotTickAmount(self, dotSpellId, amount, isCrit, t, tName)
 						local pipeId = self._rawPipeCount + 1
 						self._rawPipeCount = pipeId
 						self._rawPipe[pipeId] = amount
-						local tName = safeUnitName("target")
 						self._lastOutgoingCombatAt = t
 						self._lastOutgoingCombatTargetName = tName
 						emit("OUTGOING_DAMAGE_COMBAT", {
