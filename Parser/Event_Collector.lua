@@ -660,9 +660,13 @@ local function flushBestOutgoing(self, token)
 	-- own and must claim a real palette line to display. Gated on
 	-- spellId == nil so a named cast's echo cluster (the 300-900 case)
 	-- still collapses — rider wounds join the attributed bucket and
-	-- never reach this loop.
+	-- never reach this loop. Newest-first: the last report is most
+	-- likely the newest hit's, so a real twin's own amount claims its
+	-- line before an alias report can repeat the first hit's number.
 	if bucket.spellId == nil then
-		for _, ex in ipairs(bucket._extras or {}) do
+		local exs = bucket._extras or {}
+		for i = #exs, 1, -1 do
+			local ex = exs[i]
 			local xp = self._rawPipeCount + 1
 			self._rawPipeCount = xp
 			self._rawPipe[xp] = ex.amount
@@ -3515,13 +3519,27 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- Collapse exact school+crit twins inside 50ms so duplicates
 			-- cannot steal palette lines from distinct hits. Only dedups
 			-- safe-number schools; secret schools always pass through.
-			-- A second real identical hit is provably indistinguishable
-			-- from a token alias here — letting it through double-displays
-			-- single hits, so same-instant same-signature twins merge.
+			-- A suppressed wound is not dropped: it parks on the matching
+			-- signature bucket's extras. Token aliases then die at the
+			-- flush's line-claim gate (no palette line for them), while a
+			-- real identical hit — indistinguishable here — recovers with
+			-- its own amount when its combat-log line is still unclaimed.
 			if ZSBT.IsSafeNumber(school) then
 				local sig = self._lastTargetWoundSig
 				if sig and (t - sig.t) >= 0 and (t - sig.t) < 0.05
 					and sig.school == school and sig.crit == isCrit then
+					local pk = self._castToken or tostring(math.floor(t * 10))
+					local bk = tostring(pk) .. "|" .. tostring(school)
+						.. "|" .. tostring(isCrit == true)
+					local b = self._bestOutgoingByToken and self._bestOutgoingByToken[bk]
+					if b then
+						local ex = b._extras
+						if not ex then ex = {} ; b._extras = ex end
+						if #ex < 6 then
+							ex[#ex + 1] = { t = t, amount = amount, isCrit = isCrit }
+						end
+					end
+					auditNote(("AUDSUP school=%s crit=%s"):format(tostring(school), tostring(isCrit == true)))
 					return
 				end
 				self._lastTargetWoundSig = { t = t, school = school, crit = isCrit }
