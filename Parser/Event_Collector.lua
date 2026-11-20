@@ -640,11 +640,11 @@ local function flushBestOutgoing(self, token)
 
 	local zbt = ZSBT.ZBattleText
 	if zbt and zbt.FileLog then
-		zbt:FileLog(("FLUSH sid=%s school=%s cnt=%s crit=%s"):format(tostring(bucket.spellId), tostring(bucket.schoolMask), tostring(1 + #(bucket._extras or {})), tostring(bucket.isCrit)))
+		zbt:FileLog(("FLUSH sid=%s school=%s cnt=%s crit=%s"):format(tostring(bucket.spellId), tostring(bucket.schoolMask), tostring(bucket._seenCount), tostring(bucket.isCrit)))
 
 	end
 	auditNote(("AUDFLUSH sid=%s school=%s cnt=%s crit=%s"):format(
-		tostring(bucket.spellId), tostring(bucket.schoolMask), tostring(1 + #(bucket._extras or {})), tostring(bucket.isCrit == true)))
+		tostring(bucket.spellId), tostring(bucket.schoolMask), tostring(bucket._seenCount), tostring(bucket.isCrit == true)))
 	emit("OUTGOING_DAMAGE_COMBAT", {
 		timestamp = bucket.timestamp,
 		rawPipeId = pipeId,
@@ -656,35 +656,6 @@ local function flushBestOutgoing(self, token)
 		schoolMask = bucket.schoolMask,
 
 	})
-	-- Fan-out for unattributed bursts: each absorbed wound emits on its
-	-- own and must claim a real palette line to display. Gated on
-	-- spellId == nil so a named cast's echo cluster (the 300-900 case)
-	-- still collapses — rider wounds join the attributed bucket and
-	-- never reach this loop. Newest-first: the last report is most
-	-- likely the newest hit's, so a real twin's own amount claims its
-	-- line before an alias report can repeat the first hit's number.
-	if bucket.spellId == nil then
-		local exs = bucket._extras or {}
-		for i = #exs, 1, -1 do
-			local ex = exs[i]
-			local xp = self._rawPipeCount + 1
-			self._rawPipeCount = xp
-			self._rawPipe[xp] = ex.amount
-			emit("OUTGOING_DAMAGE_COMBAT", {
-				timestamp = ex.t,
-				rawPipeId = xp,
-				spellId = nil,
-				amountSource = "UNIT_COMBAT_BEST",
-				targetName = bucket.targetName,
-				isCrit = ex.isCrit,
-				schoolMask = bucket.schoolMask,
-				-- Twin evidence lives at the report's own instant: a real
-				-- second hit writes its line within a frame, while every
-				-- stale leftover (the alias dupe source) sits outside this.
-				_claimWindow = 0.07,
-			})
-		end
-	end
 end
 
 -- Reset fall tracking and cancel any delayed landing timer.
@@ -3523,27 +3494,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- Collapse exact school+crit twins inside 50ms so duplicates
 			-- cannot steal palette lines from distinct hits. Only dedups
 			-- safe-number schools; secret schools always pass through.
-			-- A suppressed wound is not dropped: it parks on the matching
-			-- signature bucket's extras. Token aliases then die at the
-			-- flush's line-claim gate (no palette line for them), while a
-			-- real identical hit — indistinguishable here — recovers with
-			-- its own amount when its combat-log line is still unclaimed.
 			if ZSBT.IsSafeNumber(school) then
 				local sig = self._lastTargetWoundSig
 				if sig and (t - sig.t) >= 0 and (t - sig.t) < 0.05
 					and sig.school == school and sig.crit == isCrit then
-					local pk = self._castToken or tostring(math.floor(t * 10))
-					local bk = tostring(pk) .. "|" .. tostring(school)
-						.. "|" .. tostring(isCrit == true)
-					local b = self._bestOutgoingByToken and self._bestOutgoingByToken[bk]
-					if b then
-						local ex = b._extras
-						if not ex then ex = {} ; b._extras = ex end
-						if #ex < 6 then
-							ex[#ex + 1] = { t = t, amount = amount, isCrit = isCrit }
-						end
-					end
-					auditNote(("AUDSUP school=%s crit=%s"):format(tostring(school), tostring(isCrit == true)))
 					return
 				end
 				self._lastTargetWoundSig = { t = t, school = school, crit = isCrit }
@@ -4344,24 +4298,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- If we somehow have no cast token, fall back to a time bucket.
 			tokenKey = tostring(math.floor(t * 10))
 		end
-		-- Buckets key on cast token + hit signature (school, crit) so
-		-- simultaneous DISTINCT hits — a guardian burst, a crit beside a
-		-- non-crit — never collapse into each other. Echoes of one hit
-		-- share its signature and merge exactly as before.
-		local schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil
-		local bucketKey = tostring(tokenKey) .. "|" .. tostring(schoolMask)
-			.. "|" .. tostring(isCrit == true)
 		if not self._bestOutgoingByToken then
 			self._bestOutgoingByToken = {}
 		end
-		local existing = self._bestOutgoingByToken[bucketKey]
+		local existing = self._bestOutgoingByToken[tokenKey]
 		-- Safety: never allow an old bucket to persist and keep re-attributing spellId
 		-- across later unrelated UNIT_COMBAT(target) ticks. Buckets are meant to live
 		-- only for the short merge window.
 		if existing and type(existing.timestamp) == "number" then
 			local age = t - existing.timestamp
 			if age < 0 or age > 0.20 then
-				self._bestOutgoingByToken[bucketKey] = nil
+				self._bestOutgoingByToken[tokenKey] = nil
 				existing = nil
 			end
 		end
@@ -4709,13 +4656,14 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			sidLearn = (matchedCast.spellId ~= nil) or nil
 		end
 
+		local schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil
 		auditNote(("AUDMB school=%s crit=%s spellId=%s"):format(dbgSafe(school), tostring(isCrit == true), dbgSafe(spellId)))
 
 
 		-- Merge window: multiple UNIT_COMBAT(target) hits can arrive per cast.
 		-- Keep only the largest amount in a short window to avoid showing tiny
 		-- proc/secondary values (the root cause of the "300-900 Shadow Bolt" bug).
-		local token = bucketKey
+		local token = tokenKey
 		local targetName = safeUnitName("target")
 		local bucket = self._bestOutgoingByToken[token]
 		if not bucket then
@@ -4783,15 +4731,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				bucket.schoolMask = schoolMask or bucket.schoolMask
 				bucket.targetName = targetName or bucket.targetName
 				bucket.spellId = bucket.spellId or spellId
-			end
-			-- Keep the absorbed wound so the flush can fan out: each extra
-			-- emits individually and must claim its own palette line, so
-			-- echo reports die with no line while real simultaneous hits
-			-- (twin guardian strikes) display. Cap bounds alias chatter.
-			local extras = bucket._extras
-			if not extras then extras = {} ; bucket._extras = extras end
-			if #extras < 6 then
-				extras[#extras + 1] = { t = t, amount = amount, isCrit = isCrit }
 			end
 		end
 		return
