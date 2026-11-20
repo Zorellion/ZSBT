@@ -191,10 +191,9 @@ mod.guardianSummons = GUARDIAN_SUMMONS
 -- Name an unattributed pet hit: collect the spells every ACTIVE guardian
 -- could have produced at this school; exactly one match names the hit,
 -- anything else stays generic (a wrong name is worse than no name).
--- The succubus main pet contributes Lash of Pain (7814) as a shadow
--- candidate whenever she is out — real Lash casts are claimed by
--- consumePetCast before this hook runs, so this mostly keeps school-32
--- hits correctly ambiguous between her and the other demons.
+-- An out succubus adds ambiguity to school-32 guardian candidates (Lash
+-- of Pain, 7814, is also school 32) but contributes no name of her own —
+-- real Lash casts are claimed by consumePetCast before this hook runs.
 function mod.resolvePetSpellId(self, school, t, helpers)
 	-- profile.classModule.resolveGuardians == false disables guardian
 	-- naming entirely (hits fall back to generic pet / suppression).
@@ -217,10 +216,14 @@ function mod.resolvePetSpellId(self, school, t, helpers)
 		end
 	end
 	if not ambiguous then
+		-- A succubus makes guardian school-32 candidates ambiguous (Lash of
+		-- Pain is also school 32) — but she must never SUPPLY a name on her
+		-- own. Affliction's whole kit is school-32, so an unconditional
+		-- claim routes the player's own DoT ticks and bolts into pet
+		-- scroll. Her real casts still name hits via consumePetCast.
 		local fam = helpers and helpers.family and helpers.family() or nil
-		if fam == "succubus" and school == 32 then
-			if best == nil then best = 7814
-			elseif best ~= 7814 then ambiguous = true end
+		if fam == "succubus" and school == 32 and best ~= nil then
+			ambiguous = true
 		end
 	end
 	if ambiguous then return nil end
