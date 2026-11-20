@@ -59,13 +59,40 @@ mod.channels = {
 	{ names = { "Hellfire" },     duration = 16.0, tickMin = 0.5, school = 4,  interval = 1 },
 }
 
--- Denied outright: Health Funnel drains the CASTER's health to heal the
--- pet — its tooltip parses as periodic, so the spellbook-derived dot
--- fallback would seed it and let it name enemy wounds (observed: a
--- wound on a second mob displaying "Health Funnel"). Absence from the
--- tables is not enough; exclusion survives every derivation path.
+-- Denied outright: spells that parse as periodic or sit in the
+-- pending-cast window but never deal enemy damage, so a wound can
+-- never honestly wear their name. Health Funnel drains the CASTER's
+-- health to heal the pet — its tooltip parses as periodic, so the
+-- spellbook-derived dot fallback seeded it and let it name enemy
+-- wounds (observed: a second-mob tick displaying "Health Funnel",
+-- another claiming "Fear" via the pending-cast stamp). Absence from
+-- the tables is not enough; exclusion survives every derivation path.
+-- NEVER list a dot/channel name here — exclusion wins over those.
 mod.exclude = {
 	"Health Funnel",
+	"Life Tap",
+	"Fear",
+	"Howl of Terror",
+	"Banish",
+	"Curse of Weakness",
+	"Curse of Tongues",
+	"Curse of Shadow",
+	"Curse of Elements",
+	"Curse of Exhaustion",
+	"Amplify Curse",
+	"Shadow Ward",
+	"Demon Armor",
+	"Unending Breath",
+	"Detect Invisibility",
+	"Eye of Kilrogg",
+	"Enslave Demon",
+	"Fel Domination",
+	"Ritual of Summoning",
+	"Summon Imp",
+	"Summon Voidwalker",
+	"Summon Succubus",
+	"Summon Felhunter",
+	"Summon Felguard",
 }
 
 -- Era wand "Shoot" damage can carry almost any school (shadow/fire/

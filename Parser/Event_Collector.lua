@@ -1633,9 +1633,14 @@ consumeBestPendingCast = function(self, tNow, wantSpellId, maxWindowSec, doConsu
 	expirePendingCasts(self, tNow)
 	local window = maxWindowSec or PENDING_CAST_WINDOW_SEC
 	local bestI, best, bestDt
+	local excl = ZSBT.ClassDB and ZSBT.ClassDB.ExcludedSpellId or nil
 	for i = 1, #(self._pendingCasts or {}) do
 		local c = self._pendingCasts[i]
-		if c and c.at and c.spellId then
+		-- Excluded sids (module-denied names) never produce enemy damage,
+		-- so a wound can never legitimately wear them — the record stays
+		-- queued for expiry but is skipped as a match.
+		if c and c.at and c.spellId
+			and (excl == nil or excl(c.spellId) ~= true) then
 			if (not wantSpellId) or c.spellId == wantSpellId then
 				if castSchoolOk(self, c.spellId, hitSchool) then
 					local dt = tNow - c.at
@@ -2118,6 +2123,10 @@ function Collector:handleChatSelfDamage(event, msg)
 		if not token or not self._lastPlayerSpellAt or not self._lastPlayerSpellId then
 			return
 		end
+		if ZSBT.ClassDB and ZSBT.ClassDB.ExcludedSpellId
+			and ZSBT.ClassDB.ExcludedSpellId(self._lastPlayerSpellId) then
+			return
+		end
 		local dt = tNow - (self._lastPlayerSpellAt or 0)
 		local maxDt = 2.5
 		if quietMode == true then
@@ -2355,6 +2364,10 @@ function Collector:handleChatSelfDamage(event, msg)
 	local tNow = now()
 	local token = self._castToken
 	if not token or not self._lastPlayerSpellAt or not self._lastPlayerSpellId then
+		return
+	end
+	if ZSBT.ClassDB and ZSBT.ClassDB.ExcludedSpellId
+		and ZSBT.ClassDB.ExcludedSpellId(self._lastPlayerSpellId) then
 		return
 	end
 	local dt = tNow - (self._lastPlayerSpellAt or 0)
@@ -4372,7 +4385,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				local lastCastId = self._lastPlayerSpellId
 				if type(lastCastAt) == "number" and type(lastCastId) == "number"
 					and (t - lastCastAt) >= 0 and (t - lastCastAt) <= 1.50
-					and not dotEntryForSpellId(lastCastId) then
+					and not dotEntryForSpellId(lastCastId)
+					and not (ZSBT.ClassDB and ZSBT.ClassDB.ExcludedSpellId
+						and ZSBT.ClassDB.ExcludedSpellId(lastCastId)) then
 					dotBlockedByRecentCast = true
 				end
 				if dotSpellId and not dotBlockedByRecentCast then
@@ -4526,6 +4541,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							maxAge = math.max(maxAge, 1.25)
 						end
 						if age >= 0 and age <= maxAge and castSchoolOk(self, lastId, school)
+							and not (ZSBT.ClassDB and ZSBT.ClassDB.ExcludedSpellId
+								and ZSBT.ClassDB.ExcludedSpellId(lastId))
 							and miwClaim(self, lastId, lastAt, t, school) then
 							matchedCast = { spellId = lastId, eligibleIcon = true }
 						else
