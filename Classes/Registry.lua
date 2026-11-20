@@ -169,17 +169,11 @@ function ClassDB.InferRole(spellId)
 		if ok and type(d) == "string" then desc = d end
 	end
 	if type(desc) ~= "string" or desc == "" then return "cast" end
-	local d = desc:lower()
-	if d:find("channel") then return "channel" end
-	-- Dot requires tick language ("every N sec"), not just duration
-	-- language: direct casts with DoT riders (Blood Boil -> Blood
-	-- Plague "over 24 sec") also say "over N sec" and a wrong "dot"
-	-- guess misroutes the spell's own direct hits — a wrong "cast"
-	-- guess is benign, so under-guess dot.
-	if d:find("every") or d:find("periodic") or d:find("over time") then
-		return "dot"
-	end
-	return "cast"
+	-- Shared parser lives in Classes/Spellbook.lua so the teach UI and
+	-- the book-derived layer classify descriptions identically.
+	local sb = ZSBT.Spellbook
+	local parsed = sb and sb.ParseDesc and sb.ParseDesc(desc, spellId)
+	return (parsed and parsed.role) or "cast"
 end
 
 function ClassDB.TeachSpell(spellId, name, role, budget)
@@ -267,15 +261,25 @@ function ClassDB.KnowledgeList()
 	return out
 end
 
--- Is this school mask inside the active module's declared damage kit?
--- Modules opt in via mod.schools = { [mask]=true, ... }; absence means
--- "no whitelist" and everything passes. An unverifiable (secret or
--- non-numeric) mask also passes — the veto only fires on certainty.
+-- Is this school mask inside the damage kit? The effective whitelist
+-- is the module's mod.schools UNION the spellbook-derived masks — the
+-- book only adds masks for spells the player currently knows, so it can
+-- widen the set to a new spec's kit but never invent a school the class
+-- doesn't have. Neither table present = "no whitelist", everything
+-- passes. An unverifiable (secret or non-numeric) mask also passes —
+-- the veto only fires on certainty.
 function ClassDB.SchoolAllowed(schoolMask)
 	local mod = ClassDB.ActiveModule()
-	if not mod or type(mod.schools) ~= "table" then return true end
+	local modSet = mod and type(mod.schools) == "table" and mod.schools or nil
+	local sb = ZSBT.Spellbook
+	local derived = sb and sb.Masks and sb:Masks() or nil
+	if modSet == nil and (derived == nil or next(derived) == nil) then
+		return true
+	end
 	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(schoolMask)) then return true end
-	return mod.schools[schoolMask] == true
+	if modSet and modSet[schoolMask] == true then return true end
+	if derived and derived[schoolMask] == true then return true end
+	return false
 end
 
 -- Does the active module already know this spellId? Returns a short
@@ -349,14 +353,32 @@ function ClassDB.DotEntry(spellId)
 		return te._dotEntry
 	end
 	local mod = ClassDB.ActiveModule()
-	if not mod or not mod.dots then return nil end
-	buildDotIndex(mod)
-	local sn = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or nil
-	if type(sn) == "string" and sn ~= "" then
-		local e = mod._dotNames[sn]
+	if mod and mod.dots then
+		buildDotIndex(mod)
+		local sn = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or nil
+		if type(sn) == "string" and sn ~= "" then
+			local e = mod._dotNames[sn]
+			if e then return e end
+		end
+		local e = mod._dotIds[spellId]
 		if e then return e end
 	end
-	return mod._dotIds[spellId]
+	-- Spellbook-derived fallback: the spell is in the player's current
+	-- book and its description parsed as periodic, so seed it like a
+	-- module dot even though no table lists it yet.
+	local sb = ZSBT.Spellbook
+	local rec = sb and sb.Entry and sb:Entry(spellId)
+	if rec and rec.role == "dot" then
+		rec._dotEntry = rec._dotEntry or {
+			names = { rec.name or tostring(spellId) },
+			_canon = rec.name,
+			ids = { spellId },
+			school = rec.masks and rec.masks[1] or nil,
+			_derived = true,
+		}
+		return rec._dotEntry
+	end
+	return nil
 end
 
 function ClassDB.IsDotSpell(spellId)
@@ -385,14 +407,32 @@ function ClassDB.ChannelMatch(spellId)
 		return te._chan
 	end
 	local mod = ClassDB.ActiveModule()
-	if not mod or not mod.channels then return nil end
-	buildChannelIndex(mod)
-	local sn = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or nil
-	if type(sn) == "string" and sn ~= "" then
-		local c = mod._chanNames[sn]
+	if mod and mod.channels then
+		buildChannelIndex(mod)
+		local sn = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or nil
+		if type(sn) == "string" and sn ~= "" then
+			local c = mod._chanNames[sn]
+			if c then return c end
+		end
+		local c = mod._chanIds[spellId]
 		if c then return c end
 	end
-	return mod._chanIds[spellId]
+	-- Spellbook-derived fallback, same as DotEntry: a spell in the
+	-- current book that parses as channeled opens a tick window even
+	-- without a module entry. Duration comes from castTime (channel
+	-- spells report it), else the taught-entry defaults.
+	local sb = ZSBT.Spellbook
+	local rec = sb and sb.Entry and sb:Entry(spellId)
+	if rec and rec.role == "channel" then
+		rec._chan = rec._chan or {
+			names = { rec.name or tostring(spellId) },
+			duration = tonumber(rec.duration) or 8,
+			tickMin = tonumber(rec.tickMin) or 0.4,
+			_derived = true,
+		}
+		return rec._chan
+	end
+	return nil
 end
 
 ---------------------------------------------------------------------------

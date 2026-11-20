@@ -65,6 +65,7 @@ Parser\Incoming_Detect.lua
 Parser\Outgoing_Detect.lua
 Parser\State_Manager.lua
 Parser\Correlation_Logic.lua
+Classes\Spellbook.lua
 Classes\Registry.lua
 Classes\Warlock.lua
 Classes\Warrior.lua
