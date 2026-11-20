@@ -135,7 +135,6 @@ local COLOR_TOLERANCE = 0.02
 local LINE_KEEP_SEC = 2.5
 local LINE_MAX = 96
 local VETO_WINDOW = 0.30
-local FEED_DEAD_SEC = 8.0
 
 ZB._lines = ZB._lines or {}
 
@@ -348,25 +347,16 @@ function ZB:IsTrusted()
     return ZB._trusted == true
 end
 
--- True while no classified line has arrived recently. Transient by
--- design: out-of-combat gaps produce no lines, so a stale feed must not
--- latch the veto off for the session — it re-engages as soon as lines
--- resume. _lastLineAt == 0 (nothing seen yet) is NOT stale: early
--- candidates simply defer and pair once the feed starts.
-local function feedDead()
-    local last = ZB._lastLineAt or 0
-    if last <= 0 then return false end
-    local tNow = GetTime and GetTime() or 0
-    return tNow - last > FEED_DEAD_SEC
-end
-
 -- True only when the ownership veto can actually decide: filter
--- trusted AND watchdogs have not disabled it. Upstream gates may use this
--- to route otherwise-dropped candidates through emit() so the
--- deferred line pairing can prove them.
+-- trusted AND watchdogs have not disabled it. Upstream gates use this
+-- to route otherwise-dropped candidates through emit() so deferred
+-- line pairing can prove them. A quiet feed is NOT a broken feed —
+-- out-of-combat lulls produce no lines by definition, and the wound
+-- that ends the lull produces the very line that proves it. Gating on
+-- feedDead here killed openers at intake: the feed could never warm
+-- because the hit that would wake it died first.
 function ZB:VetoActive()
-    if ZB._trusted ~= true or ZB._vetoDisabled then return false end
-    return not feedDead()
+    return ZB._trusted == true and not ZB._vetoDisabled
 end
 
 local function say(msg)
@@ -610,13 +600,13 @@ ZB._flushAt = ZB._flushAt or 0
 
 local function vetoDisabledNow()
     if ZB._vetoDisabled then return true end
-    -- Feed presumed dead: fall back to heuristics rather than eating
-    -- every outgoing number. No latch — combat lulls are normal.
-    if feedDead() then return true end
     -- Cold start: no line has ever been classified this session. The
     -- veto has nothing to pair against — deferred candidates would all
     -- die at flush, which is why openers go silent until the feed warms.
     -- Emit immediately until the first line arrives, same as untrusted.
+    -- A quiet-but-seen feed is different: queue and let the wound's own
+    -- line prove it when it lands, instead of emitting unproven (which
+    -- would pass party/follower hits on the shared target too).
     if (ZB._lastLineAt or 0) <= 0 then return true end
     return false
 end
