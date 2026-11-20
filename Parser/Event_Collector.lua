@@ -237,6 +237,12 @@ castSchoolOk = function(self, spellId, school)
 	if facts and type(facts.school) == "number" then
 		return spellSchoolFits(facts.school, school)
 	end
+	-- Module-declared school gates next (mod.dots/channels): verified
+	-- data for exactly the spells whose tooltips omit a damage school.
+	if ZSBT.ClassDB and ZSBT.ClassDB.DeclaredSchoolFits then
+		local fits = ZSBT.ClassDB.DeclaredSchoolFits(spellId, school)
+		if fits ~= nil then return fits end
+	end
 	return spellSchoolFits(self._learnedSpellSchool[spellId], school)
 end
 
