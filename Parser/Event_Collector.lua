@@ -317,6 +317,7 @@ local function emit(eventType, payload)
 		local petSchoolForeign = ZSBT.ClassDB and ZSBT.ClassDB.PetSchoolAllowed
 			and ZSBT.ClassDB.PetSchoolAllowed(payload.schoolMask) == false
 		if payload.spellId ~= nil or petSchoolForeign then
+			payload._petRoute = nil
 			local zbtX = ZSBT.ZBattleText
 			if zbtX and zbtX.FileLog then
 				zbtX:FileLog(("PET_ROUTE_STRIP sid=%s school=%s"):format(

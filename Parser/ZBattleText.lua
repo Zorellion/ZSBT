@@ -680,7 +680,19 @@ local function deliverOutgoing(payload)
         end
         local ev = "OUTGOING_DAMAGE_COMBAT"
         if payload and payload._petRoute == true then
-            ev = "PET_DAMAGE_COMBAT"
+            -- Same guards as emit()'s swap: a real player spellId or a
+            -- pet-foreign school strips the route — the deferred path
+            -- can deliver a payload whose pet guess predates a later
+            -- pending-cast claim (Conflagrate named on pet scroll).
+            local petSchoolForeign = ZSBT.ClassDB and ZSBT.ClassDB.PetSchoolAllowed
+                and ZSBT.ClassDB.PetSchoolAllowed(payload.schoolMask) == false
+            if payload.spellId ~= nil or petSchoolForeign then
+                payload._petRoute = nil
+                ZB:FileLog(("PET_ROUTE_STRIP sid=%s school=%s"):format(
+                    tostring(payload.spellId), tostring(payload.schoolMask)))
+            else
+                ev = "PET_DAMAGE_COMBAT"
+            end
         end
         ZB:AuditDamageEvent(ev, payload)
         ec._sink(ev, payload)
