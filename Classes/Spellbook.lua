@@ -324,9 +324,9 @@ local function enumTalentSpells(sink, have)
 	end
 	local added = 0
 	for _, treeID in ipairs(cInfo.treeIDs) do
-		local okT, tInfo = pcall(C_Traits.GetTreeInfo, configID, treeID)
-		if okT and type(tInfo) == "table" and type(tInfo.nodes) == "table" then
-			for _, nodeID in ipairs(tInfo.nodes) do
+		local okT, nodeIDs = pcall(C_Traits.GetTreeNodes, treeID)
+		if okT and type(nodeIDs) == "table" then
+			for _, nodeID in ipairs(nodeIDs) do
 				local okN, nInfo = pcall(C_Traits.GetNodeInfo, configID, nodeID)
 				local ae = okN and type(nInfo) == "table" and nInfo.activeEntry or nil
 				local entryID = type(ae) == "table" and ae.entryID
@@ -341,15 +341,30 @@ local function enumTalentSpells(sink, have)
 					local sid = okD and type(dInfo) == "table" and tonumber(dInfo.spellID) or nil
 					if type(sid) == "number" and sid > 0 and not have[sid] then
 						have[sid] = true
-						local name
-						if C_Spell and C_Spell.GetSpellName then
+						-- Definition override text is the node's own
+						-- tooltip — better than the base spell's when
+						-- they differ (talent modifiers).
+						local desc, name
+						if type(dInfo) == "table" then
+							local od = dInfo.overrideDescription
+							if type(od) == "string" and od ~= ""
+								and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(od)) then
+								desc = od
+							end
+							local on = dInfo.overrideName
+							if type(on) == "string" and on ~= ""
+								and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(on)) then
+								name = on
+							end
+						end
+						if name == nil and C_Spell and C_Spell.GetSpellName then
 							local okNm, nm = pcall(C_Spell.GetSpellName, sid)
 							if okNm and type(nm) == "string" and nm ~= ""
 								and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(nm)) then
 								name = nm
 							end
 						end
-						sink[#sink + 1] = { sid = sid, name = name, talent = true }
+						sink[#sink + 1] = { sid = sid, name = name, talent = true, desc = desc }
 						added = added + 1
 					end
 				end
@@ -372,19 +387,24 @@ function Spellbook:Scan()
 	local entries, byName, masks, petEntries = {}, {}, {}, {}
 	for _, e in ipairs(raw) do
 		local rec = { sid = e.sid, name = e.name, role = "cast", talent = e.talent or nil }
-		if e.name and C_Spell and C_Spell.GetSpellDescription then
-			local ok, desc = pcall(C_Spell.GetSpellDescription, e.sid)
-			if ok and type(desc) == "string" then
-				local parsed = Spellbook.ParseDesc(desc, e.sid)
-				if parsed then
-					rec.role = parsed.role
-					rec.duration = parsed.duration
-					rec.tickMin = parsed.tickMin
-					rec.interval = parsed.interval
-					rec.dotTotal = parsed.dotTotal
-					rec.dotDur = parsed.dotDur
-					rec.masks = parsed.masks
-				end
+		-- Node override text wins when present; else the spell's own
+		-- description. Name isn't required — sid-keyed records still
+		-- feed the school gate either way.
+		local desc = e.desc
+		if desc == nil and C_Spell and C_Spell.GetSpellDescription then
+			local ok, d2 = pcall(C_Spell.GetSpellDescription, e.sid)
+			if ok and type(d2) == "string" then desc = d2 end
+		end
+		if type(desc) == "string" then
+			local parsed = Spellbook.ParseDesc(desc, e.sid)
+			if parsed then
+				rec.role = parsed.role
+				rec.duration = parsed.duration
+				rec.tickMin = parsed.tickMin
+				rec.interval = parsed.interval
+				rec.dotTotal = parsed.dotTotal
+				rec.dotDur = parsed.dotDur
+				rec.masks = parsed.masks
 			end
 		end
 		entries[e.sid] = rec
@@ -489,7 +509,7 @@ function Spellbook:Dump(printFn)
 		if rec.role == "channel" then chans = chans + 1 end
 	end
 	p(("Spellbook: %d spells (%d talent, %d dot, %d channel), %d pet, %.1fms")
-		:format(n, dots, chans, (function() local c = 0 for _ in pairs(self._petEntries) do c = c + 1 end return c end)(), self._scanMs or 0))
+		:format(n, talents, dots, chans, (function() local c = 0 for _ in pairs(self._petEntries) do c = c + 1 end return c end)(), self._scanMs or 0))
 	local masks = {}
 	for m in pairs(self._masks) do masks[#masks + 1] = m end
 	table.sort(masks)
