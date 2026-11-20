@@ -3512,24 +3512,19 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		if actionStr == "WOUND" then
 			-- Same hit reported through a second unit token (target /
 			-- softenemy / nameplate remap) arrives within a frame or two.
-			-- Collapse repeat school+crit twins inside 50ms so duplicates
+			-- Collapse exact school+crit twins inside 50ms so duplicates
 			-- cannot steal palette lines from distinct hits. Only dedups
 			-- safe-number schools; secret schools always pass through.
-			-- Grace of 2: a single hit reports up to three token aliases,
-			-- but two REAL identical hits (twin guardian strikes on one
-			-- mob) must also survive — the merge bucket re-collapses
-			-- whatever cannot claim its own palette line at flush.
+			-- A second real identical hit is provably indistinguishable
+			-- from a token alias here — letting it through double-displays
+			-- single hits, so same-instant same-signature twins merge.
 			if ZSBT.IsSafeNumber(school) then
 				local sig = self._lastTargetWoundSig
-				if sig and sig.school == school and sig.crit == isCrit
-					and (t - sig.t) >= 0 and (t - sig.t) < 0.05 then
-					sig.n = (sig.n or 1) + 1
-					if sig.n > 2 then
-						return
-					end
-				else
-					self._lastTargetWoundSig = { t = t, school = school, crit = isCrit, n = 1 }
+				if sig and (t - sig.t) >= 0 and (t - sig.t) < 0.05
+					and sig.school == school and sig.crit == isCrit then
+					return
 				end
+				self._lastTargetWoundSig = { t = t, school = school, crit = isCrit }
 			end
 			local zbtc = ZSBT.ZBattleText
 			if zbtc and zbtc.FileLog then
