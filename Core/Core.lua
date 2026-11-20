@@ -352,8 +352,7 @@ function Core:OutgoingStrictnessTier()
 		return "live"
 	end
 	if self.IsInPvPInstanceType and self:IsInPvPInstanceType() then
-		local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
-		if not (g and g.pvpRelaxed == true) then
+		if not self:IsPvPRelaxedEnabled() then
 			return "dead_pvp"
 		end
 		-- pvpRelaxed falls through to the normal group/solo check.
@@ -367,6 +366,39 @@ function Core:OutgoingStrictnessTier()
 		return "dead_group"
 	end
 	return "dead_solo"
+end
+
+-- "Require combat-log proof for outgoing": suppress unattributed
+-- candidates even while the veto is live (paranoid mode).
+function Core:IsRequireProofEnabled()
+	local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+	return g ~= nil and g.requireProof == true
+end
+
+-- "Show unproven outgoing in groups": relaxes the automatic
+-- veto-dead group/instance/PvP restrict (never relaxes an explicitly
+-- enabled strict toggle — those are the user's own choice).
+function Core:IsShowUnprovenInGroupsEnabled()
+	local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+	return g ~= nil and g.showUnprovenInGroups == true
+end
+
+-- "Relaxed outgoing in PvP": opt out of auto-strict in pvp/arena.
+function Core:IsPvPRelaxedEnabled()
+	local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+	return g ~= nil and g.pvpRelaxed == true
+end
+
+-- True when the context tier alone forces restrict — i.e., veto-dead
+-- plus a bleed-capable context, not relaxed by the user. Legacy
+-- toggles are intentionally NOT part of this; Pulse_Engine's
+-- damage-meter fallback keys off the same automatic signal.
+function Core:IsAutoRestrictActive()
+	if self.IsShowUnprovenInGroupsEnabled and self:IsShowUnprovenInGroupsEnabled() then
+		return false
+	end
+	local tier = self:OutgoingStrictnessTier()
+	return tier == "dead_group" or tier == "dead_pvp"
 end
 
 function Core:ShouldRestrictOutgoingFallback()

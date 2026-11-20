@@ -22,6 +22,10 @@ ZSBT.DEFAULTS = {
             strictOutgoingCombatLogOnly = false,
             quietOutgoingWhenIdle = false,
             quietOutgoingAutoAttacks = false,
+            -- Context-tiered ownership model (veto-live vs veto-dead).
+            requireProof = false,
+            showUnprovenInGroups = false,
+            pvpRelaxed = false,
 			pvpStrictEnabled = true,
 			pvpStrictDisableAutoAttackFallback = true,
 			damageMeterOutgoingFallback = true,

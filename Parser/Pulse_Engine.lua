@@ -112,9 +112,20 @@ local function canUseDamageMeterIncoming()
 		and Enum.DamageMeterType.DamageTaken
 end
 
+-- Damage-meter polls only run while outgoing is actually restricted:
+-- the context tier (veto-dead + group/PvP, not user-relaxed) or the
+-- legacy Dungeon/Raid Aware toggle for profiles that still have it on.
+local function outgoingRestrictedNow()
+	if ZSBT.Core and ZSBT.Core.IsAutoRestrictActive and ZSBT.Core:IsAutoRestrictActive() then
+		return true
+	end
+	return ZSBT.Core and ZSBT.Core.ShouldRestrictOutgoingFallback
+		and ZSBT.Core:ShouldRestrictOutgoingFallback() or false
+end
+
 local function shouldPollDamageMeterOutgoing()
 	if not isDamageMeterOutgoingEnabled() then return false end
-	if not (ZSBT.Core and ZSBT.Core.ShouldRestrictOutgoingFallback and ZSBT.Core:ShouldRestrictOutgoingFallback()) then
+	if not outgoingRestrictedNow() then
 		return false
 	end
 	if not canUseDamageMeter() then return false end
@@ -124,7 +135,7 @@ end
 
 local function shouldPollDamageMeterIncoming()
 	if not isDamageMeterIncomingEnabled() then return false end
-	if not (ZSBT.Core and ZSBT.Core.ShouldRestrictOutgoingFallback and ZSBT.Core:ShouldRestrictOutgoingFallback()) then
+	if not outgoingRestrictedNow() then
 		return false
 	end
 	if not canUseDamageMeterIncoming() then return false end

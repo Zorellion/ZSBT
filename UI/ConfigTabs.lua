@@ -2816,59 +2816,59 @@ critInlineHeader = {
 				end,
 			},
 
-			headerDungeonRaidTuning = {
+			headerOutgoingOwnership = {
 				type  = "header",
-				name  = L["Dungeon/Raid Tuning"],
+				name  = L["Outgoing Ownership"],
 				order = 3.61,
 			},
-			dungeonRaidTuningHelp = {
+			outgoingOwnershipHelp = {
 				type  = "description",
-				name  = L["These settings adjust outgoing detection behavior specifically for dungeons/raids/follower dungeons where combat text and attribution can be restricted or ambiguous. Use them to reduce group/party cross-talk or to restore missing numbers in restricted content."],
+				name  = L["ZSBT proves outgoing hits are yours by pairing them with your combat-log lines. That pairing runs automatically everywhere — solo, groups, dungeons, and PvP. Only if the combat-log feed ever goes quiet does ZSBT fall back to conservative attribution: solo stays fully permissive, while grouped or PvP content requires hits to correlate with your casts, swings, or active DoTs so nobody else's damage can bleed in. You normally never need these toggles."],
 				order = 3.62,
 				width = "full",
 			},
-			autoRelaxOutgoingWhenSolo = {
+			requireProof = {
 				type  = "toggle",
-				name  = L["Auto-Relax Outgoing When Solo (Legacy Instances)"],
-				desc  = L["When enabled, ZSBT will temporarily relax strict/quiet outgoing attribution modes while you are alone inside a party/raid instance (e.g., soloing old raids). This helps one-shot kills still show outgoing numbers without changing your normal open-world and group behavior."],
+				name  = L["Require Combat-Log Proof for Outgoing"],
+				desc  = L["Strictest mode: outgoing hits must pair with a combat-log line or a consumed cast record before they display. Hits that cannot be proven are hidden entirely — maximum protection against showing other players' damage, at the cost of some real hits going quiet on clients with incomplete combat feeds."],
 				order = 3.63,
 				width = "full",
-				get   = function() return ZSBT.db.profile.general.autoRelaxOutgoingWhenSolo == true end,
+				get   = function() return ZSBT.db.profile.general.requireProof == true end,
 				set   = function(_, val)
-					ZSBT.db.profile.general.autoRelaxOutgoingWhenSolo = val and true or false
+					ZSBT.db.profile.general.requireProof = val and true or false
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},
-
-			instanceAwareOutgoing = {
+			showUnprovenInGroups = {
 				type  = "toggle",
-				name  = L["Dungeon/Raid Aware Outgoing"],
-				desc  = L["When enabled, ZSBT will restrict outgoing detection in dungeons and raids to avoid showing group/raid target damage as your outgoing. This may reduce outgoing numbers in group content."],
+				name  = L["Show Unproven Outgoing in Groups"],
+				desc  = L["Only applies if the combat-log feed goes quiet while you are in a group, dungeon, raid, or battleground. By default ZSBT then requires hits to correlate with your activity so foreign damage cannot bleed in. Enable this to keep full outgoing flow instead, accepting that a group member's hit on your target could rarely appear as yours."],
+				order = 3.64,
+				width = "full",
+				get   = function() return ZSBT.db.profile.general.showUnprovenInGroups == true end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.showUnprovenInGroups = val and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			pvpRelaxed = {
+				type  = "toggle",
+				name  = L["Relaxed Outgoing in PvP"],
+				desc  = L["Only applies inside battlegrounds and arenas, and only if the combat-log feed goes quiet there. By default PvP uses the strictest fallback attribution because enemy players are the highest bleed-through risk. Enable this to treat PvP like normal group content instead."],
 				order = 3.65,
 				width = "full",
-				get   = function() return ZSBT.db.profile.general.instanceAwareOutgoing == true end,
+				get   = function() return ZSBT.db.profile.general.pvpRelaxed == true end,
 				set   = function(_, val)
-					ZSBT.db.profile.general.instanceAwareOutgoing = val and true or false
-					if val ~= true then
-						ZSBT.db.profile.general.damageMeterOutgoingFallback = false
-						ZSBT.db.profile.general.damageMeterIncomingFallback = false
-						ZSBT.db.profile.general.autoAttackRestrictFallback = false
-					end
-					if ZSBT.Core and ZSBT.Core.UpdateInstanceState then
-						ZSBT.Core:UpdateInstanceState(true)
-					end
+					ZSBT.db.profile.general.pvpRelaxed = val and true or false
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},
 			damageMeterOutgoingFallback = {
 				type  = "toggle",
 				name  = L["Use Damage Meter Outgoing Fallback (Experimental)"],
-				desc  = L["When Dungeon/Raid Aware Outgoing is enabled and outgoing becomes too quiet in follower dungeons/instances, this can use Blizzard's damage meter totals (Retail 12.x) as an outgoing fallback. This may be less detailed (no crit flags) and can increase duplicate numbers if other sources are also active."],
+				desc  = L["When outgoing is restricted in group content (combat-log feed quiet) and your numbers go silent, this can use Blizzard's damage meter totals (Retail 12.x) as an outgoing fallback. Less detailed (no crit flags) and can increase duplicate numbers if other sources are also active."],
 				order = 3.66,
 				width = "full",
-				hidden = function()
-					return ZSBT.db.profile.general.instanceAwareOutgoing ~= true
-				end,
 				get   = function() return ZSBT.db.profile.general.damageMeterOutgoingFallback == true end,
 				set   = function(_, val)
 					ZSBT.db.profile.general.damageMeterOutgoingFallback = val and true or false
@@ -2878,124 +2878,12 @@ critInlineHeader = {
 			damageMeterIncomingFallback = {
 				type  = "toggle",
 				name  = L["Use Damage Meter Incoming Damage Fallback (Experimental)"],
-				desc  = L["When Dungeon/Raid Aware Outgoing is enabled and incoming combat text becomes ambiguous/secret in follower dungeons, this can use Blizzard's damage meter damage-taken totals (Retail 12.x) as a last-resort incoming damage fallback. This may be less detailed (no spell/school/crit flags) and can increase noise if other sources are also active."],
+				desc  = L["When outgoing is restricted in group content and incoming combat text becomes ambiguous/secret, this can use Blizzard's damage meter damage-taken totals (Retail 12.x) as a last-resort incoming damage fallback. Less detailed (no spell/school/crit flags) and can increase noise."],
 				order = 3.665,
 				width = "full",
-				hidden = function()
-					return ZSBT.db.profile.general.instanceAwareOutgoing ~= true
-				end,
 				get   = function() return ZSBT.db.profile.general.damageMeterIncomingFallback == true end,
 				set   = function(_, val)
 					ZSBT.db.profile.general.damageMeterIncomingFallback = val and true or false
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			autoAttackRestrictFallback = {
-				type  = "toggle",
-				name  = L["Show Auto Attacks in Instances (Experimental)"],
-				desc  = L["When Dungeon/Raid Aware Outgoing is enabled, auto-attacks may be suppressed in follower dungeons because physical UNIT_COMBAT(target) has no source attribution. This option enables a conservative last-resort auto-attack fallback in restrict mode. It may occasionally misattribute follower/other melee swings."],
-				order = 3.6655,
-				width = "full",
-				hidden = function()
-					return ZSBT.db.profile.general.instanceAwareOutgoing ~= true
-				end,
-				get   = function() return ZSBT.db.profile.general.autoAttackRestrictFallback == true end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.autoAttackRestrictFallback = val and true or false
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-
-			headerPvPTuning = {
-				type  = "header",
-				name  = L["PvP Tuning"],
-				order = 3.6656,
-			},
-			pvpTuningHelp = {
-				type  = "description",
-				name  = L["These settings tighten outgoing attribution while inside battlegrounds and arenas. They are designed to reduce bleed-through (other players showing as your outgoing) and to improve icon/color correctness by requiring stronger ownership signals."],
-				order = 3.6657,
-				width = "full",
-			},
-			pvpStrictEnabled = {
-				type  = "toggle",
-				name  = L["Enable PvP Strict Mode (Experimental)"],
-				desc  = L["Only applies inside PvP/Arena instances. Prioritizes correctness over completeness: expect fewer outgoing numbers, but fewer wrong icons/colors and less bleed-through."],
-				order = 3.6658,
-				width = "full",
-				get   = function() return ZSBT.db.profile.general.pvpStrictEnabled == true end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.pvpStrictEnabled = val and true or false
-					if ZSBT.Core and ZSBT.Core.UpdateInstanceState then
-						ZSBT.Core:UpdateInstanceState(true)
-					end
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			pvpStrictDisableAutoAttackFallback = {
-				type  = "toggle",
-				name  = L["Disable Auto-Attack Fallback (PvP)"],
-				desc  = L["When PvP Strict Mode is enabled, suppress the last-resort auto-attack fallback used in restricted attribution modes."],
-				order = 3.66585,
-				width = "full",
-				hidden = function() return ZSBT.db.profile.general.pvpStrictEnabled ~= true end,
-				get   = function() return ZSBT.db.profile.general.pvpStrictDisableAutoAttackFallback ~= false end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.pvpStrictDisableAutoAttackFallback = val and true or false
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-
-			headerExperimentalTuning = {
-				type  = "header",
-				name  = L["Open-World Tuning"],
-				order = 3.666,
-			},
-			experimentalTuningHelp = {
-				type  = "description",
-				name  = L["These settings change how ZSBT attributes outgoing events in open world and edge cases. Enable them if you see incorrect attribution (for example, other players' damage on shared targets). Some options may reduce the amount of outgoing text shown."],
-				order = 3.667,
-				width = "full",
-			},
-			strictOutgoingCombatLogOnly = {
-				type  = "toggle",
-				name  = L["Strict Outgoing (Combat Log Only)"],
-				desc  = L["Experimental mode to reduce incorrect outgoing attribution. This option is intended to stop cases where other players' damage shows up as your outgoing on shared targets (like training dummies). Depending on your client/environment, it may reduce outgoing numbers in some content."],
-				order = 3.668,
-				width = "full",
-				get   = function() return ZSBT.db.profile.general.strictOutgoingCombatLogOnly == true end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.strictOutgoingCombatLogOnly = val and true or false
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			quietOutgoingWhenIdle = {
-				type  = "toggle",
-				name  = L["Quiet Outgoing When Idle (Experimental)"],
-				desc  = L["Suppress outgoing numbers from ambiguous attribution sources unless they can be correlated to your own casts/periodic effects. This can prevent other players' damage on shared targets from being misattributed as your outgoing, but may reduce outgoing text (especially auto-attacks)."],
-				order = 3.669,
-				width = "full",
-				get   = function() return ZSBT.db.profile.general.quietOutgoingWhenIdle == true end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.quietOutgoingWhenIdle = val and true or false
-					if val ~= true then
-						ZSBT.db.profile.general.quietOutgoingAutoAttacks = false
-					end
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
-				end,
-			},
-			quietOutgoingAutoAttacks = {
-				type  = "toggle",
-				name  = L["Allow Auto Attacks While Quiet (Experimental)"],
-				desc  = L["When Quiet Outgoing When Idle is enabled, auto-attacks are suppressed for correctness (UNIT_COMBAT(target) has no source attribution). This option re-enables a conservative auto-attack fallback when your auto-attack is actually active, but it can still occasionally misattribute swings on shared targets."],
-				order = 3.6695,
-				width = "full",
-				hidden = function()
-					return ZSBT.db.profile.general.quietOutgoingWhenIdle ~= true
-				end,
-				get   = function() return ZSBT.db.profile.general.quietOutgoingAutoAttacks == true end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.quietOutgoingAutoAttacks = val and true or false
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},

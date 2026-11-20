@@ -363,8 +363,47 @@ function Addon:OnInitialize()
 		self.db.global.migrations.generalDefaults_v2 = true
 	end
 
+	-- Context-tiered ownership migration: map the retired pre-veto
+	-- strictness keys onto the three surviving toggles. Only fires once.
+	local function migrateOutgoingTiers_v1()
+		if not self.db then return end
+		self.db.global = self.db.global or {}
+		self.db.global.migrations = self.db.global.migrations or {}
+		if self.db.global.migrations.outgoingTiers_v1 == true then return end
+
+		local profiles = self.db.profiles
+		if type(profiles) == "table" then
+			for _, prof in pairs(profiles) do
+				if type(prof) == "table" then
+					local g = prof.general
+					if type(g) == "table" then
+						if g.strictOutgoingCombatLogOnly == true then
+							g.requireProof = true
+						end
+						if g.autoAttackRestrictFallback == true then
+							g.showUnprovenInGroups = true
+						end
+						-- pvpStrictEnabled's default was already the
+						-- strict behavior the new model makes automatic;
+						-- users who explicitly disabled it cannot be
+						-- distinguished from never-touched, so
+						-- pvpRelaxed is left to them to opt into.
+					end
+					local cm = prof.classModule
+					if type(cm) == "table" and cm.hideUnattributed == true then
+						prof.general = prof.general or {}
+						prof.general.requireProof = true
+					end
+				end
+			end
+		end
+
+		self.db.global.migrations.outgoingTiers_v1 = true
+	end
+
 	migrateGeneralDefaultsOnce()
 	migrateGeneralDefaults_v2()
+	migrateOutgoingTiers_v1()
 
 	-- Legacy combat-log filters: ZSBT 3.4-3.6 and 4.x installed a "ZSBT"
 	-- filter (and the embedded ZCT a "ZCT" filter) into

@@ -945,7 +945,9 @@ function ZB:OfferOutgoing(payload)
     -- it must not feed sustainedRejection.
     if candidateTier(payload) == 2 then
         local prof = ZSBT.db and ZSBT.db.profile
-        if prof and type(prof.classModule) == "table" and prof.classModule.hideUnattributed == true then
+        local strictProof = ZSBT.Core and ZSBT.Core.IsRequireProofEnabled
+            and ZSBT.Core:IsRequireProofEnabled() == true
+        if strictProof or (prof and type(prof.classModule) == "table" and prof.classModule.hideUnattributed == true) then
             ZB:Audit(("AUDSUPP ht=%.3f school=%s crit=%s src=%s"):format(
                 tonumber(tHit) or 0, audSafe(payload.schoolMask), tostring(payload.isCrit == true),
                 tostring(payload._petRoute == true and "pet" or "generic")))
