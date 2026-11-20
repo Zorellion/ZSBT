@@ -164,6 +164,7 @@ ZSBT.AUTOATTACK_MODES = {
 ZSBT.PET_AGGREGATION = {
     ["Generic (\"Pet Hit X\")"]   = "generic",
     ["Attempt Pet Name"]          = "named",
+    ["None (Numbers Only)"]       = "none",
 }
 
 ------------------------------------------------------------------------
