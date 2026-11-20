@@ -37,6 +37,12 @@ mod.channels = {
 	{ names = { "Rain of Fire" }, ids = { 1214467, 5740 }, duration = 8.0, tickMin = 0.4, school = 4 },
 }
 
+-- Health Funnel drains the caster, never an enemy — its periodic
+-- tooltip would seed a derived dot entry and name enemy wounds.
+mod.exclude = {
+	"Health Funnel",
+}
+
 -- Per-cast-instance naming budget for the recency-stamp paths: how many
 -- hits one cast may claim. Multi-hit bursts (AoE/splash) claim several;
 -- single-target nukes stay at the default of 1 so one cast can never

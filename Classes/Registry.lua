@@ -157,6 +157,34 @@ local function buildChannelIndex(mod)
 	mod._chanIds = ids
 end
 
+local function buildExcludeIndex(mod)
+	if mod._exclIndexBuilt then return end
+	mod._exclIndexBuilt = true
+	local names = {}
+	for _, n in ipairs(mod.exclude or {}) do
+		names[n] = true
+	end
+	mod._exclNames = names
+end
+
+-- Module-denied spells (mod.exclude = { names }): a name here can never
+-- resolve to a dot/channel entry through ANY path — module, taught, or
+-- spellbook-derived. Used for spells that parse as periodic but never
+-- damage an enemy (Health Funnel drains the caster): the book fallback
+-- would otherwise re-add what the module deliberately left out.
+function ClassDB.ExcludedSpellId(spellId)
+	if type(spellId) ~= "number" then return false end
+	local mod = ClassDB.ActiveModule()
+	if not mod or type(mod.exclude) ~= "table" then return false end
+	buildExcludeIndex(mod)
+	local sn = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or nil
+	if type(sn) ~= "string" or sn == "" then return false end
+	if sn:find("(", 1, true) then
+		sn = (sn:gsub("%s*%(%s*[Rr]ank%s+%d+%s*%)%s*$", ""))
+	end
+	return mod._exclNames[sn] == true
+end
+
 ---------------------------------------------------------------------------
 -- Player-taught spells (drag-and-drop on the Class page). Stored per
 -- character: db.char.classTaught[spellId] = { name, role, budget? }.
@@ -401,6 +429,7 @@ end
 -- id-set as fallback when the name cannot be resolved.
 function ClassDB.DotEntry(spellId)
 	if type(spellId) ~= "number" then return nil end
+	if ClassDB.ExcludedSpellId(spellId) then return nil end
 	local te = taughtEntry(spellId)
 	if te and te.role == "dot" then
 		te._dotEntry = te._dotEntry or {
@@ -462,6 +491,7 @@ end
 
 function ClassDB.ChannelMatch(spellId)
 	if type(spellId) ~= "number" then return nil end
+	if ClassDB.ExcludedSpellId(spellId) then return nil end
 	local te = taughtEntry(spellId)
 	if te and te.role == "channel" then
 		te._chan = te._chan or {

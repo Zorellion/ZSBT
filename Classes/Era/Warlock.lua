@@ -57,8 +57,15 @@ mod.channels = {
 	-- proportional so foreign fire ticks can't ride a wide window.
 	{ names = { "Rain of Fire" }, duration = 9.0,  tickMin = 1.2, school = 4,  interval = 2 },
 	{ names = { "Hellfire" },     duration = 16.0, tickMin = 0.5, school = 4,  interval = 1 },
-	-- Health Funnel deliberately absent: it drains the CASTER's health,
-	-- not a target's — nothing here for it to honestly name.
+}
+
+-- Denied outright: Health Funnel drains the CASTER's health to heal the
+-- pet — its tooltip parses as periodic, so the spellbook-derived dot
+-- fallback would seed it and let it name enemy wounds (observed: a
+-- wound on a second mob displaying "Health Funnel"). Absence from the
+-- tables is not enough; exclusion survives every derivation path.
+mod.exclude = {
+	"Health Funnel",
 }
 
 -- Era wand "Shoot" damage can carry almost any school (shadow/fire/
