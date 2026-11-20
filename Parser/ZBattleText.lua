@@ -612,6 +612,11 @@ local function vetoDisabledNow()
     -- Feed presumed dead: fall back to heuristics rather than eating
     -- every outgoing number. No latch — combat lulls are normal.
     if feedDead() then return true end
+    -- Cold start: no line has ever been classified this session. The
+    -- veto has nothing to pair against — deferred candidates would all
+    -- die at flush, which is why openers go silent until the feed warms.
+    -- Emit immediately until the first line arrives, same as untrusted.
+    if (ZB._lastLineAt or 0) <= 0 then return true end
     return false
 end
 
@@ -732,7 +737,10 @@ local function flushPending()
         for i = 1, #pend do
             local p = pend[i]
             if p and candidateTier(p.payload) == pass then
-                if ZB._vetoDisabled or not ZB._trusted then
+                -- Never-seen feed counts as untrusted: a candidate that
+                -- queued before we knew the feed was cold must not wait
+                -- for a line that cannot exist.
+                if ZB._vetoDisabled or not ZB._trusted or (ZB._lastLineAt or 0) <= 0 then
                     deliverOutgoing(p.payload)
                 else
                     local kind
