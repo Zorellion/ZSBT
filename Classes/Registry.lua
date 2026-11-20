@@ -517,13 +517,15 @@ function ClassDB.IsDotSpell(spellId)
 	return ClassDB.DotEntry(spellId) ~= nil
 end
 
--- Module-declared school verdict for a cast claim: does the active
--- module's dot/channel table pin this spellId to a school that fits the
--- wound's mask? Returns true/false when a declaration exists, nil when
--- the module says nothing (caller stays permissive/learned). Sits
--- between SpellFacts (tooltip) and learned schools in castSchoolOk —
--- it covers exactly the spells whose tooltips omit a damage school
--- (Fiery Brand: a physical wound was wearing its sid on ignorance).
+-- Known-school verdict for a cast claim: does a pre-combat source pin
+-- this spellId to a school that fits the wound's mask? Sources, in
+-- order: module dot/channel declarations, then the spellbook scan's
+-- derived masks. The book parsed descriptions at login while the text
+-- was still readable, so its masks are plain numbers that stay
+-- non-secret during combat — exactly when SpellFacts goes blind.
+-- Returns true/false when a verdict exists, nil when nothing is known
+-- (caller stays permissive/learned). Chaos (127) accepts the composite
+-- masks 124/126 the client reports on wounds.
 function ClassDB.DeclaredSchoolFits(spellId, school)
 	if type(spellId) ~= "number" or type(school) ~= "number" then return nil end
 	if ZSBT.IsSafeNumber
@@ -536,9 +538,19 @@ function ClassDB.DeclaredSchoolFits(spellId, school)
 		local c = ClassDB.ChannelMatch(spellId)
 		decl = c and c.school or nil
 	end
+	if decl == nil then
+		local sb = ZSBT.Spellbook
+		local rec = sb and sb.Entry and sb:Entry(spellId)
+		decl = rec and rec.masks or nil
+	end
 	if type(decl) == "table" then
 		if decl[school] == true then return true end
-		return decl[127] == true and (school == 124 or school == 126)
+		local has127 = decl[127] == true
+		for _, m in ipairs(decl) do
+			if m == school then return true end
+			if m == 127 then has127 = true end
+		end
+		return has127 and (school == 124 or school == 126)
 	end
 	if type(decl) == "number" then
 		if decl == school then return true end
