@@ -252,6 +252,20 @@ local function emit(eventType, payload)
 				payload.petBucket = "summons"
 			end
 		end
+		-- Class school whitelist: after every attribution attempt, a still-
+		-- unattributed hit carrying a school the active module cannot
+		-- produce is provably foreign (follower/party damage on a shared
+		-- target). Kill it here so it can neither emit nor queue for a
+		-- palette line. Autos are exempt (school-1 by definition) and an
+		-- unverifiable mask passes — the veto needs certainty, not hunches.
+		if payload.spellId == nil and payload.petSpellId == nil
+			and payload._petRoute ~= true and payload.isAuto ~= true
+			and ZSBT.ClassDB and ZSBT.ClassDB.SchoolAllowed
+			and not ZSBT.ClassDB.SchoolAllowed(payload.schoolMask) then
+			auditNote(("AUDDROP reason=FOREIGN_SCHOOL school=%s crit=%s"):format(
+				tostring(payload.schoolMask), tostring(payload.isCrit == true)))
+			return
+		end
 	end
 	-- Strict toggle also covers direct pet-path emits: PET_DAMAGE_COMBAT
 	-- bypasses the veto queue entirely, so without this check unnamed pet
