@@ -88,6 +88,7 @@ mod.castBudget = {
 	[385061] = 8,  -- Odyn's Fury Off-Hand cast (log-verified)
 	[385062] = 8,  -- Odyn's Fury cast 3 (log-verified)
 	[85288]  = 8,  -- Raging Blow (2 strike components; Meat Cleaver can cleave)
+	[5308]   = 5,  -- Execute (log-verified: Fury strikes MH+OH — dmg 280849 + Execute Off-Hand 163558)
 	[335097] = 8,  -- Crushing Blow (empowered Raging Blow; verify id)
 	[335096] = 6,  -- Bloodbath (empowered Bloodthirst; verify id)
 	[383917] = 6,  -- Annihilator (talent replacing Raging Blow; verify id)
