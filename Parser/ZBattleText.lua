@@ -656,24 +656,33 @@ end
 -- preference: each payload tries its own kind first, ranged last.
 local NONAUTO_KINDS = { direct = true, tick = true, shield = true, ranged = true }
 local NONAUTO_NO_RANGED = { direct = true, tick = true, shield = true }
+local NONAUTO_NO_TICK = { direct = true, shield = true }
 local TICK_KIND = { tick = true }
 local RANGED_KIND = { ranged = true }
 
 -- Ordered kind sets for a non-auto candidate: pass 1 is the wound's
 -- expected line kind, later passes widen toward the leftovers. A
--- periodic tick wants tick lines; a module-declared ranged spell
--- (wand Shoot) wants ranged first; everything else takes spell kinds
--- and reaches for ranged only as the final resort.
+-- periodic tick wants tick lines and can NEVER own a ranged line;
+-- a module-declared ranged spell (wand Shoot) wants ranged first and
+-- can NEVER own a periodic tick line. Spell wounds without an identity
+-- hint take spell kinds and reach for ranged only as the final resort.
 local function kindPreference(payload)
-    if payload and payload.isPeriodic == true then
-        return TICK_KIND, NONAUTO_NO_RANGED, RANGED_KIND
+    local sid = payload and payload.spellId or nil
+    local periodic = payload and payload.isPeriodic == true
+    local cdb = ZSBT.ClassDB
+    if not periodic and type(sid) == "number"
+        and cdb and cdb.DotEntry and cdb.DotEntry(sid) ~= nil then
+        -- A wound stamped with a dot sid via any path (pending cast,
+        -- matchbox, off-target) is periodic evidence-wise even when
+        -- the payload flag was not set.
+        periodic = true
     end
-    if payload and type(payload.spellId) == "number" then
-        local cdb = ZSBT.ClassDB
-        if cdb and cdb.PreferRangedLine
-            and cdb.PreferRangedLine(payload.spellId) == true then
-            return RANGED_KIND, NONAUTO_KINDS, nil
-        end
+    if periodic then
+        return TICK_KIND, NONAUTO_NO_RANGED, nil
+    end
+    if type(sid) == "number" and cdb and cdb.PreferRangedLine
+        and cdb.PreferRangedLine(sid) == true then
+        return RANGED_KIND, NONAUTO_NO_TICK, nil
     end
     return NONAUTO_NO_RANGED, RANGED_KIND, nil
 end
