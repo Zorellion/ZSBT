@@ -28,13 +28,13 @@ mod.dots = {
 }
 
 mod.channels = {
-	{ names = { "Drain Life" }, ids = { 234153 }, duration = 6.0, tickMin = 0.12 },
-	{ names = { "Drain Soul" }, ids = { 1120, 198590 }, duration = 5.0, tickMin = 0.12 },
+	{ names = { "Drain Life" }, ids = { 234153 }, duration = 6.0, tickMin = 0.12, school = 32 },
+	{ names = { "Drain Soul" }, ids = { 1120, 198590 }, duration = 5.0, tickMin = 0.12, school = 32 },
 	-- Rain of Fire: instant ground AoE, ticks ~0.55s (verified); the cast
 	-- seeds an 8s window and tick-kind hits claim the name — Ravager-style
 	-- because individual ticks carry no cast record. Cast id 1214467 is
 	-- Midnight's (legacy 5740 kept for safety), damage id 42223.
-	{ names = { "Rain of Fire" }, ids = { 1214467, 5740 }, duration = 8.0, tickMin = 0.4 },
+	{ names = { "Rain of Fire" }, ids = { 1214467, 5740 }, duration = 8.0, tickMin = 0.4, school = 4 },
 }
 
 -- Per-cast-instance naming budget for the recency-stamp paths: how many
@@ -299,6 +299,7 @@ function mod.onCast(self, spellId, spellName, t)
 			lastTickAt = 0,
 			spellId = spellId,
 			tickMin = ch.tickMin or 0.12,
+			school = ch.school,
 		}
 	end
 	local summon = GUARDIAN_SUMMONS[spellId]
