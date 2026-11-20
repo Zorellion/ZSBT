@@ -22,7 +22,16 @@
 --
 -- Thunderous Roar is deliberately NOT in mod.dots: cast id == damage
 -- id, and a dots entry would seed it as periodic, which can misroute
--- its own direct hit (the Blood Boil lesson on DK).
+-- its own direct hit (the Blood Boil lesson on DK). Same rule keeps
+-- every Fury bleed out: Cold Steel Hot Blood, Odyn's Fury bleed,
+-- Gushing Wound — all school-1, all unnameable regardless.
+--
+-- Fury notes: multi-strike buttons carry budgets (Rampage, Raging
+-- Blow, Crushing Blow, Bloodbath, Annihilator, Onslaught, Odyn's
+-- Fury). Single-hit buttons (Execute incl. Sudden Death, Bloodthirst,
+-- Storm Bolt) pair through the normal cast path — no budget needed.
+-- Slayer's Strike / Lightning Strike procs have no cast record —
+-- generic floor, same as Devastator.
 
 local ADDON_NAME, ZSBT = ...
 if not ZSBT or not ZSBT.ClassDB then return end
@@ -74,6 +83,10 @@ mod.castBudget = {
 	[184367] = 6,  -- Rampage (multi-strike; verify damage ids in log)
 	[315720] = 6,  -- Onslaught (multi-strike Fury; verify)
 	[385059] = 8,  -- Odyn's Fury (multi-component; verify)
+	[85288]  = 8,  -- Raging Blow (2 strike components; Meat Cleaver can cleave)
+	[335097] = 8,  -- Crushing Blow (empowered Raging Blow; verify id)
+	[335096] = 6,  -- Bloodbath (empowered Bloodthirst; verify id)
+	[383917] = 6,  -- Annihilator (talent replacing Raging Blow; verify id)
 	[376079] = 8,  -- Spear of Bastion (if still in kit; verify)
 	-- Ravager button cast id (user-verified 1235113). The throw damage
 	-- (228920) pairs via this budget; the cast also opens the 12s
