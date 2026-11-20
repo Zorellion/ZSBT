@@ -167,7 +167,8 @@ local function shellFont(parent, size, color, text)
 	fs:SetFont(GameFontNormal:GetFont())
 	fs:SetTextColor(color[1], color[2], color[3], color[4] or 1)
 	fs:SetText(text or "")
-	fs:SetHeight(size * 1.4)
+	-- No SetHeight: a fontstring auto-sizes to its text. Pinning it to
+	-- one line silently clipped every multi-line message on these pages.
 	return fs
 end
 
@@ -826,7 +827,7 @@ local function buildClassPage(pf)
 	overlay:Hide()
 
 	local ovPanel = CreateFrame("Frame", nil, overlay, "BackdropTemplate")
-	ovPanel:SetSize(560, 210)
+	ovPanel:SetSize(560, 260)
 	ovPanel:SetPoint("CENTER", overlay, "CENTER", 0, 10)
 	setBg(ovPanel, { 0.06, 0.07, 0.09, 1.0 },
 		{ COL.accent[1], COL.accent[2], COL.accent[3], 0.9 })
@@ -834,11 +835,7 @@ local function buildClassPage(pf)
 	local ovText = shellFont(ovPanel, 13, COL.text, L["NoModulePageBody"])
 	ovText:SetWidth(520)
 	ovText:SetJustifyH("CENTER")
-	-- shellFont pins height to one line; measure the real text height so
-	-- the full multi-line message renders, then size the panel to fit.
-	ovText:SetHeight(ovText:GetStringHeight())
 	ovText:SetPoint("CENTER", ovPanel, "CENTER", 0, 0)
-	ovPanel:SetHeight(ovText:GetStringHeight() + 44)
 
 	local function refresh()
 		local cdb = ZSBT.ClassDB
@@ -850,7 +847,6 @@ local function buildClassPage(pf)
 
 		if not mod then
 			body:SetText(L["NoModulePageBody"])
-			body:SetHeight(body:GetStringHeight())
 			for _, t in ipairs(toggles) do t.cb:Hide() end
 			detail:SetText("")
 			refreshTaught()
@@ -873,7 +869,6 @@ local function buildClassPage(pf)
 				st and st.pendingCasts or 0, st and st.petCasts or 0),
 		}
 		body:SetText(table.concat(lines, "\n"))
-		body:SetHeight(body:GetStringHeight())
 
 		local d = {}
 		if st and type(st.learned) == "table" then
@@ -900,7 +895,6 @@ local function buildClassPage(pf)
 			d[#d + 1] = L["Active guardians:"] .. " " .. (#g > 0 and table.concat(g, ", ") or L["none"])
 		end
 		detail:SetText(table.concat(d, "\n"))
-		detail:SetHeight(math.max(1, detail:GetStringHeight()))
 		refreshTaught()
 		refreshKnowledge()
 	end
