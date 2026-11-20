@@ -326,9 +326,25 @@ local function emit(eventType, payload)
 				and ZSBT.ClassDB.IsForever())
 			and ZSBT.ClassDB and ZSBT.ClassDB.SchoolAllowed
 			and not ZSBT.ClassDB.SchoolAllowed(payload.schoolMask) then
-			auditNote(("AUDDROP reason=FOREIGN_SCHOOL school=%s crit=%s"):format(
-				tostring(payload.schoolMask), tostring(payload.isCrit == true)))
-			return
+			-- Whitelists can't predeclare proc/trinket/hero-talent schools
+			-- (stub classes run on book-derived masks only). A MINE line
+			-- buffered near this wound is stronger proof than any list —
+			-- the feed already vouched the hit is ours, so let pairing
+			-- decide. No line evidence = foreign as before.
+			local lineProof = nil
+			local zbtS = ZSBT.ZBattleText
+			if zbtS and zbtS.PeekDamageLine then
+				lineProof = zbtS:PeekDamageLine(payload.timestamp or now(), 0.30,
+					{ direct = true, tick = true, melee = true, ranged = true, shield = true })
+			end
+			if lineProof then
+				auditNote(("AUDSCH bypass=line school=%s kind=%s"):format(
+					tostring(payload.schoolMask), tostring(lineProof)))
+			else
+				auditNote(("AUDDROP reason=FOREIGN_SCHOOL school=%s crit=%s"):format(
+					tostring(payload.schoolMask), tostring(payload.isCrit == true)))
+				return
+			end
 		end
 		-- PLAYER_SWING provenance: an unattributed school-1 hit inside the
 		-- swing window is backed by the client's own per-swing report —
