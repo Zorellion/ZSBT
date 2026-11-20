@@ -517,6 +517,36 @@ function ClassDB.IsDotSpell(spellId)
 	return ClassDB.DotEntry(spellId) ~= nil
 end
 
+-- Module-declared school verdict for a cast claim: does the active
+-- module's dot/channel table pin this spellId to a school that fits the
+-- wound's mask? Returns true/false when a declaration exists, nil when
+-- the module says nothing (caller stays permissive/learned). Sits
+-- between SpellFacts (tooltip) and learned schools in castSchoolOk —
+-- it covers exactly the spells whose tooltips omit a damage school
+-- (Fiery Brand: a physical wound was wearing its sid on ignorance).
+function ClassDB.DeclaredSchoolFits(spellId, school)
+	if type(spellId) ~= "number" or type(school) ~= "number" then return nil end
+	if ZSBT.IsSafeNumber
+		and (not ZSBT.IsSafeNumber(spellId) or not ZSBT.IsSafeNumber(school)) then
+		return nil
+	end
+	local e = ClassDB.DotEntry(spellId)
+	local decl = e and e.school or nil
+	if decl == nil then
+		local c = ClassDB.ChannelMatch(spellId)
+		decl = c and c.school or nil
+	end
+	if type(decl) == "table" then
+		if decl[school] == true then return true end
+		return decl[127] == true and (school == 124 or school == 126)
+	end
+	if type(decl) == "number" then
+		if decl == school then return true end
+		return decl == 127 and (school == 124 or school == 126)
+	end
+	return nil
+end
+
 -- Per-pet-cast claim budget (mod.petCastBudget[spellId]): how many hits
 -- one recorded pet cast may claim. Modules declare single-target pet
 -- nukes at 1 so strays can't ride the cast's window; nil = default cap.
