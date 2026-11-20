@@ -678,6 +678,10 @@ local function flushBestOutgoing(self, token)
 				targetName = bucket.targetName,
 				isCrit = ex.isCrit,
 				schoolMask = bucket.schoolMask,
+				-- Twin evidence lives at the report's own instant: a real
+				-- second hit writes its line within a frame, while every
+				-- stale leftover (the alias dupe source) sits outside this.
+				_claimWindow = 0.07,
 			})
 		end
 	end
