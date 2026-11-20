@@ -799,22 +799,13 @@ local function flushPending()
                 -- queued before we knew the feed was cold must not wait
                 -- for a line that cannot exist.
                 if ZB._vetoDisabled or not ZB._trusted or (ZB._lastLineAt or 0) <= 0 then
-                    -- Burst extras (_claimWindow) exist only to recover a
-                    -- hit a palette line can prove; with no trusted feed
-                    -- there is no proof to find, so they must not bypass.
-                    if p.payload and p.payload._claimWindow == nil then
-                        deliverOutgoing(p.payload)
-                    end
+                    deliverOutgoing(p.payload)
                 else
                     local kind
                     -- Retried generics keep the tight window — a lingering
                     -- unattributed wound must not reach a leftover line as
-                    -- far out as a proven hit can. Burst extras carry an
-                    -- even tighter per-event window: a real twin's line
-                    -- lands at its own report instant, so anything older
-                    -- is an orphan belonging to a different hit.
-                    local window = (p.payload and p.payload._claimWindow)
-                        or ((p._retried and pass == 1) and RETRY_WINDOW or DEFER_WINDOW)
+                    -- far out as a proven hit can.
+                    local window = (p._retried and pass == 1) and RETRY_WINDOW or DEFER_WINDOW
                     kind = takeCandidateLine(p.t, window, p.payload)
                     if kind then
                         ZB._allows = ZB._allows + 1
@@ -1029,8 +1020,7 @@ function ZB:OfferOutgoing(payload)
     -- An auto-attack claim may ONLY be confirmed by a melee/ranged line —
     -- it must not steal a spell line (pet spells produce lines constantly).
     if candidateTier(payload) == 1 then
-        local fastKind = takeCandidateLine(tHit,
-            payload._claimWindow or VETO_WINDOW, payload)
+        local fastKind = takeCandidateLine(tHit, VETO_WINDOW, payload)
         if fastKind then
             ZB._allows = ZB._allows + 1
             payload._vetoConfirmed = true
