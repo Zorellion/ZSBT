@@ -942,17 +942,30 @@ local function pickDotByCadenceDisambig(self, t, school)
 	local m = self and self._recentPeriodicSpellAt
 	if type(m) ~= "table" then return nil end
 	local pick, count = nil, 0
+	local rejNoEntry, rejSchool, rejDebuff, rejCadence, scanned = 0, 0, 0, 0, 0
 	for sid, at in pairs(m) do
 		if type(sid) == "number" and type(at) == "number"
 			and (t - at) >= 0 and (t - at) <= PERIODIC_OUTGOING_WINDOW_SEC then
+			scanned = scanned + 1
 			local entry = dotEntryForSpellId(sid)
-			if entry and (not (entry.school and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) or entry.school == school)
-				and cachedHasTargetDebuffSpellId(sid)
-				and dotCadencePredict(self, t, sid) then
+			if not entry then
+				rejNoEntry = rejNoEntry + 1
+			elseif entry.school and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school) and entry.school ~= school then
+				rejSchool = rejSchool + 1
+			elseif not cachedHasTargetDebuffSpellId(sid) then
+				rejDebuff = rejDebuff + 1
+			elseif not dotCadencePredict(self, t, sid) then
+				rejCadence = rejCadence + 1
+			else
 				pick = sid
 				count = count + 1
 			end
 		end
+	end
+	if auditNote then
+		auditNote(("AUDD reason=DOTDISAMBIG scan=%s surv=%s pick=%s noentry=%s school=%s debuff=%s cadence=%s")
+			:format(dbgSafe(scanned), dbgSafe(count), dbgSafe(pick),
+				dbgSafe(rejNoEntry), dbgSafe(rejSchool), dbgSafe(rejDebuff), dbgSafe(rejCadence)))
 	end
 	if count == 1 then return pick end
 	return nil

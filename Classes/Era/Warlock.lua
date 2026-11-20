@@ -27,8 +27,11 @@ mod.dots = {
 	{ names = { "Corruption" },          school = 32, interval = 3 },
 	-- Forever uses the Cataclysm curse names: Bane of Agony (980),
 	-- Bane of Doom — keep the classic aliases for name-primary match.
-	{ names = { "Curse of Agony", "Bane of Agony" }, school = 32, interval = 2 },
-	{ names = { "Curse of Doom", "Bane of Doom" },   school = 32, interval = 60 },
+	-- Forever uses the Cataclysm curse names (verified from the live
+	-- spellbook dump): lead with them so the knowledge pane shows the
+	-- names this client actually uses; classic names stay as match aliases.
+	{ names = { "Bane of Agony", "Curse of Agony" }, school = 32, interval = 2 },
+	{ names = { "Bane of Doom", "Curse of Doom" },   school = 32, interval = 60 },
 	{ names = { "Siphon Life" },         school = 32, interval = 3 },
 	{ names = { "Immolate" },            school = 4,  interval = 3 },
 	-- Later-era additions: harmless if Forever lacks them (name match
