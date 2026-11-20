@@ -347,9 +347,12 @@ provided.
 - `WOW_PROJECT_ID == WOW_PROJECT_CAMELOT` (**18**). The constant is nil
   on other clients — detect via
   `local isForever = WOW_PROJECT_ID == (WOW_PROJECT_CAMELOT or 18)`.
-  Early beta builds returned 1 (Mainline), so never branch on
-  `== WOW_PROJECT_CLASSIC` (that is Era, project 2) or assume `== 1`
-  means "modern".
+  **Verified live 2026-11-19:** the current build returns 18 — the
+  client gate (`ClassDB.IsForever` in `Classes/Registry.lua`) correctly
+  suppressed the Retail warlock module on Forever ("no class module
+  loaded" on the Class page). Early beta builds returned 1 (Mainline),
+  so never branch on `== WOW_PROJECT_CLASSIC` (that is Era, project 2)
+  or assume `== 1` means "modern".
 - TOC interface **16001**; game type `forever` (alias `camelot`),
   family `mainline`. Lua 5.1 — no `//`, no bitwise ops outside `bit.*`,
   same restrictions as our Retail code.
