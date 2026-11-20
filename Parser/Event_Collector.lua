@@ -640,11 +640,11 @@ local function flushBestOutgoing(self, token)
 
 	local zbt = ZSBT.ZBattleText
 	if zbt and zbt.FileLog then
-		zbt:FileLog(("FLUSH sid=%s school=%s cnt=%s crit=%s"):format(tostring(bucket.spellId), tostring(bucket.schoolMask), tostring(bucket._seenCount), tostring(bucket.isCrit)))
+		zbt:FileLog(("FLUSH sid=%s school=%s cnt=%s crit=%s"):format(tostring(bucket.spellId), tostring(bucket.schoolMask), tostring(1 + #(bucket._extras or {})), tostring(bucket.isCrit)))
 
 	end
 	auditNote(("AUDFLUSH sid=%s school=%s cnt=%s crit=%s"):format(
-		tostring(bucket.spellId), tostring(bucket.schoolMask), tostring(bucket._seenCount), tostring(bucket.isCrit == true)))
+		tostring(bucket.spellId), tostring(bucket.schoolMask), tostring(1 + #(bucket._extras or {})), tostring(bucket.isCrit == true)))
 	emit("OUTGOING_DAMAGE_COMBAT", {
 		timestamp = bucket.timestamp,
 		rawPipeId = pipeId,
@@ -656,6 +656,27 @@ local function flushBestOutgoing(self, token)
 		schoolMask = bucket.schoolMask,
 
 	})
+	-- Fan-out for unattributed bursts: each absorbed wound emits on its
+	-- own and must claim a real palette line to display. Gated on
+	-- spellId == nil so a named cast's echo cluster (the 300-900 case)
+	-- still collapses — rider wounds join the attributed bucket and
+	-- never reach this loop.
+	if bucket.spellId == nil then
+		for _, ex in ipairs(bucket._extras or {}) do
+			local xp = self._rawPipeCount + 1
+			self._rawPipeCount = xp
+			self._rawPipe[xp] = ex.amount
+			emit("OUTGOING_DAMAGE_COMBAT", {
+				timestamp = ex.t,
+				rawPipeId = xp,
+				spellId = nil,
+				amountSource = "UNIT_COMBAT_BEST_EXTRA",
+				targetName = bucket.targetName,
+				isCrit = ex.isCrit,
+				schoolMask = bucket.schoolMask,
+			})
+		end
+	end
 end
 
 -- Reset fall tracking and cancel any delayed landing timer.
@@ -3491,16 +3512,24 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		if actionStr == "WOUND" then
 			-- Same hit reported through a second unit token (target /
 			-- softenemy / nameplate remap) arrives within a frame or two.
-			-- Collapse exact school+crit twins inside 50ms so duplicates
+			-- Collapse repeat school+crit twins inside 50ms so duplicates
 			-- cannot steal palette lines from distinct hits. Only dedups
 			-- safe-number schools; secret schools always pass through.
+			-- Grace of 2: a single hit reports up to three token aliases,
+			-- but two REAL identical hits (twin guardian strikes on one
+			-- mob) must also survive — the merge bucket re-collapses
+			-- whatever cannot claim its own palette line at flush.
 			if ZSBT.IsSafeNumber(school) then
 				local sig = self._lastTargetWoundSig
-				if sig and (t - sig.t) >= 0 and (t - sig.t) < 0.05
-					and sig.school == school and sig.crit == isCrit then
-					return
+				if sig and sig.school == school and sig.crit == isCrit
+					and (t - sig.t) >= 0 and (t - sig.t) < 0.05 then
+					sig.n = (sig.n or 1) + 1
+					if sig.n > 2 then
+						return
+					end
+				else
+					self._lastTargetWoundSig = { t = t, school = school, crit = isCrit, n = 1 }
 				end
-				self._lastTargetWoundSig = { t = t, school = school, crit = isCrit }
 			end
 			local zbtc = ZSBT.ZBattleText
 			if zbtc and zbtc.FileLog then
@@ -4737,6 +4766,15 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				bucket.schoolMask = schoolMask or bucket.schoolMask
 				bucket.targetName = targetName or bucket.targetName
 				bucket.spellId = bucket.spellId or spellId
+			end
+			-- Keep the absorbed wound so the flush can fan out: each extra
+			-- emits individually and must claim its own palette line, so
+			-- echo reports die with no line while real simultaneous hits
+			-- (twin guardian strikes) display. Cap bounds alias chatter.
+			local extras = bucket._extras
+			if not extras then extras = {} ; bucket._extras = extras end
+			if #extras < 6 then
+				extras[#extras + 1] = { t = t, amount = amount, isCrit = isCrit }
 			end
 		end
 		return
