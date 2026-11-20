@@ -4298,17 +4298,24 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- If we somehow have no cast token, fall back to a time bucket.
 			tokenKey = tostring(math.floor(t * 10))
 		end
+		-- Buckets key on cast token + hit signature (school, crit) so
+		-- simultaneous DISTINCT hits — a guardian burst, a crit beside a
+		-- non-crit — never collapse into each other. Echoes of one hit
+		-- share its signature and merge exactly as before.
+		local schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil
+		local bucketKey = tostring(tokenKey) .. "|" .. tostring(schoolMask)
+			.. "|" .. tostring(isCrit == true)
 		if not self._bestOutgoingByToken then
 			self._bestOutgoingByToken = {}
 		end
-		local existing = self._bestOutgoingByToken[tokenKey]
+		local existing = self._bestOutgoingByToken[bucketKey]
 		-- Safety: never allow an old bucket to persist and keep re-attributing spellId
 		-- across later unrelated UNIT_COMBAT(target) ticks. Buckets are meant to live
 		-- only for the short merge window.
 		if existing and type(existing.timestamp) == "number" then
 			local age = t - existing.timestamp
 			if age < 0 or age > 0.20 then
-				self._bestOutgoingByToken[tokenKey] = nil
+				self._bestOutgoingByToken[bucketKey] = nil
 				existing = nil
 			end
 		end
@@ -4656,14 +4663,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			sidLearn = (matchedCast.spellId ~= nil) or nil
 		end
 
-		local schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil
 		auditNote(("AUDMB school=%s crit=%s spellId=%s"):format(dbgSafe(school), tostring(isCrit == true), dbgSafe(spellId)))
 
 
 		-- Merge window: multiple UNIT_COMBAT(target) hits can arrive per cast.
 		-- Keep only the largest amount in a short window to avoid showing tiny
 		-- proc/secondary values (the root cause of the "300-900 Shadow Bolt" bug).
-		local token = tokenKey
+		local token = bucketKey
 		local targetName = safeUnitName("target")
 		local bucket = self._bestOutgoingByToken[token]
 		if not bucket then
