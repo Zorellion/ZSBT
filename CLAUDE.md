@@ -332,12 +332,12 @@ keeping ZSBT look/feel and nested groups. Implemented:
 ---
 # Masterplan: World of Warcraft: Forever class modules
 
-Status: **client gate implemented; Era modules not started.** `ClassDB.IsForever()`
-(project-18 check) and the client-scoped `ClassDB.Register` gate are live —
-modules declare `mod.client = "era"` to load only on Forever; everything else
-defaults to Retail and stays dormant there. `Classes/Era/` files need TOC
-entries when created. Revisit module data after a real Forever combat log is
-provided.
+Status: **client gate + Era Warlock module live; module-less fallback works.**
+`ClassDB.IsForever()` (project-18 check) and the client-scoped `ClassDB.Register`
+gate are live — modules declare `mod.client = "era"` to load only on Forever;
+everything else defaults to Retail and stays dormant there. `Classes/Era/` files
+need TOC entries when created. Classes with no module still display all damage/
+heals — modules upgrade naming/attribution only (see "Verified live" below).
 
 ## Client facts (researched 2026-11, verify against live build)
 
@@ -393,6 +393,45 @@ class the client doesn't have.
   needs the Forever interface/game-type markers when we ship for it.
 
 ## Mechanical notes (verify, don't assume)
+
+### Verified live (combatlog-verified 2026-11-20)
+
+- **Paladin — Judgement produces NO damage under its own sid.** Cast is
+  always `20271 "Judgement"` (SPELL_CAST_SUCCESS); the damage sid depends
+  on the *active seal* and judging consumes the seal:
+  - Seal of Righteousness (`21084`) → `SPELL_DAMAGE 20187
+    "Judgement of Righteousness"` school `0x2`. Also melee procs
+    `SPELL_DAMAGE 25741 "Seal of Righteousness"` per swing.
+  - Seal of the Crusader (`21082`) → **zero damage**. Only
+    `SPELL_AURA_REFRESH 21183 "Judgement of the Crusader"` (debuff).
+    Nothing should scroll — absence of text is correct.
+  - Module implication: map cast `20271` → damage sid by active seal
+    (Righteousness `20187`); a judgement with no damage event is
+    legitimate, not a pipeline failure.
+- **`UNIT_COMBAT` school field is unreliable** — reports `32` for hits
+  whose combat-log school is `0x2` (holy). `castSchoolOk` is relaxed for
+  player sids and `FOREIGN_SCHOOL` is era-exempt (commit `e63ef45`).
+  Pet records keep strict school matching.
+- **`UNIT_SPELLCAST_SUCCEEDED` fires per-unit unfiltered** — the
+  player's own casts arrive on `player` AND duplicated on
+  `targettarget` when the mob targets the player (targettarget =
+  player). `UC_CAST unit=targettarget` lines are expected noise.
+- **`PLAYER_SWING` exists and fires** on Forever (`AUDSWING`) — autos
+  have real provenance; `SWING_DAMAGE` lines classify as `melee`.
+- **Feed latency**: `SWING_DAMAGE`/chat lines lag wounds ~0.4s —
+  `DEFER_SEC` (0.20s) first flush misses them; the `_retried` requeue
+  pass is what claims them. Never remove the retry on this client.
+- **Feed completeness**: `SPELL_DAMAGE` observed only for Holy Strike
+  (`679`), Judgement of Righteousness (`20187`), Seal of Righteousness
+  (`25741`), Touch of the Grave (`1260198`, school `0x20` — Forsaken
+  racial, real shadow, purple tint is correct). Any spell the feed
+  omits gets the era-gated `kind=noline` rescue in `flushPending`
+  (tier-1 sid-bearing only; Retail keeps strict line requirement).
+- **Module-less fallback works**: no module still displays casts
+  (cast-record sids), autos (`_swingProven`), procs (line pairing),
+  incoming/outgoing heals — modules upgrade naming/attribution, never
+  gate visibility. Book-derived periodic entries drive dot
+  disambiguation without a module (`ClassDB.DotCadenceDisambig`).
 
 - **Warlock:** permanent named minions (Imp/Firebolt, Voidwalker,
   Succubus, Felhunter) — likely easier to attribute than Retail's
