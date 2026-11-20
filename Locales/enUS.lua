@@ -1207,6 +1207,7 @@ L["Hide Unattributed Hits"] = true
 L["Hide unattributed hits"] = true
 L["Learned:"] = true
 L["No class module is loaded for this character."] = true
+L["NoModulePageBody"] = "|cFFFFD100No class module for this class — yet.|r\n\n|cFFEBF0F5ZSBT doesn't ship a dedicated module for your class yet; modules are being built out one class at a time. Everything still works — your damage, healing, auto-attacks, procs, and pet hits all display normally. A module just upgrades naming, icons, and attribution detail.|r\n\n|cFF808C9EThe module knowledge and Teach-a-Spell tools below already work from your spellbook data.|r"
 L["Quick toggle class-module attribution tweaks."] = true
 L["Show Auto-Attack Swings"] = true
 L["Show auto-attack swings"] = true

@@ -821,7 +821,7 @@ local function buildClassPage(pf)
 		local st = ec and ec.ClassModuleState and ec:ClassModuleState() or nil
 
 		if not mod then
-			body:SetText(L["No class module is loaded for this character."])
+			body:SetText(L["NoModulePageBody"])
 			for _, t in ipairs(toggles) do t.cb:Hide() end
 			detail:SetText("")
 			refreshTaught()
