@@ -388,6 +388,11 @@ function ClassDB.DotEntry(spellId)
 		buildDotIndex(mod)
 		local sn = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or nil
 		if type(sn) == "string" and sn ~= "" then
+			-- Era/Forever ranks can arrive as "Corruption (Rank 4)" —
+			-- all ranks of a spell share one module entry.
+			if sn:find("(", 1, true) then
+				sn = (sn:gsub("%s*%(%s*[Rr]ank%s+%d+%s*%)%s*$", ""))
+			end
 			local e = mod._dotNames[sn]
 			if e then return e end
 		end
@@ -442,6 +447,9 @@ function ClassDB.ChannelMatch(spellId)
 		buildChannelIndex(mod)
 		local sn = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or nil
 		if type(sn) == "string" and sn ~= "" then
+			if sn:find("(", 1, true) then
+				sn = (sn:gsub("%s*%(%s*[Rr]ank%s+%d+%s*%)%s*$", ""))
+			end
 			local c = mod._chanNames[sn]
 			if c then return c end
 		end
