@@ -5761,9 +5761,15 @@ local GENERAL_GROUP_KEYS = {
 		critAfterimageIntensity=1, critRumbleIntensity=1,
 	},
 	numbers = { numbersHelp=1, numberFormat=1 },
+	outgoing = {
+		outgoingOwnershipHelp=1, requireProof=1, showUnprovenInGroups=1,
+		pvpRelaxed=1, damageMeterOutgoingFallback=1,
+		damageMeterIncomingFallback=1,
+	},
 }
 local GENERAL_DROP_KEYS = {
 	headerMaster=1, headerFont=1, headerNumbers=1,
+	headerOutgoingOwnership=1,
 	brandHeader=1, brandSpacer=1,
 }
 
@@ -5792,14 +5798,18 @@ local GENERAL_ORDER = {
 	critScreenPunchIntensity = 34, critShatterIntensity = 35,
 	critAfterimageIntensity = 36, critRumbleIntensity = 37,
 	numbersHelp = 1, numberFormat = 2,
+	outgoingOwnershipHelp = 1, requireProof = 2, showUnprovenInGroups = 3,
+	pvpRelaxed = 4, damageMeterOutgoingFallback = 5,
+	damageMeterIncomingFallback = 6,
 }
 
 function ZSBT._groupGeneralArgs(args)
-	local groups = { system = {}, masterFont = {}, numbers = {} }
+	local groups = { system = {}, masterFont = {}, numbers = {}, outgoing = {} }
 	for key, val in pairs(args) do
 		local g = GENERAL_GROUP_KEYS.system[key] and "system"
 			or GENERAL_GROUP_KEYS.masterFont[key] and "masterFont"
-			or GENERAL_GROUP_KEYS.numbers[key] and "numbers" or nil
+			or GENERAL_GROUP_KEYS.numbers[key] and "numbers"
+			or GENERAL_GROUP_KEYS.outgoing[key] and "outgoing" or nil
 		if g then
 			if type(val) == "table" and GENERAL_ORDER[key] then
 				val.order = GENERAL_ORDER[key]
@@ -5817,6 +5827,7 @@ function ZSBT._groupGeneralArgs(args)
 	args.system = { type = "group", name = L["|cFFFFD100System|r"], order = 10, args = groups.system }
 	args.masterFont = { type = "group", name = L["|cFFFFD100Master Font|r"], order = 20, args = groups.masterFont }
 	args.numbers = { type = "group", name = L["|cFFFFD100Numbers|r"], order = 30, args = groups.numbers }
+	args.outgoing = { type = "group", name = L["|cFFFFD100Outgoing Accuracy|r"], order = 35, args = groups.outgoing }
 	if type(args.media) == "table" then args.media.order = 40 end
 	return args
 end

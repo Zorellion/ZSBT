@@ -1194,6 +1194,7 @@ L["Use custom font settings for the resource counter text."] = true
 L["|cFFFFD100Donate|r"] = true
 L["|cFFFFD100Master Font|r"] = true
 L["|cFFFFD100Numbers|r"] = true
+L["|cFFFFD100Outgoing Accuracy|r"] = true
 L["|cFFFFD100Resource Counter|r"] = true
 L["|cFFFFD100Resource Tracker|r"] = true
 
