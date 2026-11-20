@@ -73,6 +73,7 @@ end
 
 local castSchoolOk -- fwd decl; real def below
 local consumeBestPendingCast -- fwd decl; emit() calls it before the real def below
+local anySwingRecent -- fwd decl; emit() stamps _swingProven before the real def below
 
 -- Friendly non-player casts (pet slot, imps, guardians) recorded in
 -- _petCasts. A hit claims one of them instead of taking the most recent
@@ -922,7 +923,7 @@ end
 -- A melee hit lands ~0.45s after its swing; ranged shots fly up to ~2s
 -- (FCT measured values).
 local SWING_HIT_WINDOW, RANGED_HIT_WINDOW = 0.9, 2.0
-local function anySwingRecent(self, t)
+anySwingRecent = function(self, t)
 	local sw = self._swingAt
 	if type(sw) ~= "table" then return false end
 	for hand, at in pairs(sw) do
