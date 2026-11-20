@@ -44,11 +44,14 @@ mod.channels = {
 	-- not a target's — nothing here for it to honestly name.
 }
 
--- No mod.schools whitelist: era wand "Shoot" damage can carry almost any
--- school (shadow/fire/frost/nature/arcane/holy wands all exist), so the
--- provable-player-school set is effectively the whole school space and a
--- foreign-school veto would eat real wand hits. Foreign suppression is
--- left to the group gate, which works off source ownership instead.
+-- Era wand "Shoot" damage can carry almost any school (shadow/fire/
+-- frost/nature/arcane/holy wands all exist) and a wand is not a spell —
+-- the spellbook-derived mask union can't see it, so leaving mod.schools
+-- nil would still let the derived fallback veto real wand hits as
+-- FOREIGN_SCHOOL. schoolsAny declares: this class can produce any
+-- school; foreign suppression falls to the group gate (source
+-- ownership) instead of a school whitelist.
+mod.schoolsAny = true
 
 -- Union of every school an era warlock minion can produce: imp Firebolt
 -- (4), succubus Lash of Pain / felhunter shadow (32), melee (1), 36 for
@@ -63,13 +66,31 @@ function mod.petSchoolAllowed(school, helpers)
 	return PET_SCHOOLS[school] == true
 end
 
+-- Era minions are REAL pets with real UNIT_SPELLCAST_SUCCEEDED casts —
+-- imp Firebolt (Forever sid 7799) and Fire Shield (2947) claim their own
+-- hits through _petCasts records, verified from a live Forever log. The
+-- retail module's imp-fire signature route exists because Retail's wild
+-- imps are recordless guardians; on era, routing unclaimed school-4
+-- wounds to the pet scroll is a misroute: era Immolate is a real fire
+-- DoT and its ticks are indistinguishable-from-recordless-bolt wounds.
+-- Correctness-first: no school-4 wound enters the pet scroll without a
+-- cast record; the ambiguous remainder stays generic outgoing instead
+-- of wearing a pet frame it can't prove.
+function mod.petSchoolHit(school, helpers)
+	return false
+end
+
+function mod.petSchoolHitRecent(self, school, lastPlayerSpellId, helpers)
+	return false
+end
+
+-- Same reasoning inverted: a school-4 wound must not claim a player DoT
+-- window while an imp is out (it could be a bolt whose record was
+-- already consumed). dotGuard keeps the veto so the wound drops to
+-- honest generic instead of wearing Immolate's name.
 local function isImpPet(helpers)
 	local fam = helpers and helpers.family and helpers.family() or nil
 	return fam ~= nil and fam == "imp"
-end
-
-local function hasFireBit(school)
-	return math.floor(school / 4) % 2 == 1
 end
 
 function mod.dotGuard(entry, school, helpers)
@@ -78,52 +99,6 @@ function mod.dotGuard(entry, school, helpers)
 		return false
 	end
 	return nil
-end
-
--- Imp Firebolt signature, same as Retail: fire-bit hits belong to the
--- imp ONLY while an imp is actually out.
-function mod.petSchoolHit(school, helpers)
-	if helpers and helpers.safeNumber and helpers.safeNumber(school)
-		and hasFireBit(school) and isImpPet(helpers) then
-		return true
-	end
-	return false
-end
-
--- Era player casts whose damage carries the fire bit — a fire hit near
--- one of these is the player's, never the imp's. (Era Shadowburn is
--- shadow, but custom builds may re-school it — harmless either way since
--- the fire-bit check runs first.)
-local WARLOCK_FIRE_PLAYER_SPELLS = {
-	["Immolate"] = true,
-	["Searing Pain"] = true,
-	["Soul Fire"] = true,
-	["Rain of Fire"] = true,
-	["Hellfire"] = true,
-	["Conflagrate"] = true,
-	["Incinerate"] = true,
-	["Chaos Bolt"] = true,
-	["Shadowburn"] = true,
-	["Firebolt"] = true,
-}
-
-function mod.petSchoolHitRecent(self, school, lastPlayerSpellId, helpers)
-	if not (helpers and helpers.safeNumber and helpers.safeNumber(school)) then
-		return false
-	end
-	if not hasFireBit(school) then return false end
-	if not isImpPet(helpers) then return false end
-	if type(lastPlayerSpellId) ~= "number" then return false end
-	local sn = helpers.cleanName and helpers.cleanName(lastPlayerSpellId) or nil
-	if sn == nil then
-		local e = ZSBT.ClassDB.DotEntry and ZSBT.ClassDB.DotEntry(lastPlayerSpellId)
-		if e and e.school == 32 then
-			return true
-		end
-		return false
-	end
-	if WARLOCK_FIRE_PLAYER_SPELLS[sn] then return false end
-	return true
 end
 
 -- Era warlocks still don't meaningfully melee: school-1 hits are demon
