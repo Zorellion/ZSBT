@@ -37,10 +37,33 @@ mod.channels = {
 	{ names = { "Rain of Fire" }, ids = { 1214467, 5740 }, duration = 8.0, tickMin = 0.4, school = 4 },
 }
 
--- Health Funnel drains the caster, never an enemy — its periodic
--- tooltip would seed a derived dot entry and name enemy wounds.
+-- Zero-enemy-damage casts: a wound can never honestly wear these
+-- names — not via dot pools, channels, pending-cast stamps, or the
+-- make-it-work recency claim, and they must not suppress DoT
+-- attribution as a "recent cast". NEVER list a dot/channel name.
 mod.exclude = {
 	"Health Funnel",
+	"Fear",
+	"Howl of Terror",
+	"Banish",
+	"Curse of Weakness",
+	"Curse of Tongues",
+	"Curse of Exhaustion",
+	"Amplify Curse",
+	"Shadowfury",
+	"Dark Pact",
+	"Unending Resolve",
+	"Demonic Circle: Teleport",
+	"Fel Domination",
+	"Ritual of Summoning",
+	"Eye of Kilrogg",
+	"Subjugate Demon",
+	"Summon Imp",
+	"Summon Voidwalker",
+	"Summon Succubus",
+	"Summon Felhunter",
+	"Summon Felguard",
+	"Summon Incubus",
 }
 
 -- Per-cast-instance naming budget for the recency-stamp paths: how many
