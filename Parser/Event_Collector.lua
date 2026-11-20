@@ -900,6 +900,60 @@ local function dotCadencePredict(self, t, spellId, appliedAtOverride)
 	return false -- no timing anchor at all: cannot prove cadence
 end
 
+local function offTargetDotsEnabled()
+	local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+	return g == nil or g.showDotsOnOtherEnemies ~= false
+end
+
+-- Off-target periodic attribution ("show dots on other enemies"): a
+-- UNIT_COMBAT wound on a non-target nameplate can only be named if a
+-- DoT application record exists for THAT mob. The nameplate unit token
+-- carries the identity directly — GUID preferred (collision-free when
+-- several same-named mobs are dotted), name as the fallback key space
+-- _dotAppliedTarget writes. Candidates must pass the same cadence
+-- proof the target path uses; the best phase fit wins, none stays
+-- generic rather than wrong.
+local function resolveOffTargetDot(self, unit, t)
+	local gm = self._dotAppliedGuid
+	local nm = self._dotAppliedTarget
+	if type(gm) ~= "table" and type(nm) ~= "table" then return nil end
+	local g, n
+	if UnitGUID then
+		local ok, v = pcall(UnitGUID, unit)
+		if ok and ZSBT.IsSafeString and ZSBT.IsSafeString(v) then g = v end
+	end
+	local un = safeUnitName(unit)
+	if ZSBT.IsSafeString and ZSBT.IsSafeString(un) then n = un end
+	if g == nil and n == nil then return nil end
+	local best, bestDist = nil, nil
+	local seen = nil
+	local function consider(sid, at)
+		if type(sid) ~= "number" or type(at) ~= "number"
+			or (t - at) < 0 or (t - at) > PERIODIC_OUTGOING_WINDOW_SEC then
+			return
+		end
+		seen = seen or {}
+		if seen[sid] then return end
+		seen[sid] = true
+		if not dotCadencePredict(self, t, sid, at) then return end
+		local iv = dotTickInterval(sid) or 2.0
+		local phase = (t - at) % iv
+		local dist = math.min(phase, iv - phase)
+		if bestDist == nil or dist < bestDist then best, bestDist = sid, dist end
+	end
+	if g and type(gm) == "table" then
+		for sid, sm in pairs(gm) do
+			if type(sm) == "table" then consider(sid, sm[g]) end
+		end
+	end
+	if n and type(nm) == "table" then
+		for sid, sm in pairs(nm) do
+			if type(sm) == "table" then consider(sid, sm[n]) end
+		end
+	end
+	return best
+end
+
 local function arePetsEnabled()
 	local petConf = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.pets
 	return petConf and petConf.enabled == true
@@ -1791,6 +1845,19 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 				local sm = map[spellId]
 				if not sm then sm = {} ; map[spellId] = sm end
 				sm[tgtName] = self._lastPlayerSpellAt
+			end
+			-- GUID-keyed mirror for nameplate lookup: off-target DoT
+			-- attribution needs a collision-free mob identity (two
+			-- same-named mobs each holding a dot).
+			if UnitGUID then
+				local okG, g = pcall(UnitGUID, "target")
+				if okG and ZSBT.IsSafeString and ZSBT.IsSafeString(g) then
+					local gm = self._dotAppliedGuid
+					if not gm then gm = {} ; self._dotAppliedGuid = gm end
+					local sm = gm[spellId]
+					if not sm then sm = {} ; gm[spellId] = sm end
+					sm[g] = self._lastPlayerSpellAt
+				end
 			end
 		end
 
@@ -3056,12 +3123,15 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- identified, so they emit spellId=nil (pet-routed when a recent
 				-- friendly cast exists).
 				local emitted = false
-				-- Only offer off-target hits while the target token itself
-				-- has stopped reporting WOUNDs (~1.5s). When target events flow
-				-- normally, hostile nameplate traffic is almost always foreign
-				-- or redundant cleave and stays out of the pipe entirely.
+				-- Only offer UNATTRIBUTED off-target hits while the target token
+				-- itself has stopped reporting WOUNDs (~1.5s). When target events
+				-- flow normally, hostile nameplate traffic is almost always
+				-- foreign or redundant cleave and stays out of the pipe entirely.
+				-- A wound with a DoT application record on this nameplate is
+				-- different: the mob's own cast evidence names it, so it emits
+				-- attributed regardless of the starve window.
 				local tgtStarved = (now() - (self._lastTargetWoundAt or 0)) > 1.5
-				if zbtVetoActive() and tgtStarved and amount ~= nil then
+				if zbtVetoActive() and amount ~= nil then
 					local aStr = (ZSBT.IsSafeString and ZSBT.IsSafeString(action)) and action or nil
 					if aStr == "WOUND" then
 						local hostile = false
@@ -3073,27 +3143,34 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							end
 						end
 						if hostile then
-							local isCritOff = false
-							if type(descriptor) == "string" then
-								isCritOff = descriptor:upper():find("CRIT", 1, true) ~= nil
+							local offSid = nil
+							if offTargetDotsEnabled() then
+								offSid = resolveOffTargetDot(self, unit, now())
 							end
-							local pipeId = self._rawPipeCount + 1
-							self._rawPipeCount = pipeId
-							self._rawPipe[pipeId] = amount
-							local zbtOff = ZSBT.ZBattleText
-							if zbtOff and zbtOff.FileLog then
-								zbtOff:FileLog(("OFFT unit=%s school=%s"):format(tostring(unit), tostring(school)))
+							if offSid ~= nil or tgtStarved then
+								local isCritOff = false
+								if type(descriptor) == "string" then
+									isCritOff = descriptor:upper():find("CRIT", 1, true) ~= nil
+								end
+								local pipeId = self._rawPipeCount + 1
+								self._rawPipeCount = pipeId
+								self._rawPipe[pipeId] = amount
+								local zbtOff = ZSBT.ZBattleText
+								if zbtOff and zbtOff.FileLog then
+									zbtOff:FileLog(("OFFT unit=%s sid=%s school=%s"):format(
+										tostring(unit), tostring(offSid), tostring(school)))
+								end
+								emit("OUTGOING_DAMAGE_COMBAT", {
+									timestamp = now(),
+									rawPipeId = pipeId,
+									spellId = offSid,
+									amountSource = "COMBAT_LOG",
+									targetName = safeUnitName(unit),
+									isCrit = isCritOff,
+									schoolMask = (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) and school or nil,
+								})
+								emitted = true
 							end
-							emit("OUTGOING_DAMAGE_COMBAT", {
-								timestamp = now(),
-								rawPipeId = pipeId,
-								spellId = nil,
-								amountSource = "COMBAT_LOG",
-								targetName = nil,
-								isCrit = isCritOff,
-								schoolMask = (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) and school or nil,
-							})
-							emitted = true
 						end
 					end
 				end
