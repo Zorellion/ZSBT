@@ -326,8 +326,18 @@ local function ravagerWound(self, ctx)
 	local IsSafeNumber = ZSBT.IsSafeNumber
 
 	if actionStr ~= "WOUND" then return end
+	if self._ravHookSeen ~= true then
+		self._ravHookSeen = true
+		ravAudit("RAVHOOK ok")
+	end
 	local ravDebuff = cachedHasTargetDebuffSpellId(RAVAGER_DEBUFF)
 	if ravDebuff ~= true then
+		-- Rate-limited probe: proves the hook ran but the debuff gate
+		-- failed, vs. the hook never executing at all.
+		if (t - (self._ravDbgAt or 0)) > 10 then
+			self._ravDbgAt = t
+			ravAudit("RAVCHK deb=false")
+		end
 		if self._ravTickAt ~= nil then
 			self._ravTickAt = nil
 			ravAudit("RAVWIN close")
