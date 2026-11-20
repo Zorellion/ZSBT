@@ -304,16 +304,74 @@ local function enumBank(bank, sink)
 	return enumPlayerBank(bank, sink)
 end
 
+-- Selected talent nodes -> granted spellIDs. Talent-passive and
+-- hero-tree damage spells never appear in the base spellbook, so
+-- without this pass the derived layer knows nothing about a large
+-- part of the kit's actual wound output. Selected nodes only —
+-- unbought choices contribute nothing.
+local function enumTalentSpells(sink, have)
+	if not (C_ClassTalents and C_ClassTalents.GetActiveConfigID
+		and C_Traits and C_Traits.GetConfigInfo and C_Traits.GetTreeInfo
+		and C_Traits.GetNodeInfo and C_Traits.GetEntryInfo
+		and C_Traits.GetDefinitionInfo) then
+		return 0
+	end
+	local configID = C_ClassTalents.GetActiveConfigID()
+	if type(configID) ~= "number" then return 0 end
+	local okC, cInfo = pcall(C_Traits.GetConfigInfo, configID)
+	if not (okC and type(cInfo) == "table" and type(cInfo.treeIDs) == "table") then
+		return 0
+	end
+	local added = 0
+	for _, treeID in ipairs(cInfo.treeIDs) do
+		local okT, tInfo = pcall(C_Traits.GetTreeInfo, configID, treeID)
+		if okT and type(tInfo) == "table" and type(tInfo.nodes) == "table" then
+			for _, nodeID in ipairs(tInfo.nodes) do
+				local okN, nInfo = pcall(C_Traits.GetNodeInfo, configID, nodeID)
+				local ae = okN and type(nInfo) == "table" and nInfo.activeEntry or nil
+				local entryID = type(ae) == "table" and ae.entryID
+					or (type(ae) == "number" and ae or nil)
+				if okN and type(nInfo) == "table"
+					and (tonumber(nInfo.currentRank) or 0) > 0
+					and type(entryID) == "number" then
+					local okE, eInfo = pcall(C_Traits.GetEntryInfo,
+						configID, entryID)
+					local defID = okE and type(eInfo) == "table" and eInfo.definitionID or nil
+					local okD, dInfo = defID and pcall(C_Traits.GetDefinitionInfo, defID) or nil
+					local sid = okD and type(dInfo) == "table" and tonumber(dInfo.spellID) or nil
+					if type(sid) == "number" and sid > 0 and not have[sid] then
+						have[sid] = true
+						local name
+						if C_Spell and C_Spell.GetSpellName then
+							local okNm, nm = pcall(C_Spell.GetSpellName, sid)
+							if okNm and type(nm) == "string" and nm ~= ""
+								and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(nm)) then
+								name = nm
+							end
+						end
+						sink[#sink + 1] = { sid = sid, name = name, talent = true }
+						added = added + 1
+					end
+				end
+			end
+		end
+	end
+	return added
+end
+
 function Spellbook:Scan()
 	local t0 = debugprofilestop and debugprofilestop() or 0
 	local raw = {}
 	enumBank(Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player, raw)
+	local have = {}
+	for _, e in ipairs(raw) do have[e.sid] = true end
+	enumTalentSpells(raw, have)
 	local petRaw = {}
 	enumBank(Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Pet, petRaw)
 
 	local entries, byName, masks, petEntries = {}, {}, {}, {}
 	for _, e in ipairs(raw) do
-		local rec = { sid = e.sid, name = e.name, role = "cast" }
+		local rec = { sid = e.sid, name = e.name, role = "cast", talent = e.talent or nil }
 		if e.name and C_Spell and C_Spell.GetSpellDescription then
 			local ok, desc = pcall(C_Spell.GetSpellDescription, e.sid)
 			if ok and type(desc) == "string" then
@@ -423,13 +481,14 @@ end
 function Spellbook:Dump(printFn)
 	local p = printFn or print
 	ensureScanned(self)
-	local n, dots, chans = 0, 0, 0
+	local n, dots, chans, talents = 0, 0, 0, 0
 	for sid, rec in pairs(self._entries) do
 		n = n + 1
+		if rec.talent then talents = talents + 1 end
 		if rec.role == "dot" then dots = dots + 1 end
 		if rec.role == "channel" then chans = chans + 1 end
 	end
-	p(("Spellbook: %d spells (%d dot, %d channel), %d pet, %.1fms")
+	p(("Spellbook: %d spells (%d talent, %d dot, %d channel), %d pet, %.1fms")
 		:format(n, dots, chans, (function() local c = 0 for _ in pairs(self._petEntries) do c = c + 1 end return c end)(), self._scanMs or 0))
 	local masks = {}
 	for m in pairs(self._masks) do masks[#masks + 1] = m end
@@ -444,8 +503,8 @@ function Spellbook:Dump(printFn)
 			local mlist = {}
 			for _, m in ipairs(rec.masks or {}) do mlist[#mlist + 1] = tostring(m) end
 			flagged[#flagged + 1] = {
-				label = ("%s (%d): %s%s%s%s"):format(
-					rec.name or tostring(sid), sid, rec.role,
+				label = ("%s%s (%d): %s%s%s%s"):format(
+					rec.talent and "*" or "", rec.name or tostring(sid), sid, rec.role,
 					type(rec.interval) == "number" and (" iv=" .. rec.interval) or "",
 					(type(rec.dotTotal) == "number" and type(rec.dotDur) == "number")
 						and (" exp=" .. string.format("%.1f", rec.dotTotal * (rec.interval or 2) / rec.dotDur)) or "",
