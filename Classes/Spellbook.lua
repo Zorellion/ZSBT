@@ -113,15 +113,16 @@ local function isChanneledTip(spellId)
 	if not (C_TooltipInfo and C_TooltipInfo.GetSpellByID) then return false end
 	local ok, data = pcall(C_TooltipInfo.GetSpellByID, spellId)
 	if not (ok and type(data) == "table" and type(data.lines) == "table") then return false end
+	-- rightText only: the cast-type label sits right-aligned next to
+	-- the cast time. Description body lines are leftText — scanning
+	-- them lets a passive that mentions "channeling" (Furious Gaze)
+	-- claim the channel role.
 	for i = 1, math.min(#data.lines, 8) do
-		local line = data.lines[i]
-		for _, key in ipairs({ "leftText", "rightText" }) do
-			local tx = line and line[key]
-			if type(tx) == "string" and tx ~= ""
-				and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(tx))
-				and tx:lower():find("channel") then
-				return true
-			end
+		local tx = data.lines[i] and data.lines[i].rightText
+		if type(tx) == "string" and tx ~= ""
+			and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(tx))
+			and tx:lower():gsub("^%s+", ""):gsub("%s+$", "") == "channeled" then
+			return true
 		end
 	end
 	return false
@@ -160,15 +161,21 @@ function Spellbook.ParseDesc(desc, spellId)
 	-- record that can steal ticks inside a real channel window.
 	if chanMs or isChanneledTip(spellId) then
 		role = "channel"
-	-- The role exists to attribute DAMAGE — periodic phrasing without
-	-- a damage word is a resource/buff rhythm, not a DoT ("generates
-	-- 40 Fury every 1 sec" — Blind Fury).
-	elseif not selfDrain and not d:find("summon")
-		and d:find("damage")
-		and (d:find("every") or d:find("periodic") or d:find("over time")
-			or d:find("per second") or d:find("per sec")
-			or d:find("damage over")) then
-		role = "dot"
+	-- The role exists to attribute DAMAGE — and the periodic phrase
+	-- must modify it. Clause scope (,.;): "generates 10 Fury every
+	-- second, ... deals 10% increased damage" (Blind Fury) puts the
+	-- rhythm and the damage in different clauses — not a DoT. A real
+	-- DoT keeps them together: "fire damage over 12 sec", "radiating
+	-- fire damage every 1 sec".
+	elseif not selfDrain and not d:find("summon") then
+		for clause in d:gmatch("[^%.;,]+") do
+			if clause:find("damage")
+				and (clause:find("every") or clause:find("periodic")
+					or clause:find("per sec") or clause:find("over")) then
+				role = "dot"
+				break
+			end
+		end
 	end
 	-- Tick interval: era/periodic descriptions state it directly
 	-- ("every 3 sec", "every 2 seconds", "per second"). This is the
