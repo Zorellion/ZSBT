@@ -13,12 +13,16 @@ if not ZSBT or not ZSBT.ClassDB then return end
 local mod = {}
 
 mod.dots = {
-	{ names = { "Corruption" },             ids = { 172 },     school = 32 },
-	{ names = { "Agony" },                  ids = { 980 },     school = 32 },
-	{ names = { "Unstable Affliction" },    ids = { 30108 },  school = 32 },
-	{ names = { "Seed of Corruption" },     ids = { 27243 },  school = 32 },
-	{ names = { "Haunt" },                  ids = { 48181 },  school = 32 },
-	{ names = { "Immolate" },               ids = { 348 },    school = 4 },
+	{ names = { "Corruption" },             ids = { 172, 146739, 1261158 },       school = 32 },
+	{ names = { "Agony" },                  ids = { 980, 1261166 },               school = 32 },
+	{ names = { "Unstable Affliction" },    ids = { 30108, 1259790, 1261176 },    school = 32 },
+	{ names = { "Seed of Corruption" },     ids = { 27243, 27285 },               school = 32 },
+	{ names = { "Haunt" },                  ids = { 48181 },                      school = 32 },
+	{ names = { "Immolate" },               ids = { 348 },                        school = 4 },
+	-- Soul Anathema self-applies (SPELL_AURA_APPLIED, no cast event), so
+	-- the ids below can never seed a window — the entry documents the
+	-- periodic for the knowledge pane and future per-dot records.
+	{ names = { "Soul Anathema" },          ids = { 450538 },                     school = 32 },
 }
 
 mod.channels = {
@@ -36,10 +40,20 @@ mod.castBudget = {
 	[434635] = 8,    -- Ruination (AoE)
 	[1276462] = 4,   -- Grimoire: Imp Lord variant
 	[264106] = 6,    -- Bilescourge Bombers
+	[1261153] = 8,   -- Malefic Grasp: ~1 hit per active DoT (verified 3-4/cast)
+	[1257052] = 4,   -- Dark Harvest: cast -> damage 1257065 (shadowflame)
 }
 
+-- Provable damage schools (masks observed on player/pet/guardian-owned
+-- lines): 1 pet melee, 4 fire (imp/destro), 8 nature (Bile Spit,
+-- trinkets), 32 shadow, 36 shadowflame, 40 shadow|nature (Blighted Maw),
+-- 127 chaos (Ruination, Diabolic Gaze). Anything else on an
+-- unattributed hit is provably foreign — ClassDB.SchoolAllowed vetoes.
+mod.schools = { [1] = true, [4] = true, [8] = true, [32] = true,
+	[36] = true, [40] = true, [127] = true }
+
 -- Class-module UI toggles this module supports (Class page + quick bar).
-mod.guardianLabel = "imps, dreadstalkers, or the tyrant"
+mod.guardianLabel = "imps, dreadstalkers, darkglare, or the tyrant"
 mod.toggles = {
 	resolveGuardians = true,  -- guardian spellbook naming on/off
 	namePetMelee = true,      -- MY_PET-proven melee named "Auto Attack"
@@ -150,8 +164,13 @@ local GUARDIAN_SPELLS = {
 	gloomhound = { { sid = 455491, school = 32 },                   -- Gloom Slash
 		{ sid = 267997, school = 8 } },                             -- Bile Spit
 	tyrant = { { sid = 1264093, school = 36 } },                    -- Burning Cleave
+	-- darkglare deliberately has no entries: its Eye Beam (205231) is
+	-- school 32, and during a Darkglare window every unattributed
+	-- school-32 hit — the player's own DoT ticks whose windows lapsed,
+	-- Soul Anathema, Shadow of Nathreza — would claim the name. On a
+	-- spec whose kit is almost entirely school-32 periodic traffic,
+	-- leaving the group spell-less keeps those hits honest generics.
 }
-mod.guardianSummons = GUARDIAN_SUMMONS
 mod.guardianSpells = GUARDIAN_SPELLS
 
 -- Player summon casts → which guardian groups go out, and for how long.
@@ -164,8 +183,10 @@ local GUARDIAN_SUMMONS = {
 		{ group = "gloomhound", duration = 12 } },                  -- Call Dreadstalkers
 	[264119] = { { group = "gloomhound", duration = 15 } },         -- Summon Vilefiend
 	[265187] = { { group = "tyrant", duration = 18 } },             -- Summon Demonic Tyrant
+	[205180] = { { group = "darkglare", duration = 15 } },          -- Summon Darkglare (Aff)
 	[1276452] = { { group = "implord", duration = 20 } },           -- Grimoire: Imp Lord
 }
+mod.guardianSummons = GUARDIAN_SUMMONS
 
 -- Name an unattributed pet hit: collect the spells every ACTIVE guardian
 -- could have produced at this school; exactly one match names the hit,
