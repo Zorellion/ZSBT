@@ -314,6 +314,15 @@ local function emit(eventType, payload)
 				tostring(payload.schoolMask), tostring(payload.isCrit == true)))
 			return
 		end
+		-- PLAYER_SWING provenance: an unattributed school-1 hit inside the
+		-- swing window is backed by the client's own per-swing report —
+		-- stamp it so the veto treats it as proven (fast melee-line claim,
+		-- one retry on a lagging line) instead of a generic tier-2 guess.
+		if payload.spellId == nil and payload.schoolMask == 1
+			and Collector._swingSupported == true
+			and anySwingRecent(Collector, payload.timestamp or now()) then
+			payload._swingProven = true
+		end
 	end
 	-- Strict toggle also covers direct pet-path emits: PET_DAMAGE_COMBAT
 	-- bypasses the veto queue entirely, so without this check unnamed pet
