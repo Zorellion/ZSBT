@@ -10,10 +10,12 @@
 --     Deep Wounds / Thunderous Roar bleeds have no equivalent and stay
 --     generic — honest floor, same as guardian physical on other
 --     classes.
---   * No guardian windows at all. Ravager is PLAYER-sourced on the
---     verified client (throw + ticks under the player GUID), so its
---     cast budget can name what the claim window reaches; ticks
---     beyond it stay generic physical.
+--   * No guardian windows. Ravager is PLAYER-sourced on the verified
+--     client; the talented button (cast id 1235113) is covered by the
+--     cast budget + cast-seeded tick window (ravagerWound). The
+--     Whirling Blade proc variant emits no cast, no summon, and its
+--     debuff is a secret aura — verified unattributable, stays
+--     generic like Devastator/Phalanx.
 --   * mod.toggles stays empty: there is no pet melee to name and no
 --     guardian spellbook to resolve, so the Class page shows no
 --     class toggles.
@@ -26,6 +28,10 @@ local ADDON_NAME, ZSBT = ...
 if not ZSBT or not ZSBT.ClassDB then return end
 
 local mod = {}
+
+local RAVAGER_CAST_SID = 1235113
+local RAVAGER_TICK_SID = 156287
+local RAVAGER_WINDOW = 12.5
 
 mod.dots = {
 	{ names = { "Rend" },         ids = { 772 },    school = 1 },
@@ -70,9 +76,10 @@ mod.castBudget = {
 	[385059] = 8,  -- Odyn's Fury (multi-component; verify)
 	[376079] = 8,  -- Spear of Bastion (if still in kit; verify)
 	-- Ravager button cast id (user-verified 1235113). The throw damage
-	-- (228920) pairs via this budget; periodic ticks (156287) under the
-	-- Ravaged debuff are claimed by ravagerWound — which also covers the
-	-- Whirling Blade proc variant that produces no cast record at all.
+	-- (228920) pairs via this budget; the cast also opens the 12s
+	-- ravagerWound window that names periodic ticks (156287).
+	-- The Whirling Blade proc variant produces no cast and is
+	-- unattributable — see the classifier comment below.
 	[1235113] = 8,
 }
 
@@ -117,6 +124,12 @@ function mod.onCast(self, spellId, spellName, t)
 			spellId = spellId,
 			tickMin = ch.tickMin or 0.12,
 		}
+	end
+	if spellId == RAVAGER_CAST_SID then
+		-- Talented Ravager button: the only observable signal on this
+		-- client. Opens the tick window ravagerWound claims against.
+		self._ravWinUntil = t + RAVAGER_WINDOW
+		self._ravTickAt = nil
 	end
 end
 
@@ -296,18 +309,19 @@ function mod.onPhysicalWound(self, ctx)
 	end
 end
 
--- Ravager tick classifier. Ravager produces NO cast record client-side
--- (prot log-verified: 228920 throw + "Ravaged" debuff 1299405 appear
--- with no SPELL_CAST_SUCCESS), so cast pairing, budgets, and channel
--- windows all miss it. The Ravaged debuff is visible on the target —
--- gate on it: ticks are a stable ~2.0s school-1 cadence, so a wound
--- landing 1.8-2.4s after the last named tick while the debuff is up
--- claims the Ravager name (156287). The first tick has no anchor and
--- stays generic; Devastator/Phalanx procs colliding on cadence can
--- steal a single name — bounded, and better than the all-generic floor.
-local RAVAGER_DEBUFF = 1299405
-local RAVAGER_TICK_SID = 156287
-
+-- Ravager tick classifier. Two sources exist on this client:
+--
+--   * Talented button (cast id 1235113): SPELL_CAST_SUCCESS fires →
+--     onCast opens _ravWinUntil. Ticks claim inside that window.
+--   * Whirling Blade talent proc: produces NO observable signal — no
+--     cast in the combat log, no UNIT_SPELLCAST_SUCCEEDED, no summon,
+--     and its "Ravaged" debuff is an unreadable secret aura. Verified
+--     unattributable on this client; stays generic with the other
+--     proc-damage floor (Devastator, Phalanx, Lightning Strike).
+--
+-- While the window is open, ticks are a stable ~2.0s school-1 cadence:
+-- a wound landing 1.8-2.4s after the last claimed tick takes the name.
+-- The first tick anchors and stays generic by design.
 local function ravAudit(msg)
 	local ZB = ZSBT.ZBattleText
 	if ZB and ZB.Audit then
@@ -320,39 +334,13 @@ local function ravagerWound(self, ctx)
 	local amount = ctx.amount
 	local isCrit = ctx.isCrit
 	local actionStr = ctx.actionStr
-	local cachedHasTargetDebuffSpellId = ctx.hasTargetDebuff
 	local safeUnitName = ctx.safeUnitName
 	local emit = ctx.emit
 	local IsSafeNumber = ZSBT.IsSafeNumber
 
 	if actionStr ~= "WOUND" then return end
-	if self._ravHookSeen ~= true then
-		self._ravHookSeen = true
-		ravAudit("RAVHOOK ok")
-	end
-	local ravDebuff = cachedHasTargetDebuffSpellId(RAVAGER_DEBUFF)
-	if ravDebuff ~= true then
-		-- Rate-limited probe: proves the hook ran but the debuff gate
-		-- failed, vs. the hook never executing at all.
-		if (t - (self._ravDbgAt or 0)) > 10 then
-			self._ravDbgAt = t
-			-- Dump what the aura scan actually sees on the target so we can
-			-- tell "Ravaged not on this unit" from "aura APIs dead on client".
-			local n, ids = 0, ""
-			if AuraUtil and AuraUtil.ForEachAura then
-				pcall(function()
-					AuraUtil.ForEachAura("target", "HARMFUL", 40, function(auraData)
-						n = n + 1
-						local sid = auraData and (auraData.spellId or auraData.spellID)
-						if type(sid) == "number" and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid) and n <= 6 then
-							ids = ids .. sid .. ","
-						end
-						return true
-					end, true)
-				end)
-			end
-			ravAudit(("RAVCHK deb=false n=%d ids=%s"):format(n, ids))
-		end
+	local winUntil = self._ravWinUntil
+	if type(winUntil) ~= "number" or t > winUntil then
 		if self._ravTickAt ~= nil then
 			self._ravTickAt = nil
 			ravAudit("RAVWIN close")
@@ -361,7 +349,7 @@ local function ravagerWound(self, ctx)
 	end
 	local last = self._ravTickAt
 	if type(last) ~= "number" then
-		-- No anchor yet: mark the debuff window so the NEXT hit at tick
+		-- No anchor yet: mark the window so the NEXT hit at tick
 		-- cadence can claim. First tick stays generic by design.
 		self._ravTickAt = t
 		ravAudit("RAVWIN open")
@@ -370,7 +358,7 @@ local function ravagerWound(self, ctx)
 	local dt = t - last
 	if dt < 1.8 then return end
 	if dt > 2.4 then
-		-- Anchor expired without a claim inside a live debuff window.
+		-- Anchor expired without a claim inside a live window.
 		-- Re-anchor so the next in-cadence hit can claim — without this
 		-- the classifier went permanently dead after one overshoot.
 		self._ravTickAt = t
