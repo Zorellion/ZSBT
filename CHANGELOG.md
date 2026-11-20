@@ -3,7 +3,7 @@
 ## 3.3.9-beta
 
 ### Added
-- **Death Knight class module (Blood + Frost, log-verified):** channels (Breath of Sindragosa), per-cast hit budgets, guardian spellbook and summon windows (Dancing Rune Weapon, Rider of the Apocalypse horsemen), and disease/proc DoT coverage including Remorseless Winter's damage id.
+- **Death Knight class module (all three specs, log-verified):** channels (Breath of Sindragosa), per-cast hit budgets, permanent ghoul handling for Unholy, guardian spellbook and summon windows (Dancing Rune Weapon, Rider of the Apocalypse horsemen, Summon Gargoyle, Army/Apocalypse), and disease/proc DoT coverage including Remorseless Winter's damage id.
 - **Warrior class module:** Fury multi-strike budgets (Raging Blow family and empowered variants, dual-wield Execute MH+OH, Rampage), Whirlwind `190411`, Odyn's Fury four-cast pattern; Protection Thunder Blast and Whirlwind dual-cast handling; Ravager tick window via a debuff-gated classifier seeded from its cast.
 - **Live spellbook-derived knowledge layer:** the addon now enumerates the player and pet spellbooks, resolves current spell IDs by name (self-healing across Midnight's re-ids), and parses descriptions for role (DoT/channel/cast), tick cadence, and damage-school masks — school names resolve through localized client strings. Module tables stay authoritative; derived knowledge only fills gaps. `/zsbt sb` dumps the derived view.
 - **Teach-a-spell on the Class page:** drag a spell from your action bar or the new spellbook flyout (class + current-spec icon grid) onto the drop slot. Auto role inference guesses dot/channel/cast; entries the module already knows are flagged redundant; taught spells take precedence over derived knowledge.
