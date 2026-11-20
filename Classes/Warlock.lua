@@ -52,6 +52,12 @@ mod.castBudget = {
 mod.schools = { [1] = true, [4] = true, [8] = true, [32] = true,
 	[36] = true, [40] = true, [127] = true }
 
+-- Per-pet-cast claim budget (default is PET_CAST_MAX_CLAIMS=8 for AoE).
+-- Lash of Pain is strictly single-target and its damage lands ~0.05s
+-- after the cast — first in the window, always — so a second claim is
+-- a stray school-32 player hit wearing her name.
+mod.petCastBudget = { [7814] = 1 }
+
 -- Class-module UI toggles this module supports (Class page + quick bar).
 mod.guardianLabel = "imps, dreadstalkers, darkglare, or the tyrant"
 mod.toggles = {

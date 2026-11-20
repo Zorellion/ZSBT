@@ -89,8 +89,16 @@ local function consumePetCast(self, t, window, hitSchool)
 		local c = casts[i]
 		local age = t - (c.at or 0)
 		if age > w then break end
+		-- Per-cast claim budget: AoE pet casts (Whiplash) claim many hits,
+		-- but a single-target nuke's real damage lands first in the window
+		-- — every claim past its budget is a stray wearing a pet name
+		-- (Affliction's dense same-school tick stream starves this hard).
+		local maxClaims = PET_CAST_MAX_CLAIMS
+		if ZSBT.ClassDB and ZSBT.ClassDB.PetCastBudget then
+			maxClaims = ZSBT.ClassDB.PetCastBudget(c.spellId) or maxClaims
+		end
 		if age >= 0
-			and (c.claims or 0) < PET_CAST_MAX_CLAIMS
+			and (c.claims or 0) < maxClaims
 			and (not ZSBT.IsSafeNumber or ZSBT.IsSafeNumber(c.spellId))
 			and castSchoolOk(self, c.spellId, hitSchool) then
 			c.claims = (c.claims or 0) + 1
