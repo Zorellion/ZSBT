@@ -821,23 +821,33 @@ end
 -- its time sits near a multiple of that dot's interval. Two same-school
 -- dots only collide where their phases coincide (rare), and any wound
 -- matching both stays generic — never wrong beats sometimes named.
-local function dotCadencePredict(self, t, spellId)
+local function dotCadencePredict(self, t, spellId, appliedAtOverride)
 	local entry = dotEntryForSpellId(spellId)
-	local iv = dotTickInterval(spellId, entry)
+	local st = self._dotTickState
+	local rec = (type(st) == "table") and st[spellId] or nil
+	-- Learned period (confirmed tick gaps) outranks book/module/2.0 —
+	-- the model adapts to what this client actually schedules.
+	local prof = ZSBT.db and ZSBT.db.profile
+	local learnedPer = (rec and type(rec.period) == "number" and rec.period > 0 and rec.period)
+		or (prof and prof.learnedDotPeriods and prof.learnedDotPeriods[spellId])
+	local iv = learnedPer or dotTickInterval(spellId, entry)
 	local jitter = 0.45
-	-- Two timing anchors, either is sufficient: phase-lock from the cast
-	-- (strong early) OR interval distance from the last confirmed tick
-	-- (self-correcting — a wandering tick schedule re-anchors instead of
-	-- drifting permanently out of the appliedAt phase window).
-	local appliedAt = self._dotAppliedAt and self._dotAppliedAt[spellId]
+	-- Three timing anchors, any is sufficient: phase-lock from the cast
+	-- (per-target when a name key exists), OR distance from the last
+	-- confirmed tick, OR the predicted next beat — each real tick
+	-- re-locks the schedule instead of letting drift accumulate.
+	local appliedAt = appliedAtOverride
+		or (self._dotAppliedAt and self._dotAppliedAt[spellId])
 	if type(appliedAt) == "number" and t >= appliedAt then
 		local phase = (t - appliedAt) % iv
 		if phase <= jitter or phase >= (iv - jitter) then
 			return true
 		end
 	end
-	local st = self._dotTickState
-	local rec = (type(st) == "table") and st[spellId] or nil
+	local nextAt = (type(rec) == "table") and rec.nextAt or nil
+	if type(nextAt) == "number" and math.abs(t - nextAt) <= jitter then
+		return true
+	end
 	local lastAt = (type(rec) == "table") and rec.lastAt or nil
 	if type(lastAt) == "number" then
 		local dt = t - lastAt
@@ -995,18 +1005,58 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 	-- old blanket school-4 veto, which suppressed Immolate entirely
 	-- whenever an imp was active.
 	local pendingPet = pendingPetCast(self, t, 1.5, school)
+	local woundTgt = safeUnitName("target")
 	local pick, count = nil, 0
-	-- Survivor pool for the learned-amount tiebreak (reused table — no
+	-- Survivor pool + scores for the scored race (reused tables — no
 	-- per-wound allocation).
 	local pool = self._disambigPool
 	if pool then wipe(pool) else pool = {} ; self._disambigPool = pool end
-	local rejNoEntry, rejSchool, rejCadence, rejChan, scanned = 0, 0, 0, 0, 0
+	local scores = self._disambigScores
+	if scores then wipe(scores) else scores = {} ; self._disambigScores = scores end
+	local rejNoEntry, rejSchool, rejCadence, rejChan, rejTarget, scanned = 0, 0, 0, 0, 0, 0
 	-- Target-debuff presence is a TIEBREAKER, not a gate: era aura APIs
 	-- may not expose the data at all, and multi-target DoTing means a real
 	-- tick from another mob arrives while this target lacks the debuff.
 	-- School + cadence phase-lock is the proof; the aura check only
 	-- disambiguates when several candidates survive.
 	local debuffPick, debuffCount = nil, 0
+	local prof = ZSBT.db and ZSBT.db.profile
+	local learnedAm = type(prof) == "table" and prof.learnedTickAmounts or nil
+	local learnedPer = type(prof) == "table" and prof.learnedDotPeriods or nil
+	-- Score a gated survivor: predicted-beat proximity + amount fit vs the
+	-- learned EMA → persisted amount → tooltip-derived expected tick.
+	-- Lower is better; ~0.5/leg when that evidence is unavailable.
+	local function candidateScore(sid, entry)
+		local score = 0
+		local st = self._dotTickState
+		local rec = type(st) == "table" and st[sid] or nil
+		local nextAt = rec and rec.nextAt
+		if type(nextAt) == "number" then
+			local off = math.abs(t - nextAt)
+			score = score + ((off <= 0.45) and (off / 0.45 * 0.3) or 0.8)
+		else
+			score = score + 0.5
+		end
+		local ref = self._dotTickAmounts and self._dotTickAmounts[sid]
+		if not ref and learnedAm then ref = learnedAm[sid] end
+		if not ref then
+			local iv = (rec and rec.period) or (learnedPer and learnedPer[sid])
+				or dotTickInterval(sid, entry)
+			local sb = ZSBT.Spellbook
+			local sbRec = sb and sb.Entry and sb:Entry(sid)
+			if sbRec and type(sbRec.dotTotal) == "number" and type(sbRec.dotDur) == "number"
+				and sbRec.dotDur > 0 then
+				ref = sbRec.dotTotal * iv / sbRec.dotDur
+			end
+		end
+		if ref and ref > 0 and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(amount) then
+			local cmp = (isCrit == true) and (amount * 0.5) or amount
+			score = score + math.min(1, math.abs(cmp - ref) / ref)
+		else
+			score = score + 0.5
+		end
+		return score
+	end
 	for sid, at in pairs(m) do
 		if type(sid) == "number" and type(at) == "number"
 			and (t - at) >= 0 and (t - at) <= PERIODIC_OUTGOING_WINDOW_SEC then
@@ -1026,15 +1076,31 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 				-- Wound is contested by a proven pet claim: don't let a
 				-- same-school dot steal it. Falls through to the pet path.
 				rejSchool = rejSchool + 1
-			elseif not dotCadencePredict(self, t, sid) then
-				rejCadence = rejCadence + 1
 			else
-				pick = sid
-				count = count + 1
-				pool[count] = sid
-				if cachedHasTargetDebuffSpellId(sid) then
-					debuffPick = sid
-					debuffCount = debuffCount + 1
+				-- Per-target scoping: a wound on the current target may
+				-- only claim a dot applied to that mob. Unknown names are
+				-- permissive (CombatText wounds carry no target).
+				local appliedOv, tgtOk = nil, true
+				local map = self._dotAppliedTarget and self._dotAppliedTarget[sid]
+				if type(map) == "table" and woundTgt ~= nil then
+					if map[woundTgt] ~= nil then
+						appliedOv = map[woundTgt]
+					elseif next(map) ~= nil then
+						tgtOk = false
+					end
+				end
+				if not tgtOk then
+					rejTarget = rejTarget + 1
+				elseif not dotCadencePredict(self, t, sid, appliedOv) then
+					rejCadence = rejCadence + 1
+				else
+					count = count + 1
+					pool[count] = sid
+					scores[count] = candidateScore(sid, entry)
+					if cachedHasTargetDebuffSpellId(sid) then
+						debuffPick = sid
+						debuffCount = debuffCount + 1
+					end
 				end
 			end
 		end
@@ -1081,8 +1147,8 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 			end
 			if phaseOk then
 				count = count + 1
-				pick = ch.spellId
 				pool[count] = ch.spellId
+				scores[count] = candidateScore(ch.spellId, nil)
 				if cachedHasTargetDebuffSpellId(ch.spellId) then
 					debuffPick = ch.spellId
 					debuffCount = debuffCount + 1
@@ -1092,33 +1158,26 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 			end
 		end
 	end
+	-- Scored race: the best-fitting survivor wins only if it beats the
+	-- runner-up by a margin — near-tied candidates stay honest generic
+	-- (the FCT DIRECT_MATCH_MARGIN model), never a coin flip.
 	local ret, retWhy = nil, nil
 	if count == 1 then
-		ret = pick
+		ret = pool[1]
 	elseif count > 1 then
-		-- Learned-amount tiebreak: era dot ticks are consistent per rank,
-		-- so a wound's amount discriminates same-school same-phase
-		-- collisions phase-locking can't. Exactly one survivor inside the
-		-- tolerance band → name it; zero or several → stays honest generic.
-		local am = self._dotTickAmounts
-		if type(am) == "table" and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(amount) then
-			local cmp = (isCrit == true) and (amount * 0.5) or amount
-			local best, bestErr, secondErr = nil, nil, nil
-			for i = 1, count do
-				local avg = am[pool[i]]
-				if type(avg) == "number" and avg > 0 then
-					local err = math.abs(cmp - avg) / avg
-					if best == nil or err < bestErr then
-						secondErr = bestErr
-						best, bestErr = pool[i], err
-					elseif secondErr == nil or err < secondErr then
-						secondErr = err
-					end
-				end
+		local bestI
+		for i = 1, count do
+			if not bestI or scores[i] < scores[bestI] then bestI = i end
+		end
+		local ambiguous = false
+		for i = 1, count do
+			if i ~= bestI and scores[i] <= scores[bestI] + 0.15 then
+				ambiguous = true
+				break
 			end
-			if best ~= nil and bestErr <= 0.35 and (secondErr == nil or secondErr > 0.35) then
-				ret, retWhy = best, "amt"
-			end
+		end
+		if not ambiguous then
+			ret, retWhy = pool[bestI], "score"
 		end
 		if ret == nil and debuffCount == 1 then
 			ret, retWhy = debuffPick, "debuff"
@@ -1130,9 +1189,10 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 		ch.lastTickAt = t
 	end
 	if auditNote then
-		auditNote(("AUDD reason=DOTDISAMBIG scan=%s surv=%s ret=%s why=%s debuffpass=%s pet=%s noentry=%s school=%s chan=%s cadence=%s")
+		auditNote(("AUDD reason=DOTDISAMBIG scan=%s surv=%s ret=%s why=%s debuffpass=%s pet=%s noentry=%s school=%s chan=%s tgt=%s cadence=%s")
 			:format(dbgSafe(scanned), dbgSafe(count), dbgSafe(ret), dbgSafe(retWhy), dbgSafe(debuffCount),
-				dbgSafe(pendingPet), dbgSafe(rejNoEntry), dbgSafe(rejSchool), dbgSafe(rejChan), dbgSafe(rejCadence)))
+				dbgSafe(pendingPet), dbgSafe(rejNoEntry), dbgSafe(rejSchool), dbgSafe(rejChan),
+				dbgSafe(rejTarget), dbgSafe(rejCadence)))
 	end
 	return ret
 end
@@ -1150,14 +1210,49 @@ end
 -- is a strong discriminator when phase-locking leaves collisions. Only
 -- feeds the tiebreak where the module opted in — amounts stay unread
 -- (possibly secret) on clients that don't.
-local function noteDotTickAmount(self, spellId, amount, isCrit)
-	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(amount)) then return end
-	if isCrit == true then amount = amount * 0.5 end
-	if amount <= 0 then return end
-	local am = self._dotTickAmounts
-	if not am then am = {} ; self._dotTickAmounts = am end
-	local avg = am[spellId]
-	am[spellId] = avg and (avg * 0.65 + amount * 0.35) or amount
+local function noteDotTickAmount(self, spellId, amount, isCrit, t)
+	if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(amount) then
+		if isCrit == true then amount = amount * 0.5 end
+		if amount > 0 then
+			local am = self._dotTickAmounts
+			if not am then am = {} ; self._dotTickAmounts = am end
+			local avg = am[spellId]
+			am[spellId] = avg and (avg * 0.65 + amount * 0.35) or amount
+		end
+	end
+	-- Learned rhythm + persistence are disambig-module features: the
+	-- confirmed-tick gap refines the sid's true period, and nextAt is the
+	-- predicted beat the scorer prefers. Persisted so it survives /reload.
+	if not (ZSBT.ClassDB and ZSBT.ClassDB.DotCadenceDisambig
+		and ZSBT.ClassDB.DotCadenceDisambig()) then return end
+	if type(t) ~= "number" then return end
+	local st = self._dotTickState
+	if type(st) ~= "table" then st = {} ; self._dotTickState = st end
+	local rec = st[spellId]
+	if type(rec) ~= "table" then rec = {} ; st[spellId] = rec end
+	if type(rec.confirmedAt) == "number" then
+		local gap = t - rec.confirmedAt
+		local iv = rec.period or dotTickInterval(spellId)
+		-- A gap near 1x period refines the learned interval; a gap at 2x+
+		-- is skipped ticks — keep the learned value, don't grow it.
+		if gap >= iv * 0.7 and gap <= iv * 1.45 then
+			rec.period = rec.period and (rec.period * 0.6 + gap * 0.4) or gap
+		end
+	end
+	rec.confirmedAt = t
+	rec.nextAt = t + (rec.period or dotTickInterval(spellId))
+	local prof = ZSBT.db and ZSBT.db.profile
+	if type(prof) == "table" then
+		local avg = self._dotTickAmounts and self._dotTickAmounts[spellId]
+		if avg then
+			prof.learnedTickAmounts = prof.learnedTickAmounts or {}
+			prof.learnedTickAmounts[spellId] = avg
+		end
+		if rec.period then
+			prof.learnedDotPeriods = prof.learnedDotPeriods or {}
+			prof.learnedDotPeriods[spellId] = rec.period
+		end
+	end
 end
 
 hasTargetDebuffSpellId = function(spellId)
@@ -1604,6 +1699,18 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 			self._recentPeriodicSpellAt[spellId] = self._lastPlayerSpellAt
 			self._dotAppliedAt = self._dotAppliedAt or {}
 			self._dotAppliedAt[spellId] = self._lastPlayerSpellAt
+			-- Per-target application map for the disambiguation path:
+			-- tab-dotting needs each mob's own phase anchor, and a wound on
+			-- the current target must not claim a dot applied elsewhere.
+			-- Only read by mod.dotCadenceDisambig paths.
+			local tgtName = safeUnitName("target")
+			if type(tgtName) == "string" and tgtName ~= "" then
+				local map = self._dotAppliedTarget
+				if not map then map = {} ; self._dotAppliedTarget = map end
+				local sm = map[spellId]
+				if not sm then sm = {} ; map[spellId] = sm end
+				sm[tgtName] = self._lastPlayerSpellAt
+			end
 		end
 
 		-- Prime target health baseline to improve first-hit correlation.
@@ -3320,7 +3427,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							return
 						end
 						self._recentPeriodicSpellAt[dotSpellId] = t
-						noteDotTickAmount(self, dotSpellId, amount, isCrit)
+						noteDotTickAmount(self, dotSpellId, amount, isCrit, t)
 						local pipeId = self._rawPipeCount + 1
 						self._rawPipeCount = pipeId
 						self._rawPipe[pipeId] = amount
@@ -4042,7 +4149,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						return
 					end
 					self._recentPeriodicSpellAt[dotSpellId] = t
-					noteDotTickAmount(self, dotSpellId, amount, isCrit)
+					noteDotTickAmount(self, dotSpellId, amount, isCrit, t)
 					local pipeId = self._rawPipeCount + 1
 					self._rawPipeCount = pipeId
 					self._rawPipe[pipeId] = amount
@@ -4134,7 +4241,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(amount), dbgSafe(school)))
 						end
 						self._recentPeriodicSpellAt[dotSpellId] = t
-						noteDotTickAmount(self, dotSpellId, amount, isCrit)
+						noteDotTickAmount(self, dotSpellId, amount, isCrit, t)
 						local pipeId = self._rawPipeCount + 1
 						self._rawPipeCount = pipeId
 						self._rawPipe[pipeId] = amount
