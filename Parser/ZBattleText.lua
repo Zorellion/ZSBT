@@ -764,10 +764,17 @@ local function flushPending()
                             tostring(kind)))
                         ZB:FileLog(("ALLOW kind=%s sid=%s"):format(tostring(kind), tostring(p.payload and p.payload.spellId)))
                         deliverOutgoing(p.payload)
-                    elseif p.payload and p.payload._swingProven == true and p._retried ~= true then
-                        -- Proven by PLAYER_SWING but its line hasn't
-                        -- landed yet — one retry at a wider window
-                        -- before treating it as foreign bleed.
+                    elseif p.payload and p._retried ~= true and (
+                        p.payload._swingProven == true
+                        or (p.payload.spellId ~= nil
+                            and ZSBT.ClassDB and ZSBT.ClassDB.IsForever and ZSBT.ClassDB.IsForever())
+                    ) then
+                        -- Proven (PLAYER_SWING or a consumed cast record)
+                        -- but its line hasn't landed yet — one retry at a
+                        -- wider window before treating it as foreign bleed.
+                        -- On Forever sid-bearing hits retry too, since the
+                        -- no-line rescue below must only fire for spells the
+                        -- feed genuinely never reports (Judgement etc.).
                         p._retried = true
                         requeue = requeue or {}
                         requeue[#requeue + 1] = p
@@ -801,6 +808,21 @@ local function flushPending()
                                 tostring(dp._petRoute == true and "pet" or (dp.isAuto == true and "auto" or (dp.spellId ~= nil and "spell" or "generic")))))
                             sustainedRejection()
                         end
+                    elseif pass == 1 and p._retried == true and p.payload and p.payload.spellId ~= nil
+                        and ZSBT.ClassDB and ZSBT.ClassDB.IsForever and ZSBT.ClassDB.IsForever() then
+                        -- Forever's feed is structurally incomplete: some
+                        -- player damage (Judgement, seal procs) produces no
+                        -- SPELL_DAMAGE/RANGE_DAMAGE at all, so no classified
+                        -- line can exist. A consumed cast record is already
+                        -- provenance — after the retry confirms no line is
+                        -- coming, dropping it only hides a proven own hit.
+                        -- Retail keeps the strict line requirement; its
+                        -- feed is complete.
+                        ZB._allows = ZB._allows + 1
+                        ZB:Audit(("AUDCLAIM tier=1 sid=%s kind=noline"):format(
+                            audSafe(p.payload.spellId)))
+                        ZB:FileLog(("ALLOW_NOLINE sid=%s"):format(tostring(p.payload.spellId)))
+                        deliverOutgoing(p.payload)
                     else
                         ZB._drops = ZB._drops + 1
                         ZB:FileLog(("DROP sid=%s"):format(tostring(p.payload and p.payload.spellId)))
