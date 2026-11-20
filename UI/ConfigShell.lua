@@ -794,8 +794,16 @@ local function buildClassPage(pf)
 					for _, id in ipairs(e.ids) do parts[#parts + 1] = tostring(id) end
 					ids = " (" .. table.concat(parts, ",") .. ")"
 				end
+				-- School-colored name, same palette the scroll uses —
+				-- a wrong declared/derived school reads wrong at a glance.
+				local nameText = tostring(e.name)
+				local c = ZSBT.SchoolColorFromMask and ZSBT.SchoolColorFromMask(e.school)
+				if c then
+					nameText = ("|cff%02x%02x%02x%s|r")
+						:format(c.r * 255, c.g * 255, c.b * 255, nameText)
+				end
 				row:SetText(("|cFF888888%s|r %s%s%s")
-					:format(tostring(e.kind), tostring(e.name), ids,
+					:format(tostring(e.kind), nameText, ids,
 						e.extra and (" - " .. tostring(e.extra)) or ""))
 				row:Show()
 			elseif row then

@@ -210,11 +210,20 @@ function ClassDB.KnowledgeList()
 		local nm = clean and clean(sid)
 		return (type(nm) == "string" and nm ~= "") and nm or tostring(sid)
 	end
+	-- School masks for the knowledge list's color coding: module tables
+	-- declare them where known; for plain casts/summons the spellbook
+	-- layer's parsed masks are the fallback (nil = neutral text).
+	local function sidSchool(sid)
+		local sb = ZSBT.Spellbook
+		local e = sb and sb.Entry and sb:Entry(sid)
+		return e and e.masks and e.masks[1] or nil
+	end
 	for _, e in ipairs(mod.dots or {}) do
 		out[#out + 1] = {
 			kind = "DoT",
 			name = (e.names and e.names[1]) or "?",
 			ids = e.ids,
+			school = e.school,
 			extra = type(e.school) == "number" and ("school " .. e.school) or nil,
 		}
 	end
@@ -223,6 +232,7 @@ function ClassDB.KnowledgeList()
 			kind = "Channel",
 			name = (e.names and e.names[1]) or "?",
 			ids = e.ids,
+			school = e.school,
 			extra = type(e.duration) == "number" and (e.duration .. "s") or nil,
 		}
 	end
@@ -231,6 +241,7 @@ function ClassDB.KnowledgeList()
 			kind = "Cast",
 			name = nameOf(sid),
 			ids = { sid },
+			school = sidSchool(sid),
 			extra = "x" .. tostring(budget),
 		}
 	end
@@ -241,6 +252,7 @@ function ClassDB.KnowledgeList()
 			kind = "Summon",
 			name = nameOf(sid),
 			ids = { sid },
+			school = sidSchool(sid),
 			extra = table.concat(groups, "/"),
 		}
 	end
@@ -250,6 +262,7 @@ function ClassDB.KnowledgeList()
 				kind = "Guardian",
 				name = nameOf(sp.sid),
 				ids = { sp.sid },
+				school = sp.school,
 				extra = tostring(group) .. "/sch" .. tostring(sp.school),
 			}
 		end
