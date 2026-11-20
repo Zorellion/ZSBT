@@ -19,6 +19,8 @@ mod.dots = {
 	{ names = { "Seed of Corruption" },     ids = { 27243, 27285 },               school = 32 },
 	{ names = { "Haunt" },                  ids = { 48181 },                      school = 32 },
 	{ names = { "Immolate" },               ids = { 348 },                        school = 4 },
+	-- Destruction's DoT (Midnight): cast 445468, ticks 445474, shadowflame.
+	{ names = { "Wither" },                 ids = { 445468, 445474 },             school = 36 },
 	-- Soul Anathema self-applies (SPELL_AURA_APPLIED, no cast event), so
 	-- the ids below can never seed a window — the entry documents the
 	-- periodic for the knowledge pane and future per-dot records.
@@ -28,6 +30,11 @@ mod.dots = {
 mod.channels = {
 	{ names = { "Drain Life" }, ids = { 234153 }, duration = 6.0, tickMin = 0.12 },
 	{ names = { "Drain Soul" }, ids = { 1120, 198590 }, duration = 5.0, tickMin = 0.12 },
+	-- Rain of Fire: instant ground AoE, ticks ~0.55s (verified); the cast
+	-- seeds an 8s window and tick-kind hits claim the name — Ravager-style
+	-- because individual ticks carry no cast record. Cast id 1214467 is
+	-- Midnight's (legacy 5740 kept for safety), damage id 42223.
+	{ names = { "Rain of Fire" }, ids = { 1214467, 5740 }, duration = 8.0, tickMin = 0.4 },
 }
 
 -- Per-cast-instance naming budget for the recency-stamp paths: how many
@@ -42,6 +49,8 @@ mod.castBudget = {
 	[264106] = 6,    -- Bilescourge Bombers
 	[1261153] = 8,   -- Malefic Grasp: ~1 hit per active DoT (verified 3-4/cast)
 	[1257052] = 4,   -- Dark Harvest: cast -> damage 1257065 (shadowflame)
+	[442726] = 4,    -- Malevolence: cast -> damage 446285 (shadowflame)
+	[442804] = 2,    -- Curse of the Satyr
 }
 
 -- Provable damage schools (masks observed on player/pet/guardian-owned
@@ -50,7 +59,7 @@ mod.castBudget = {
 -- 127 chaos (Ruination, Diabolic Gaze). Anything else on an
 -- unattributed hit is provably foreign — ClassDB.SchoolAllowed vetoes.
 mod.schools = { [1] = true, [4] = true, [8] = true, [32] = true,
-	[36] = true, [40] = true, [127] = true }
+	[36] = true, [40] = true, [124] = true, [127] = true }
 
 -- Per-pet-cast claim budget (default is PET_CAST_MAX_CLAIMS=8 for AoE).
 -- Lash of Pain is strictly single-target and its damage lands ~0.05s
@@ -88,8 +97,12 @@ local function hasFireBit(school)
 end
 
 function mod.petSchoolHit(school, helpers)
+	-- Fire bit = imp signature ONLY. A succubus/felhunter out means no
+	-- pet produces fire damage at all — on Destruction nearly the whole
+	-- player kit carries the fire bit, so gating on family is the only
+	-- thing keeping player strays out of the pet scroll.
 	if helpers and helpers.safeNumber and helpers.safeNumber(school)
-		and hasFireBit(school) then
+		and hasFireBit(school) and isImpPet(helpers) then
 		return true
 	end
 	return false
@@ -116,6 +129,15 @@ local WARLOCK_FIRE_PLAYER_SPELLS = {
 	["Diabolic Gaze"] = true,
 	["Rune of Unleashed Fire"] = true,
 	["Summon Infernal"] = true,
+	-- Destruction (verified Midnight): every fire-bit damage cast, so a
+	-- stray fire hit after one of these is not imp-claimed.
+	["Wither"] = true,          -- 0x24 shadowflame DoT
+	["Chaos Bolt"] = true,      -- 0x7c chromatic
+	["Shadowburn"] = true,
+	["Soul Fire"] = true,
+	["Channel Demonfire"] = true,
+	["Malevolence"] = true,     -- 0x24
+	["Curse of the Satyr"] = true,
 }
 
 -- Recent-cast variant: a fire-bit hit near a recent cast belongs to the
@@ -127,6 +149,7 @@ function mod.petSchoolHitRecent(self, school, lastPlayerSpellId, helpers)
 		return false
 	end
 	if not hasFireBit(school) then return false end
+	if not isImpPet(helpers) then return false end
 	if type(lastPlayerSpellId) ~= "number" then return false end
 	local sn = helpers.cleanName and helpers.cleanName(lastPlayerSpellId) or nil
 	if sn == nil then
@@ -176,6 +199,9 @@ local GUARDIAN_SPELLS = {
 	-- Soul Anathema, Shadow of Nathreza — would claim the name. On a
 	-- spec whose kit is almost entirely school-32 periodic traffic,
 	-- leaving the group spell-less keeps those hits honest generics.
+	-- infernal likewise: Immolation (19483) is school 4, and Destruction's
+	-- stray stream is nearly all fire-bit — a school-4 guardian name
+	-- would steal the player's own unpaired hits for 30 straight seconds.
 }
 mod.guardianSpells = GUARDIAN_SPELLS
 
@@ -190,6 +216,7 @@ local GUARDIAN_SUMMONS = {
 	[264119] = { { group = "gloomhound", duration = 15 } },         -- Summon Vilefiend
 	[265187] = { { group = "tyrant", duration = 18 } },             -- Summon Demonic Tyrant
 	[205180] = { { group = "darkglare", duration = 15 } },          -- Summon Darkglare (Aff)
+	[1122] = { { group = "infernal", duration = 30 } },             -- Summon Infernal (Destro)
 	[1276452] = { { group = "implord", duration = 20 } },           -- Grimoire: Imp Lord
 }
 mod.guardianSummons = GUARDIAN_SUMMONS
