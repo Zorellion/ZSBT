@@ -825,12 +825,17 @@ local function dotCadencePredict(self, t, spellId)
 	local entry = dotEntryForSpellId(spellId)
 	local iv = dotTickInterval(spellId, entry)
 	local jitter = 0.45
+	-- Two timing anchors, either is sufficient: phase-lock from the cast
+	-- (strong early) OR interval distance from the last confirmed tick
+	-- (self-correcting — a wandering tick schedule re-anchors instead of
+	-- drifting permanently out of the appliedAt phase window).
 	local appliedAt = self._dotAppliedAt and self._dotAppliedAt[spellId]
 	if type(appliedAt) == "number" and t >= appliedAt then
 		local phase = (t - appliedAt) % iv
-		return phase <= jitter or phase >= (iv - jitter)
+		if phase <= jitter or phase >= (iv - jitter) then
+			return true
+		end
 	end
-	-- No application stamp: fall back to distance-from-last-claimed.
 	local st = self._dotTickState
 	local rec = (type(st) == "table") and st[spellId] or nil
 	local lastAt = (type(rec) == "table") and rec.lastAt or nil
@@ -1061,10 +1066,20 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 		else
 			-- Interval-proportional jitter: era drain channels tick at 1s,
 			-- where a fixed 0.45s band accepts ~90% of all wounds and
-			-- manufactures collisions.
+			-- manufactures collisions. Phase from channel start OR distance
+			-- from the last claimed tick — same self-correcting anchors as
+			-- the dot path (drains wander too).
 			local jitter = math.min(0.45, math.max(0.20, iv * 0.30))
 			local phase = elapsed % iv
-			if phase <= jitter or phase >= (iv - jitter) then
+			local phaseOk = phase <= jitter or phase >= (iv - jitter)
+			if not phaseOk then
+				local lastCh = ch.lastTickAt
+				if type(lastCh) == "number" and lastCh > 0 then
+					local dt = t - lastCh
+					phaseOk = dt >= (iv * 0.7) and dt <= (iv * 1.45)
+				end
+			end
+			if phaseOk then
 				count = count + 1
 				pick = ch.spellId
 				pool[count] = ch.spellId
@@ -1108,6 +1123,11 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 		if ret == nil and debuffCount == 1 then
 			ret, retWhy = debuffPick, "debuff"
 		end
+	end
+	-- Stamp the channel's tick anchor only on an actual pick: it feeds the
+	-- distance-from-last-tick check next wound (self-correcting cadence).
+	if ret ~= nil and type(ch) == "table" and ret == ch.spellId then
+		ch.lastTickAt = t
 	end
 	if auditNote then
 		auditNote(("AUDD reason=DOTDISAMBIG scan=%s surv=%s ret=%s why=%s debuffpass=%s pet=%s noentry=%s school=%s chan=%s cadence=%s")
