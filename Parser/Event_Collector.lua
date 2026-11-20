@@ -769,34 +769,33 @@ local function dotCadenceOk(self, t, spellId)
 	return true
 end
 
--- Non-mutating cadence prediction: would this sid's dot cadence accept a
--- tick at t? Same interval logic as dotCadenceOk but no state writes, and
--- a tighter band — era ticks are server-exact, so a narrow window is what
--- lets two same-school dots be told apart at all.
+-- Non-mutating cadence prediction for multi-dot disambiguation: era dot
+-- ticks are phase-locked to application — tick N lands at appliedAt+N*iv
+-- with only latency jitter. A wound is a candidate tick for this sid iff
+-- its time sits near a multiple of that dot's interval. Two same-school
+-- dots only collide where their phases coincide (rare), and any wound
+-- matching both stays generic — never wrong beats sometimes named.
 local function dotCadencePredict(self, t, spellId)
 	local iv = DOT_DEFAULT_TICK_INTERVAL
 	local entry = dotEntryForSpellId(spellId)
 	if entry and type(entry.interval) == "number" and entry.interval > 0 then
 		iv = entry.interval
 	end
+	local jitter = 0.45
+	local appliedAt = self._dotAppliedAt and self._dotAppliedAt[spellId]
+	if type(appliedAt) == "number" and t >= appliedAt then
+		local phase = (t - appliedAt) % iv
+		return phase <= jitter or phase >= (iv - jitter)
+	end
+	-- No application stamp: fall back to distance-from-last-claimed.
 	local st = self._dotTickState
 	local rec = (type(st) == "table") and st[spellId] or nil
 	local lastAt = (type(rec) == "table") and rec.lastAt or nil
 	if type(lastAt) == "number" then
 		local dt = t - lastAt
-		if dt >= (iv * 0.7) and dt <= (iv * 1.45) then return true end
-		if dt > (iv * 3.5) then
-			-- Stale record: fall through to first-tick check.
-		else
-			return false
-		end
+		return dt >= (iv * 0.7) and dt <= (iv * 1.45)
 	end
-	local appliedAt = self._dotAppliedAt and self._dotAppliedAt[spellId]
-	if type(appliedAt) == "number" then
-		local dt = t - appliedAt
-		return dt >= (iv * 0.4) and dt <= (iv * 3.0)
-	end
-	return true -- no records: allow (legacy state)
+	return false -- no timing anchor at all: cannot prove cadence
 end
 
 local function arePetsEnabled()
