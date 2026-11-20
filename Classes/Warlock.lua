@@ -126,12 +126,15 @@ local function hasFireBit(school)
 end
 
 -- Union of every school a warlock minion can produce across ALL
--- families + guardians: imp fire (4/36), demon shadow (32), melee (1).
+-- families + guardians: imp fire (4/36), demon shadow (32), melee (1),
+-- plus the guardian spellbook's declared masks — Bile Spit (8) and
+-- Blighted Maw (40) resolved named, then got stripped as "foreign"
+-- because their schools were missing here.
 -- A pet-routed hit outside this set is provably foreign regardless of
 -- which demon is out (holy/nature/frost/arcane have no warlock-minion
 -- source). Deliberately NOT family-scoped — guardians make different
 -- minions' damage overlap, and a false veto loses real pet damage.
-local PET_SCHOOLS = { [1] = true, [4] = true, [32] = true, [36] = true }
+local PET_SCHOOLS = { [1] = true, [4] = true, [8] = true, [32] = true, [36] = true, [40] = true }
 
 function mod.petSchoolAllowed(school, helpers)
 	if not (helpers and helpers.safeNumber and helpers.safeNumber(school)) then
