@@ -4917,6 +4917,14 @@ function Collector:Enable()
 				local dl = OutDbgLevel()
 				local msg = select(1, ...)
 				local msgSafe = type(msg) == "string" and (not ZSBT.IsSafeString or ZSBT.IsSafeString(msg))
+				local zc = ZSBT.ZBattleText
+				if zc and zc.FileLog and ZSBT._ucDropTrace == true then
+					if msgSafe then
+						zc:FileLog(("CHAT_OUT evt=%s msg=%s"):format(tostring(event), tostring(msg:sub(1, 120))))
+					else
+						zc:FileLog(("CHAT_OUT evt=%s msg=<unsafe>"):format(tostring(event)))
+					end
+				end
 				if dl >= 5 then
 					if msgSafe and (msg:find("Whirlwind", 1, true) or msg:find("whirlwind", 1, true)) then
 						Collector._dbgWWChatRecvAt = now()
