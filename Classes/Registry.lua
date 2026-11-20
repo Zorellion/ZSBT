@@ -363,6 +363,15 @@ function ClassDB.IsDotSpell(spellId)
 	return ClassDB.DotEntry(spellId) ~= nil
 end
 
+-- Per-pet-cast claim budget (mod.petCastBudget[spellId]): how many hits
+-- one recorded pet cast may claim. Modules declare single-target pet
+-- nukes at 1 so strays can't ride the cast's window; nil = default cap.
+function ClassDB.PetCastBudget(spellId)
+	local mod = ClassDB.ActiveModule()
+	if not mod or type(mod.petCastBudget) ~= "table" then return nil end
+	return mod.petCastBudget[spellId]
+end
+
 function ClassDB.ChannelMatch(spellId)
 	if type(spellId) ~= "number" then return nil end
 	local te = taughtEntry(spellId)
