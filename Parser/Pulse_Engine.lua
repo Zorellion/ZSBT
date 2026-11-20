@@ -1343,6 +1343,12 @@ function Engine:flushBucket()
 							petName = name
 						end
 					end
+					if aggMode:find("Spell") then
+						local nm = ZSBT.CleanSpellName and ZSBT.CleanSpellName(sample.petSpellId or sample.spellId)
+						if type(nm) == "string" and nm ~= "" then
+							prefix = nm
+						end
+					end
 					if not prefix then
 						if aggMode:find("None") then
 							prefix = ""
