@@ -303,6 +303,13 @@ end
 local RAVAGER_DEBUFF = 1299405
 local RAVAGER_TICK_SID = 156287
 
+local function ravAudit(msg)
+	local ZB = ZSBT.ZBattleText
+	if ZB and ZB.Audit then
+		ZB:Audit(msg)
+	end
+end
+
 local function ravagerWound(self, ctx)
 	local t = ctx.t
 	local amount = ctx.amount
@@ -316,7 +323,10 @@ local function ravagerWound(self, ctx)
 	if actionStr ~= "WOUND" then return end
 	local ravDebuff = cachedHasTargetDebuffSpellId(RAVAGER_DEBUFF)
 	if ravDebuff ~= true then
-		self._ravTickAt = nil
+		if self._ravTickAt ~= nil then
+			self._ravTickAt = nil
+			ravAudit("RAVWIN close")
+		end
 		return
 	end
 	local last = self._ravTickAt
@@ -324,11 +334,21 @@ local function ravagerWound(self, ctx)
 		-- No anchor yet: mark the debuff window so the NEXT hit at tick
 		-- cadence can claim. First tick stays generic by design.
 		self._ravTickAt = t
+		ravAudit("RAVWIN open")
 		return
 	end
 	local dt = t - last
-	if dt < 1.8 or dt > 2.4 then return end
+	if dt < 1.8 then return end
+	if dt > 2.4 then
+		-- Anchor expired without a claim inside a live debuff window.
+		-- Re-anchor so the next in-cadence hit can claim — without this
+		-- the classifier went permanently dead after one overshoot.
+		self._ravTickAt = t
+		ravAudit(("RAV reanchor dt=%.2f"):format(dt))
+		return
+	end
 	self._ravTickAt = t
+	ravAudit(("RAV claim dt=%.2f"):format(dt))
 	local pipeId = self._rawPipeCount + 1
 	self._rawPipeCount = pipeId
 	self._rawPipe[pipeId] = amount
