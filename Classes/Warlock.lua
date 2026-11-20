@@ -96,6 +96,21 @@ local function hasFireBit(school)
 	return math.floor(school / 4) % 2 == 1
 end
 
+-- Union of every school a warlock minion can produce across ALL
+-- families + guardians: imp fire (4/36), demon shadow (32), melee (1).
+-- A pet-routed hit outside this set is provably foreign regardless of
+-- which demon is out (holy/nature/frost/arcane have no warlock-minion
+-- source). Deliberately NOT family-scoped — guardians make different
+-- minions' damage overlap, and a false veto loses real pet damage.
+local PET_SCHOOLS = { [1] = true, [4] = true, [32] = true, [36] = true }
+
+function mod.petSchoolAllowed(school, helpers)
+	if not (helpers and helpers.safeNumber and helpers.safeNumber(school)) then
+		return nil
+	end
+	return PET_SCHOOLS[school] == true
+end
+
 function mod.petSchoolHit(school, helpers)
 	-- Fire bit = imp signature ONLY. A succubus/felhunter out means no
 	-- pet produces fire damage at all — on Destruction nearly the whole

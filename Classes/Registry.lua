@@ -475,6 +475,19 @@ function ClassDB.PetSchoolHit(school)
 	return false
 end
 
+-- Pet-side counterpart to SchoolAllowed: false ONLY when the school is
+-- provably impossible for any of the class's pets/guardians — used to
+-- strip a wrongly pet-routed wound (a foreign hit that consumed a
+-- MY_PET palette line or claimed a pet cast via an unknown-school
+-- window). nil/true = can't disprove it, allow.
+function ClassDB.PetSchoolAllowed(school)
+	local mod = ClassDB.ActiveModule()
+	if mod and mod.petSchoolAllowed then
+		return mod.petSchoolAllowed(school, ClassDB.Helpers())
+	end
+	return nil
+end
+
 function ClassDB.PetSchoolHitRecent(self, school, lastPlayerSpellId)
 	local mod = ClassDB.ActiveModule()
 	if mod and mod.petSchoolHitRecent then
