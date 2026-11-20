@@ -680,7 +680,14 @@ end
 -- Retail modules leave this unset: single-most-recent behavior stays.
 function ClassDB.DotCadenceDisambig()
 	local mod = ClassDB.ActiveModule()
-	return mod ~= nil and mod.dotCadenceDisambig == true
+	if mod ~= nil then return mod.dotCadenceDisambig == true end
+	-- Module-less era fallback: the spellbook already derives each known
+	-- spell's role/school/interval, so a class with no era module still
+	-- runs the disambiguation engine on the book alone — modules only
+	-- add what tooltips can't express. Retail never enters this path.
+	if not ClassDB.IsForever() then return false end
+	local sb = ZSBT.Spellbook
+	return sb ~= nil and sb.HasPeriodic ~= nil and sb:HasPeriodic() == true
 end
 
 -- Which class-module UI toggles apply to this class. Modules declare
