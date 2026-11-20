@@ -2000,6 +2000,13 @@ function Addon:HandleSlashCommand(input)
         end
         self:Print("UC_DROP trace " .. (ZSBT._ucDropTrace and "ON" or "OFF"))
         return
+    elseif cmd == "sb" then
+        if ZSBT.Spellbook and ZSBT.Spellbook.Dump then
+            ZSBT.Spellbook:Dump(function(s) self:Print(s) end)
+        else
+            self:Print("Spellbook layer unavailable.")
+        end
+        return
     elseif cmd == "audit" then
         ZSBT._auditTrace = not (ZSBT._auditTrace == true)
         if ZSBT._auditTrace == true then
