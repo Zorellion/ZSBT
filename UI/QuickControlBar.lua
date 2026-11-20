@@ -305,7 +305,10 @@ function QuickBar:Init()
 	-- an "Open Class Module" shortcut, so even a module with no toggles
 	-- (warrior) gets a button — its knowledge/teaching page still exists.
 	local cdb = ZSBT.ClassDB
-	local classModActive = cdb and cdb.ActiveModule and cdb.ActiveModule() ~= nil
+	local classMod = cdb and cdb.ActiveModule and cdb.ActiveModule()
+	-- Stub modules (registered placeholders with no data) don't get a
+	-- button — there's nothing to toggle and the page is covered anyway.
+	local classModActive = classMod ~= nil and classMod._stub ~= true
 	local btnAnchor = btnOutgoing
 	if classModActive then
 		local _, className = UnitClass("player")

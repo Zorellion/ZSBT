@@ -837,12 +837,15 @@ local function buildClassPage(pf)
 	local function refresh()
 		local cdb = ZSBT.ClassDB
 		local mod = cdb and cdb.ActiveModule and cdb.ActiveModule()
-		ovPanel:SetShown(mod == nil)
+		-- mod._stub: registered placeholder files carry no attribution
+		-- data — they behave as "no module" for the page's purposes.
+		local noMod = (mod == nil) or (mod._stub == true)
+		ovPanel:SetShown(noMod)
 		local tag = cdb and cdb.PlayerTag and cdb.PlayerTag() or "?"
 		local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
 		local st = ec and ec.ClassModuleState and ec:ClassModuleState() or nil
 
-		if not mod then
+		if noMod then
 			body:SetText(L["NoModulePageBody"])
 			for _, t in ipairs(toggles) do t.cb:Hide() end
 			detail:SetText("")
