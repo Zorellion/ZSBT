@@ -616,7 +616,7 @@ end
 -- /zsbt sb — dump what the book-derived layer sees for the current
 -- spec, so verification is a chat command rather than a code read.
 ---------------------------------------------------------------------------
-function Spellbook:Dump(printFn)
+function Spellbook:Dump(printFn, showAll)
 	local p = printFn or print
 	-- Diagnostic command — always print the freshest state, including
 	-- a trait config that only finished loading after the login scan.
@@ -642,10 +642,11 @@ function Spellbook:Dump(printFn)
 	local bits = {}
 	for _, m in ipairs(masks) do bits[#bits + 1] = tostring(m) end
 	p("Derived schools: " .. (#bits > 0 and table.concat(bits, ", ") or "none"))
-	-- Interesting entries only: anything not plain "cast".
+	-- Interesting entries only: anything not plain "cast" — unless
+	-- /zsbt sb all asked for the full record list.
 	local flagged = {}
 	for sid, rec in pairs(self._entries) do
-		if rec.role ~= "cast" or rec.masks then
+		if showAll or rec.role ~= "cast" or rec.masks then
 			local mlist = {}
 			for _, m in ipairs(rec.masks or {}) do mlist[#mlist + 1] = tostring(m) end
 			flagged[#flagged + 1] = {

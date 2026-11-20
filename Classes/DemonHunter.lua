@@ -23,6 +23,10 @@ mod.dots = {
 	-- never cast, so it can't seed a window; the entry gives the
 	-- matcher a real candidate record for its ticks.
 	{ names = { "Frailty" },         ids = { 227255 },          school = 4 },
+
+	-- Devourer (void spec) ------------------------------------------------
+	-- Fire dot inside the void kit — book-derived role, log-pending.
+	{ names = { "Set Fire to the Pain" }, ids = { 452406 },     school = 4 },
 }
 
 -- Channeled/ground volleys: individual hits carry no cast record, so the
@@ -32,6 +36,12 @@ mod.channels = {
 	{ names = { "Fel Devastation" }, ids = { 212084 }, duration = 2.0, tickMin = 0.12, school = 4 },
 	{ names = { "Fel Barrage" },    ids = { 258925 }, duration = 3.0, tickMin = 0.12 },
 	{ names = { "Glaive Tempest" }, ids = { 370965 }, duration = 3.0, tickMin = 0.25 },
+
+	-- Devourer (void spec) ------------------------------------------------
+	-- Void Ray: the void channel — book-derived channel with a very
+	-- fast stream (iv=0.1). School 127 covers the void composite 106
+	-- bitwise (106 & 127 = 106).
+	{ names = { "Void Ray" },       ids = { 473728 }, duration = 3.0, tickMin = 0.08, school = 127 },
 }
 
 -- Zero-enemy-damage casts: a wound can never honestly wear these names —
@@ -51,6 +61,8 @@ mod.exclude = {
 	"Sigil of Silence",
 	"Sigil of Chains",
 	"Fodder to the Flame",
+	-- Devourer (void spec) ------------------------------------------------
+	"Shift",             -- void mobility; emitted school=nil
 }
 
 -- Per-cast-instance naming budget: AoE/splash casts may name several
@@ -76,6 +88,19 @@ mod.castBudget = {
 	[201467] = 4,   -- Fury of the Illidari
 	[210153] = 8,   -- Death Sweep (alternate id)
 	[201428] = 8,   -- Fury of the Illidari (alternate)
+
+	-- Devourer (void spec) — provisional budgets from the first
+	-- session's emit counts; tighten against AUDCLAIM tallies.
+	[1226019] = 6,  -- Reap (signature spender; observed bursts)
+	[1245412] = 4,  -- Voidblade
+	[1234195] = 8,  -- Void Nova (AoE)
+	[473662]  = 4,  -- Consume
+	[1226033] = 4,  -- Eradicate (execute)
+	[1225826] = 4,  -- Eradicate (damage variant sid)
+	[1221167] = 8,  -- Collapsing Star (AoE)
+	[473728]  = 12, -- Void Ray (fallback; the channel usually catches it)
+	[1245483] = 4,  -- Pierce the Veil
+	[1250088] = 4,  -- Midnight
 }
 
 -- Provable damage schools: 1 physical (melee, Blade Dance, glaives),
@@ -84,7 +109,7 @@ mod.castBudget = {
 -- (procs, The Hunt variants), 36 shadowflame, 124/127 chaos — the book
 -- reports chaos spells under both masks (Chaos Nova, Sigil of Spite).
 mod.schools = { [1] = true, [4] = true, [8] = true, [32] = true,
-	[36] = true, [64] = true, [124] = true, [127] = true }
+	[36] = true, [64] = true, [106] = true, [124] = true, [127] = true }
 
 ZSBT.ClassDB.Register("DEMONHUNTER", mod)
 return mod

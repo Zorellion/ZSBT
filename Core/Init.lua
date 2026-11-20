@@ -2041,7 +2041,8 @@ function Addon:HandleSlashCommand(input)
         return
     elseif cmd == "sb" then
         if ZSBT.Spellbook and ZSBT.Spellbook.Dump then
-            ZSBT.Spellbook:Dump(function(s) self:Print(s) end)
+            ZSBT.Spellbook:Dump(function(s) self:Print(s) end,
+                rest:lower():find("all") ~= nil)
         else
             self:Print("Spellbook layer unavailable.")
         end
