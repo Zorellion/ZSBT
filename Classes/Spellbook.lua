@@ -111,9 +111,18 @@ function Spellbook.ParseDesc(desc, spellId)
 	if ZSBT.IsSafeString and not ZSBT.IsSafeString(desc) then return nil end
 	local d = desc:lower()
 	local role = "cast"
+	-- Summons and self-drains carry periodic language ("deals damage
+	-- every 1 sec", "lose 4% of your health every 1 sec") but are not
+	-- DoTs: seeding a dot window on Summon Infernal would let every
+	-- school-4 stray wear the summon name, and Burning Rush produces no
+	-- target wounds at all. Both degrade to "cast" — module tables
+	-- (guardianSummons) already own the real behavior.
+	local selfDrain = d:find("of your health")
+		or d:find("your maximum health")
 	if d:find("channel") then
 		role = "channel"
-	elseif d:find("every") or d:find("periodic") or d:find("over time") then
+	elseif not selfDrain and not d:find("summon")
+		and (d:find("every") or d:find("periodic") or d:find("over time")) then
 		role = "dot"
 	end
 	-- Channeled spells report their channel duration via castTime.
