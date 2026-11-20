@@ -332,8 +332,12 @@ keeping ZSBT look/feel and nested groups. Implemented:
 ---
 # Masterplan: World of Warcraft: Forever class modules
 
-Status: **planned — not started.** Revisit after the Retail class-module
-work is polished and a real Forever combat log is provided.
+Status: **client gate implemented; Era modules not started.** `ClassDB.IsForever()`
+(project-18 check) and the client-scoped `ClassDB.Register` gate are live —
+modules declare `mod.client = "era"` to load only on Forever; everything else
+defaults to Retail and stays dormant there. `Classes/Era/` files need TOC
+entries when created. Revisit module data after a real Forever combat log is
+provided.
 
 ## Client facts (researched 2026-11, verify against live build)
 
