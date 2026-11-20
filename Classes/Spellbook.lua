@@ -310,36 +310,56 @@ end
 -- part of the kit's actual wound output. Selected nodes only —
 -- unbought choices contribute nothing.
 local function enumTalentSpells(sink, have)
+	-- Stage counters: which link dies when the yield is zero.
+	local dbg = { trees = 0, nodes = 0, ranked = 0, entry = 0, sid = 0, bail = "" }
+	local function bail(why)
+		dbg.bail = why
+		return nil, dbg
+	end
 	if not (C_ClassTalents and C_ClassTalents.GetActiveConfigID
 		and C_Traits and C_Traits.GetConfigInfo and C_Traits.GetTreeInfo
 		and C_Traits.GetNodeInfo and C_Traits.GetEntryInfo
-		and C_Traits.GetDefinitionInfo) then
-		return nil
+		and C_Traits.GetDefinitionInfo and C_Traits.GetTreeNodes) then
+		return bail("apis")
 	end
 	local configID = C_ClassTalents.GetActiveConfigID()
-	if type(configID) ~= "number" then return nil end
+	if type(configID) ~= "number" then return bail("config") end
 	local okC, cInfo = pcall(C_Traits.GetConfigInfo, configID)
 	if not (okC and type(cInfo) == "table" and type(cInfo.treeIDs) == "table") then
-		return nil
+		return bail("cinfo")
 	end
 	local tset = {}
 	for _, treeID in ipairs(cInfo.treeIDs) do
+		dbg.trees = dbg.trees + 1
 		local okT, nodeIDs = pcall(C_Traits.GetTreeNodes, treeID)
 		if okT and type(nodeIDs) == "table" then
 			for _, nodeID in ipairs(nodeIDs) do
+				dbg.nodes = dbg.nodes + 1
 				local okN, nInfo = pcall(C_Traits.GetNodeInfo, configID, nodeID)
 				local ae = okN and type(nInfo) == "table" and nInfo.activeEntry or nil
 				local entryID = type(ae) == "table" and ae.entryID
 					or (type(ae) == "number" and ae or nil)
 				if okN and type(nInfo) == "table"
+					and (tonumber(nInfo.currentRank) or 0) > 0 then
+					dbg.ranked = dbg.ranked + 1
+				end
+				if okN and type(nInfo) == "table"
 					and (tonumber(nInfo.currentRank) or 0) > 0
 					and type(entryID) == "number" then
+					dbg.entry = dbg.entry + 1
 					local okE, eInfo = pcall(C_Traits.GetEntryInfo,
 						configID, entryID)
 					local defID = okE and type(eInfo) == "table" and eInfo.definitionID or nil
-					local okD, dInfo = defID and pcall(C_Traits.GetDefinitionInfo, defID) or nil
+					-- NOT `defID and pcall(...) or nil` — the `and`
+					-- truncates pcall's returns to one value and
+					-- dInfo is always nil.
+					local okD, dInfo
+					if defID then
+						okD, dInfo = pcall(C_Traits.GetDefinitionInfo, defID)
+					end
 					local sid = okD and type(dInfo) == "table" and tonumber(dInfo.spellID) or nil
 					if type(sid) == "number" and sid > 0 then
+						dbg.sid = dbg.sid + 1
 						-- Coverage set: every granted spell, whether or
 						-- not the book already has it. Also the pick-list
 						-- a future teach UI would want.
@@ -376,7 +396,7 @@ local function enumTalentSpells(sink, have)
 			end
 		end
 	end
-	return tset
+	return tset, dbg
 end
 
 function Spellbook:Scan()
@@ -385,8 +405,9 @@ function Spellbook:Scan()
 	enumBank(Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player, raw)
 	local have = {}
 	for _, e in ipairs(raw) do have[e.sid] = true end
-	local tset = enumTalentSpells(raw, have)
+	local tset, tdbg = enumTalentSpells(raw, have)
 	self._talents = tset
+	self._talentDbg = tdbg
 	local petRaw = {}
 	enumBank(Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Pet, petRaw)
 
@@ -531,6 +552,12 @@ function Spellbook:Dump(printFn)
 	end
 	p(("Spellbook: %d spells (%d talent, %d dot, %d channel), %d pet, %.1fms")
 		:format(n, talents, dots, chans, (function() local c = 0 for _ in pairs(self._petEntries) do c = c + 1 end return c end)(), self._scanMs or 0))
+	local d = self._talentDbg
+	if d then
+		p(("  talent-dbg: trees=%d nodes=%d ranked=%d entry=%d sid=%d bail=%s")
+			:format(d.trees or 0, d.nodes or 0, d.ranked or 0,
+				d.entry or 0, d.sid or 0, tostring(d.bail or "")))
+	end
 	local masks = {}
 	for m in pairs(self._masks) do masks[#masks + 1] = m end
 	table.sort(masks)
