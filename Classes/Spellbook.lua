@@ -100,10 +100,10 @@ local function schoolNames()
 	_schoolNames = {}
 	for _, src in ipairs(SCHOOL_SOURCES) do
 		local s = rawget(_G, src.global)
-		if type(s) == "string" and s ~= "" then
-			if ZSBT.IsSafeString == nil or ZSBT.IsSafeString(s) then
-				_schoolNames[#_schoolNames + 1] = { name = s, masks = src.masks }
-			end
+		if type(s) == "string"
+			and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(s))
+			and s ~= "" then
+			_schoolNames[#_schoolNames + 1] = { name = s, masks = src.masks }
 		end
 	end
 	-- Longest first so "Shadowflame" is consumed before "Shadow"/"Fire"
@@ -141,8 +141,11 @@ local function isChanneledTip(spellId)
 		local line = data.lines[i]
 		for _, key in ipairs({ "leftText", "rightText" }) do
 			local tx = line and line[key]
-			if type(tx) == "string" and tx ~= ""
-				and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(tx)) then
+			-- IsSafeString must gate first: comparing a secret string
+			-- to "" errors before the guard can reject it.
+			if type(tx) == "string"
+				and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(tx))
+				and tx ~= "" then
 				local t = tx:lower()
 					:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
 					:gsub("^%s+", ""):gsub("%s+$", "")
@@ -154,8 +157,9 @@ local function isChanneledTip(spellId)
 end
 
 function Spellbook.ParseDesc(desc, spellId)
-	if type(desc) ~= "string" or desc == "" then return nil end
+	if type(desc) ~= "string" then return nil end
 	if ZSBT.IsSafeString and not ZSBT.IsSafeString(desc) then return nil end
+	if desc == "" then return nil end
 	-- Thousands separators are display formatting, not data — "4,289
 	-- fire damage" must parse as 4289 or every amount derivation is off
 	-- by orders of magnitude.
@@ -444,20 +448,23 @@ local function enumTalentSpells(sink, have)
 						local desc, name
 						if type(dInfo) == "table" then
 							local od = dInfo.overrideDescription
-							if type(od) == "string" and od ~= ""
-								and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(od)) then
+							if type(od) == "string"
+								and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(od))
+								and od ~= "" then
 								desc = od
 							end
 							local on = dInfo.overrideName
-							if type(on) == "string" and on ~= ""
-								and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(on)) then
+							if type(on) == "string"
+								and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(on))
+								and on ~= "" then
 								name = on
 							end
 						end
 						if name == nil and C_Spell and C_Spell.GetSpellName then
 							local okNm, nm = pcall(C_Spell.GetSpellName, sid)
-							if okNm and type(nm) == "string" and nm ~= ""
-								and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(nm)) then
+							if okNm and type(nm) == "string"
+								and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(nm))
+								and nm ~= "" then
 								name = nm
 							end
 						end
