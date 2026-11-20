@@ -99,6 +99,8 @@ It provides:
 - [Media](Docs/09-Media.md)
 - [UT Announcer](Docs/10-UT-Announcer.md)
 - [Diagnostics](Docs/11-Diagnostics.md)
+- [Class Modules](Docs/15-Class-Modules.md)
+- [School Colors](Docs/16-School-Colors.md)
 
 ## Author
 Zorellion
