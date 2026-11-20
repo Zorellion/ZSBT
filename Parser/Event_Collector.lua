@@ -3162,28 +3162,27 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 	-- UNIT_HEALTH deltas are missing/suppressed. Only accept it when we can
 	-- strictly attribute it to a very recent player cast.
 	if unit == "target" then
-		local restrict = (ZSBT.Core and ZSBT.Core.ShouldRestrictOutgoingFallback and ZSBT.Core:ShouldRestrictOutgoingFallback()) or false
-		local instanceAware = (ZSBT.Core and ZSBT.Core.IsInstanceAwareOutgoingEnabled and ZSBT.Core:IsInstanceAwareOutgoingEnabled()) or false
+		-- Context-tiered ownership (CLAUDE.md masterplan): while the
+		-- combat-log veto is live it is the ownership proof and restrict
+		-- adds nothing; when the feed is dead, context auto-engages the
+		-- conservative fallback — solo stays permissive, group/instance/PvP
+		-- restricts unattributed hits so foreign damage cannot bleed in.
+		local tier = (ZSBT.Core and ZSBT.Core.OutgoingStrictnessTier
+			and ZSBT.Core:OutgoingStrictnessTier()) or "live"
+		local autoRestrict = tier == "dead_group" or tier == "dead_pvp"
+			or (ZSBT.Core and ZSBT.Core.ShouldRestrictOutgoingFallback
+				and ZSBT.Core:ShouldRestrictOutgoingFallback()) or false
 		local quietMode = isQuietOutgoingWhenIdle()
-		-- PvP Strict Mode: battlegrounds/arenas are high-risk for misattribution.
-		-- Force restricted attribution behavior when active.
-		if isPvPStrictActive() then
-			restrict = true
-			instanceAware = true
-		end
-		-- Strict outgoing mode: still allow UNIT_COMBAT(target) for outgoing, but only
-		-- when we can correlate it to a very recent player cast (conservative safety).
-		if isStrictOutgoingCombatLogOnly() then
-			restrict = true
-			instanceAware = true
-		end
-		-- Max correctness: UNIT_COMBAT(target) has no source attribution, so only allow
-		-- it when we can correlate to the player's own casts/periodic effects.
-		-- This intentionally suppresses auto-attacks from this pipeline.
-		if quietMode == true then
-			restrict = true
-			instanceAware = true
-		end
+		-- Legacy explicit-strict keys (pre-migration compat): an enabled
+		-- strict toggle still forces restrict even while the veto is live —
+		-- the future "Require combat-log proof" toggle keeps that role.
+		local legacyStrict = isPvPStrictActive()
+			or isStrictOutgoingCombatLogOnly()
+			or quietMode == true
+		local restrict = autoRestrict or legacyStrict
+		local instanceAware = restrict
+			or (ZSBT.Core and ZSBT.Core.IsInstanceAwareOutgoingEnabled
+				and ZSBT.Core:IsInstanceAwareOutgoingEnabled()) or false
 		-- If combat text / chat already produced an outgoing number for the current cast
 		-- token, suppress UNIT_COMBAT(target) for that token to avoid double numbers.
 		if self._castToken and self._lastCombatTextOutgoingToken == self._castToken then

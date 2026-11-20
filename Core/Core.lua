@@ -341,6 +341,34 @@ function Core:IsInGroupInstance()
 	return Core._inGroupInstance == true
 end
 
+-- Context-tiered outgoing strictness (CLAUDE.md masterplan).
+-- The combat-log veto is the everyday ownership proof; strictness only
+-- matters in the degraded veto-dead mode, where context decides how
+-- conservative unattributed wounds must be.
+-- Returns: "live" | "dead_solo" | "dead_group" | "dead_pvp"
+function Core:OutgoingStrictnessTier()
+	local zb = ZSBT.ZBattleText
+	if zb and zb.VetoActive and zb:VetoActive() == true then
+		return "live"
+	end
+	if self.IsInPvPInstanceType and self:IsInPvPInstanceType() then
+		local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+		if not (g and g.pvpRelaxed == true) then
+			return "dead_pvp"
+		end
+		-- pvpRelaxed falls through to the normal group/solo check.
+	end
+	local members = 0
+	if type(GetNumGroupMembers) == "function" then
+		local okM, m = pcall(GetNumGroupMembers)
+		if okM and type(m) == "number" then members = m end
+	end
+	if members > 1 or self:IsInGroupInstance() then
+		return "dead_group"
+	end
+	return "dead_solo"
+end
+
 function Core:ShouldRestrictOutgoingFallback()
 	return self:IsInstanceAwareOutgoingEnabled() and self:IsInGroupInstance()
 end
