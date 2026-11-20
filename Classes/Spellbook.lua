@@ -117,12 +117,21 @@ local function isChanneledTip(spellId)
 	-- the cast time. Description body lines are leftText — scanning
 	-- them lets a passive that mentions "channeling" (Furious Gaze)
 	-- claim the channel role.
+	-- The cast-type label is its own whole line ("Channeled") — on
+	-- this client it sits in leftText with color codes. Whole-line
+	-- match after stripping keeps description text ("channeling" in a
+	-- sentence) out while surviving color/formatting wrappers.
 	for i = 1, math.min(#data.lines, 8) do
-		local tx = data.lines[i] and data.lines[i].rightText
-		if type(tx) == "string" and tx ~= ""
-			and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(tx))
-			and tx:lower():gsub("^%s+", ""):gsub("%s+$", "") == "channeled" then
-			return true
+		local line = data.lines[i]
+		for _, key in ipairs({ "leftText", "rightText" }) do
+			local tx = line and line[key]
+			if type(tx) == "string" and tx ~= ""
+				and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(tx)) then
+				local t = tx:lower()
+					:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+					:gsub("^%s+", ""):gsub("%s+$", "")
+				if t == "channeled" or t == "channel" then return true end
+			end
 		end
 	end
 	return false
@@ -161,21 +170,19 @@ function Spellbook.ParseDesc(desc, spellId)
 	-- record that can steal ticks inside a real channel window.
 	if chanMs or isChanneledTip(spellId) then
 		role = "channel"
-	-- The role exists to attribute DAMAGE — and the periodic phrase
-	-- must modify it. Clause scope (,.;): "generates 10 Fury every
-	-- second, ... deals 10% increased damage" (Blind Fury) puts the
-	-- rhythm and the damage in different clauses — not a DoT. A real
-	-- DoT keeps them together: "fire damage over 12 sec", "radiating
-	-- fire damage every 1 sec".
-	elseif not selfDrain and not d:find("summon") then
-		for clause in d:gmatch("[^%.;,]+") do
-			if clause:find("damage")
-				and (clause:find("every") or clause:find("periodic")
-					or clause:find("per sec") or clause:find("over")) then
-				role = "dot"
-				break
-			end
-		end
+	-- The role exists to attribute DAMAGE — and "damage" must precede
+	-- the periodic word within the same sentence. Real DoTs read
+	-- "fire damage over 12 sec" / "damage every 1 sec"; a resource
+	-- rhythm reads "generates 10 Fury every second ... deals 10%
+	-- increased damage" (Blind Fury) — periodic first, damage later
+	-- or in another clause entirely. Talent override texts strip
+	-- punctuation, so ordering — not clause boundaries — is the
+	-- discriminator. "damage taken over" is defensive, not periodic.
+	elseif not selfDrain and not d:find("summon")
+		and not d:find("damage taken")
+		and (d:find("damage[^.]-over") or d:find("damage[^.]-every")
+			or d:find("damage[^.]-per sec") or d:find("periodic damage")) then
+		role = "dot"
 	end
 	-- Tick interval: era/periodic descriptions state it directly
 	-- ("every 3 sec", "every 2 seconds", "per second"). This is the
