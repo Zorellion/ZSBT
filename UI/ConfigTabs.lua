@@ -2894,6 +2894,18 @@ critInlineHeader = {
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},
+			showDotsOnOtherEnemies = {
+				type  = "toggle",
+				name  = L["Show DoT Ticks on Other Enemies"],
+				desc  = L["Shows your DoT ticks on enemies you are not currently targeting. A tick on another nameplated enemy is only shown when your application record for that mob and the tick's cadence both check out — it displays with the DoT's name and icon like a normal tick. Requires enemy nameplates enabled; untracked off-target hits stay hidden as before."],
+				order = 3.67,
+				width = "full",
+				get   = function() return ZSBT.db.profile.general.showDotsOnOtherEnemies ~= false end,
+				set   = function(_, val)
+					ZSBT.db.profile.general.showDotsOnOtherEnemies = val and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
 
 			headerFont = {
 				type  = "header",
@@ -5771,7 +5783,7 @@ local GENERAL_GROUP_KEYS = {
 	outgoing = {
 		outgoingOwnershipHelp=1, requireProof=1, showUnprovenInGroups=1,
 		pvpRelaxed=1, damageMeterOutgoingFallback=1,
-		damageMeterIncomingFallback=1,
+		damageMeterIncomingFallback=1, showDotsOnOtherEnemies=1,
 	},
 }
 local GENERAL_DROP_KEYS = {
@@ -5807,7 +5819,7 @@ local GENERAL_ORDER = {
 	numbersHelp = 1, numberFormat = 2,
 	outgoingOwnershipHelp = 1, requireProof = 2, showUnprovenInGroups = 3,
 	pvpRelaxed = 4, damageMeterOutgoingFallback = 5,
-	damageMeterIncomingFallback = 6,
+	damageMeterIncomingFallback = 6, showDotsOnOtherEnemies = 7,
 }
 
 function ZSBT._groupGeneralArgs(args)
