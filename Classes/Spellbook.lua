@@ -152,9 +152,19 @@ function Spellbook.ParseDesc(desc, spellId)
 		local ct = ok and type(info) == "table" and tonumber(info.castTime)
 		if ct and ct < 0 then chanMs = -ct end
 	end
-	if d:find("channel") or chanMs or isChanneledTip(spellId) then
+	-- Channel comes only from mechanical sources — the tooltip header's
+	-- cast-type label or a negative castTime. A body-text "channel"
+	-- mention is usually a passive referencing another spell ("when you
+	-- finish channeling Eye Beam" — Furious Gaze), which is not itself
+	-- channeled; letting text promote it gives a nil-school passive a
+	-- record that can steal ticks inside a real channel window.
+	if chanMs or isChanneledTip(spellId) then
 		role = "channel"
+	-- The role exists to attribute DAMAGE — periodic phrasing without
+	-- a damage word is a resource/buff rhythm, not a DoT ("generates
+	-- 40 Fury every 1 sec" — Blind Fury).
 	elseif not selfDrain and not d:find("summon")
+		and d:find("damage")
 		and (d:find("every") or d:find("periodic") or d:find("over time")
 			or d:find("per second") or d:find("per sec")
 			or d:find("damage over")) then
