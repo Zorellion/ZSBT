@@ -19,8 +19,10 @@ mod.client = "era"
 
 mod.dots = {
 	{ names = { "Corruption" },          school = 32 },
-	{ names = { "Curse of Agony" },      school = 32 },
-	{ names = { "Curse of Doom" },       school = 32 },
+	-- Forever uses the Cataclysm curse names: Bane of Agony (980),
+	-- Bane of Doom — keep the classic aliases for name-primary match.
+	{ names = { "Curse of Agony", "Bane of Agony" }, school = 32 },
+	{ names = { "Curse of Doom", "Bane of Doom" },   school = 32 },
 	{ names = { "Siphon Life" },         school = 32 },
 	{ names = { "Immolate" },            school = 4 },
 	-- Later-era additions: harmless if Forever lacks them (name match
