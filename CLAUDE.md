@@ -330,6 +330,103 @@ keeping ZSBT look/feel and nested groups. Implemented:
 - `CLAUDE.md` — this masterplan (keep updated with progress)
 
 ---
+# Masterplan: Outgoing strictness — context-tiered ownership
+
+Status: **AGREED 2026-11-20, not started.** Replaces the four legacy
+context toggles that pre-date the combat-log veto.
+
+## Why
+
+Four UI toggles (`instanceAwareOutgoing`, `strictOutgoingCombatLogOnly`,
+`pvpStrictEnabled`, `quietOutgoingWhenIdle`) collapse into the same two
+runtime flags (`restrict` + `instanceAware`, Event_Collector ~L3165)
+differing only in activation context. They were built before the
+ZBattleText line-veto existed: restrict was the only anti-bleed defense.
+Now pairing proves ownership whenever the feed is live, so the toggles
+mostly duplicate each other — and they fail *closed* (silence own
+damage) exactly in the veto-dead windows they were meant to handle.
+
+## Key facts that shape the design
+
+- `UNIT_COMBAT(target)` carries no source attribution — own hits and a
+  party member's hits on the same target are indistinguishable without
+  either a palette line (veto) or activity correlation (restrict).
+- The user's "someone else's damage on my target while I idle" case is
+  covered automatically by the veto whenever the feed is live; it only
+  fails open when the feed is dead (uninstalled, untrusted, or
+  sustained-rejection failsafe).
+- Feed-dead is a rare degraded mode on both clients; the toggle stack
+  becomes degraded-mode policy, not everyday behavior.
+- Forever's feed is incomplete for some spells (Judgement etc.) — the
+  era `noline` rescue covers sid-bearing hits only; unattributed
+  generics on Forever still depend on lines, same as Retail.
+
+## Target model — strictness is contextual, not manual
+
+| Context | Veto live | Veto dead |
+|---|---|---|
+| Solo / solo instance | line pairing | permissive heuristics (no bleed source exists) |
+| Group / instance / follower | line pairing | restrict auto-engages (cast/swing/DoT correlation) |
+| PvP / arena | line pairing | restrict auto-engages + auto-attack fallback off |
+
+Context detection is all existing code: `IsInInstance`,
+`GetNumGroupMembers`, `IsInPvPInstanceType`, `Core._inGroupInstance`.
+
+## Surviving toggles (3)
+
+1. **"Require combat-log proof for outgoing"** (`requireProof`,
+   default off) — suppress tier-2 even while veto live; the paranoid
+   mode. Absorbs `strictOutgoingCombatLogOnly` +
+   `classModule.hideUnattributed`.
+2. **"Show unproven outgoing in groups"** (`showUnprovenInGroups`,
+   default off) — relaxes veto-dead group restrict. Absorbs
+   `autoAttackRestrictFallback`; unlike the old key it actually reaches
+   the drop sites it promises to affect.
+3. **"Relaxed outgoing in PvP"** (`pvpRelaxed`, default off) — opt-out
+   of auto-strict in pvp/arena. Inverts `pvpStrictEnabled` (auto-strict
+   is now the default until proven unnecessary).
+
+## Retired keys (kept dormant in saved data; no UI, no consumers)
+
+`quietOutgoingWhenIdle`, `quietOutgoingAutoAttacks`,
+`strictOutgoingCombatLogOnly`, `strictOutgoingAlways`,
+`instanceAwareOutgoing`, `autoAttackRestrictFallback`,
+`pvpStrictDisableAutoAttackFallback`, `autoRelaxOutgoingWhenSolo`
+(absorbed by the solo tier).
+
+## Migration (one-time, additive)
+
+- `strictOutgoingCombatLogOnly == true` → `requireProof = true`
+- `classModule.hideUnattributed == true` → `requireProof = true`
+- `autoAttackRestrictFallback == true` → `showUnprovenInGroups = true`
+- `pvpStrictEnabled == false` → `pvpRelaxed = true`
+- quiet keys: no migration (the behavior is now automatic).
+
+## Implementation phases
+
+- **P0** — `Core:OutgoingStrictnessTier()` returns
+  `live|dead_solo|dead_group|dead_pvp` using existing context helpers.
+- **P1** — collapse the ~L3165 restrict lattice onto the tier function;
+  `quietMode`/`instanceAware` local refs go away; restrict gates read
+  tier directly. Behavior identical for every current toggle combo.
+- **P2** — new profile keys + ConfigTabs replacement section (one
+  "Outgoing ownership" group, 3 toggles) + QuickControlBar dropdown
+  cleanup; localization keys.
+- **P3** — one-time migration + dormant key sweep.
+- **P4** — audit-tag emits with the active tier (`AUDT live|dgroup`)
+  so post-change logs prove which policy ran.
+
+## Verification
+
+- Veto-live grouped fight: foreign wounds still AUDROP via line
+  pairing; own hits unaffected — restrict must not engage while live.
+- Simulated feed-dead (`ZB._trusted=false` via test hook): solo shows
+  all; grouped drops unattributed; pvp additionally drops the auto
+  fallback.
+- Forever: `kind=noline` rescue unaffected; Touch of the Grave and
+  Judgement-of-Righteousness behavior unchanged.
+- Byte-identical mirror to `_forever_` after every phase.
+
 # Masterplan: World of Warcraft: Forever class modules
 
 Status: **client gate + Era Warlock module live; module-less fallback works.**
