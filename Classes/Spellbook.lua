@@ -78,6 +78,22 @@ local SCHOOL_SOURCES = {
 	{ global = "STRING_SCHOOL_MAGICAL",       masks = { 126 } },
 }
 
+-- Periodic clauses that name a resource are generation rhythms, not
+-- DoTs — "generates 10 Fury every second" (Blind Fury). Lua patterns
+-- have no alternation, so this is a plain word scan.
+local RESOURCE_WORDS = {
+	"fury", "rage", "energy", "mana", "combo point", "insanity",
+	"maelstrom", "essence", "focus", "runic power", "astral power",
+	"holy power", "chi", "soul shard", "soul fragment", "pain",
+	"maelstrom weapon", "arcane charge", "ebon might",
+}
+local function namesResource(clause)
+	for _, w in ipairs(RESOURCE_WORDS) do
+		if clause:find("%f[%a]" .. w .. "%f[%A]") then return true end
+	end
+	return false
+end
+
 local _schoolNames = nil
 local function schoolNames()
 	if _schoolNames then return _schoolNames end
@@ -170,19 +186,25 @@ function Spellbook.ParseDesc(desc, spellId)
 	-- record that can steal ticks inside a real channel window.
 	if chanMs or isChanneledTip(spellId) then
 		role = "channel"
-	-- The role exists to attribute DAMAGE — and "damage" must precede
-	-- the periodic word within the same sentence. Real DoTs read
-	-- "fire damage over 12 sec" / "damage every 1 sec"; a resource
-	-- rhythm reads "generates 10 Fury every second ... deals 10%
-	-- increased damage" (Blind Fury) — periodic first, damage later
-	-- or in another clause entirely. Talent override texts strip
-	-- punctuation, so ordering — not clause boundaries — is the
-	-- discriminator. "damage taken over" is defensive, not periodic.
+	-- The role exists to attribute DAMAGE, and the periodic phrase
+	-- must modify it. Per clause: "damage" plus a periodic word in
+	-- EITHER order counts — real DoTs phrase both ways ("damage over
+	-- 12 sec", "every 1 sec it burns for damage") — UNLESS the clause
+	-- names a resource, which marks the rhythm as generation
+	-- ("generates 10 Fury every second and deals damage" — Blind
+	-- Fury's comma-free override text is one clause). "damage taken"
+	-- is defensive, not periodic.
 	elseif not selfDrain and not d:find("summon")
-		and not d:find("damage taken")
-		and (d:find("damage[^.]-over") or d:find("damage[^.]-every")
-			or d:find("damage[^.]-per sec") or d:find("periodic damage")) then
-		role = "dot"
+		and not d:find("damage taken") then
+		for clause in d:gmatch("[^%.;,]+") do
+			local dp = clause:find("damage")
+			local pp = clause:find("every") or clause:find("periodic")
+				or clause:find("per sec") or clause:find("over")
+			if dp and pp and (dp < pp or not namesResource(clause)) then
+				role = "dot"
+				break
+			end
+		end
 	end
 	-- Tick interval: era/periodic descriptions state it directly
 	-- ("every 3 sec", "every 2 seconds", "per second"). This is the
