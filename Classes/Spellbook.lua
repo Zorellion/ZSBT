@@ -150,6 +150,17 @@ function Spellbook.ParseDesc(desc, spellId)
 	elseif d:find("every second") or d:find("per second") or d:find("each second") then
 		interval = 1
 	end
+	-- Periodic total + duration: "90 Shadow damage over 18 sec" gives the
+	-- expected tick amount (total * interval / duration) BEFORE any tick
+	-- is observed — the tooltip bootstraps the learned-amount model.
+	-- For direct+periodic spells (Immolate: "60 Fire damage and an
+	-- additional 100 Fire damage over 15 sec") the number nearest the
+	-- "over" phrase is the periodic total.
+	local dotTotal, dotDur
+	dotDur = tonumber(d:match("damage[^.]-over (%d+%.?%d*)%s*sec"))
+	if dotDur then
+		dotTotal = tonumber(d:match("(%d+%.?%d*)%s*[%a]*%s*damage[^.]-over"))
+	end
 	-- School extraction: consume matched names so composite names
 	-- ("Shadowflame") don't also emit their base school names.
 	local masks
@@ -176,6 +187,8 @@ function Spellbook.ParseDesc(desc, spellId)
 		duration = duration,
 		tickMin = tickMin,
 		interval = interval,
+		dotTotal = dotTotal,
+		dotDur = dotDur,
 		masks = maskList,
 	}
 end
@@ -275,6 +288,8 @@ function Spellbook:Scan()
 					rec.duration = parsed.duration
 					rec.tickMin = parsed.tickMin
 					rec.interval = parsed.interval
+					rec.dotTotal = parsed.dotTotal
+					rec.dotDur = parsed.dotDur
 					rec.masks = parsed.masks
 				end
 			end
@@ -384,9 +399,11 @@ function Spellbook:Dump(printFn)
 			local mlist = {}
 			for _, m in ipairs(rec.masks or {}) do mlist[#mlist + 1] = tostring(m) end
 			flagged[#flagged + 1] = {
-				label = ("%s (%d): %s%s%s"):format(
+				label = ("%s (%d): %s%s%s%s"):format(
 					rec.name or tostring(sid), sid, rec.role,
 					type(rec.interval) == "number" and (" iv=" .. rec.interval) or "",
+					(type(rec.dotTotal) == "number" and type(rec.dotDur) == "number")
+						and (" exp=" .. string.format("%.1f", rec.dotTotal * (rec.interval or 2) / rec.dotDur)) or "",
 					#mlist > 0 and (" sch=" .. table.concat(mlist, "/")) or ""),
 			}
 		end
