@@ -336,7 +336,22 @@ local function ravagerWound(self, ctx)
 		-- failed, vs. the hook never executing at all.
 		if (t - (self._ravDbgAt or 0)) > 10 then
 			self._ravDbgAt = t
-			ravAudit("RAVCHK deb=false")
+			-- Dump what the aura scan actually sees on the target so we can
+			-- tell "Ravaged not on this unit" from "aura APIs dead on client".
+			local n, ids = 0, ""
+			if AuraUtil and AuraUtil.ForEachAura then
+				pcall(function()
+					AuraUtil.ForEachAura("target", "HARMFUL", 40, function(auraData)
+						n = n + 1
+						local sid = auraData and (auraData.spellId or auraData.spellID)
+						if type(sid) == "number" and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid) and n <= 6 then
+							ids = ids .. sid .. ","
+						end
+						return true
+					end, true)
+				end)
+			end
+			ravAudit(("RAVCHK deb=false n=%d ids=%s"):format(n, ids))
 		end
 		if self._ravTickAt ~= nil then
 			self._ravTickAt = nil
