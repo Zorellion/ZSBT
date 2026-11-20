@@ -950,7 +950,7 @@ local function pickDotByCadenceDisambig(self, t, school)
 	local m = self and self._recentPeriodicSpellAt
 	if type(m) ~= "table" then return nil end
 	local pick, count = nil, 0
-	local rejNoEntry, rejSchool, rejCadence, scanned = 0, 0, 0, 0
+	local rejNoEntry, rejSchool, rejCadence, rejChan, scanned = 0, 0, 0, 0, 0
 	-- Target-debuff presence is a TIEBREAKER, not a gate: era aura APIs
 	-- may not expose the data at all, and multi-target DoTing means a real
 	-- tick from another mob arrives while this target lacks the debuff.
@@ -964,6 +964,12 @@ local function pickDotByCadenceDisambig(self, t, school)
 			local entry = dotEntryForSpellId(sid)
 			if not entry then
 				rejNoEntry = rejNoEntry + 1
+			elseif ZSBT.ClassDB.ChannelMatch and ZSBT.ClassDB.ChannelMatch(sid) then
+				-- Channel-owned sid (Drain Soul derives as "dot" from the
+				-- book too): its ticks claim through the channel path, and
+				-- a ~1s interval would accept nearly every wound's phase —
+				-- including it here only manufactures collisions.
+				rejChan = rejChan + 1
 			elseif entry.school and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school) and entry.school ~= school then
 				rejSchool = rejSchool + 1
 			elseif not dotCadencePredict(self, t, sid) then
@@ -978,14 +984,18 @@ local function pickDotByCadenceDisambig(self, t, school)
 			end
 		end
 	end
-	if auditNote then
-		auditNote(("AUDD reason=DOTDISAMBIG scan=%s surv=%s pick=%s debuffpass=%s noentry=%s school=%s cadence=%s")
-			:format(dbgSafe(scanned), dbgSafe(count), dbgSafe(pick), dbgSafe(debuffCount),
-				dbgSafe(rejNoEntry), dbgSafe(rejSchool), dbgSafe(rejCadence)))
+	local ret = nil
+	if count == 1 then
+		ret = pick
+	elseif count > 1 and debuffCount == 1 then
+		ret = debuffPick
 	end
-	if count == 1 then return pick end
-	if count > 1 and debuffCount == 1 then return debuffPick end
-	return nil
+	if auditNote then
+		auditNote(("AUDD reason=DOTDISAMBIG scan=%s surv=%s ret=%s debuffpass=%s noentry=%s school=%s chan=%s cadence=%s")
+			:format(dbgSafe(scanned), dbgSafe(count), dbgSafe(ret), dbgSafe(debuffCount),
+				dbgSafe(rejNoEntry), dbgSafe(rejSchool), dbgSafe(rejChan), dbgSafe(rejCadence)))
+	end
+	return ret
 end
 
 local function pickDotForWound(self, t, school)
