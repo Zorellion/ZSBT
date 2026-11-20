@@ -236,43 +236,69 @@ function ClassDB.KnowledgeList()
 		local e = sb and sb.Entry and sb:Entry(sid)
 		return e and e.masks and e.masks[1] or nil
 	end
+	-- mod.bookScopedKnowledge: the knowledge list only shows module rows
+	-- whose spell actually exists in the player's CURRENT book. On era/
+	-- Forever the module table is a superset of any level's real kit —
+	-- book-scoping makes the pane show the level-appropriate baseline and
+	-- grow as new ranks/spells are learned. No book API = show all.
+	local bookScoped = mod.bookScopedKnowledge == true
+	local sbBook = ZSBT.Spellbook
+	local function bookHasNames(names)
+		if not bookScoped or not (sbBook and sbBook.IdForName) then return true end
+		for _, n in ipairs(names or {}) do
+			if sbBook:IdForName(n) ~= nil then return true end
+		end
+		return false
+	end
+	local function bookHasSid(sid)
+		if not bookScoped or not (sbBook and sbBook.Entry) then return true end
+		return sbBook:Entry(sid) ~= nil
+	end
 	for _, e in ipairs(mod.dots or {}) do
-		out[#out + 1] = {
-			kind = "DoT",
-			name = (e.names and e.names[1]) or "?",
-			ids = e.ids,
-			school = e.school,
-			extra = type(e.school) == "number" and ("school " .. e.school) or nil,
-		}
+		if bookHasNames(e.names) then
+			out[#out + 1] = {
+				kind = "DoT",
+				name = (e.names and e.names[1]) or "?",
+				ids = e.ids,
+				school = e.school,
+				extra = type(e.school) == "number" and ("school " .. e.school) or nil,
+			}
+		end
 	end
 	for _, e in ipairs(mod.channels or {}) do
-		out[#out + 1] = {
-			kind = "Channel",
-			name = (e.names and e.names[1]) or "?",
-			ids = e.ids,
-			school = e.school,
-			extra = type(e.duration) == "number" and (e.duration .. "s") or nil,
-		}
+		if bookHasNames(e.names) then
+			out[#out + 1] = {
+				kind = "Channel",
+				name = (e.names and e.names[1]) or "?",
+				ids = e.ids,
+				school = e.school,
+				extra = type(e.duration) == "number" and (e.duration .. "s") or nil,
+			}
+		end
 	end
 	for sid, budget in pairs(mod.castBudget or {}) do
-		out[#out + 1] = {
-			kind = "Cast",
-			name = nameOf(sid),
-			ids = { sid },
-			school = sidSchool(sid),
-			extra = "x" .. tostring(budget),
-		}
+		if bookHasSid(sid) then
+			out[#out + 1] = {
+				kind = "Cast",
+				name = nameOf(sid),
+				ids = { sid },
+				school = sidSchool(sid),
+				extra = "x" .. tostring(budget),
+			}
+		end
 	end
 	for sid, wins in pairs(mod.guardianSummons or {}) do
-		local groups = {}
-		for _, g in ipairs(wins) do groups[#groups + 1] = tostring(g.group) end
-		out[#out + 1] = {
-			kind = "Summon",
-			name = nameOf(sid),
-			ids = { sid },
-			school = sidSchool(sid),
-			extra = table.concat(groups, "/"),
-		}
+		if bookHasSid(sid) then
+			local groups = {}
+			for _, g in ipairs(wins) do groups[#groups + 1] = tostring(g.group) end
+			out[#out + 1] = {
+				kind = "Summon",
+				name = nameOf(sid),
+				ids = { sid },
+				school = sidSchool(sid),
+				extra = table.concat(groups, "/"),
+			}
+		end
 	end
 	for group, spells in pairs(mod.guardianSpells or {}) do
 		for _, sp in ipairs(spells) do
@@ -413,6 +439,7 @@ function ClassDB.DotEntry(spellId)
 			_canon = rec.name,
 			ids = { spellId },
 			school = rec.masks and rec.masks[1] or nil,
+			interval = rec.interval,
 			_derived = true,
 		}
 		return rec._dotEntry

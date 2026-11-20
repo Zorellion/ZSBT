@@ -23,6 +23,11 @@ mod.client = "era"
 -- cadence — wounds matching both stay generic rather than misname.
 mod.dotCadenceDisambig = true
 
+-- The spellbook IS the baseline: the knowledge pane lists only module
+-- rows whose spell exists in the current book, so it shows the level-
+-- appropriate kit and grows as new spells/ranks are learned.
+mod.bookScopedKnowledge = true
+
 mod.dots = {
 	{ names = { "Corruption" },          school = 32, interval = 3 },
 	-- Forever uses the Cataclysm curse names: Bane of Agony (980),

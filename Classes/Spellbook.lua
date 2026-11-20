@@ -138,6 +138,12 @@ function Spellbook.ParseDesc(desc, spellId)
 		duration = duration or 8
 		tickMin = 0.4
 	end
+	-- Tick interval: era/periodic descriptions state it directly
+	-- ("every 3 sec", "every 2 seconds"). This is the client's own
+	-- declared cadence — better than any table's guessed interval.
+	local interval
+	local iv = d:match("every (%d+%.?%d*) sec")
+	if iv then interval = tonumber(iv) end
 	-- School extraction: consume matched names so composite names
 	-- ("Shadowflame") don't also emit their base school names.
 	local masks
@@ -163,6 +169,7 @@ function Spellbook.ParseDesc(desc, spellId)
 		role = role,
 		duration = duration,
 		tickMin = tickMin,
+		interval = interval,
 		masks = maskList,
 	}
 end

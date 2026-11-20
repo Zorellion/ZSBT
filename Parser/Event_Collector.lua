@@ -727,12 +727,23 @@ end
 -- previously attributed tick. Returns false -> caller drops dotSpellId
 -- and lets the normal attribution paths decide instead.
 local DOT_DEFAULT_TICK_INTERVAL = 2.0
-local function dotCadenceOk(self, t, spellId)
-	local iv = DOT_DEFAULT_TICK_INTERVAL
-	local entry = dotEntryForSpellId(spellId)
-	if entry and type(entry.interval) == "number" and entry.interval > 0 then
-		iv = entry.interval
+-- Prefer the spellbook-derived interval (the client's own description
+-- states the tick rate); fall back to the module entry's, then default.
+local function dotTickInterval(spellId, entry)
+	local sb = ZSBT.Spellbook
+	local rec = sb and sb.Entry and sb:Entry(spellId) or nil
+	if rec and type(rec.interval) == "number" and rec.interval > 0 then
+		return rec.interval
 	end
+	if entry and type(entry.interval) == "number" and entry.interval > 0 then
+		return entry.interval
+	end
+	return DOT_DEFAULT_TICK_INTERVAL
+end
+
+local function dotCadenceOk(self, t, spellId)
+	local entry = dotEntryForSpellId(spellId)
+	local iv = dotTickInterval(spellId, entry)
 	local st = self._dotTickState
 	if type(st) ~= "table" then
 		st = {}
@@ -776,11 +787,8 @@ end
 -- dots only collide where their phases coincide (rare), and any wound
 -- matching both stays generic — never wrong beats sometimes named.
 local function dotCadencePredict(self, t, spellId)
-	local iv = DOT_DEFAULT_TICK_INTERVAL
 	local entry = dotEntryForSpellId(spellId)
-	if entry and type(entry.interval) == "number" and entry.interval > 0 then
-		iv = entry.interval
-	end
+	local iv = dotTickInterval(spellId, entry)
 	local jitter = 0.45
 	local appliedAt = self._dotAppliedAt and self._dotAppliedAt[spellId]
 	if type(appliedAt) == "number" and t >= appliedAt then
