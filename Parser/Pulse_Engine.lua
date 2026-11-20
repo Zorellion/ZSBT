@@ -1333,32 +1333,45 @@ function Engine:flushBucket()
 					local text = nil
 					local aggMode = petConf.aggregation or "Generic"
 					local petName = nil
-					local prefix
-					if sample.petBucket == "summons" then
-						prefix = ""
-					end
 					if aggMode:find("Attempt") then
 						local ok, name = pcall(UnitName, "pet")
 						if ok and ZSBT.IsSafeString(name) and name ~= "" then
 							petName = name
 						end
 					end
+					-- Summons-bucket hits (guardians, resolved minion casts)
+					-- never wear the pet's name — but the aggregation mode
+					-- still applies: Spell names them, Generic labels them,
+					-- Attempt/None keep them bare.
+					local spellNm = nil
 					if aggMode:find("Spell") then
 						local nm = ZSBT.CleanSpellName and ZSBT.CleanSpellName(sample.petSpellId or sample.spellId)
-						if type(nm) == "string" and nm ~= "" then
-							prefix = nm
-						end
+						if type(nm) == "string" and nm ~= "" then spellNm = nm end
 					end
-					if not prefix then
-						if aggMode:find("None") then
-							prefix = ""
+					local prefix
+					if sample.petBucket == "summons" then
+						if spellNm then
+							prefix = spellNm
 						elseif aggMode:find("Generic") then
 							prefix = "Pet"
-						elseif petName then
+						elseif petName and sample.petUnit == "pet" then
+							-- Attempt mode: the pet's own name only on hits
+							-- the cast record proves the main pet fired —
+							-- guardians never wear it.
 							prefix = petName
 						else
-							prefix = "Pet"
+							prefix = ""
 						end
+					elseif spellNm then
+						prefix = spellNm
+					elseif aggMode:find("None") then
+						prefix = ""
+					elseif aggMode:find("Generic") then
+						prefix = "Pet"
+					elseif petName then
+						prefix = petName
+					else
+						prefix = "Pet"
 					end
 
 					if val ~= nil then
