@@ -950,7 +950,13 @@ local function pickDotByCadenceDisambig(self, t, school)
 	local m = self and self._recentPeriodicSpellAt
 	if type(m) ~= "table" then return nil end
 	local pick, count = nil, 0
-	local rejNoEntry, rejSchool, rejDebuff, rejCadence, scanned = 0, 0, 0, 0, 0
+	local rejNoEntry, rejSchool, rejCadence, scanned = 0, 0, 0, 0
+	-- Target-debuff presence is a TIEBREAKER, not a gate: era aura APIs
+	-- may not expose the data at all, and multi-target DoTing means a real
+	-- tick from another mob arrives while this target lacks the debuff.
+	-- School + cadence phase-lock is the proof; the aura check only
+	-- disambiguates when several candidates survive.
+	local debuffPick, debuffCount = nil, 0
 	for sid, at in pairs(m) do
 		if type(sid) == "number" and type(at) == "number"
 			and (t - at) >= 0 and (t - at) <= PERIODIC_OUTGOING_WINDOW_SEC then
@@ -960,22 +966,25 @@ local function pickDotByCadenceDisambig(self, t, school)
 				rejNoEntry = rejNoEntry + 1
 			elseif entry.school and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school) and entry.school ~= school then
 				rejSchool = rejSchool + 1
-			elseif not cachedHasTargetDebuffSpellId(sid) then
-				rejDebuff = rejDebuff + 1
 			elseif not dotCadencePredict(self, t, sid) then
 				rejCadence = rejCadence + 1
 			else
 				pick = sid
 				count = count + 1
+				if cachedHasTargetDebuffSpellId(sid) then
+					debuffPick = sid
+					debuffCount = debuffCount + 1
+				end
 			end
 		end
 	end
 	if auditNote then
-		auditNote(("AUDD reason=DOTDISAMBIG scan=%s surv=%s pick=%s noentry=%s school=%s debuff=%s cadence=%s")
-			:format(dbgSafe(scanned), dbgSafe(count), dbgSafe(pick),
-				dbgSafe(rejNoEntry), dbgSafe(rejSchool), dbgSafe(rejDebuff), dbgSafe(rejCadence)))
+		auditNote(("AUDD reason=DOTDISAMBIG scan=%s surv=%s pick=%s debuffpass=%s noentry=%s school=%s cadence=%s")
+			:format(dbgSafe(scanned), dbgSafe(count), dbgSafe(pick), dbgSafe(debuffCount),
+				dbgSafe(rejNoEntry), dbgSafe(rejSchool), dbgSafe(rejCadence)))
 	end
 	if count == 1 then return pick end
+	if count > 1 and debuffCount == 1 then return debuffPick end
 	return nil
 end
 
