@@ -122,7 +122,9 @@ function Spellbook.ParseDesc(desc, spellId)
 	if d:find("channel") then
 		role = "channel"
 	elseif not selfDrain and not d:find("summon")
-		and (d:find("every") or d:find("periodic") or d:find("over time")) then
+		and (d:find("every") or d:find("periodic") or d:find("over time")
+			or d:find("per second") or d:find("per sec")
+			or d:find("damage over")) then
 		role = "dot"
 	end
 	-- Channeled spells report their channel duration via castTime.
@@ -139,11 +141,15 @@ function Spellbook.ParseDesc(desc, spellId)
 		tickMin = 0.4
 	end
 	-- Tick interval: era/periodic descriptions state it directly
-	-- ("every 3 sec", "every 2 seconds"). This is the client's own
-	-- declared cadence — better than any table's guessed interval.
+	-- ("every 3 sec", "every 2 seconds", "per second"). This is the
+	-- client's own declared cadence — better than any table's guess.
 	local interval
-	local iv = d:match("every (%d+%.?%d*) sec")
-	if iv then interval = tonumber(iv) end
+	local ivStr = d:match("every (%d+%.?%d*)%s*sec") or d:match("per (%d+%.?%d*)%s*sec")
+	if ivStr then
+		interval = tonumber(ivStr)
+	elseif d:find("every second") or d:find("per second") or d:find("each second") then
+		interval = 1
+	end
 	-- School extraction: consume matched names so composite names
 	-- ("Shadowflame") don't also emit their base school names.
 	local masks
@@ -268,6 +274,7 @@ function Spellbook:Scan()
 					rec.role = parsed.role
 					rec.duration = parsed.duration
 					rec.tickMin = parsed.tickMin
+					rec.interval = parsed.interval
 					rec.masks = parsed.masks
 				end
 			end
@@ -377,8 +384,9 @@ function Spellbook:Dump(printFn)
 			local mlist = {}
 			for _, m in ipairs(rec.masks or {}) do mlist[#mlist + 1] = tostring(m) end
 			flagged[#flagged + 1] = {
-				label = ("%s (%d): %s%s"):format(
+				label = ("%s (%d): %s%s%s"):format(
 					rec.name or tostring(sid), sid, rec.role,
+					type(rec.interval) == "number" and (" iv=" .. rec.interval) or "",
 					#mlist > 0 and (" sch=" .. table.concat(mlist, "/")) or ""),
 			}
 		end
