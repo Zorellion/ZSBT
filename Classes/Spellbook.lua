@@ -109,7 +109,10 @@ end
 function Spellbook.ParseDesc(desc, spellId)
 	if type(desc) ~= "string" or desc == "" then return nil end
 	if ZSBT.IsSafeString and not ZSBT.IsSafeString(desc) then return nil end
-	local d = desc:lower()
+	-- Thousands separators are display formatting, not data — "4,289
+	-- fire damage" must parse as 4289 or every amount derivation is off
+	-- by orders of magnitude.
+	local d = (desc:lower()):gsub(",", "")
 	local role = "cast"
 	-- Summons and self-drains carry periodic language ("deals damage
 	-- every 1 sec", "lose 4% of your health every 1 sec") but are not
@@ -119,7 +122,16 @@ function Spellbook.ParseDesc(desc, spellId)
 	-- (guardianSummons) already own the real behavior.
 	local selfDrain = d:find("of your health")
 		or d:find("your maximum health")
-	if d:find("channel") then
+	-- Channeled spells report a NEGATIVE castTime from GetSpellInfo —
+	-- mechanical, independent of whether the description ever says
+	-- "channel" (Fel Devastation's tooltip doesn't; it scanned as a dot).
+	local chanMs
+	if C_Spell and C_Spell.GetSpellInfo then
+		local ok, info = pcall(C_Spell.GetSpellInfo, spellId)
+		local ct = ok and type(info) == "table" and tonumber(info.castTime)
+		if ct and ct < 0 then chanMs = -ct end
+	end
+	if d:find("channel") or chanMs then
 		role = "channel"
 	elseif not selfDrain and not d:find("summon")
 		and (d:find("every") or d:find("periodic") or d:find("over time")
@@ -129,12 +141,8 @@ function Spellbook.ParseDesc(desc, spellId)
 	end
 	-- Channeled spells report their channel duration via castTime.
 	local duration, tickMin
-	if role == "channel" and C_Spell and C_Spell.GetSpellInfo then
-		local ok, info = pcall(C_Spell.GetSpellInfo, spellId)
-		local ct = ok and type(info) == "table" and tonumber(info.castTime)
-		if ct and ct > 0 then
-			duration = math.max(1, math.min(12, ct / 1000))
-		end
+	if role == "channel" and chanMs then
+		duration = math.max(1, math.min(12, chanMs / 1000))
 	end
 	if role == "channel" then
 		duration = duration or 8
@@ -159,16 +167,24 @@ function Spellbook.ParseDesc(desc, spellId)
 	local dotTotal, dotDur
 	dotDur = tonumber(d:match("damage[^.]-over (%d+%.?%d*)%s*sec"))
 	if dotDur then
-		dotTotal = tonumber(d:match("(%d+%.?%d*)%s*[%a]*%s*damage[^.]-over"))
+		-- Iterate all "N <school> damage...over" matches: a direct+periodic
+		-- tooltip ("4618 fire damage and 4289 fire damage over 12 sec") puts
+		-- the direct amount first — the periodic total is the number
+		-- NEAREST the over-phrase, so the last match wins.
+		for num in d:gmatch("(%d+%.?%d*)%s*[%a]*%s*damage[^.]-over") do
+			dotTotal = tonumber(num)
+		end
 	end
 	-- School extraction: consume matched names so composite names
-	-- ("Shadowflame") don't also emit their base school names.
+	-- ("Shadowflame") don't also emit their base school names. Word
+	-- boundaries on both ends — "fire" must not hit "fiery"/"wildfire".
 	local masks
 	local remaining = " " .. d .. " "
 	for _, sn in ipairs(schoolNames()) do
 		local plain = sn.name:lower()
-		if remaining:find(plain, 1, true) then
-			remaining = remaining:gsub(plain:gsub("(%W)", "%%%1"), " ")
+		local pat = "%f[%a]" .. plain:gsub("(%W)", "%%%1") .. "%f[%A]"
+		if remaining:find(pat) then
+			remaining = remaining:gsub(pat, " ")
 			masks = masks or {}
 			for _, m in ipairs(sn.masks) do
 				masks[m] = true
