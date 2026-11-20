@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.3.9.1-Beta
+
+### Added
+- **Context-tiered outgoing strictness (auto-detected):** outgoing attribution now picks a strictness tier automatically — combat-log line pairing proves ownership whenever the feed is live, and conservative correlation only engages as a degraded-mode fallback when the feed goes quiet (permissive solo, restricted grouped/PvP). The old per-context toggle lattice is gone.
+- **Outgoing Accuracy section:** General now has a dedicated tree group holding the three surviving policy toggles (Require Combat-Log Proof, Show Unproven in Groups, Relaxed in PvP) and the damage-meter fallbacks, with one "Outgoing" entry on the Quick Control Bar. Legacy keys migrate forward.
+- **Styled page intros:** General, DB Profiles, Combat Text, Crits, and Alerts landing pages have sectioned, palette-colored descriptions of what each category controls — all locales carry the same structure.
+- **Class page no-module notice:** classes without a module (most Era classes on Forever) show a static gold-bordered panel explaining that all damage still displays — visibility is never module-gated.
+- **Forever feed-gap fallback:** on Camelot, spell/pet-proven hits that retry and still find no combat-log line display anyway — the feed omits whole spell classes (e.g. Judgement under Seal of the Crusader). Retail keeps strict pairing.
+- **Module-less dot disambiguation on Forever:** spellbook-derived periodic spells run the cadence/amount disambiguation engine without a class module.
+
+### Fixed
+- **Fontstring clipping on the Class page:** shellFont pinned every label to one line, silently truncating multi-line status and notice text — now auto-sizes.
+- **Forever school-field lies:** bogus UNIT_COMBAT school masks no longer kill proven player hits (era-exempt school checks; pet matching stays strict).
+- **Audit tier stamping:** every target wound logs `AUDT tier=live|dead_*` so policy decisions are visible in the audit ring.
+
 ## 3.3.9-beta
 
 ### Added
