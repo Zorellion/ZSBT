@@ -670,7 +670,7 @@ local function flushBestOutgoing(self, token)
 				timestamp = ex.t,
 				rawPipeId = xp,
 				spellId = nil,
-				amountSource = "UNIT_COMBAT_BEST_EXTRA",
+				amountSource = "UNIT_COMBAT_BEST",
 				targetName = bucket.targetName,
 				isCrit = ex.isCrit,
 				schoolMask = bucket.schoolMask,
