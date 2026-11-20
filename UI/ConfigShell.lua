@@ -813,9 +813,33 @@ local function buildClassPage(pf)
 		knowledgeChild:SetHeight(math.max(1, 10 + #list * 14))
 	end
 
+	--------------------------------------------------------------------
+	-- No-module overlay: static, non-dismissible cover over the whole
+	-- page until a class module ships. Created last so it stacks above
+	-- every page widget; EnableMouse swallows clicks to hidden controls.
+	--------------------------------------------------------------------
+	local overlay = CreateFrame("Frame", nil, pf, "BackdropTemplate")
+	overlay:SetAllPoints(pf)
+	overlay:SetToplevel(true)
+	overlay:EnableMouse(true)
+	setBg(overlay, { 0.03, 0.035, 0.045, 0.96 })
+	overlay:Hide()
+
+	local ovPanel = CreateFrame("Frame", nil, overlay, "BackdropTemplate")
+	ovPanel:SetSize(560, 210)
+	ovPanel:SetPoint("CENTER", overlay, "CENTER", 0, 10)
+	setBg(ovPanel, { 0.06, 0.07, 0.09, 1.0 },
+		{ COL.accent[1], COL.accent[2], COL.accent[3], 0.9 })
+
+	local ovText = shellFont(ovPanel, 13, COL.text, L["NoModulePageBody"])
+	ovText:SetWidth(520)
+	ovText:SetJustifyH("CENTER")
+	ovText:SetPoint("CENTER", ovPanel, "CENTER", 0, 0)
+
 	local function refresh()
 		local cdb = ZSBT.ClassDB
 		local mod = cdb and cdb.ActiveModule and cdb.ActiveModule()
+		overlay:SetShown(mod == nil)
 		local tag = cdb and cdb.PlayerTag and cdb.PlayerTag() or "?"
 		local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
 		local st = ec and ec.ClassModuleState and ec:ClassModuleState() or nil
