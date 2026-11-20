@@ -308,10 +308,26 @@ local function emit(eventType, payload)
 	-- filter is untrusted, where behaviour is unchanged heuristics).
 	local sinkType = eventType
 	if eventType == "OUTGOING_DAMAGE_COMBAT" and payload and payload._petRoute == true then
-		sinkType = "PET_DAMAGE_COMBAT"
-		local zbt3 = ZSBT.ZBattleText
-		if zbt3 and zbt3.FileLog then
-			zbt3:FileLog(("PET_ROUTE petSid=%s school=%s"):format(tostring(payload.petSpellId), tostring(payload.schoolMask)))
+		-- Two cases keep this payload out of pet scroll:
+		--  1. A player spellId landed after the pet-route guess (deferred
+		--     retry dual-claim) — a hit wearing a real cast's name
+		--     belongs in outgoing, not pet scroll.
+		--  2. The school is provably impossible for any class minion —
+		--     the wound is foreign and emits as generic instead.
+		local petSchoolForeign = ZSBT.ClassDB and ZSBT.ClassDB.PetSchoolAllowed
+			and ZSBT.ClassDB.PetSchoolAllowed(payload.schoolMask) == false
+		if payload.spellId ~= nil or petSchoolForeign then
+			local zbtX = ZSBT.ZBattleText
+			if zbtX and zbtX.FileLog then
+				zbtX:FileLog(("PET_ROUTE_STRIP sid=%s school=%s"):format(
+					tostring(payload.spellId), tostring(payload.schoolMask)))
+			end
+		else
+			sinkType = "PET_DAMAGE_COMBAT"
+			local zbt3 = ZSBT.ZBattleText
+			if zbt3 and zbt3.FileLog then
+				zbt3:FileLog(("PET_ROUTE petSid=%s school=%s"):format(tostring(payload.petSpellId), tostring(payload.schoolMask)))
+			end
 		end
 	end
 	if Collector._sink then
