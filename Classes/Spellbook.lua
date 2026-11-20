@@ -106,6 +106,27 @@ end
 -- yields role "cast" + whatever schools matched, which degrades to
 -- module-table behavior — never worse than today.
 ---------------------------------------------------------------------------
+-- Tooltip header carries the cast-type label ("Channeled" top-right)
+-- even when the description body never says the word — Fel Devastation
+-- reads "damage over 2 sec" and scans as a dot on text alone.
+local function isChanneledTip(spellId)
+	if not (C_TooltipInfo and C_TooltipInfo.GetSpellByID) then return false end
+	local ok, data = pcall(C_TooltipInfo.GetSpellByID, spellId)
+	if not (ok and type(data) == "table" and type(data.lines) == "table") then return false end
+	for i = 1, math.min(#data.lines, 8) do
+		local line = data.lines[i]
+		for _, key in ipairs({ "leftText", "rightText" }) do
+			local tx = line and line[key]
+			if type(tx) == "string" and tx ~= ""
+				and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(tx))
+				and tx:lower():find("channel") then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 function Spellbook.ParseDesc(desc, spellId)
 	if type(desc) ~= "string" or desc == "" then return nil end
 	if ZSBT.IsSafeString and not ZSBT.IsSafeString(desc) then return nil end
@@ -122,31 +143,22 @@ function Spellbook.ParseDesc(desc, spellId)
 	-- (guardianSummons) already own the real behavior.
 	local selfDrain = d:find("of your health")
 		or d:find("your maximum health")
-	-- Channeled spells report a NEGATIVE castTime from GetSpellInfo —
-	-- mechanical, independent of whether the description ever says
-	-- "channel" (Fel Devastation's tooltip doesn't; it scanned as a dot).
+	-- Channeled spells report a NEGATIVE castTime from GetSpellInfo
+	-- (older API convention; kept — harmless when never negative), and
+	-- the tooltip header labels channels regardless of body text.
 	local chanMs
 	if C_Spell and C_Spell.GetSpellInfo then
 		local ok, info = pcall(C_Spell.GetSpellInfo, spellId)
 		local ct = ok and type(info) == "table" and tonumber(info.castTime)
 		if ct and ct < 0 then chanMs = -ct end
 	end
-	if d:find("channel") or chanMs then
+	if d:find("channel") or chanMs or isChanneledTip(spellId) then
 		role = "channel"
 	elseif not selfDrain and not d:find("summon")
 		and (d:find("every") or d:find("periodic") or d:find("over time")
 			or d:find("per second") or d:find("per sec")
 			or d:find("damage over")) then
 		role = "dot"
-	end
-	-- Channeled spells report their channel duration via castTime.
-	local duration, tickMin
-	if role == "channel" and chanMs then
-		duration = math.max(1, math.min(12, chanMs / 1000))
-	end
-	if role == "channel" then
-		duration = duration or 8
-		tickMin = 0.4
 	end
 	-- Tick interval: era/periodic descriptions state it directly
 	-- ("every 3 sec", "every 2 seconds", "per second"). This is the
@@ -174,6 +186,13 @@ function Spellbook.ParseDesc(desc, spellId)
 		for num in d:gmatch("(%d+%.?%d*)%s*[%a]*%s*damage[^.]-over") do
 			dotTotal = tonumber(num)
 		end
+	end
+	-- Channel duration: negative castTime when present, else the
+	-- tooltip's own "over N sec" (Fel Devastation: "damage over 2 sec").
+	local duration, tickMin
+	if role == "channel" then
+		duration = chanMs and math.max(1, math.min(12, chanMs / 1000)) or dotDur or 8
+		tickMin = 0.4
 	end
 	-- School extraction: consume matched names so composite names
 	-- ("Shadowflame") don't also emit their base school names. Word
