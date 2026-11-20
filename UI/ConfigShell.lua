@@ -815,22 +815,19 @@ local function buildClassPage(pf)
 	end
 
 	--------------------------------------------------------------------
-	-- No-module overlay: static, non-dismissible cover over the whole
-	-- page until a class module ships. Created last so it stacks above
-	-- every page widget; EnableMouse swallows clicks to hidden controls.
+	-- No-module notice: a static floating panel centered on the page,
+	-- shown until a class module ships. Not a cover — just a raised
+	-- window above the page content. EnableMouse so clicks on it don't
+	-- fall through to the controls behind it.
 	--------------------------------------------------------------------
-	local overlay = CreateFrame("Frame", nil, pf, "BackdropTemplate")
-	overlay:SetAllPoints(pf)
-	overlay:SetToplevel(true)
-	overlay:EnableMouse(true)
-	setBg(overlay, { 0.03, 0.035, 0.045, 0.96 })
-	overlay:Hide()
-
-	local ovPanel = CreateFrame("Frame", nil, overlay, "BackdropTemplate")
+	local ovPanel = CreateFrame("Frame", nil, pf, "BackdropTemplate")
 	ovPanel:SetSize(560, 260)
-	ovPanel:SetPoint("CENTER", overlay, "CENTER", 0, 10)
+	ovPanel:SetPoint("CENTER", pf, "CENTER", 0, 10)
+	ovPanel:SetToplevel(true)
+	ovPanel:EnableMouse(true)
 	setBg(ovPanel, { 0.06, 0.07, 0.09, 1.0 },
 		{ COL.accent[1], COL.accent[2], COL.accent[3], 0.9 })
+	ovPanel:Hide()
 
 	local ovText = shellFont(ovPanel, 13, COL.text, L["NoModulePageBody"])
 	ovText:SetWidth(520)
@@ -840,7 +837,7 @@ local function buildClassPage(pf)
 	local function refresh()
 		local cdb = ZSBT.ClassDB
 		local mod = cdb and cdb.ActiveModule and cdb.ActiveModule()
-		overlay:SetShown(mod == nil)
+		ovPanel:SetShown(mod == nil)
 		local tag = cdb and cdb.PlayerTag and cdb.PlayerTag() or "?"
 		local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
 		local st = ec and ec.ClassModuleState and ec:ClassModuleState() or nil
