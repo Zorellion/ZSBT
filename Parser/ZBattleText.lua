@@ -602,6 +602,7 @@ end
 ------------------------------------------------------------------------
 local DEFER_SEC = 0.20
 local DEFER_WINDOW = 0.45
+local RETRY_WINDOW = 0.90
 
 ZB._pending = ZB._pending or {}
 ZB._flushAt = ZB._flushAt or 0
@@ -664,7 +665,8 @@ end
 -- foreign bleed lives here. sid nil-checks are secret-safe (existence,
 -- not value comparison).
 local function candidateTier(payload)
-    if payload and (payload.spellId ~= nil or payload.petSpellId ~= nil) then
+    if payload and (payload.spellId ~= nil or payload.petSpellId ~= nil
+        or payload._swingProven == true) then
         return 1
     end
     return 2
@@ -729,6 +731,9 @@ local function flushPending()
     if ZSBT._auditTrace == true then
         ZB:Audit(("AUDFLP n=%d"):format(#pend))
     end
+    -- Swing-proven candidates get one retry at a wider window: on slow
+    -- chat feeds their melee line can lag past the first flush.
+    local requeue = nil
     -- Provenance-tiered claiming: sid-bearing candidates (real cast/pet
     -- record or class-resolved identity) claim lines before unattributed
     -- generics, so a foreign generic can no longer take the line a proven
@@ -744,11 +749,12 @@ local function flushPending()
                     deliverOutgoing(p.payload)
                 else
                     local kind
+                    local window = p._retried and RETRY_WINDOW or DEFER_WINDOW
                     if p.payload and p.payload.isAuto == true then
-                        kind = takeDamageLine(p.t, DEFER_WINDOW, autoLineKinds())
+                        kind = takeDamageLine(p.t, window, autoLineKinds())
                     else
                         local pref = preferredKinds(p.payload)
-                        kind = takeDamageLine(p.t, DEFER_WINDOW, pref) or takeDamageLine(p.t, DEFER_WINDOW)
+                        kind = takeDamageLine(p.t, window, pref) or takeDamageLine(p.t, window)
                     end
                     if kind then
                         ZB._allows = ZB._allows + 1
@@ -758,6 +764,13 @@ local function flushPending()
                             tostring(kind)))
                         ZB:FileLog(("ALLOW kind=%s sid=%s"):format(tostring(kind), tostring(p.payload and p.payload.spellId)))
                         deliverOutgoing(p.payload)
+                    elseif p.payload and p.payload._swingProven == true and p._retried ~= true then
+                        -- Proven by PLAYER_SWING but its line hasn't
+                        -- landed yet — one retry at a wider window
+                        -- before treating it as foreign bleed.
+                        p._retried = true
+                        requeue = requeue or {}
+                        requeue[#requeue + 1] = p
                     elseif p.payload and p.payload.isAuto == true and p.payload.spellId == nil then
                         -- Rescue: a module that restricts auto kinds
                         -- (hunter: ranged only) can flag pet melee isAuto
@@ -800,6 +813,19 @@ local function flushPending()
                     end
                 end
             end
+        end
+    end
+    -- Retry pass for swing-proven candidates whose line lagged the
+    -- first flush: one more cycle at RETRY_WINDOW before dropping.
+    if requeue and #requeue > 0 then
+        for i = 1, #requeue do
+            ZB._pending[#ZB._pending + 1] = requeue[i]
+        end
+        ZB:FileLog(("REQUEUE n=%d"):format(#requeue))
+        if C_Timer and C_Timer.After then
+            local tNow = GetTime and GetTime() or 0
+            ZB._flushAt = tNow + DEFER_SEC
+            C_Timer.After(DEFER_SEC, flushPending)
         end
     end
 end
