@@ -267,6 +267,17 @@ function ClassDB.KnowledgeList()
 	return out
 end
 
+-- Is this school mask inside the active module's declared damage kit?
+-- Modules opt in via mod.schools = { [mask]=true, ... }; absence means
+-- "no whitelist" and everything passes. An unverifiable (secret or
+-- non-numeric) mask also passes — the veto only fires on certainty.
+function ClassDB.SchoolAllowed(schoolMask)
+	local mod = ClassDB.ActiveModule()
+	if not mod or type(mod.schools) ~= "table" then return true end
+	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(schoolMask)) then return true end
+	return mod.schools[schoolMask] == true
+end
+
 -- Does the active module already know this spellId? Returns a short
 -- kind string ("dot"/"channel"/"cast"/"summon"/"guardian") so the teach
 -- UI can flag a redundant drop. Name check included so a cast-id

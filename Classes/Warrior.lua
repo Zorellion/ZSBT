@@ -101,6 +101,15 @@ mod.castBudget = {
 	[1235113] = 8,
 }
 
+-- Provable damage schools for the kit (masks observed on player-owned
+-- lines): 1 physical, 8 nature (Lightning Strike, Ground Current,
+-- Thorn Bloom), 9 physical|nature (Thunder Blast). An unattributed hit
+-- carrying any other school is provably foreign — follower/party
+-- damage on a shared target — and ClassDB.SchoolAllowed vetoes it
+-- before it can queue for a palette line. School-1 generics stay
+-- ambiguous by design (follower melee is indistinguishable from ours).
+mod.schools = { [1] = true, [8] = true, [9] = true }
+
 -- No pet spells to match, no pet physical damage — warrior has no
 -- permanent or controllable pet.
 function mod.petSchoolHit(school, helpers)
