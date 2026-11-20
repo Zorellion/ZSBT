@@ -50,46 +50,6 @@ local function savePosition(frame)
 	g.quickControlBarPos.y = y
 end
 
-local function setInstanceAware(val)
-	local g = getGeneral()
-	if not g then return end
-	g.instanceAwareOutgoing = val and true or false
-	if val ~= true then
-		g.damageMeterOutgoingFallback = false
-		g.damageMeterIncomingFallback = false
-		g.autoAttackRestrictFallback = false
-	end
-	if ZSBT.Core and ZSBT.Core.UpdateInstanceState then
-		ZSBT.Core:UpdateInstanceState(true)
-	end
-	notifyConfig()
-end
-
-local function setQuietOutgoing(val)
-	local g = getGeneral()
-	if not g then return end
-	g.quietOutgoingWhenIdle = val and true or false
-	if val ~= true then
-		g.quietOutgoingAutoAttacks = false
-		g.strictOutgoingCombatLogOnly = false
-	end
-	notifyConfig()
-end
-
-local function setPvPStrict(val)
-	local g = getGeneral()
-	if not g then return end
-	g.pvpStrictEnabled = val and true or false
-	if val ~= true then
-		-- Parent off: clear dependents to match Instance menu behavior.
-		g.pvpStrictDisableAutoAttackFallback = false
-	end
-	if ZSBT.Core and ZSBT.Core.UpdateInstanceState then
-		ZSBT.Core:UpdateInstanceState(true)
-	end
-	notifyConfig()
-end
-
 local function toggleBool(key)
 	local g = getGeneral()
 	if not g then return end
@@ -107,15 +67,38 @@ local function refreshActiveDropDown()
 	end
 end
 
-local function buildInstanceMenu()
+-- Context-tiered ownership model: the three surviving outgoing
+-- toggles plus the damage-meter fallbacks. Context (solo/group/PvP)
+-- is auto-detected — no per-context menus needed.
+local function buildOutgoingMenu()
 	local g = getGeneral() or {}
-	local parentOn = (g.instanceAwareOutgoing == true)
 	return {
 		{
-			text = L["Dungeon/Raid Aware Outgoing"],
-			checked = function() return g.instanceAwareOutgoing == true end,
+			text = L["Require Combat-Log Proof"],
+			isNotRadio = true,
+			checked = function() return g.requireProof == true end,
 			func = function()
-				setInstanceAware(not (g.instanceAwareOutgoing == true))
+				toggleBool("requireProof")
+				refreshActiveDropDown()
+			end,
+			keepShownOnClick = true,
+		},
+		{
+			text = L["Show Unproven Hits in Groups"],
+			isNotRadio = true,
+			checked = function() return g.showUnprovenInGroups == true end,
+			func = function()
+				toggleBool("showUnprovenInGroups")
+				refreshActiveDropDown()
+			end,
+			keepShownOnClick = true,
+		},
+		{
+			text = L["Relaxed Outgoing in PvP"],
+			isNotRadio = true,
+			checked = function() return g.pvpRelaxed == true end,
+			func = function()
+				toggleBool("pvpRelaxed")
 				refreshActiveDropDown()
 			end,
 			keepShownOnClick = true,
@@ -123,7 +106,6 @@ local function buildInstanceMenu()
 		{
 			text = L["Use Damage Meter Outgoing Fallback"],
 			isNotRadio = true,
-			disabled = (not parentOn),
 			checked = function() return g.damageMeterOutgoingFallback == true end,
 			func = function() toggleBool("damageMeterOutgoingFallback") end,
 			keepShownOnClick = true,
@@ -131,81 +113,8 @@ local function buildInstanceMenu()
 		{
 			text = L["Use Damage Meter Incoming Damage Fallback"],
 			isNotRadio = true,
-			disabled = (not parentOn),
 			checked = function() return g.damageMeterIncomingFallback == true end,
 			func = function() toggleBool("damageMeterIncomingFallback") end,
-			keepShownOnClick = true,
-		},
-		{
-			text = L["Show Auto Attacks in Instances"],
-			isNotRadio = true,
-			disabled = (not parentOn),
-			checked = function() return g.autoAttackRestrictFallback == true end,
-			func = function() toggleBool("autoAttackRestrictFallback") end,
-			keepShownOnClick = true,
-		},
-	}
-end
-
-local function buildPvPMenu()
-	local g = getGeneral() or {}
-	local parentOn = (g.pvpStrictEnabled == true)
-	return {
-		{
-			text = L["PvP Strict Mode"],
-			checked = function() return g.pvpStrictEnabled == true end,
-			func = function()
-				setPvPStrict(not (g.pvpStrictEnabled == true))
-				refreshActiveDropDown()
-			end,
-			keepShownOnClick = true,
-		},
-		{
-			text = L["Disable Auto-Attack Fallback"],
-			isNotRadio = true,
-			disabled = (not parentOn),
-			checked = function() return g.pvpStrictDisableAutoAttackFallback ~= false end,
-			func = function()
-				toggleBool("pvpStrictDisableAutoAttackFallback")
-				refreshActiveDropDown()
-			end,
-			keepShownOnClick = true,
-		},
-	}
-end
-
-local function buildOpenWorldMenu()
-	local g = getGeneral() or {}
-	local parentOn = (g.quietOutgoingWhenIdle == true)
-	return {
-		{
-			text = L["Quiet Outgoing When Idle"],
-			checked = function() return g.quietOutgoingWhenIdle == true end,
-			func = function()
-				setQuietOutgoing(not (g.quietOutgoingWhenIdle == true))
-				refreshActiveDropDown()
-			end,
-			keepShownOnClick = true,
-		},
-		{
-			text = L["Allow Auto Attacks While Quiet"],
-			isNotRadio = true,
-			disabled = (not parentOn),
-			checked = function() return g.quietOutgoingAutoAttacks == true end,
-			func = function()
-				toggleBool("quietOutgoingAutoAttacks")
-				refreshActiveDropDown()
-			end,
-			keepShownOnClick = true,
-		},
-		{
-			text = L["Strict Outgoing (Combat Log Only)"],
-			isNotRadio = true,
-			checked = function() return g.strictOutgoingCombatLogOnly == true end,
-			func = function()
-				toggleBool("strictOutgoingCombatLogOnly")
-				refreshActiveDropDown()
-			end,
 			keepShownOnClick = true,
 		},
 	}
@@ -311,12 +220,8 @@ function QuickBar:Init()
 		if level ~= 1 then return end
 		local which = QuickBar._activeMenu
 		local menu = nil
-		if which == "instance" then
-			menu = buildInstanceMenu()
-		elseif which == "openworld" then
-			menu = buildOpenWorldMenu()
-		elseif which == "pvp" then
-			menu = buildPvPMenu()
+		if which == "outgoing" then
+			menu = buildOutgoingMenu()
 		elseif which == "class" then
 			menu = buildClassMenu()
 		end
@@ -327,7 +232,7 @@ function QuickBar:Init()
 	end, "MENU")
 
 	local f = CreateFrame("Frame", "ZSBT_QuickControlBar", UIParent, "BackdropTemplate")
-	f:SetSize(430, 28)
+	f:SetSize(280, 28)
 	f:SetFrameStrata("DIALOG")
 	f:SetFrameLevel(50)
 	f:SetBackdrop({
@@ -380,50 +285,20 @@ function QuickBar:Init()
 	end)
 	f:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
-	local btnInstance = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-	btnInstance:SetSize(80, 22)
-	btnInstance:SetPoint("LEFT", label, "RIGHT", 6, 0)
-	btnInstance:SetText(L["Instance"])
-	btnInstance:SetScript("OnClick", function()
-		showMenu(btnInstance, "instance")
+	local btnOutgoing = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+	btnOutgoing:SetSize(80, 22)
+	btnOutgoing:SetPoint("LEFT", label, "RIGHT", 6, 0)
+	btnOutgoing:SetText(L["Outgoing"])
+	btnOutgoing:SetScript("OnClick", function()
+		showMenu(btnOutgoing, "outgoing")
 	end)
-	btnInstance:SetScript("OnEnter", function()
-		GameTooltip:SetOwner(btnInstance, "ANCHOR_TOP")
-		GameTooltip:SetText(L["ZSBT - Instance Control"])
-		GameTooltip:AddLine(L["Quick toggle dungeon/raid tuning options."], 0.8, 0.8, 0.8, true)
+	btnOutgoing:SetScript("OnEnter", function()
+		GameTooltip:SetOwner(btnOutgoing, "ANCHOR_TOP")
+		GameTooltip:SetText(L["ZSBT - Outgoing Ownership"])
+		GameTooltip:AddLine(L["Quick toggle outgoing ownership options."], 0.8, 0.8, 0.8, true)
 		GameTooltip:Show()
 	end)
-	btnInstance:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
-
-	local btnWorld = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-	btnWorld:SetSize(90, 22)
-	btnWorld:SetPoint("LEFT", btnInstance, "RIGHT", 4, 0)
-	btnWorld:SetText(L["Open World"])
-	btnWorld:SetScript("OnClick", function()
-		showMenu(btnWorld, "openworld")
-	end)
-	btnWorld:SetScript("OnEnter", function()
-		GameTooltip:SetOwner(btnWorld, "ANCHOR_TOP")
-		GameTooltip:SetText(L["ZSBT - Open World Control"])
-		GameTooltip:AddLine(L["Quick toggle open-world tuning options."], 0.8, 0.8, 0.8, true)
-		GameTooltip:Show()
-	end)
-	btnWorld:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
-
-	local btnPvP = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-	btnPvP:SetSize(50, 22)
-	btnPvP:SetPoint("LEFT", btnWorld, "RIGHT", 4, 0)
-	btnPvP:SetText("PvP")
-	btnPvP:SetScript("OnClick", function()
-		showMenu(btnPvP, "pvp")
-	end)
-	btnPvP:SetScript("OnEnter", function()
-		GameTooltip:SetOwner(btnPvP, "ANCHOR_TOP")
-		GameTooltip:SetText(L["ZSBT - PvP Control"])
-		GameTooltip:AddLine(L["Quick toggle PvP tuning options."], 0.8, 0.8, 0.8, true)
-		GameTooltip:Show()
-	end)
-	btnPvP:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+	btnOutgoing:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
 	-- Class-module button: labeled with the player's class, visible when
 	-- a class module is loaded. The menu holds the module's toggles plus
@@ -431,12 +306,12 @@ function QuickBar:Init()
 	-- (warrior) gets a button — its knowledge/teaching page still exists.
 	local cdb = ZSBT.ClassDB
 	local classModActive = cdb and cdb.ActiveModule and cdb.ActiveModule() ~= nil
-	local btnAnchor = btnPvP
+	local btnAnchor = btnOutgoing
 	if classModActive then
 		local _, className = UnitClass("player")
 		local btnClass = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
 		btnClass:SetSize(80, 22)
-		btnClass:SetPoint("LEFT", btnPvP, "RIGHT", 4, 0)
+		btnClass:SetPoint("LEFT", btnOutgoing, "RIGHT", 4, 0)
 		btnClass:SetText(className or L["Class"])
 		btnClass:SetScript("OnClick", function()
 			showMenu(btnClass, "class")

@@ -346,7 +346,9 @@ local function emit(eventType, payload)
 	if eventType == "PET_DAMAGE_COMBAT" and payload
 		and payload.spellId == nil and payload.petSpellId == nil then
 		local prof = ZSBT.db and ZSBT.db.profile
-		if prof and type(prof.classModule) == "table" and prof.classModule.hideUnattributed == true then
+		local strictProof = ZSBT.Core and ZSBT.Core.IsRequireProofEnabled
+			and ZSBT.Core:IsRequireProofEnabled() == true
+		if strictProof or (prof and type(prof.classModule) == "table" and prof.classModule.hideUnattributed == true) then
 			auditNote(("AUDSUPP ht=%.3f school=%s crit=%s src=pet"):format(
 				tonumber(payload.timestamp) or 0, tostring(payload.schoolMask),
 				tostring(payload.isCrit == true)))
@@ -3169,20 +3171,25 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		-- restricts unattributed hits so foreign damage cannot bleed in.
 		local tier = (ZSBT.Core and ZSBT.Core.OutgoingStrictnessTier
 			and ZSBT.Core:OutgoingStrictnessTier()) or "live"
-		local autoRestrict = tier == "dead_group" or tier == "dead_pvp"
+		local autoRestrict = (ZSBT.Core and ZSBT.Core.IsAutoRestrictActive
+			and ZSBT.Core:IsAutoRestrictActive())
 			or (ZSBT.Core and ZSBT.Core.ShouldRestrictOutgoingFallback
 				and ZSBT.Core:ShouldRestrictOutgoingFallback()) or false
 		local quietMode = isQuietOutgoingWhenIdle()
-		-- Legacy explicit-strict keys (pre-migration compat): an enabled
-		-- strict toggle still forces restrict even while the veto is live —
-		-- the future "Require combat-log proof" toggle keeps that role.
+		-- Legacy explicit-strict keys (pre-migration compat) plus the new
+		-- "Require combat-log proof" toggle: an enabled strict toggle still
+		-- forces restrict even while the veto is live.
 		local legacyStrict = isPvPStrictActive()
 			or isStrictOutgoingCombatLogOnly()
 			or quietMode == true
+			or (ZSBT.Core and ZSBT.Core.IsRequireProofEnabled
+				and ZSBT.Core:IsRequireProofEnabled())
 		local restrict = autoRestrict or legacyStrict
 		local instanceAware = restrict
 			or (ZSBT.Core and ZSBT.Core.IsInstanceAwareOutgoingEnabled
 				and ZSBT.Core:IsInstanceAwareOutgoingEnabled()) or false
+		auditNote(("AUDT tier=%s restrict=%s"):format(
+			tostring(tier), tostring(restrict == true)))
 		-- If combat text / chat already produced an outgoing number for the current cast
 		-- token, suppress UNIT_COMBAT(target) for that token to avoid double numbers.
 		if self._castToken and self._lastCombatTextOutgoingToken == self._castToken then
