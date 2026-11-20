@@ -653,10 +653,15 @@ local function autoLineKinds()
 	return MELEE_KINDS
 end
 
+-- Kinds a non-auto candidate may claim. melee/ranged lines come only
+-- from SWING_DAMAGE/RANGE_DAMAGE — auto-attacks — so a wound that is
+-- not an auto can never legitimately own one, no matter its school.
+-- Restricting non-autos to spell kinds stops spell wounds from
+-- stealing a leftover auto line (a school-4 wound claimed a melee
+-- line and displayed it as "Frailty").
+local NONAUTO_KINDS = { direct = true, tick = true, shield = true }
 local function preferredKinds(payload)
-    local sm = payload and payload.schoolMask
-    if sm == 1 then return MELEE_KINDS end
-    return nil
+    return NONAUTO_KINDS
 end
 
 -- Provenance tier for line claiming. Tier 1 = sid-bearing (the hit
@@ -749,12 +754,14 @@ local function flushPending()
                     deliverOutgoing(p.payload)
                 else
                     local kind
-                    local window = p._retried and RETRY_WINDOW or DEFER_WINDOW
+                    -- Retried generics keep the tight window — a lingering
+                    -- unattributed wound must not reach a leftover line as
+                    -- far out as a proven hit can.
+                    local window = (p._retried and pass == 1) and RETRY_WINDOW or DEFER_WINDOW
                     if p.payload and p.payload.isAuto == true then
                         kind = takeDamageLine(p.t, window, autoLineKinds())
                     else
-                        local pref = preferredKinds(p.payload)
-                        kind = takeDamageLine(p.t, window, pref) or takeDamageLine(p.t, window)
+                        kind = takeDamageLine(p.t, window, preferredKinds(p.payload))
                     end
                     if kind then
                         ZB._allows = ZB._allows + 1
@@ -764,17 +771,16 @@ local function flushPending()
                             tostring(kind)))
                         ZB:FileLog(("ALLOW kind=%s sid=%s"):format(tostring(kind), tostring(p.payload and p.payload.spellId)))
                         deliverOutgoing(p.payload)
-                    elseif p.payload and p._retried ~= true and (
-                        p.payload._swingProven == true
-                        or (p.payload.spellId ~= nil
-                            and ZSBT.ClassDB and ZSBT.ClassDB.IsForever and ZSBT.ClassDB.IsForever())
-                    ) then
-                        -- Proven (PLAYER_SWING or a consumed cast record)
-                        -- but its line hasn't landed yet — one retry at a
-                        -- wider window before treating it as foreign bleed.
-                        -- On Forever sid-bearing hits retry too, since the
-                        -- no-line rescue below must only fire for spells the
-                        -- feed genuinely never reports (Judgement etc.).
+                    elseif p.payload and p._retried ~= true then
+                        -- Every candidate gets one retry: feed lines
+                        -- routinely land after the first flush (~0.2s) in
+                        -- grouped content, and a candidate whose line is
+                        -- still in transit dies without ever meeting it.
+                        -- Retail has no PLAYER_SWING so autos can never be
+                        -- swing-proven — without this, first-hit autos were
+                        -- flushed dead before their melee line arrived.
+                        -- A foreign wound produces no MINE lines anyway, so
+                        -- retrying it just delays its drop one cycle.
                         p._retried = true
                         requeue = requeue or {}
                         requeue[#requeue + 1] = p
@@ -802,11 +808,16 @@ local function flushPending()
                             ZB._drops = ZB._drops + 1
                             ZB:FileLog(("DROP sid=%s"):format(tostring(p.payload and p.payload.spellId)))
                             local dp = p.payload or {}
-                            ZB:Audit(("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=%s"):format(
+                            ZB:Audit(("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=%s%s"):format(
                                 tonumber(p.t) or 0, pass, audSafe(dp.spellId), audSafe(dp.schoolMask),
                                 tostring(dp.isCrit == true),
+                                tostring(dp._foreignSchool == true and "fschool-" or ""),
                                 tostring(dp._petRoute == true and "pet" or (dp.isAuto == true and "auto" or (dp.spellId ~= nil and "spell" or "generic")))))
-                            sustainedRejection()
+                            -- Deferred off-whitelist drops are expected
+                            -- foreign traffic — counting them toward feed
+                            -- distrust would flip the veto permissive in
+                            -- exactly the grouped fights they appear in.
+                            if not dp._foreignSchool then sustainedRejection() end
                         end
                     elseif pass == 1 and p._retried == true and p.payload and p.payload.spellId ~= nil
                         and ZSBT.ClassDB and ZSBT.ClassDB.IsForever and ZSBT.ClassDB.IsForever() then
@@ -827,11 +838,14 @@ local function flushPending()
                         ZB._drops = ZB._drops + 1
                         ZB:FileLog(("DROP sid=%s"):format(tostring(p.payload and p.payload.spellId)))
                         local dp = p.payload or {}
-                        ZB:Audit(("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=%s"):format(
+                        ZB:Audit(("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=%s%s"):format(
                             tonumber(p.t) or 0, pass, audSafe(dp.spellId), audSafe(dp.schoolMask),
                             tostring(dp.isCrit == true),
+                            tostring(dp._foreignSchool == true and "fschool-" or ""),
                             tostring(dp._petRoute == true and "pet" or (dp.isAuto == true and "auto" or (dp.spellId ~= nil and "spell" or "generic")))))
-                        sustainedRejection()
+                        -- Deferred off-whitelist drops are expected foreign
+                        -- traffic; they must not count toward feed distrust.
+                        if not dp._foreignSchool then sustainedRejection() end
                     end
                 end
             end
@@ -966,7 +980,7 @@ function ZB:OfferOutgoing(payload)
         if payload.isAuto == true then
             fastKind = takeDamageLine(tHit, VETO_WINDOW, autoLineKinds())
         else
-            fastKind = takeDamageLine(tHit, VETO_WINDOW, preferredKinds(payload)) or takeDamageLine(tHit, VETO_WINDOW)
+            fastKind = takeDamageLine(tHit, VETO_WINDOW, preferredKinds(payload))
         end
         if fastKind then
             ZB._allows = ZB._allows + 1

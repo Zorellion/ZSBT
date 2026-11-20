@@ -327,10 +327,11 @@ local function emit(eventType, payload)
 			and ZSBT.ClassDB and ZSBT.ClassDB.SchoolAllowed
 			and not ZSBT.ClassDB.SchoolAllowed(payload.schoolMask) then
 			-- Whitelists can't predeclare proc/trinket/hero-talent schools
-			-- (stub classes run on book-derived masks only). A MINE line
-			-- buffered near this wound is stronger proof than any list —
-			-- the feed already vouched the hit is ours, so let pairing
-			-- decide. No line evidence = foreign as before.
+			-- (stub classes run on book-derived masks only), and feed lines
+			-- routinely lag the wound past intake. Instead of killing the
+			-- hit here, tag it and let pairing decide: a claimed MINE line
+			-- is stronger proof than any list, and an off-whitelist wound
+			-- that never meets a line dies at flush — foreign as before.
 			local lineProof = nil
 			local zbtS = ZSBT.ZBattleText
 			if zbtS and zbtS.PeekDamageLine then
@@ -341,9 +342,9 @@ local function emit(eventType, payload)
 				auditNote(("AUDSCH bypass=line school=%s kind=%s"):format(
 					tostring(payload.schoolMask), tostring(lineProof)))
 			else
-				auditNote(("AUDDROP reason=FOREIGN_SCHOOL school=%s crit=%s"):format(
+				payload._foreignSchool = true
+				auditNote(("AUDSCH defer school=%s crit=%s"):format(
 					tostring(payload.schoolMask), tostring(payload.isCrit == true)))
-				return
 			end
 		end
 		-- PLAYER_SWING provenance: an unattributed school-1 hit inside the
