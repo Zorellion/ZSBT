@@ -29,8 +29,26 @@ ClassDB._modules = {}
 ClassDB._activeTag = nil
 ClassDB._activeMod = nil
 
+-- Client detection: World of Warcraft: Forever (codename "Camelot",
+-- project 18) is a second game type in the Mainline family — modern API
+-- surface but Classic+ content, so spell ids, talents, and guardian
+-- semantics all differ from Retail. Same-name spell data would actively
+-- mislead the modules, so Retail modules must not load there: Era
+-- modules live in Classes/Era/<Class>.lua and opt in via
+-- mod.client = "era". Early Forever betas reported project 1
+-- (Mainline), so a false here means "not confirmed Forever" and the
+-- Retail data set is the safer default.
+function ClassDB.IsForever()
+	return WOW_PROJECT_ID == (WOW_PROJECT_CAMELOT or 18)
+end
+
 function ClassDB.Register(tag, mod)
 	if type(tag) ~= "string" or tag == "" or type(mod) ~= "table" then return end
+	-- Modules are client-scoped: Era files declare mod.client = "era" and
+	-- are dormant on Retail; everything else defaults to Retail and is
+	-- dormant on Forever. Saves cross-client id drift poisoning every
+	-- learned table.
+	if (mod.client == "era") ~= ClassDB.IsForever() then return end
 	ClassDB._modules[tag] = mod
 end
 
