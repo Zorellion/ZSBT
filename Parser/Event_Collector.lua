@@ -1123,7 +1123,8 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 				-- permissive (CombatText wounds carry no target).
 				local appliedOv, tgtOk = nil, true
 				local map = self._dotAppliedTarget and self._dotAppliedTarget[sid]
-				if type(map) == "table" and woundTgt ~= nil then
+				if type(map) == "table" and ZSBT.IsSafeString
+					and ZSBT.IsSafeString(woundTgt) then
 					if map[woundTgt] ~= nil then
 						appliedOv = map[woundTgt]
 					elseif next(map) ~= nil then
@@ -1765,7 +1766,9 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 			-- the current target must not claim a dot applied elsewhere.
 			-- Only read by mod.dotCadenceDisambig paths.
 			local tgtName = safeUnitName("target")
-			if type(tgtName) == "string" and tgtName ~= "" then
+			-- IsSafeString: safeUnitName returns secrets as-is for
+			-- SetText; they can't be compared or used as map keys.
+			if ZSBT.IsSafeString and ZSBT.IsSafeString(tgtName) then
 				local map = self._dotAppliedTarget
 				if not map then map = {} ; self._dotAppliedTarget = map end
 				local sm = map[spellId]
