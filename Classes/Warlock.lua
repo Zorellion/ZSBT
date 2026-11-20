@@ -233,7 +233,8 @@ end
 -- school is the exact schoolMask the hit reports.
 local GUARDIAN_SPELLS = {
 	wildimp = { { sid = 104318, school = 4 } },                     -- Fel Firebolt
-	dreadstalker = { { sid = 271971, school = 32 } },               -- Dreadbite
+	dreadstalker = { { sid = 271971, school = 32 },                 -- Dreadbite
+		{ sid = 1276960, school = 40 } },                           -- Blighted Maw (talent rider)
 	gloomhound = { { sid = 455491, school = 32 },                   -- Gloom Slash
 		{ sid = 267997, school = 8 } },                             -- Bile Spit
 	tyrant = { { sid = 1264093, school = 36 } },                    -- Burning Cleave
