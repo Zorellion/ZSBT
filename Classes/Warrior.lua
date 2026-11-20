@@ -69,6 +69,11 @@ mod.castBudget = {
 	[315720] = 6,  -- Onslaught (multi-strike Fury; verify)
 	[385059] = 8,  -- Odyn's Fury (multi-component; verify)
 	[376079] = 8,  -- Spear of Bastion (if still in kit; verify)
+	-- Ravager button cast id (user-verified 1235113). The throw damage
+	-- (228920) pairs via this budget; periodic ticks (156287) under the
+	-- Ravaged debuff are claimed by ravagerWound — which also covers the
+	-- Whirling Blade proc variant that produces no cast record at all.
+	[1235113] = 8,
 }
 
 -- No pet spells to match, no pet physical damage — warrior has no
