@@ -650,9 +650,32 @@ end
 -- RANGE_DAMAGE covers Auto Shot, thrown AND wand Shoot, which arrive
 -- as sid-bearing spell wounds (5019 pending cast) — not isAuto — so
 -- excluding ranged left every wand hit unpairable (noline rescue).
+-- But ranged is also a theft vector: an ordinary spell wound claiming
+-- the nearest line would steal a wand bolt's ranged line (observed:
+-- sid=980 claiming kind=ranged while the bolt claimed tick). Ordered
+-- preference: each payload tries its own kind first, ranged last.
 local NONAUTO_KINDS = { direct = true, tick = true, shield = true, ranged = true }
-local function preferredKinds(payload)
-    return NONAUTO_KINDS
+local NONAUTO_NO_RANGED = { direct = true, tick = true, shield = true }
+local TICK_KIND = { tick = true }
+local RANGED_KIND = { ranged = true }
+
+-- Ordered kind sets for a non-auto candidate: pass 1 is the wound's
+-- expected line kind, later passes widen toward the leftovers. A
+-- periodic tick wants tick lines; a module-declared ranged spell
+-- (wand Shoot) wants ranged first; everything else takes spell kinds
+-- and reaches for ranged only as the final resort.
+local function kindPreference(payload)
+    if payload and payload.isPeriodic == true then
+        return TICK_KIND, NONAUTO_NO_RANGED, RANGED_KIND
+    end
+    if payload and type(payload.spellId) == "number" then
+        local cdb = ZSBT.ClassDB
+        if cdb and cdb.PreferRangedLine
+            and cdb.PreferRangedLine(payload.spellId) == true then
+            return RANGED_KIND, NONAUTO_KINDS, nil
+        end
+    end
+    return NONAUTO_NO_RANGED, RANGED_KIND, nil
 end
 
 -- Kinds a queued/offered candidate may claim, from its own evidence.
@@ -660,14 +683,24 @@ end
 -- wounds own whatever line the pet produced (melee pet -> melee line,
 -- caster pet -> direct) so they get the full set; everything else is
 -- a spell wound and melee stays off-limits (auto-line theft).
+-- Returns up to three kind sets, tried in order; a nil first set means
+-- "any kind" on the first pass.
 local function candidateKinds(payload)
     if payload and (payload.isAuto == true or payload._swingProven == true) then
-        return autoLineKinds()
+        return autoLineKinds(), nil, nil
     end
     if payload and payload._petRoute == true then
-        return nil
+        return nil, nil, nil
     end
-    return preferredKinds(payload)
+    return kindPreference(payload)
+end
+
+local function takeCandidateLine(tHit, window, payload)
+    local a, b, c = candidateKinds(payload)
+    local kind = takeDamageLine(tHit, window, a)
+    if not kind and b then kind = takeDamageLine(tHit, window, b) end
+    if not kind and c then kind = takeDamageLine(tHit, window, c) end
+    return kind
 end
 
 -- Provenance tier for line claiming. Tier 1 = sid-bearing (the hit
@@ -764,7 +797,7 @@ local function flushPending()
                     -- unattributed wound must not reach a leftover line as
                     -- far out as a proven hit can.
                     local window = (p._retried and pass == 1) and RETRY_WINDOW or DEFER_WINDOW
-                    kind = takeDamageLine(p.t, window, candidateKinds(p.payload))
+                    kind = takeCandidateLine(p.t, window, p.payload)
                     if kind then
                         ZB._allows = ZB._allows + 1
                         ZB:Audit(("AUDCLAIM tier=%d sid=%s kind=%s"):format(
@@ -978,7 +1011,7 @@ function ZB:OfferOutgoing(payload)
     -- An auto-attack claim may ONLY be confirmed by a melee/ranged line —
     -- it must not steal a spell line (pet spells produce lines constantly).
     if candidateTier(payload) == 1 then
-        local fastKind = takeDamageLine(tHit, VETO_WINDOW, candidateKinds(payload))
+        local fastKind = takeCandidateLine(tHit, VETO_WINDOW, payload)
         if fastKind then
             ZB._allows = ZB._allows + 1
             payload._vetoConfirmed = true

@@ -68,6 +68,13 @@ mod.channels = {
 -- another claiming "Fear" via the pending-cast stamp). Absence from
 -- the tables is not enough; exclusion survives every derivation path.
 -- NEVER list a dot/channel name here — exclusion wins over those.
+-- Wand Shoot arrives as a sid-bearing spell wound (5019 pending cast,
+-- not isAuto) but produces RANGE_DAMAGE lines. Declaring it ranged
+-- lets pairing reach for the ranged line first instead of letting
+-- nearby DoT ticks steal it (or the bolt stealing a tick line).
+mod.ranged = { "Shoot" }
+mod.rangedIds = { 5019 }
+
 mod.exclude = {
 	"Health Funnel",
 	"Life Tap",

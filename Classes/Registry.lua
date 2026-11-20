@@ -167,6 +167,43 @@ local function buildExcludeIndex(mod)
 	mod._exclNames = names
 end
 
+local function buildRangedIndex(mod)
+	if mod._rangedIndexBuilt then return end
+	mod._rangedIndexBuilt = true
+	local names, ids = {}, {}
+	for _, n in ipairs(mod.ranged or {}) do
+		names[n] = true
+	end
+	for _, id in ipairs(mod.rangedIds or {}) do
+		ids[id] = true
+	end
+	mod._rangedNames = names
+	mod._rangedIds = ids
+end
+
+-- Module-declared ranged spells (mod.ranged = { names }, mod.rangedIds
+-- = { ids }): a spell wound that produces RANGE_DAMAGE lines — wand
+-- Shoot on era clients — should reach for a ranged line first at
+-- pairing instead of letting any spell wound steal one.
+function ClassDB.PreferRangedLine(spellId)
+	if type(spellId) ~= "number" then return false end
+	local mod = ClassDB.ActiveModule()
+	if not mod then return false end
+	if type(mod.ranged) ~= "table" and type(mod.rangedIds) ~= "table" then
+		return false
+	end
+	buildRangedIndex(mod)
+	if mod._rangedIds[spellId] == true then return true end
+	local sn = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or nil
+	if type(sn) == "string" and sn ~= "" then
+		if sn:find("(", 1, true) then
+			sn = (sn:gsub("%s*%(%s*[Rr]ank%s+%d+%s*%)%s*$", ""))
+		end
+		return mod._rangedNames[sn] == true
+	end
+	return false
+end
+
 -- Module-denied spells (mod.exclude = { names }): a name here can never
 -- resolve to a dot/channel entry through ANY path — module, taught, or
 -- spellbook-derived. Used for spells that parse as periodic but never

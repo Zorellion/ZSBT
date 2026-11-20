@@ -3180,6 +3180,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 									amountSource = "COMBAT_LOG",
 									targetName = safeUnitName(unit),
 									isCrit = isCritOff,
+									isPeriodic = (offSid ~= nil) or nil,
 									schoolMask = (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) and school or nil,
 								})
 								emitted = true
