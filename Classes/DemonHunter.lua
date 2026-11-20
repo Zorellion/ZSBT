@@ -18,6 +18,11 @@ mod.dots = {
 	{ names = { "Immolation Aura" }, ids = { 258920, 427343 },  school = 4 },
 	-- The Hunt leaves a mark that ticks before the detonation.
 	{ names = { "The Hunt" },        ids = { 258860, 323996 },  school = 127 },
+	-- Vengeance's stacking debuff ticks fire damage ~1s (log-verified
+	-- sid=227255). Aura-applied by Soul Cleave/Spirit Bomb/Fracture —
+	-- never cast, so it can't seed a window; the entry gives the
+	-- matcher a real candidate record for its ticks.
+	{ names = { "Frailty" },         ids = { 227255 },          school = 4 },
 }
 
 -- Channeled/ground volleys: individual hits carry no cast record, so the
