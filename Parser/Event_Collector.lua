@@ -919,7 +919,7 @@ end
 -- _dotAppliedTarget writes. Candidates must pass the same cadence
 -- proof the target path uses; the best phase fit wins, none stays
 -- generic rather than wrong.
-local function resolveOffTargetDot(self, unit, t)
+local function resolveOffTargetDot(self, unit, t, school)
 	local gm = self._dotAppliedGuid
 	local nm = self._dotAppliedTarget
 	if type(gm) ~= "table" and type(nm) ~= "table" then return nil end
@@ -941,6 +941,16 @@ local function resolveOffTargetDot(self, unit, t)
 		seen = seen or {}
 		if seen[sid] then return end
 		seen[sid] = true
+		-- School gate: a school-1 melee hit on a dotted nameplate cannot be
+		-- that DoT's tick no matter how clean the phase looks. Same veto
+		-- the target path applies (declared/book/learned), plus the
+		-- module dotGuard hook so pet-school strays stay out here too.
+		if not castSchoolOk(self, sid, school) then return end
+		local entry = dotEntryForSpellId(sid)
+		if entry and ZSBT.ClassDB and ZSBT.ClassDB.DotGuard
+			and ZSBT.ClassDB.DotGuard(entry, school) == false then
+			return
+		end
 		if not dotCadencePredict(self, t, sid, at) then return end
 		local iv = dotTickInterval(sid) or 2.0
 		local phase = (t - at) % iv
@@ -3180,7 +3190,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							local offSid = nil
 							local offTgtName = safeUnitName(unit)
 							if offTargetDotsEnabled() then
-								offSid = resolveOffTargetDot(self, unit, now())
+								offSid = resolveOffTargetDot(self, unit, now(), school)
 							end
 							if offSid ~= nil or tgtStarved then
 								local isCritOff = false
