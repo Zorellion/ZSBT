@@ -981,7 +981,7 @@ end
 -- one survivor names the hit; zero or multiple stay generic — with two
 -- same-school dots up, a wound that fits both cadences cannot be proven
 -- and "never wrong" beats "sometimes named".
-local function pickDotByCadenceDisambig(self, t, school)
+local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 	local m = self and self._recentPeriodicSpellAt
 	if type(m) ~= "table" then return nil end
 	-- A pending pet cast record is PROOF a pet spell is in flight — the
@@ -991,6 +991,10 @@ local function pickDotByCadenceDisambig(self, t, school)
 	-- whenever an imp was active.
 	local pendingPet = pendingPetCast(self, t, 1.5, school)
 	local pick, count = nil, 0
+	-- Survivor pool for the learned-amount tiebreak (reused table — no
+	-- per-wound allocation).
+	local pool = self._disambigPool
+	if pool then wipe(pool) else pool = {} ; self._disambigPool = pool end
 	local rejNoEntry, rejSchool, rejCadence, rejChan, scanned = 0, 0, 0, 0, 0
 	-- Target-debuff presence is a TIEBREAKER, not a gate: era aura APIs
 	-- may not expose the data at all, and multi-target DoTing means a real
@@ -1022,6 +1026,7 @@ local function pickDotByCadenceDisambig(self, t, school)
 			else
 				pick = sid
 				count = count + 1
+				pool[count] = sid
 				if cachedHasTargetDebuffSpellId(sid) then
 					debuffPick = sid
 					debuffCount = debuffCount + 1
@@ -1062,6 +1067,7 @@ local function pickDotByCadenceDisambig(self, t, school)
 			if phase <= jitter or phase >= (iv - jitter) then
 				count = count + 1
 				pick = ch.spellId
+				pool[count] = ch.spellId
 				if cachedHasTargetDebuffSpellId(ch.spellId) then
 					debuffPick = ch.spellId
 					debuffCount = debuffCount + 1
@@ -1071,26 +1077,67 @@ local function pickDotByCadenceDisambig(self, t, school)
 			end
 		end
 	end
-	local ret = nil
+	local ret, retWhy = nil, nil
 	if count == 1 then
 		ret = pick
-	elseif count > 1 and debuffCount == 1 then
-		ret = debuffPick
+	elseif count > 1 then
+		-- Learned-amount tiebreak: era dot ticks are consistent per rank,
+		-- so a wound's amount discriminates same-school same-phase
+		-- collisions phase-locking can't. Exactly one survivor inside the
+		-- tolerance band → name it; zero or several → stays honest generic.
+		local am = self._dotTickAmounts
+		if type(am) == "table" and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(amount) then
+			local cmp = (isCrit == true) and (amount * 0.5) or amount
+			local best, bestErr, secondErr = nil, nil, nil
+			for i = 1, count do
+				local avg = am[pool[i]]
+				if type(avg) == "number" and avg > 0 then
+					local err = math.abs(cmp - avg) / avg
+					if best == nil or err < bestErr then
+						secondErr = bestErr
+						best, bestErr = pool[i], err
+					elseif secondErr == nil or err < secondErr then
+						secondErr = err
+					end
+				end
+			end
+			if best ~= nil and bestErr <= 0.35 and (secondErr == nil or secondErr > 0.35) then
+				ret, retWhy = best, "amt"
+			end
+		end
+		if ret == nil and debuffCount == 1 then
+			ret, retWhy = debuffPick, "debuff"
+		end
 	end
 	if auditNote then
-		auditNote(("AUDD reason=DOTDISAMBIG scan=%s surv=%s ret=%s debuffpass=%s pet=%s noentry=%s school=%s chan=%s cadence=%s")
-			:format(dbgSafe(scanned), dbgSafe(count), dbgSafe(ret), dbgSafe(debuffCount),
+		auditNote(("AUDD reason=DOTDISAMBIG scan=%s surv=%s ret=%s why=%s debuffpass=%s pet=%s noentry=%s school=%s chan=%s cadence=%s")
+			:format(dbgSafe(scanned), dbgSafe(count), dbgSafe(ret), dbgSafe(retWhy), dbgSafe(debuffCount),
 				dbgSafe(pendingPet), dbgSafe(rejNoEntry), dbgSafe(rejSchool), dbgSafe(rejChan), dbgSafe(rejCadence)))
 	end
 	return ret
 end
 
-local function pickDotForWound(self, t, school)
+local function pickDotForWound(self, t, school, amount, isCrit)
 	if ZSBT.ClassDB and ZSBT.ClassDB.DotCadenceDisambig
 		and ZSBT.ClassDB.DotCadenceDisambig() then
-		return pickDotByCadenceDisambig(self, t, school)
+		return pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 	end
 	return getMostRecentPeriodicSpellId(self, t)
+end
+
+-- Learned tick amounts: EMA of a sid's claimed non-crit tick amounts.
+-- Era dots tick for a consistent per-rank value, so the learned average
+-- is a strong discriminator when phase-locking leaves collisions. Only
+-- feeds the tiebreak where the module opted in — amounts stay unread
+-- (possibly secret) on clients that don't.
+local function noteDotTickAmount(self, spellId, amount, isCrit)
+	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(amount)) then return end
+	if isCrit == true then amount = amount * 0.5 end
+	if amount <= 0 then return end
+	local am = self._dotTickAmounts
+	if not am then am = {} ; self._dotTickAmounts = am end
+	local avg = am[spellId]
+	am[spellId] = avg and (avg * 0.65 + amount * 0.35) or amount
 end
 
 hasTargetDebuffSpellId = function(spellId)
@@ -2337,7 +2384,7 @@ function Collector:handleCombatTextUpdate(arg1)
 			end
 		end
 		if (not outgoingSpellId) and isPeriodic and (not ctSpellId) then
-			outgoingSpellId = pickDotForWound(self, tNow, school)
+			outgoingSpellId = pickDotForWound(self, tNow, school, rawAmount, isCrit)
 		end
 
 		local pipeId = self._rawPipeCount + 1
@@ -3202,7 +3249,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- this as player periodic damage instead of pet damage.
 					local dotSpellId = nil
 					if not isPhysicalEarly then
-						dotSpellId = pickDotForWound(self, t, school)
+						dotSpellId = pickDotForWound(self, t, school, amount, isCrit)
 					end
 					-- Class-module dot guard: e.g. Warlock Imp fire hits are pet damage,
 					-- never player DoT ticks.
@@ -3253,6 +3300,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							return
 						end
 						self._recentPeriodicSpellAt[dotSpellId] = t
+						noteDotTickAmount(self, dotSpellId, amount, isCrit)
 						local pipeId = self._rawPipeCount + 1
 						self._rawPipeCount = pipeId
 						self._rawPipe[pipeId] = amount
@@ -3945,7 +3993,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- DoT ticks often show up as small UNIT_COMBAT(target) magic WOUND events.
 				-- If we recently cast a periodic-capable spell, treat this as outgoing
 				-- periodic damage.
-				local dotSpellId = pickDotForWound(self, t, school)
+				local dotSpellId = pickDotForWound(self, t, school, amount, isCrit)
 				-- Safety: only treat it as a DoT tick if the target actually has the debuff.
 				local debuffOk = nil
 				if dotSpellId then
@@ -3974,6 +4022,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						return
 					end
 					self._recentPeriodicSpellAt[dotSpellId] = t
+					noteDotTickAmount(self, dotSpellId, amount, isCrit)
 					local pipeId = self._rawPipeCount + 1
 					self._rawPipeCount = pipeId
 					self._rawPipe[pipeId] = amount
@@ -4017,7 +4066,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- non-physical WOUND can be a periodic tick. No amount comparisons
 				-- are needed — the amount goes straight into the raw pipe, which is
 				-- the only display-safe path for secret values on Retail 12.x.
-				local dotSpellId = pickDotForWound(self, t, school)
+				local dotSpellId = pickDotForWound(self, t, school, amount, isCrit)
 				-- Don't let a DoT steal a hit that probably belongs to a nuke cast
 				-- moments ago: if the last cast was a non-dot spell within ~1.5s,
 				-- leave attribution to the make-it-work window below.
@@ -4065,6 +4114,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(amount), dbgSafe(school)))
 						end
 						self._recentPeriodicSpellAt[dotSpellId] = t
+						noteDotTickAmount(self, dotSpellId, amount, isCrit)
 						local pipeId = self._rawPipeCount + 1
 						self._rawPipeCount = pipeId
 						self._rawPipe[pipeId] = amount
