@@ -192,15 +192,16 @@ function Spellbook.ParseDesc(desc, spellId)
 	-- 12 sec", "every 1 sec it burns for damage") — UNLESS the clause
 	-- names a resource, which marks the rhythm as generation
 	-- ("generates 10 Fury every second and deals damage" — Blind
-	-- Fury's comma-free override text is one clause). "damage taken"
-	-- is defensive, not periodic.
-	elseif not selfDrain and not d:find("summon")
-		and not d:find("damage taken") then
+	-- Fury's comma-free override text is one clause). A "damage
+	-- taken" clause is defensive — but only THAT clause is vetoed;
+	-- a real DoT may also buff damage taken (Burning Wound).
+	elseif not selfDrain and not d:find("summon") then
 		for clause in d:gmatch("[^%.;,]+") do
 			local dp = clause:find("damage")
 			local pp = clause:find("every") or clause:find("periodic")
 				or clause:find("per sec") or clause:find("over")
-			if dp and pp and (dp < pp or not namesResource(clause)) then
+			if dp and pp and not clause:find("damage taken")
+				and (dp < pp or not namesResource(clause)) then
 				role = "dot"
 				break
 			end
