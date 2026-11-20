@@ -261,7 +261,19 @@ function Spellbook.ParseDesc(desc, spellId)
 	for _, sn in ipairs(schoolNames()) do
 		local plain = sn.name:lower()
 		local pat = "%f[%a]" .. plain:gsub("(%W)", "%%%1") .. "%f[%A]"
-		if remaining:find(pat) then
+		-- Per-occurrence veto: a school word feeding "damage taken" is
+		-- defensive text, not a wound claim ("reduces arcane damage
+		-- taken"). Reject that occurrence; every other context keeps
+		-- its vote, so no legitimate mask is ever lost.
+		local pos, accepted = 1, false
+		while not accepted do
+			local s, e = remaining:find(pat, pos)
+			if not s then break end
+			local after = remaining:sub(e + 1, e + 24):match("^%s*(%a+ %a+)")
+			if after ~= "damage taken" then accepted = true end
+			pos = e + 1
+		end
+		if accepted then
 			remaining = remaining:gsub(pat, " ")
 			masks = masks or {}
 			for _, m in ipairs(sn.masks) do
