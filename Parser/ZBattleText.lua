@@ -643,13 +643,14 @@ local function autoLineKinds()
 	return MELEE_KINDS
 end
 
--- Kinds a non-auto candidate may claim. melee/ranged lines come only
--- from SWING_DAMAGE/RANGE_DAMAGE — auto-attacks — so a wound that is
--- not an auto can never legitimately own one, no matter its school.
--- Restricting non-autos to spell kinds stops spell wounds from
--- stealing a leftover auto line (a school-4 wound claimed a melee
--- line and displayed it as "Frailty").
-local NONAUTO_KINDS = { direct = true, tick = true, shield = true }
+-- Kinds a non-auto candidate may claim. melee lines come only from
+-- SWING_DAMAGE — real auto-swings — so a wound that is not an auto can
+-- never legitimately own one (a school-4 wound claimed a leftover
+-- melee line and displayed it as "Frailty"). ranged is different:
+-- RANGE_DAMAGE covers Auto Shot, thrown AND wand Shoot, which arrive
+-- as sid-bearing spell wounds (5019 pending cast) — not isAuto — so
+-- excluding ranged left every wand hit unpairable (noline rescue).
+local NONAUTO_KINDS = { direct = true, tick = true, shield = true, ranged = true }
 local function preferredKinds(payload)
     return NONAUTO_KINDS
 end
