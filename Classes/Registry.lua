@@ -301,6 +301,9 @@ end
 -- the veto only fires on certainty.
 function ClassDB.SchoolAllowed(schoolMask)
 	local mod = ClassDB.ActiveModule()
+	-- Era wands cover the whole school space — a module can declare
+	-- schoolsAny to say no foreign-school exclusion exists at all.
+	if mod and mod.schoolsAny == true then return true end
 	local modSet = mod and type(mod.schools) == "table" and mod.schools or nil
 	local sb = ZSBT.Spellbook
 	local derived = sb and sb.Masks and sb:Masks() or nil
