@@ -481,13 +481,25 @@ if frame then
 	if frame.RegisterUnitEvent then
 		frame:RegisterUnitEvent("UNIT_PET", "player")
 	end
-	pcall(function()
-		frame:RegisterEvent("SPELLS_CHANGED")
-		frame:RegisterEvent("TRAIT_CONFIG_UPDATED")
-		frame:RegisterEvent("ACTIVE_PLAYER_SPECIALIZATION_CHANGED")
-		frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
-		frame:RegisterEvent("PET_BAR_UPDATE")
-	end)
+	-- Trait configs load asynchronously after login and fire on
+	-- every build/commit; cover the whole lifecycle so a scan
+	-- never runs off a half-loaded tree. One pcall each — an
+	-- unknown event on this client must not starve the rest.
+	for _, ev in ipairs({
+		"SPELLS_CHANGED",
+		"TRAIT_CONFIG_UPDATED",
+		"TRAIT_CONFIG_LIST_RECEIVED",
+		"TRAIT_CONFIG_CREATED",
+		"TRAIT_CONFIG_DELETED",
+		"TRAIT_TREE_CHANGED",
+		"ACTIVE_TALENT_GROUP_CHANGED",
+		"PLAYER_TALENT_UPDATE",
+		"ACTIVE_PLAYER_SPECIALIZATION_CHANGED",
+		"PLAYER_SPECIALIZATION_CHANGED",
+		"PET_BAR_UPDATE",
+	}) do
+		pcall(frame.RegisterEvent, frame, ev)
+	end
 	frame:SetScript("OnEvent", function(self)
 		self._dirty = true
 		if C_Timer and C_Timer.After then
@@ -507,7 +519,9 @@ end
 ---------------------------------------------------------------------------
 function Spellbook:Dump(printFn)
 	local p = printFn or print
-	ensureScanned(self)
+	-- Diagnostic command — always print the freshest state, including
+	-- a trait config that only finished loading after the login scan.
+	self:Scan()
 	local n, dots, chans, talents = 0, 0, 0, 0
 	for sid, rec in pairs(self._entries) do
 		n = n + 1
