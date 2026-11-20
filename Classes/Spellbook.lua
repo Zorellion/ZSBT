@@ -200,10 +200,22 @@ function Spellbook.ParseDesc(desc, spellId)
 			local dp = clause:find("damage")
 			local pp = clause:find("every") or clause:find("periodic")
 				or clause:find("per sec") or clause:find("over")
-			if dp and pp and not clause:find("damage taken")
-				and (dp < pp or not namesResource(clause)) then
-				role = "dot"
-				break
+			if dp and pp then
+				-- Direct "damage over/every" is periodic damage even
+				-- when the same clause carries a damage-taken rider
+				-- ("chaos damage over 15 sec and increasing damage
+				-- taken" — Burning Wound). Vetoes only apply to the
+				-- indirect match ("damage taken over", "generates
+				-- Fury every ... and deals damage").
+				local direct = clause:find("damage over")
+					or clause:find("damage every")
+					or clause:find("damage per sec")
+					or clause:find("periodic damage")
+				if direct or (not clause:find("damage taken")
+					and (dp < pp or not namesResource(clause))) then
+					role = "dot"
+					break
+				end
 			end
 		end
 	end
