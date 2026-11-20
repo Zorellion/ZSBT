@@ -2052,6 +2052,13 @@ function ZSBT.BuildTab_ProfilesRoot()
 		order = 2.0,
 		childGroups = "tree",
 		args = {
+			profilesIntro = {
+				type  = "description",
+				name  = L["ProfilesPageIntro"],
+				fontSize = "large",
+				width = "full",
+				order = 0.01,
+			},
 			importExport = importExport or { type = "group", name = L["|cFFFFD100Import / Export|r"], order = 1, args = {} },
 			acedbProfiles = { type = "group", name = L["|cFFFFD100DB Profiles|r"], order = 2, args = {} },
 		},
