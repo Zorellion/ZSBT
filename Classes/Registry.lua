@@ -424,12 +424,22 @@ function ClassDB.ChannelMatch(spellId)
 	local sb = ZSBT.Spellbook
 	local rec = sb and sb.Entry and sb:Entry(spellId)
 	if rec and rec.role == "channel" then
-		rec._chan = rec._chan or {
-			names = { rec.name or tostring(spellId) },
-			duration = tonumber(rec.duration) or 8,
-			tickMin = tonumber(rec.tickMin) or 0.4,
-			_derived = true,
-		}
+		if not rec._chan then
+			-- Derived masks become a set so the tick-claim school check
+			-- accepts every variant the description resolved.
+			local mset
+			if type(rec.masks) == "table" then
+				mset = {}
+				for _, m in ipairs(rec.masks) do mset[m] = true end
+			end
+			rec._chan = {
+				names = { rec.name or tostring(spellId) },
+				duration = tonumber(rec.duration) or 8,
+				tickMin = tonumber(rec.tickMin) or 0.4,
+				school = mset,
+				_derived = true,
+			}
+		end
 		return rec._chan
 	end
 	return nil

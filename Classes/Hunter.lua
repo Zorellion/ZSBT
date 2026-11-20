@@ -26,8 +26,8 @@ mod.dots = {
 -- Channeled volleys: each shot is a separate UNIT_COMBAT hit; channel
 -- tracking lets the whole volley name itself off one cast.
 mod.channels = {
-	{ names = { "Rapid Fire" },       ids = { 257044 }, duration = 2.0, tickMin = 0.12 },
-	{ names = { "Fury of the Eagle" }, ids = { 203415 }, duration = 4.0, tickMin = 0.12 },
+	{ names = { "Rapid Fire" },       ids = { 257044 }, duration = 2.0, tickMin = 0.12, school = 1 },
+	{ names = { "Fury of the Eagle" }, ids = { 203415 }, duration = 4.0, tickMin = 0.12, school = 1 },
 }
 
 -- Per-cast-instance naming budget (same mechanism as warlock): AoE and
@@ -176,6 +176,7 @@ function mod.onCast(self, spellId, spellName, t)
 			lastTickAt = 0,
 			spellId = spellId,
 			tickMin = ch.tickMin or 0.12,
+			school = ch.school,
 		}
 	end
 	local summon = GUARDIAN_SUMMONS[spellId]

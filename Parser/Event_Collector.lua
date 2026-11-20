@@ -3648,8 +3648,25 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			if type(ch) == "table" and type(ch.untilAt) == "number" and t <= ch.untilAt then
 				local wantSid = self._lastPlayerSpellId
 				if wantSid == ch.spellId then
+					-- School check: a channel's ticks arrive at one mask
+					-- (declared school=N, or the derived mask set). A
+					-- wrong-school tick in the window is a foreign/DoT
+					-- hit, not this channel — falls through to normal
+					-- attribution or generic instead of stealing the name.
+					local schoolOk = true
+					if ch.school ~= nil and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school) then
+						if type(ch.school) == "table" then
+							schoolOk = ch.school[school] == true
+						else
+							schoolOk = school == ch.school
+						end
+					end
+					if not schoolOk then
+						auditNote(("AUDD reason=CHANNEL_SCHOOL school=%s want=%s"):format(
+							dbgSafe(school), dbgSafe(ch.school)))
+					end
 					local dtTick = t - (ch.lastTickAt or 0)
-					if dtTick >= (ch.tickMin or 0.12) then
+					if schoolOk and dtTick >= (ch.tickMin or 0.12) then
 						ch.lastTickAt = t
 						local pipeId = self._rawPipeCount + 1
 						self._rawPipeCount = pipeId

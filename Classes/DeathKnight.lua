@@ -28,7 +28,7 @@ mod.dots = {
 
 -- Channeled: Breath of Sindragosa ticks for the channel's duration.
 mod.channels = {
-	{ names = { "Breath of Sindragosa" }, ids = { 152279 }, duration = 12.0, tickMin = 0.4 },
+	{ names = { "Breath of Sindragosa" }, ids = { 152279 }, duration = 12.0, tickMin = 0.4, school = 16 },
 }
 
 -- Per-cast-instance naming budget: AoE/multi-hit casts may name several
@@ -198,6 +198,7 @@ function mod.onCast(self, spellId, spellName, t)
 			lastTickAt = 0,
 			spellId = spellId,
 			tickMin = ch.tickMin or 0.12,
+			school = ch.school,
 		}
 	end
 	local summon = GUARDIAN_SUMMONS[spellId]
