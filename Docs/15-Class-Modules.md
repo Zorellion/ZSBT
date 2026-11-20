@@ -25,7 +25,7 @@ right spell instead of showing a plain number.
 |---|---|
 | Warlock | All three specs covered (Affliction, Demonology, Destruction) |
 | Hunter | Fully implemented, including Dark Ranger guardians |
-| Death Knight | Blood and Frost covered |
+| Death Knight | All three specs covered (Blood, Frost, Unholy) |
 | Warrior | Fury and Protection covered |
 | Other classes | Safe generic behavior — your casts still name, but no pet/guardian extras yet |
 
