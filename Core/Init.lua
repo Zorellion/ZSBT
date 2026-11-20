@@ -2046,6 +2046,25 @@ function Addon:HandleSlashCommand(input)
             self:Print("Spellbook layer unavailable.")
         end
         return
+    elseif cmd == "clearlearned" then
+        -- Wipe learned attribution so the book-derived values carry the
+        -- load: persisted school/tick tables plus the collector's runtime
+        -- EMA/vote state. Taught spells and module tables are untouched.
+        local prof = ZSBT.db and ZSBT.db.profile
+        if type(prof) == "table" then
+            prof.learnedSpellSchools = nil
+            prof.learnedTickAmounts = nil
+            prof.learnedDotPeriods = nil
+        end
+        local col = ZSBT.Parser and ZSBT.Parser.EventCollector
+        if type(col) == "table" then
+            col._learnedSpellSchool = {}
+            col._schoolVotes = {}
+            col._dotTickState = {}
+            col._dotTickAmounts = {}
+        end
+        self:Print("Learned attribution cleared (schools, tick amounts, dot periods).")
+        return
     elseif cmd == "audit" then
         ZSBT._auditTrace = not (ZSBT._auditTrace == true)
         if ZSBT._auditTrace == true then
