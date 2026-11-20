@@ -3233,6 +3233,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								-- so unattributed hits can flow as candidates instead of dying
 								-- here during the idle window after the opener's cast ages out.
 								if not zbtVetoActive() then
+									dbgDrop("INST_GATE", self._castToken, school)
 									return
 								end
 							end
@@ -3950,12 +3951,15 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				if not inPlayerCombat then
 					okSwing = false
 				end
+				local canAtk = nil
 				if okSwing and UnitCanAttack then
-					local okA, canAtk = pcall(UnitCanAttack, "player", "target")
-					if okA and canAtk == false then
+					local okA, a = pcall(UnitCanAttack, "player", "target")
+					if okA then canAtk = a end
+					if a == false then
 						okSwing = false
 					end
 				end
+				local autoOk = nil
 				if okSwing then
 					-- Midnight: IsCurrentSpell(6603)/IsSpellInRange/CheckInteractDistance are
 					-- unreliable or return secret values, so isPlayerAutoAttackActive() and
@@ -3964,12 +3968,14 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- else to attribute the hit to, so treat "player in combat with a hostile
 					-- target" as sufficient evidence of a white swing. Group/instance leakage
 					-- is still handled by the restrict/instance-aware gates above.
-					local autoOk = isPlayerAutoAttackActive() or isPlayerMeleeEngaged()
+					autoOk = (isPlayerAutoAttackActive() or isPlayerMeleeEngaged()) and true or false
 					if (not autoOk) and (not inPlayerCombat) then
 						okSwing = false
 					end
 				end
 				if not okSwing then
+					auditNote(("AUDD reason=WHT_EV inCbt=%s canAtk=%s auto=%s school=%s")
+						:format(tostring(inPlayerCombat), tostring(canAtk), tostring(autoOk), dbgSafe(school)))
 					return
 				end
 			end
@@ -3993,6 +3999,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					ECPrint(("BIG_HIT_SUPPRESS src=UNIT_COMBAT_PHYSICAL token=%s spellId=%s amt=%s")
 						:format(dbgSafe(self._castToken), dbgSafe(spellId), dbgSafe(amount)))
 				end
+				dbgDrop("WHT_HUGE", self._castToken, school)
 				return
 			end
 			if isWhirlwindSpellId(spellId) and wwAggEnabled(spellId)
@@ -4017,6 +4024,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			if spellId == nil then
 				local lastAuto = self._lastAutoOutgoingAt or 0
 				if (t - lastAuto) >= 0 and (t - lastAuto) < AUTO_OUTGOING_DEDUP_WINDOW then
+					dbgDrop("WHT_DEDUP", self._castToken, school)
 					return
 				end
 				self._lastAutoOutgoingAt = t
@@ -4346,7 +4354,14 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
 							})
 							return
+						else
+							auditNote(("AUDD reason=AUTO_FB inCbt=%s canAtk=%s members=%s swing=%s school=%s")
+								:format(tostring(inPlayerCombat), tostring(canAtk), dbgSafe(members),
+									tostring(swingExplainsHit(self, t)), dbgSafe(school)))
 						end
+					else
+						auditNote(("AUDD reason=AUTO_FB_OFF restrict=%s quiet=%s school=%s")
+							:format(tostring(restrict == true), tostring(quietMode == true), dbgSafe(school)))
 					end
 					dbgDrop("SUPPRESS_UNATTR", self._castToken, school)
 					return
