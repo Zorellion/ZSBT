@@ -81,6 +81,18 @@ local consumeBestPendingCast -- fwd decl; emit() calls it before the real def be
 -- stamps total, covering AoE like Whiplash while stopping one cast from
 -- absorbing an unlimited run of foreign hits.
 local PET_CAST_MAX_CLAIMS = 8
+-- A spell in the player's own spellbook can never be pet damage. The
+-- UNIT_SPELLCAST_SUCCEEDED pet/friendly paths occasionally report a
+-- player-known sid under a non-player token (Incinerate landing in
+-- _petCasts produced a "Conflagrate|pet"-class misroute). IsPlayerSpell
+-- is authoritative and locale-free; an API error stays permissive.
+local function isPlayerSpellId(spellId)
+	if type(spellId) ~= "number" then return false end
+	if not (IsPlayerSpell and type(IsPlayerSpell) == "function") then return false end
+	local ok, res = pcall(IsPlayerSpell, spellId)
+	return ok == true and res == true
+end
+
 local function consumePetCast(self, t, window, hitSchool)
 	local casts = self._petCasts
 	if type(casts) ~= "table" then return nil end
@@ -99,6 +111,7 @@ local function consumePetCast(self, t, window, hitSchool)
 		end
 		if age >= 0
 			and (c.claims or 0) < maxClaims
+			and not isPlayerSpellId(c.spellId)
 			and (not ZSBT.IsSafeNumber or ZSBT.IsSafeNumber(c.spellId))
 			and castSchoolOk(self, c.spellId, hitSchool) then
 			c.claims = (c.claims or 0) + 1
@@ -1234,12 +1247,20 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 		end
 		-- Track friendly non-player casts (pet, imps, guardians) for pet-hit
 		-- attribution. Also records non-pet friendly units so we can learn
-		-- which unit token temporary pets cast under.
+		-- which unit token temporary pets cast under. Player spellbook sids
+		-- are rejected: under a non-player token they can only poison the
+		-- pet-cast pool (a pet scroll hit wearing a player spell's name).
+		local zbtc = ZSBT.ZBattleText
+		if isPlayerSpellId(spellId) then
+			if zbtc and zbtc.FileLog then
+				zbtc:FileLog(("PET_CAST_REJECT unit=%s sid=%s"):format(tostring(unit), tostring(spellId)))
+			end
+			return
+		end
 		self._petCasts = self._petCasts or {}
 		local tCast = now()
 		self._petCasts[#self._petCasts + 1] = { unit = unit, spellId = spellId, at = tCast }
 		if #self._petCasts > 24 then table.remove(self._petCasts, 1) end
-		local zbtc = ZSBT.ZBattleText
 		if zbtc and zbtc.FileLog then
 			zbtc:FileLog(("PET_CAST unit=%s sid=%s"):format(tostring(unit), tostring(spellId)))
 		end
@@ -1262,13 +1283,21 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 		if not isPlayerAlias then
 			local okF, isFriend = pcall(UnitIsFriend, "player", unit)
 			if okF and isFriend == true then
-				self._petCasts = self._petCasts or {}
-				local tCast2 = now()
-				self._petCasts[#self._petCasts + 1] = { unit = unit, spellId = spellId, at = tCast2 }
-				if #self._petCasts > 24 then table.remove(self._petCasts, 1) end
 				local zbtc2 = ZSBT.ZBattleText
-				if zbtc2 and zbtc2.FileLog then
-					zbtc2:FileLog(("FRIEND_CAST unit=%s sid=%s"):format(tostring(unit), tostring(spellId)))
+				-- Same-class followers share our spellbook: their casts
+				-- can never name pet damage, so player sids are refused.
+				if isPlayerSpellId(spellId) then
+					if zbtc2 and zbtc2.FileLog then
+						zbtc2:FileLog(("FRIEND_CAST_REJECT unit=%s sid=%s"):format(tostring(unit), tostring(spellId)))
+					end
+				else
+					self._petCasts = self._petCasts or {}
+					local tCast2 = now()
+					self._petCasts[#self._petCasts + 1] = { unit = unit, spellId = spellId, at = tCast2 }
+					if #self._petCasts > 24 then table.remove(self._petCasts, 1) end
+					if zbtc2 and zbtc2.FileLog then
+						zbtc2:FileLog(("FRIEND_CAST unit=%s sid=%s"):format(tostring(unit), tostring(spellId)))
+					end
 				end
 			end
 		end
