@@ -221,6 +221,16 @@ castSchoolOk = function(self, spellId, school)
 	if type(spellId) ~= "number" then return true end
 	-- Secret spellIds can't index or compare — permissive, like unknown.
 	if ZSBT.IsSafeNumber and not ZSBT.IsSafeNumber(spellId) then return true end
+	-- Forever: UNIT_COMBAT's wound school is unreliable (paladin Holy
+	-- hits arrive as 32), so it can't veto a *player* cast record's own
+	-- school — age-recency matching stays and the palette line proves
+	-- ownership. Pet records keep the check: their ids aren't player
+	-- spells, and school is all that stops an imp's Firebolt record
+	-- from claiming a melee wound.
+	if ZSBT.ClassDB and ZSBT.ClassDB.IsForever and ZSBT.ClassDB.IsForever()
+		and isPlayerSpellId(spellId) then
+		return true
+	end
 	local facts = SpellFacts(spellId)
 	if facts and facts.damages == false then return false end
 	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) then return true end
@@ -307,8 +317,13 @@ local function emit(eventType, payload)
 		-- target). Kill it here so it can neither emit nor queue for a
 		-- palette line. Autos are exempt (school-1 by definition) and an
 		-- unverifiable mask passes — the veto needs certainty, not hunches.
+		-- Forever is exempt: UNIT_COMBAT reports bogus schools there
+		-- (paladin Seal/Judgement hits arrive as school-32), so the mask
+		-- cannot prove foreignness — line pairing stays the real gate.
 		if payload.spellId == nil and payload.petSpellId == nil
 			and payload._petRoute ~= true and payload.isAuto ~= true
+			and not (ZSBT.ClassDB and ZSBT.ClassDB.IsForever
+				and ZSBT.ClassDB.IsForever())
 			and ZSBT.ClassDB and ZSBT.ClassDB.SchoolAllowed
 			and not ZSBT.ClassDB.SchoolAllowed(payload.schoolMask) then
 			auditNote(("AUDDROP reason=FOREIGN_SCHOOL school=%s crit=%s"):format(
