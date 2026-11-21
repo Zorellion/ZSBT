@@ -256,21 +256,37 @@ local function AE_MinSeparationSecondsBetween(newEv, oldEv)
 end
 
 local function AE_ResolveStyleId(ev)
-	-- Crit animations: allow explicit critAnim to override sticky flags.
+	-- Crit animations: Pow keeps its classic centered-sticky behavior.
+	-- Every other crit style rides the scroll area's own animation as an
+	-- FX overlay (critFxId) unless the user opts back into centered crits.
 	if ev.meta and ev.meta.isCrit == true then
 		local ca = ev.meta.critAnim
-		if ca == "Slam" then return "Slam" end
-		if ca == "Shockwave" then return "Shockwave" end
-		if ca == "Ignite" then return "Ignite" end
-		if ca == "Chromatic" then return "Chromatic" end
-		if ca == "Stomp" then return "Stomp" end
-		if ca == "ScreenPunch" then return "ScreenPunch" end
-		if ca == "Shatter" then return "Shatter" end
-		if ca == "Afterimage" then return "Afterimage" end
-		if ca == "Rumble" then return "Rumble" end
-		if ca == "Glow" then return "Pow" end
-		-- Default crit behavior: Pow (sticky) when critAnim is nil or Pow.
-		if ca == nil or ca == "Pow" then return "Pow" end
+		if ca == "Glow" then ca = "Pow" end
+		local gen = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+		if gen and gen.critsRidePath == false then
+			-- Classic centered crits: the crit animation replaces the
+			-- scroll area's animation entirely (pre-overlay behavior).
+			if ca == "Slam" then return "Slam" end
+			if ca == "Shockwave" then return "Shockwave" end
+			if ca == "Ignite" then return "Ignite" end
+			if ca == "Chromatic" then return "Chromatic" end
+			if ca == "Stomp" then return "Stomp" end
+			if ca == "ScreenPunch" then return "ScreenPunch" end
+			if ca == "Shatter" then return "Shatter" end
+			if ca == "Afterimage" then return "Afterimage" end
+			if ca == "Rumble" then return "Rumble" end
+			if ca == nil or ca == "Pow" then return "Pow" end
+		else
+			-- Default crit behavior: Pow (sticky) when critAnim is nil or Pow.
+			if ca == nil or ca == "Pow" then return "Pow" end
+			-- "Area" stays pure scroll motion (inline crit FX handles it);
+			-- any other crit animation becomes an overlay on the base style.
+			if ca == "Slam" or ca == "Shockwave" or ca == "Ignite" or ca == "Chromatic"
+				or ca == "Stomp" or ca == "ScreenPunch" or ca == "Shatter"
+				or ca == "Afterimage" or ca == "Rumble" then
+				ev.critFxId = ca
+			end
+		end
 	end
 	-- Sticky non-crit notifications always use Pow.
 	if ev.meta and ev.meta.isCrit ~= true and (ev.meta.sticky == true) then return "Pow" end
@@ -609,6 +625,246 @@ local function AE_RecycleEvent(ev)
 		ev.iconTex:Hide()
 		ev.iconTex:SetParent(recyclingBin)
 	end
+end
+
+-- Composed crit FX: replays a crit animation's scale/shake/ghost math on top
+-- of the base scroll style's motion. Returns dx, dy to add to the base
+-- offsets (dy is up-positive, matching yOff2 semantics). The scroll style
+-- keeps owning position and alpha — the crit layer only styles the line.
+local function AE_ApplyCritFx(ev, fx, t)
+	local fs = ev.fs
+	if not fs then return 0, 0 end
+	if not ev._zsbtFxSeeded then
+		ev._zsbtFxSeeded = true
+		ev._zsbtShockwaveTheta = math.random() * (math.pi * 2.0)
+		ev._zsbtPunchTheta = math.random() * (math.pi * 2.0)
+		ev._zsbtRumbleTheta = math.random() * (math.pi * 2.0)
+		ev._zsbtChromPhase = math.random() * 10.0
+		ev.driftPhase = ev.driftPhase or (math.random() * 10.0)
+	end
+	local inten = (ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0
+	if inten < 0 then inten = 0 end
+	if inten > 3.0 then inten = 3.0 end
+	local tWave = (ev.elapsedTime ~= nil) and ev.elapsedTime or (ev.elapsed or 0)
+	local baseA = (fs.GetAlpha and fs:GetAlpha()) or (ev.fontAlpha or 1.0)
+	local dx, dy = 0, 0
+	local scale = 1.0
+
+	if fx == "Slam" then
+		local shake = 0
+		if t < 0.14 then
+			local p = t / 0.14
+			scale = 0.20 + (p * 1.70)
+			shake = (1.0 - p) * 5
+		elseif t < 0.26 then
+			local p = (t - 0.14) / 0.12
+			scale = 1.70 - (p * 0.55)
+			shake = (1.0 - p) * 3
+		elseif t < 0.62 then
+			local p = (t - 0.26) / 0.36
+			scale = 1.15 - (p * 0.10)
+		else
+			local p = (t - 0.62) / 0.38
+			scale = 1.05 - (p * 0.35)
+		end
+		dx = math.sin(tWave * 55) * shake
+		dy = math.cos(tWave * 48) * (shake * 0.65)
+
+	elseif fx == "ScreenPunch" then
+		local jolt = 0
+		if t < 0.10 then
+			local p = t / 0.10
+			scale = 0.55 + (p * (1.60 + (0.25 * inten)))
+			jolt = (1.0 - p) * (3 + (3 * inten))
+		elseif t < 0.22 then
+			local p = (t - 0.10) / 0.12
+			scale = (1.60 + (0.25 * inten)) - (p * (0.55 + (0.10 * inten)))
+			jolt = (1.0 - p) * (2 + (2 * inten))
+		elseif t < 0.60 then
+			local p = (t - 0.22) / 0.38
+			scale = 1.05 - (p * 0.08)
+		else
+			local p = (t - 0.60) / 0.40
+			scale = 0.97 - (p * 0.20)
+		end
+		local theta = ev._zsbtPunchTheta or 0
+		dx = (math.cos(theta) * jolt) + (math.sin(tWave * 65) * (jolt * 0.35))
+		dy = (math.sin(theta) * jolt) + (math.cos(tWave * 58) * (jolt * 0.25))
+
+	elseif fx == "Afterimage" then
+		scale = 1.0 + (math.sin(tWave * 8.0) * (0.02 + (0.02 * inten)))
+		-- Lazy-create two afterimage echoes (reusing fontStringPool)
+		if not ev._zsbtAfterimageFS1 then
+			local tr, tg, tb, ta = 1, 1, 1, 1
+			if fs.GetTextColor then
+				local ok, r, g, b, a = pcall(fs.GetTextColor, fs)
+				if ok then tr, tg, tb, ta = r or 1, g or 1, b or 1, a or 1 end
+			end
+			ev._zsbtAfterimageFS1 = AcquireFontString(ev.parent)
+			pcall(ev._zsbtAfterimageFS1.SetFont, ev._zsbtAfterimageFS1, ev.fontFace, (ev.effectiveFontSize or ev.fontSize or 18), ev.outlineFlag or "OUTLINE")
+			pcall(ev._zsbtAfterimageFS1.SetText, ev._zsbtAfterimageFS1, (fs.GetText and fs:GetText()) or "")
+			pcall(ev._zsbtAfterimageFS1.SetTextColor, ev._zsbtAfterimageFS1, tr, tg, tb, ta)
+		end
+		if not ev._zsbtAfterimageFS2 then
+			local tr, tg, tb, ta = 1, 1, 1, 1
+			if fs.GetTextColor then
+				local ok, r, g, b, a = pcall(fs.GetTextColor, fs)
+				if ok then tr, tg, tb, ta = r or 1, g or 1, b or 1, a or 1 end
+			end
+			ev._zsbtAfterimageFS2 = AcquireFontString(ev.parent)
+			pcall(ev._zsbtAfterimageFS2.SetFont, ev._zsbtAfterimageFS2, ev.fontFace, (ev.effectiveFontSize or ev.fontSize or 18), ev.outlineFlag or "OUTLINE")
+			pcall(ev._zsbtAfterimageFS2.SetText, ev._zsbtAfterimageFS2, (fs.GetText and fs:GetText()) or "")
+			pcall(ev._zsbtAfterimageFS2.SetTextColor, ev._zsbtAfterimageFS2, tr, tg, tb, ta)
+		end
+		local a1 = math.max(0, baseA) * (0.35 + (0.10 * inten))
+		local a2 = math.max(0, baseA) * (0.20 + (0.08 * inten))
+		if t < 0.04 then a1 = 0 end
+		if t < 0.08 then a2 = 0 end
+		if ev._zsbtAfterimageFS1 then ev._zsbtAfterimageFS1:SetAlpha(a1) end
+		if ev._zsbtAfterimageFS2 then ev._zsbtAfterimageFS2:SetAlpha(a2) end
+
+	elseif fx == "Shatter" then
+		if t < 0.10 then
+			local p = t / 0.10
+			scale = 0.40 + (p * (1.85 + (0.35 * inten)))
+		elseif t < 0.22 then
+			local p = (t - 0.10) / 0.12
+			scale = (1.85 + (0.35 * inten)) - (p * (0.70 + (0.18 * inten)))
+		elseif t < 0.62 then
+			local p = (t - 0.22) / 0.40
+			scale = 1.15 - (p * 0.12)
+		else
+			local p = (t - 0.62) / 0.38
+			scale = 1.03 - (p * 0.28)
+		end
+		-- Lazy-create 4 shatter copies
+		if not ev._zsbtShatterFS then
+			ev._zsbtShatterFS = {}
+			ev._zsbtShatterDir = {}
+			local tr, tg, tb, ta = 1, 1, 1, 1
+			if fs.GetTextColor then
+				local ok, r, g, b, a = pcall(fs.GetTextColor, fs)
+				if ok then tr, tg, tb, ta = r or 1, g or 1, b or 1, a or 1 end
+			end
+			for i = 1, 4 do
+				local sfs = AcquireFontString(ev.parent)
+				ev._zsbtShatterFS[i] = sfs
+				local th = (math.pi * 2.0) * ((i - 1) / 4) + (math.random() * 0.7)
+				ev._zsbtShatterDir[i] = th
+				pcall(sfs.SetFont, sfs, ev.fontFace, (ev.effectiveFontSize or ev.fontSize or 18), ev.outlineFlag or "OUTLINE")
+				pcall(sfs.SetText, sfs, (fs.GetText and fs:GetText()) or "")
+				pcall(sfs.SetTextColor, sfs, tr, tg, tb, ta)
+			end
+		end
+		local burst = math.min(1.0, t / 0.18)
+		local dist = (18 + (42 * inten)) * burst
+		local ghostAlpha = math.max(0, baseA) * (0.18 + (0.06 * inten))
+		if ev._zsbtShatterFS and ev._zsbtShatterDir then
+			for i = 1, #ev._zsbtShatterFS do
+				local sfs = ev._zsbtShatterFS[i]
+				if sfs then
+					sfs._zsbtOffX = math.cos(ev._zsbtShatterDir[i] or 0) * dist
+					sfs._zsbtOffY = math.sin(ev._zsbtShatterDir[i] or 0) * dist
+					sfs:SetAlpha(ghostAlpha)
+				end
+			end
+		end
+
+	elseif fx == "Rumble" then
+		local shake = 0
+		if t < 0.14 then
+			local p = t / 0.14
+			scale = 0.25 + (p * (1.65 + (0.25 * inten)))
+			shake = (1.0 - p) * (4 + (4 * inten))
+		elseif t < 0.26 then
+			local p = (t - 0.14) / 0.12
+			scale = (1.65 + (0.25 * inten)) - (p * (0.55 + (0.12 * inten)))
+			shake = (1.0 - p) * (3 + (3 * inten))
+		elseif t < 0.36 then
+			scale = 1.10
+		elseif t < 0.48 then
+			-- Second impact / thud
+			local p = (t - 0.36) / 0.12
+			scale = 1.10 + (math.sin(p * math.pi) * (0.22 + (0.10 * inten)))
+			shake = math.sin(p * math.pi) * (3 + (4 * inten))
+		elseif t < 0.70 then
+			local p = (t - 0.48) / 0.22
+			scale = 1.06 - (p * 0.08)
+		else
+			local p = (t - 0.70) / 0.30
+			scale = 0.98 - (p * 0.22)
+		end
+		local theta = ev._zsbtRumbleTheta or 0
+		dx = (math.sin(tWave * 48) * shake) + (math.cos(theta) * (shake * 0.25))
+		dy = (math.cos(tWave * 44) * (shake * 0.55)) + (math.sin(theta) * (shake * 0.20))
+
+	elseif fx == "Shockwave" then
+		local pop
+		if t < 0.12 then
+			pop = t / 0.12
+		elseif t < 0.30 then
+			pop = 1.0 - ((t - 0.12) / 0.18)
+		else
+			pop = 0
+		end
+		local theta = ev._zsbtShockwaveTheta or 0
+		local dist = (6 + (16 * inten)) * math.max(0, math.min(1, t / 0.55))
+		dx = math.cos(theta) * dist
+		dy = math.sin(theta) * dist
+		scale = 1.0 + (pop * (0.55 + (0.30 * inten)))
+
+	elseif fx == "Ignite" then
+		dy = (10 + (26 * inten)) * (t ^ 0.75)
+		local wave = math.sin((t * 10.0 + (ev.driftPhase or 0)) * math.pi) * (0.03 + (0.02 * inten))
+		scale = 1.0 + wave
+
+	elseif fx == "Chromatic" then
+		if not ev._zsbtChromOrigTextColor and fs.GetTextColor then
+			local r, g, b, a = fs:GetTextColor()
+			ev._zsbtChromOrigTextColor = { r or 1, g or 1, b or 1, a or 1 }
+		end
+		if ev._zsbtChromOrigTextColor and fs.SetTextColor then
+			local c = ev._zsbtChromOrigTextColor
+			local ph = (ev._zsbtChromPhase or 0)
+			local s = 0.5 + 0.5 * math.sin((tWave * 8.0) + ph)
+			local amt = math.min(0.80, 0.20 + (0.18 * inten))
+			local r2 = (0.75 * (1 - s)) + (0.20 * s)
+			local g2 = (0.20 * (1 - s)) + (1.00 * s)
+			local b2 = (1.00 * (1 - s)) + (1.00 * s)
+			pcall(fs.SetTextColor, fs,
+				(c[1] * (1 - amt)) + (r2 * amt),
+				(c[2] * (1 - amt)) + (g2 * amt),
+				(c[3] * (1 - amt)) + (b2 * amt),
+				c[4] or 1)
+		end
+		scale = 1.0 + (0.06 * inten) * math.sin((tWave * 6.0) + (ev._zsbtChromPhase or 0))
+
+	elseif fx == "Stomp" then
+		local slamY = 0
+		if t < 0.16 then
+			local p = t / 0.16
+			scale = 0.55 + (p * (0.95 + (0.35 * inten)))
+			slamY = -(10 + (18 * inten)) * (1.0 - p)
+		elseif t < 0.30 then
+			local p = (t - 0.16) / 0.14
+			scale = (1.50 + (0.35 * inten)) - (p * (0.45 + (0.15 * inten)))
+			slamY = (4 + (6 * inten)) * p
+		elseif t < 0.60 then
+			local p = (t - 0.30) / 0.30
+			scale = 1.10 - (p * 0.08)
+		else
+			local p = (t - 0.60) / 0.40
+			scale = 1.02 - (p * 0.22)
+		end
+		dy = slamY
+	end
+
+	local scaledSize = math.max(8, math.floor((ev.effectiveFontSize or ev.fontSize or 18) * scale))
+	if scaledSize ~= ev._lastFontSize then
+		ev._lastFontSize = scaledSize
+		pcall(fs.SetFont, fs, ev.fontFace, scaledSize, ev.outlineFlag or "OUTLINE")
+	end
+	return dx, dy
 end
 
 local function AE_UpdateEvent(ev, dt)
@@ -1189,6 +1445,14 @@ local function AE_UpdateEvent(ev, dt)
 		ev.fs:SetAlpha(math.max(0, (ev.fontAlpha or 1) * (ev.alpha or 1)))
 	end
 
+	-- Composed crit FX: the crit animation rides on top of the base scroll
+	-- motion — scale/shake/ghosts layered over the path position.
+	if ev.critFxId then
+		local fdx, fdy = AE_ApplyCritFx(ev, ev.critFxId, progress)
+		xOff2 = (xOff2 or 0) + fdx
+		yOff2 = (yOff2 or 0) + fdy
+	end
+
 	-- Placement (match existing semantics)
 	-- reference does not ClearAllPoints each tick; doing so can cause flicker.
 	if styleId ~= "Straight" and styleId ~= "Parabola" and styleId ~= "Pow" and styleId ~= "Slam" then
@@ -1278,8 +1542,12 @@ local function AE_UpdateEvent(ev, dt)
 		end)
 	end
 	local point = ev.anchorPoint or ev.startPoint
+	local placedPoint, placedX, placedY = point, xOff2, yOff2
 	if styleId == "Static" and ev.staticPoint and ev.staticSlotY ~= nil then
-		ev.fs:SetPoint(ev.staticPoint, ev.parent, ev.staticPoint, 0, ev.staticSlotY)
+		placedPoint = ev.staticPoint
+		placedX = (xOff2 or 0)
+		placedY = ev.staticSlotY + (yOff2 or 0)
+		ev.fs:SetPoint(ev.staticPoint, ev.parent, ev.staticPoint, placedX, placedY)
 	elseif styleId == "Pow" or styleId == "Slam" or styleId == "Shockwave" or styleId == "Ignite" or styleId == "Chromatic" or styleId == "Stomp" or styleId == "ScreenPunch" or styleId == "Shatter" or styleId == "Afterimage" or styleId == "Rumble" then
 		-- reference Pow uses the scroll area's anchorPoint.
 		ev.fs:SetPoint(point, ev.parent, point, xOff2, yOff2)
@@ -1292,6 +1560,7 @@ local function AE_UpdateEvent(ev, dt)
 			yPlaced = laneOff - (sh - (yOff2 or 0))
 		end
 		ev.fs:SetPoint(point, ev.parent, point, xOff2, yPlaced)
+		placedY = yPlaced
 	end
 	-- Edge fade (keep your existing edge behavior)
 	-- reference Straight/Parabola doesn't apply extra post-fade; it can cause visible jitter.
@@ -1314,17 +1583,18 @@ local function AE_UpdateEvent(ev, dt)
 		ev.iconTex:SetAlpha(ev.fs:GetAlpha())
 	end
 
-	-- Extra crit layers for some centered animations
-	if styleId == "Afterimage" then
+	-- Extra crit layers for some centered animations (and their composed
+	-- critFxId counterparts — ghosts track the line's placed position).
+	if styleId == "Afterimage" or ev.critFxId == "Afterimage" then
 		if ev._zsbtAfterimageFS1 then
 			ev._zsbtAfterimageFS1:ClearAllPoints()
-			ev._zsbtAfterimageFS1:SetPoint(point, ev.parent, point, xOff2 - (4 + (2 * ((ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0))), yOff2 + 2)
+			ev._zsbtAfterimageFS1:SetPoint(placedPoint, ev.parent, placedPoint, placedX - (4 + (2 * ((ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0))), placedY + 2)
 		end
 		if ev._zsbtAfterimageFS2 then
 			ev._zsbtAfterimageFS2:ClearAllPoints()
-			ev._zsbtAfterimageFS2:SetPoint(point, ev.parent, point, xOff2 + (4 + (2 * ((ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0))), yOff2 - 2)
+			ev._zsbtAfterimageFS2:SetPoint(placedPoint, ev.parent, placedPoint, placedX + (4 + (2 * ((ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0))), placedY - 2)
 		end
-	elseif styleId == "Shatter" then
+	elseif styleId == "Shatter" or ev.critFxId == "Shatter" then
 		if ev._zsbtShatterFS then
 			for i = 1, #ev._zsbtShatterFS do
 				local sfs = ev._zsbtShatterFS[i]
@@ -1332,7 +1602,7 @@ local function AE_UpdateEvent(ev, dt)
 					local ox = sfs._zsbtOffX or 0
 					local oy = sfs._zsbtOffY or 0
 					sfs:ClearAllPoints()
-					sfs:SetPoint(point, ev.parent, point, xOff2 + ox, yOff2 + oy)
+					sfs:SetPoint(placedPoint, ev.parent, placedPoint, placedX + ox, placedY + oy)
 				end
 			end
 		end
