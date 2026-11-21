@@ -73,6 +73,8 @@ end
 
 local castSchoolOk -- fwd decl; real def below
 local consumeBestPendingCast -- fwd decl; emit() calls it before the real def below
+local claimSignature -- fwd decl; emit() calls it before the real def below
+local sigSeed -- fwd decl; enqueuePendingCast calls it before the real def below
 local anySwingRecent -- fwd decl; emit() stamps _swingProven before the real def below
 
 -- Friendly non-player casts (pet slot, imps, guardians) recorded in
@@ -315,6 +317,17 @@ local function emit(eventType, payload)
 				payload.petSpellId = psid
 				payload._petSidLearn = (not resolved) or nil
 				payload.petBucket = "summons"
+			end
+		end
+		-- Signature claim: an unattributed hit inside a trigger window may
+		-- be a linked proc's wound (book correlations). Runs after real
+		-- cast evidence and pet claims — both are stronger provenance.
+		if payload.spellId == nil and payload.petSpellId == nil
+			and payload.schoolMask ~= 1 and payload._petRoute ~= false then
+			local ssid = claimSignature(Collector, payload.timestamp or now(), payload.schoolMask)
+			if ssid ~= nil then
+				payload.spellId = ssid
+				payload._sigClaim = true
 			end
 		end
 		-- Class school whitelist: after every attribution attempt, a still-
@@ -1604,6 +1617,9 @@ local function enqueuePendingCast(self, spellId, spellName, tNow)
 	if #self._pendingCasts > PENDING_CAST_MAX then
 		table.remove(self._pendingCasts, 1)
 	end
+	-- Signature window: separate from the pending record — a cast's own
+	-- direct hit consumes the record while its linked procs still fly.
+	sigSeed(self, spellId, tNow)
 end
 
 -- Veto-confirmed (line-paired) outgoing hits teach the spell's damage
@@ -1658,6 +1674,92 @@ function Collector:LearnConfirmedSchool(spellId, schoolMask, trusted)
 		self._learnedSpellSchool[spellId] = schoolMask
 		self:_persistLearnedSchool(spellId, schoolMask)
 	end
+end
+
+-- Signature claim ------------------------------------------------------
+-- An unattributed non-physical hit may be a linked proc's wound: the
+-- book's correlation layer maps "cast X -> spells whose tooltips
+-- reference X" (triggers, modifiers, hero procs). Every damage-capable
+-- cast seeds a short window here — the pending record can be consumed
+-- by the cast's own direct hit while its proc is still in flight, so
+-- windows are tracked separately. A candidate must be a wound source
+-- (facts don't deny damage), school-fit, and reach composite
+-- confidence: a strong link edge claims outright; a mention needs the
+-- hero-tree proc prior plus a declared school match. Module-excluded
+-- and no-damage sids never claim. Claims are guesses, not provenance —
+-- they do not teach schools.
+local SIG_WINDOW = 2.5
+local SIG_MAX = 16
+local sigBand = (bit and bit.band) or (bit32 and bit32.band)
+Collector._sigCasts = Collector._sigCasts or {}
+
+local function sigExpire(self, tNow)
+	local l = self._sigCasts
+	for i = #l, 1, -1 do
+		if (tNow - l[i].at) > SIG_WINDOW then table.remove(l, i) end
+	end
+end
+
+sigSeed = function(self, spellId, tNow)
+	local l = self._sigCasts
+	l[#l + 1] = { sid = spellId, at = tNow }
+	if #l > SIG_MAX then table.remove(l, 1) end
+end
+
+local function sigMaskFit(rec, hitSchool)
+	if type(hitSchool) ~= "number" or not sigBand then return true end
+	local ms = rec and rec.masks
+	if type(ms) ~= "table" or #ms == 0 then return true end
+	for _, m in ipairs(ms) do
+		if sigBand(m, hitSchool) ~= 0 then return true end
+	end
+	return false
+end
+
+claimSignature = function(self, tNow, hitSchool)
+	local sb = ZSBT.Spellbook
+	if not (sb and sb.LinksFrom and sb.PairOf) then return nil end
+	sigExpire(self, tNow)
+	local excl = ZSBT.ClassDB and ZSBT.ClassDB.ExcludedSpellId or nil
+	local best, bestScore, bestDt, bestVia
+	for _, w in ipairs(self._sigCasts) do
+		local seen = {}
+		for _, trig in ipairs({ w.sid, sb:PairOf(w.sid) }) do
+			if type(trig) == "number" and seen[trig] ~= true then
+				seen[trig] = true
+				local links = sb:LinksFrom(trig)
+				if type(links) == "table" then
+					for procSid, strength in pairs(links) do
+						if type(procSid) == "number"
+							and (excl == nil or excl(procSid) ~= true) then
+							local rec = sb:Entry(procSid)
+							local facts = SpellFacts(procSid)
+							if type(rec) == "table"
+								and (not facts or facts.damages ~= false)
+								and sigMaskFit(rec, hitSchool) then
+								local score = (strength == "strong" and 2 or 0)
+									+ (rec.subTree ~= nil and 1 or 0)
+									+ (type(rec.masks) == "table" and #rec.masks > 0 and 1 or 0)
+								if score >= 3 then
+									local dt = tNow - w.at
+									if bestScore == nil or score > bestScore
+										or (score == bestScore and dt < bestDt) then
+										best, bestScore, bestDt, bestVia = procSid, score, dt, trig
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	if best then
+		auditNote(("AUDSIG sid=%s via=%s score=%d dt=%.2f school=%s"):format(
+			tostring(best), tostring(bestVia), bestScore or 0,
+			bestDt or 0, tostring(hitSchool)))
+	end
+	return best
 end
 
 consumeBestPendingCast = function(self, tNow, wantSpellId, maxWindowSec, doConsume, hitSchool)
