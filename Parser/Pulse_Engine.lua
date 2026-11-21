@@ -1213,6 +1213,7 @@ function Engine:flushBucket()
 					traceId = sample.traceId,
 					spellName = nil,
 					spellId = sample.spellId,
+					baseSpellId = sample.baseSpellId,
 					dbgChatId = sample.dbgChatId,
 					amountSource = sample.amountSource,
 					isAuto = sample.isAuto == true,

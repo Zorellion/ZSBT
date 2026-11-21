@@ -329,6 +329,7 @@ ZSBT.DEFAULTS = {
             },
             showSpellNames = false,
             showSpellIcons = false,
+            showEmpowerIcons = true,
             iconSide = "left",
             useSchoolColors = true,
             customDamageColor  = { r = 1, g = 1, b = 1 },
