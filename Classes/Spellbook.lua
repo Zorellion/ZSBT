@@ -762,6 +762,23 @@ function Spellbook:Dump(printFn, showAll)
 			table.sort(subRecs)
 			p("  hero-tree: " .. table.concat(subRecs, ", "))
 		end
+		-- Learned trigger->proc bindings (collector store): fires,
+		-- windows offered, relearn count.
+		local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
+		local binds = ec and ec.ProcBindings and ec:ProcBindings() or nil
+		if type(binds) == "table" then
+			local rows = {}
+			for trig, t in pairs(binds) do
+				local tn = self._entries[trig] and self._entries[trig].name or tostring(trig)
+				for proc, e in pairs(t) do
+					local pn = self._entries[proc] and self._entries[proc].name or tostring(proc)
+					rows[#rows + 1] = ("  learned: %s -> %s n=%d w=%d rel=%d")
+						:format(tn, pn, e.n or 0, e.w or 0, e.rel or 0)
+				end
+			end
+			table.sort(rows)
+			for _, r in ipairs(rows) do p(r) end
+		end
 	end
 	local masks = {}
 	for m in pairs(self._masks) do masks[#masks + 1] = m end
