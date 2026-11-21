@@ -18,10 +18,14 @@ mod.dotCadenceDisambig = true
 
 -- Periodic damage (name-primary; ids are fallback fast path).
 mod.dots = {
-	{ names = { "Sigil of Flame" },  ids = { 204596, 204598 },  school = 4 },
+	-- aoe=true: one application covers every mob in range (ground sigil /
+	-- self-aura pulse), so the spell-level apply anchor is valid for
+	-- off-target nameplate wounds — single-target dots still need a
+	-- per-mob application record.
+	{ names = { "Sigil of Flame" },  ids = { 204596, 204598 },  school = 4, aoe = true },
 	{ names = { "Fiery Brand" },     ids = { 204021 },          school = 4 },
 	-- Immolation Aura's aura ticks arrive periodic under the buff name.
-	{ names = { "Immolation Aura" }, ids = { 258920, 427343 },  school = 4 },
+	{ names = { "Immolation Aura" }, ids = { 258920, 427343 },  school = 4, aoe = true },
 	-- The Hunt leaves a mark that ticks before the detonation.
 	{ names = { "The Hunt" },        ids = { 258860, 323996 },  school = 127 },
 	-- Vengeance's stacking debuff ticks fire damage ~1s (log-verified
