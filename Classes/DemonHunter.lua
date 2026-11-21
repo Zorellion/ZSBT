@@ -10,6 +10,12 @@ if not ZSBT or not ZSBT.ClassDB then return end
 
 local mod = {}
 
+-- Opt into the cadence-disambiguation pool: Vengeance runs up to five
+-- fire dots at once, and channels (Fel Devastation) share their school.
+-- Most-recent-dot matching stole channel ticks; the scored race gives
+-- each wound to whichever periodic source's beat it actually lands on.
+mod.dotCadenceDisambig = true
+
 -- Periodic damage (name-primary; ids are fallback fast path).
 mod.dots = {
 	{ names = { "Sigil of Flame" },  ids = { 204596, 204598 },  school = 4 },
@@ -32,16 +38,16 @@ mod.dots = {
 -- Channeled/ground volleys: individual hits carry no cast record, so the
 -- cast seeds a window and same-school hits inside it claim the name.
 mod.channels = {
-	{ names = { "Eye Beam" },       ids = { 198013 }, duration = 3.0, tickMin = 0.12, school = 127 },
-	{ names = { "Fel Devastation" }, ids = { 212084 }, duration = 2.0, tickMin = 0.12, school = 4 },
-	{ names = { "Fel Barrage" },    ids = { 258925 }, duration = 3.0, tickMin = 0.12 },
-	{ names = { "Glaive Tempest" }, ids = { 370965 }, duration = 3.0, tickMin = 0.25 },
+	{ names = { "Eye Beam" },       ids = { 198013 }, duration = 3.0, tickMin = 0.12, interval = 0.12, school = 127 },
+	{ names = { "Fel Devastation" }, ids = { 212084 }, duration = 2.0, tickMin = 0.12, interval = 0.2, school = 4 },
+	{ names = { "Fel Barrage" },    ids = { 258925 }, duration = 3.0, tickMin = 0.12, interval = 0.25 },
+	{ names = { "Glaive Tempest" }, ids = { 370965 }, duration = 3.0, tickMin = 0.25, interval = 0.33 },
 
 	-- Devourer (void spec) ------------------------------------------------
 	-- Void Ray: the void channel — book-derived channel with a very
 	-- fast stream (iv=0.1). School 127 covers the void composite 106
 	-- bitwise (106 & 127 = 106).
-	{ names = { "Void Ray" },       ids = { 473728 }, duration = 3.0, tickMin = 0.08, school = 127 },
+	{ names = { "Void Ray" },       ids = { 473728 }, duration = 3.0, tickMin = 0.08, interval = 0.1, school = 127 },
 }
 
 -- Zero-enemy-damage casts: a wound can never honestly wear these names —
