@@ -980,6 +980,15 @@ local function resolveOffTargetDot(self, unit, t, school)
 			if type(sm) == "table" then consider(sid, sm[n]) end
 		end
 	end
+	-- AoE-declared dots (ground sigils, self-aura pulses): one cast debuffs
+	-- every mob in range, so the spell-level apply anchor is a valid phase
+	-- reference for any nameplate — no per-mob record exists to consult.
+	-- Single-target dots still require a per-mob record; cadence gates
+	-- everything either way.
+	for sid, at in pairs(self._dotAppliedAt or {}) do
+		local entry = dotEntryForSpellId(sid)
+		if entry and entry.aoe == true then consider(sid, at) end
+	end
 	return best
 end
 
