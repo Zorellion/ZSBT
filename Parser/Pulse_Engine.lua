@@ -1214,6 +1214,7 @@ function Engine:flushBucket()
 					spellName = nil,
 					spellId = sample.spellId,
 					baseSpellId = sample.baseSpellId,
+					empowerId = sample.empowerId,
 					dbgChatId = sample.dbgChatId,
 					amountSource = sample.amountSource,
 					isAuto = sample.isAuto == true,

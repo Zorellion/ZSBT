@@ -53,6 +53,7 @@ function Outgoing:ProcessEvent(info)
 		spellName = info.spellName,
 		spellId = info.spellId,
 		baseSpellId = info.baseSpellId,
+		empowerId = info.empowerId,
 		wwCount = info.wwCount,
 		wwCritCount = info.wwCritCount,
 		amountSource = info.amountSource,
