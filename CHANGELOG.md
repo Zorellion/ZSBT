@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.3.9.3-beta
+
+### Fixed
+- **Blizzard combat-text restore rewritten (ownership-safe):** explicit restores — the "Restore Blizzard Combat Text Now" panic button, `/zsbt restorefct`, and the restore prompt — now revert *everything* ZSBT touches when no snapshot exists: every FCT CVar plus `WorldTextScale`/`WorldTextScreenY` (and `_v2` variants), CombatText frame registrations, `CombatText_AddMessage*` overrides, and the XP chat filter, each reset to the client-reported default via `GetCVarDefault`. Previously the no-backup path wrote a handful of hardcoded `"1"`s and never touched WorldText — leaving floating text permanently invisible after a reinstall or cleared SavedVariables.
+- **Suppression no longer stomps user CVars:** the zone/regen re-apply path is now gated on `suppressedByZSBT`/backup state — if ZSBT never suppressed, your own Blizzard FCT settings are left untouched instead of being rewritten to `"1"` on every zone change and combat end.
+- **Panic button actually works:** it now clears the master suppression toggle (previously the next zone change re-zeroed everything seconds later) and is always enabled — the no-backup defaults revert was previously unreachable in exactly the state you'd need it. `/zsbt restorefct` also clears suppression for the same reason.
+- **Master CVar ordering:** `enableFloatingCombatText` removed from the outgoing/incoming category groups — a "show outgoing, hide incoming" config no longer leaves the master switch at `0` with nothing visible.
+- **Orphan CVars managed:** `floatingCombatTextCombatState`, `floatingCombatTextFloatMode`, and `floatingCombatTextFriendlyHealers` now zero on hide-all and restore from backup on partial configs, instead of sticking wherever a previous suppress left them.
+- **Restore prompt checks the live key** (`hideBlizzardFCT`), not the dead legacy `suppressBlizzardFCT` — it no longer fires while suppression is intentionally on.
+
+### Added
+- **Era pet spellbook discovery (Forever/Camelot):** the pet scan now accepts `PetAction` spellbook items (the client's actual shape) and unmasks action IDs to real spell IDs, with legacy `HasPetSpells`/`GetSpellBookItemInfo(i, "pet")` and `GetPetActionInfo` action-bar probes as pcall-guarded fallbacks. Pet verification lanes and pet spell icons now work on era clients.
+
+### Changed
+- **Era mutual veto for stolen DoT ticks:** when a recent cast blocks a surviving disambiguation pick on era clients, that cast can no longer claim the wound line-free either — the wound renders as a bare number instead of wearing a wrong spell name (e.g. a wand's "Shoot" on an Immolate tick). Retail travel-time nuke claims are unaffected.
+
 ## 3.3.9.2-beta
 
 ### Added
