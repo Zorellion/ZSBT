@@ -790,4 +790,58 @@ function Spellbook:Dump(printFn, showAll)
 	for _, f in ipairs(flagged) do p("  " .. f.label) end
 end
 
+---------------------------------------------------------------------------
+-- /zsbt sb win — the full dump is too long for chat scrollback; render it
+-- into a draggable window with a selectable EditBox for Ctrl+A / Ctrl+C.
+---------------------------------------------------------------------------
+local dumpFrame
+function Spellbook:DumpWindow()
+	if not dumpFrame then
+		local f = CreateFrame("Frame", "ZSBT_SpellbookDump",
+			UIParent, "BackdropTemplateMixin and BackdropTemplate")
+		f:SetSize(780, 560)
+		f:SetPoint("CENTER")
+		f:SetFrameStrata("DIALOG")
+		f:SetMovable(true)
+		f:EnableMouse(true)
+		f:RegisterForDrag("LeftButton")
+		f:SetScript("OnDragStart", f.StartMoving)
+		f:SetScript("OnDragStop", f.StopMovingOrSizing)
+		f:SetBackdrop({
+			bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+			edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+			edgeSize = 14,
+			insets = { left = 3, right = 3, top = 3, bottom = 3 },
+		})
+		f:SetBackdropColor(0.05, 0.05, 0.08, 0.95)
+		f:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+		if type(UISpecialFrames) == "table" then
+			UISpecialFrames[#UISpecialFrames + 1] = "ZSBT_SpellbookDump"
+		end
+		local title = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		title:SetPoint("TOPLEFT", 12, -10)
+		title:SetText("ZSBT Spellbook Dump — Ctrl+A, Ctrl+C")
+		local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+		close:SetPoint("TOPRIGHT", -4, -4)
+		local sf = CreateFrame("ScrollFrame", nil, f,
+			"UIPanelScrollFrameTemplate")
+		sf:SetPoint("TOPLEFT", 10, -32)
+		sf:SetPoint("BOTTOMRIGHT", -30, 10)
+		local eb = CreateFrame("EditBox", nil, sf)
+		eb:SetMultiLine(true)
+		eb:SetAutoFocus(false)
+		eb:SetFontObject(ChatFontNormal or GameFontHighlightSmall)
+		eb:SetWidth(720)
+		eb:SetScript("OnEscapePressed", function() f:Hide() end)
+		sf:SetScrollChild(eb)
+		f._edit = eb
+		dumpFrame = f
+	end
+	local buf = {}
+	self:Dump(function(s) buf[#buf + 1] = tostring(s) end, true)
+	dumpFrame._edit:SetText(table.concat(buf, "\n"))
+	dumpFrame._edit:SetCursorPosition(0)
+	dumpFrame:Show()
+end
+
 return Spellbook

@@ -2040,7 +2040,10 @@ function Addon:HandleSlashCommand(input)
         self:Print("UC_DROP trace " .. (ZSBT._ucDropTrace and "ON" or "OFF"))
         return
     elseif cmd == "sb" then
-        if ZSBT.Spellbook and ZSBT.Spellbook.Dump then
+        if rest:lower():find("win") and ZSBT.Spellbook
+            and ZSBT.Spellbook.DumpWindow then
+            ZSBT.Spellbook:DumpWindow()
+        elseif ZSBT.Spellbook and ZSBT.Spellbook.Dump then
             ZSBT.Spellbook:Dump(function(s) self:Print(s) end,
                 rest:lower():find("all") ~= nil)
         else
