@@ -63,6 +63,7 @@ mod.exclude = {
 	"Fodder to the Flame",
 	-- Devourer (void spec) ------------------------------------------------
 	"Shift",             -- void mobility; emitted school=nil
+	"Void Metamorphosis",-- transform only; log-verified zero wounds
 }
 
 -- Per-cast-instance naming budget: AoE/splash casts may name several
@@ -101,8 +102,8 @@ mod.castBudget = {
 	[473728]  = 12, -- Void Ray (fallback; the channel usually catches it)
 	[1245483] = 4,  -- Pierce the Veil
 	[1250088] = 4,  -- Midnight
-	[1217605] = 8,  -- Void Metamorphosis (confirmed damage sid; leap AoE)
-	[471306] = 8,   -- Void Metamorphosis (talent-granted sid, same name)
+	[1245414] = 4,  -- Voidblade (variant sid)
+	[1245453] = 4,  -- Cull
 }
 
 -- Provable damage schools: 1 physical (melee, Blade Dance, glaives),
