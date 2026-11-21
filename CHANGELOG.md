@@ -3,18 +3,35 @@
 ## 3.3.9.2-beta
 
 ### Added
+- **Signature matcher + persisted proc bindings:** hits that land unnamed inside a trigger window now claim the linked spell, and every claim feeds a persisted per-binding ledger (`n` claims, `w` windows, `rel` drift) written to the profile in instances and on demand. The learner accumulates real trigger-to-proc correlation instead of one-off guesses. `/zsbt clearlearned` wipes bindings and evidence for a cold start.
+- **Learner evidence reporting (`/zsbt arep`):** end-of-fight report pairing each emitted line back to its wound — sid match / lost / changed / unverifiable counts, per-binding claim fidelity across cast/dot/channel/pet/generic lanes, and a pressure ledger of gate refusals. Evidence records migrate forward from older saves.
+- **`/zsbt auditreport`:** end-to-end confidence metrics from the audit ring, persisted to `diagnostics.auditReport` so the numbers survive `/reload`.
+- **Monotonic trace IDs:** every wound carries a unique `traceId` through the PulseEngine event rebuilds (replaces recycled pipe IDs), so `AUDRNDR` render lines correlate exactly to their claim — the backbone of `/arep`.
+- **Talent-tree spellbook import:** selected talent nodes join the derived knowledge layer — `GetTreeNodes` enumeration, cast-to-talent sid pairs, trigger-to-proc links, and hero-tree provenance — feeding learner/spec context without claiming display. `/zsbt sb` dump got a copyable window, plus `/zsbt sb all`.
+- **Channel ownership lane:** channels get their own evidence path — registry-seeded `_channel` records and a cadence pool — so channel ticks (Drain Life-style channels) claim and verify like dots.
+- **Burst/merge engine rework:** unattributed same-signature bursts fan out from line-backed evidence keyed by hit signature so distinct hits can't collapse; pets whitelist companion schools; suppressed twin wounds park on the signature bucket for line-backed recovery; extra claims tighten to a per-event window.
+- **Demon Hunter module (real, replacing the stub):** Vengeance spellbook verification pass, Frailty (`227255`) joins dots, Void Metamorphosis is transform-only (excluded rather than budgeted) with proper cast budgets, and Devourer module section. Stub modules for Monk/Paladin/Evoker now correctly fall back to no-module handling instead of pretending coverage.
+- **Pet aggregation modes fixed:** "Spell Name" uses resolved pet-spell names, "None (Numbers Only)" shows bare numbers, and the dead summons-bucket path that forced a bare prefix is repaired — the dropdown actually does something now.
 - **Composed crit animations:** crit animations (Stomp, Slam, Shockwave, Ignite, Chromatic, ScreenPunch, Shatter, Afterimage, Rumble) now play on top of the scroll area's motion instead of replacing it — a crit in a Parabola area travels the curve while the effect plays, and crits spread across normal lanes instead of stacking in the center. Pow keeps its classic centered-sticky behavior. New toggle: General > Crit Animations Ride Scroll Motion (default on; off restores centered crits).
 - **Outgoing Pet Crits section (Crits page):** pet crits get the same per-stream crit options as incoming/outgoing — scroll-area routing, sticky + jiggle, and a full crit font override (face, size/scale, outline, all crit animations with intensity sliders). Pet crit color moved here from the pet damage settings; existing colors carry over.
 - **Pet spell icons (opt-in):** Pets > Show Pet Spell Icons puts the pet's own spell icon next to pet damage (e.g. the imp's Firebolt). Merged pet lines only show an icon when every contributor shares the same spell.
 - **Dual empower/proc icons (experimental):** Outgoing > Show Empowering Proc Icon renders the triggering cast's icon alongside the proc that empowered it, when the client can prove the proc's state. Degrades cleanly to a single icon on secret-value builds.
-- **Learner evidence reporting:** `/zsbt arep` now reports per-binding claim fidelity (cast/dot/channel/pet/generic lanes), and the spellbook import maps talent-tree trigger-to-proc correlations for spec context. `/zsbt sb` dumps the derived book.
+- **Warlock guardian naming:** Blighted Maw (`1276960`, school 40) joins named guardians.
 
 ### Changed
+- **Pairing preference order:** wounds now claim their own line kind first — pet-route and swing-proven wounds reclaim melee lines, non-autos can claim ranged lines (wand Shoot was unpairable), impossible kinds are removed from the fallback rather than deprioritized.
+- **Off-target DoT attribution:** nameplate wounds on other mobs attribute to that mob's own application record; AoE dots additionally fall back to spell-level anchoring, fixing multi-mob dot leakage.
+- **DoT learning:** tick intervals only learn between hits on the same mob — cross-target gaps no longer corrupt cadence.
 - **Merged outgoing lines honor Show Spell Names:** secret-amount merges no longer display a spell name unless Outgoing > Show Spell Names is enabled — they now read "Hits (xN)".
+- **Module-declared exclusion lists:** `mod.exclude` denylists (e.g. Health Funnel) can never name enemy wounds.
 
 ### Fixed
-- **Attribution honesty layer:** talent-node spell IDs can no longer claim wounds (they're modifiers, not damage events); proc claims now require tooltip damage proof or a clean learned binding (no school drift); learned-binding score boosts stop self-reinforcing after drift; pet render lines count as unverifiable instead of falsely lost.
-- `/zsbt arep` no longer crashes on learner records saved before the unverifiable counter existed.
+- **Attribution honesty layer:** talent-node spell IDs can no longer claim wounds (they're modifiers, not damage events); proc claims require tooltip damage proof or a clean learned binding with no school drift; learned-binding score boosts stop self-reinforcing after drift is detected.
+- **School-gate vetoes, four fixes:** line evidence is now exempt from the foreign-school veto; module-declared and spellbook-derived masks gate cast claims; a quiet feed is no longer treated as a dead feed so combat openers stop dying at intake.
+- **Zero-damage casts:** casts that provably deal no damage can neither name wounds nor block DoT picks.
+- **Secret-value crashes:** secret-string comparison crash in the dot per-target map and the attribution audit sink (Retail 12.x); audit ring now guards writes and skips tainted entries in `/arep`.
+- **Pet render accounting:** pet lines with no verifiable identity count as `unverifiable` instead of falsely `lost`; `/arep` no longer crashes on learner records saved before that counter existed.
+- **Spellbook parse accuracy:** talent enumeration via `GetTreeNodes` (the old `treeInfo.nodes` walk silently died), all tree grants counted, tooltip-header channel detection, clause-scoped dot gating, damage-taken rider vetoes scoped to their clause, resource-generation clauses no longer read as dots, and string-typed spell IDs coerced at the cast boundary.
 
 ## 3.3.9.1-Beta
 
