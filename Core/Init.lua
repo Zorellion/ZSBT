@@ -1958,6 +1958,147 @@ function Addon:OnDisable()
     DisableParsers()
     if ZSBT.Core and ZSBT.Core.Disable then ZSBT.Core:Disable() end
 end
+-- Walks the audit ring and correlates emit decisions ("AUD ... pid=N")
+-- with what actually rendered ("AUDRNDR tid=N") and merge flushes
+-- ("AUDMRG tids=..."). Confidence is a count, not a vibe: every emit
+-- should become exactly one screen line, and the rendered spellId/icon
+-- should match the sid the wound was attributed to.
+function Addon:HandleAuditReport()
+	local diag = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
+	local log = type(diag) == "table" and diag.auditLog or nil
+	if type(log) ~= "table" or #log == 0 then
+		self:Print("Audit ring is empty — '/zsbt audit' on, fight, then '/zsbt arep'.")
+		return
+	end
+
+	local emits, renders, merges = {}, {}, {}
+	for i = 1, #log do
+		local line = log[i]
+		if type(line) == "string" then
+			local lts, rest = line:match("^(%S+)%s+(.*)$")
+			lts = tonumber(lts) or 0
+			if rest then
+				if rest:match("^AUD ht=") then
+					local pid = rest:match(" pid=(%S+)$")
+					local sid = rest:match(" sid=(%S+)")
+					if pid and pid ~= "nil" then
+						emits[#emits + 1] = { ts = lts, pid = pid, sid = sid }
+					end
+				elseif rest:match("^AUDRNDR") then
+					renders[#renders + 1] = {
+						ts = lts,
+						tid = rest:match("tid=(%S+)"),
+						sid = rest:match(" sid=(%S+)"),
+						stream = rest:match("stream=(%S+)"),
+						icon = rest:match("icon=(%S+)"),
+						text = rest:match(" text=(.+)$"),
+					}
+				elseif rest:match("^AUDMRG") then
+					merges[#merges + 1] = {
+						ts = lts,
+						tids = rest:match("tids=(%S+)"),
+						sid = rest:match(" sid=(%S+)"),
+						cnt = tonumber(rest:match("cnt=(%d+)")) or 0,
+						text = rest:match(" text=(.+)$"),
+					}
+				end
+			end
+		end
+	end
+
+	-- Pair a render tid to the nearest emit with the same pid within a
+	-- short window (pipeIds recycle, so proximity disambiguates).
+	local function pairEmit(pid, rts)
+		local best, bestDt = nil, 3.0
+		for _, e in ipairs(emits) do
+			if e.pid == pid then
+				local dt = math.abs(e.ts - rts)
+				if dt <= bestDt then best, bestDt = e, dt end
+			end
+		end
+		return best
+	end
+
+	local paired, sidMatch, sidLost, sidChanged, sidResolved = 0, 0, 0, 0, 0
+	local incoming, noncombat, orphanOut = 0, 0, 0
+	local anomalies = {}
+	local pairedEmit = {}
+
+	local function classify(render, tid, label)
+		local e = pairEmit(tid, render.ts)
+		if not e then
+			if render.stream == "incoming" then
+				incoming = incoming + 1
+			else
+				orphanOut = orphanOut + 1
+				anomalies[#anomalies + 1] = ("  %.3f %s tid=%s sid=%s — no emit near pid (rendered without a matching decision)")
+					:format(render.ts, label, tostring(tid), tostring(render.sid))
+			end
+			return
+		end
+		paired = paired + 1
+		pairedEmit[e] = true
+		local esid, rsid = e.sid or "nil", render.sid or "nil"
+		if esid == rsid then
+			sidMatch = sidMatch + 1
+		elseif rsid == "nil" then
+			sidLost = sidLost + 1
+			anomalies[#anomalies + 1] = ("  %.3f %s emit pid=%s sid=%s -> render sid=nil (identity lost en route)")
+				:format(render.ts, label, tostring(tid), tostring(esid))
+		elseif esid == "nil" then
+			sidResolved = sidResolved + 1
+		else
+			sidChanged = sidChanged + 1
+			anomalies[#anomalies + 1] = ("  %.3f %s emit pid=%s sid=%s -> render sid=%s (WRONG ICON)")
+				:format(render.ts, label, tostring(tid), tostring(esid), tostring(rsid))
+		end
+	end
+
+	for _, r in ipairs(renders) do
+		if not r.tid or r.tid == "nil" then
+			if r.stream == "incoming" then
+				incoming = incoming + 1
+			else
+				noncombat = noncombat + 1
+			end
+		else
+			classify(r, r.tid, "render")
+		end
+	end
+	local mergeContrib = 0
+	for _, m in ipairs(merges) do
+		if type(m.tids) == "string" then
+			for tid in m.tids:gmatch("[^,]+") do
+				mergeContrib = mergeContrib + 1
+				classify({ ts = m.ts, sid = m.sid, stream = "outgoing" }, tid, "merge")
+			end
+		end
+	end
+
+	local unrendered = 0
+	for _, e in ipairs(emits) do
+		if not pairedEmit[e] then unrendered = unrendered + 1 end
+	end
+
+	self:Print(("auditreport: ring=%d emits=%d renders=%d merges=%d")
+		:format(#log, #emits, #renders, #merges))
+	self:Print(("  paired=%d: sid match=%d  lost=%d  changed=%d  resolved-late=%d")
+		:format(paired, sidMatch, sidLost, sidChanged, sidResolved))
+	self:Print(("  unpaired: incoming=%d (no emit records)  orphan=%d  noncombat=%d")
+		:format(incoming, orphanOut, noncombat))
+	self:Print(("  merge contributors=%d  unrendered emits=%d (vetoed/suppressed/approx)")
+		:format(mergeContrib, unrendered))
+	if #anomalies > 0 then
+		self:Print("  anomalies:")
+		for i = 1, math.min(#anomalies, 10) do
+			self:Print(anomalies[i])
+		end
+		if #anomalies > 10 then
+			self:Print(("  ...and %d more"):format(#anomalies - 10))
+		end
+	end
+end
+
 -- Slash Command Router
 ------------------------------------------------------------------------
 function Addon:HandleSlashCommand(input)
@@ -2076,6 +2217,9 @@ function Addon:HandleSlashCommand(input)
             if type(diag) == "table" then diag.auditLog = {} end
         end
         self:Print("AUDIT trace " .. (ZSBT._auditTrace and "ON" or "OFF"))
+        return
+    elseif cmd == "auditreport" or cmd == "arep" then
+        self:HandleAuditReport()
         return
     elseif cmd == "dumpcvars" then
 		local function safeGet(name)
