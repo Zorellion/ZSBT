@@ -2080,23 +2080,31 @@ function Addon:HandleAuditReport()
 		if not pairedEmit[e] then unrendered = unrendered + 1 end
 	end
 
-	self:Print(("auditreport: ring=%d emits=%d renders=%d merges=%d")
+	-- Persist alongside the ring so the report survives /reload for
+	-- post-fight review (same pattern as auditLog itself).
+	local out = {}
+	local function say(s)
+		out[#out + 1] = s
+		self:Print(s)
+	end
+	say(("auditreport: ring=%d emits=%d renders=%d merges=%d")
 		:format(#log, #emits, #renders, #merges))
-	self:Print(("  paired=%d: sid match=%d  lost=%d  changed=%d  resolved-late=%d")
+	say(("  paired=%d: sid match=%d  lost=%d  changed=%d  resolved-late=%d")
 		:format(paired, sidMatch, sidLost, sidChanged, sidResolved))
-	self:Print(("  unpaired: incoming=%d (no emit records)  orphan=%d  noncombat=%d")
+	say(("  unpaired: incoming=%d (no emit records)  orphan=%d  noncombat=%d")
 		:format(incoming, orphanOut, noncombat))
-	self:Print(("  merge contributors=%d  unrendered emits=%d (vetoed/suppressed/approx)")
+	say(("  merge contributors=%d  unrendered emits=%d (vetoed/suppressed/approx)")
 		:format(mergeContrib, unrendered))
 	if #anomalies > 0 then
-		self:Print("  anomalies:")
+		say("  anomalies:")
 		for i = 1, math.min(#anomalies, 10) do
-			self:Print(anomalies[i])
+			say(anomalies[i])
 		end
 		if #anomalies > 10 then
-			self:Print(("  ...and %d more"):format(#anomalies - 10))
+			say(("  ...and %d more"):format(#anomalies - 10))
 		end
 	end
+	diag.auditReport = out
 end
 
 -- Slash Command Router
