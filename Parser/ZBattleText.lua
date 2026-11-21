@@ -955,6 +955,13 @@ end
 function ZB:AuditDamageEvent(eventType, payload)
     if ZSBT._auditTrace ~= true then return end
     local p = payload or {}
+    -- Monotonic correlation id: unlike rawPipeId (a bounded registry that
+    -- recycles), this never repeats within a session, so a rendered line
+    -- can be paired to THIS decision exactly — not a neighbor's same pid.
+    if p.traceId == nil then
+        ZB._traceSeq = (ZB._traceSeq or 0) + 1
+        p.traceId = ZB._traceSeq
+    end
     local sid = p.spellId
     local src = "generic"
     if eventType == "PET_DAMAGE_COMBAT" or eventType == "PET_HEAL_LOG"
@@ -982,10 +989,10 @@ function ZB:AuditDamageEvent(eventType, payload)
     else
         amtStr = "secret"
     end
-    ZB:Audit(("AUD ht=%.3f %s sid=%s name=%s school=%s crit=%s amt=%s src=%s tgt=%s pid=%s"):format(
+    ZB:Audit(("AUD ht=%.3f %s sid=%s name=%s school=%s crit=%s amt=%s src=%s tgt=%s pid=%s tid=%s"):format(
         tonumber(p.timestamp) or 0, eventType, audSafe(sid), audSafe(name),
         audSafe(p.schoolMask), tostring(p.isCrit == true), amtStr, src,
-        audSafe(p.targetName), audSafe(p.rawPipeId)))
+        audSafe(p.targetName), audSafe(p.rawPipeId), audSafe(p.traceId)))
 end
 
 -- Returns true when the caller should emit immediately; false when the

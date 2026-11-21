@@ -1979,7 +1979,9 @@ function Addon:HandleAuditReport()
 			lts = tonumber(lts) or 0
 			if rest then
 				if rest:match("^AUD ht=") then
-					local pid = rest:match(" pid=(%S+)$")
+					-- Prefer tid (monotonic, unique) over pid (recycled
+					-- rawPipe registry id); old lines only have pid.
+					local pid = rest:match(" tid=(%S+)$") or rest:match(" pid=(%S+)$")
 					local sid = rest:match(" sid=(%S+)")
 					if pid and pid ~= "nil" then
 						emits[#emits + 1] = { ts = lts, pid = pid, sid = sid }
