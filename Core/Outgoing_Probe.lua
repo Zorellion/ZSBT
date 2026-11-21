@@ -825,8 +825,23 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				)) or (evt and evt.isPeriodic == true)
 		if prof.showSpellIcons and evt.isAuto ~= true and type(resolvedSpellID) == "number" and trustedForSpellIcon then
 			meta.iconSide = prof.iconSide
-			local tex = ZSBT.CleanSpellIcon(resolvedSpellID)
-			if tex then meta.spellIcon = tex end
+			-- Signature claims carry the trigger cast (baseSpellId) that
+			-- seeded the proc attribution. With empower icons on, the pair
+			-- renders base icon + proc icon; off, the original cast's icon
+			-- alone. The learned binding is untouched either way.
+			local baseSid = (evt and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(evt.baseSpellId))
+				and evt.baseSpellId or nil
+			if baseSid ~= nil then
+				local tex = ZSBT.CleanSpellIcon(baseSid)
+				if tex then meta.spellIcon = tex end
+				if prof.showEmpowerIcons ~= false then
+					local tex2 = ZSBT.CleanSpellIcon(resolvedSpellID)
+					if tex2 then meta.spellIcon2 = tex2 end
+				end
+			else
+				local tex = ZSBT.CleanSpellIcon(resolvedSpellID)
+				if tex then meta.spellIcon = tex end
+			end
 		end
 
         local areaToUse = ruleArea or conf.scrollArea or defaultRuleArea or "Outgoing"

@@ -5653,7 +5653,7 @@ local COMBAT_BUCKET_KEYS = {
 	},
 	outgoing = {
 		damage = {
-			damageEnabled=1, showSpellNames=1, showSpellIcons=1, iconSide=1,
+			damageEnabled=1, showSpellNames=1, showSpellIcons=1, showEmpowerIcons=1, iconSide=1,
 			useSchoolColors=1, customDamageColor=1, damageScrollArea=1,
 			showTargets=1, autoAttackMode=1,
 			damageMinThreshold=1, thresholdTip=1,
@@ -5691,7 +5691,7 @@ ZSBT._BUCKET_ORDER = {
 	},
 	outgoingDamage = {
 		"damageEnabled", "damageScrollArea",
-		"showSpellNames", "showSpellIcons", "iconSide",
+		"showSpellNames", "showSpellIcons", "showEmpowerIcons", "iconSide",
 		"showTargets", "autoAttackMode",
 		"damageMinThreshold", "thresholdTip",
 		"useSchoolColors", "customDamageColor",
@@ -7474,6 +7474,17 @@ function ZSBT.BuildTab_Outgoing()
                 order = 3.5,
                 get   = function() return ZSBT.db.profile.outgoing.showSpellIcons end,
                 set   = function(_, val) ZSBT.db.profile.outgoing.showSpellIcons = val end,
+            },
+            showEmpowerIcons = {
+                type  = "toggle",
+                name  = L["Show Empowering Proc Icon"],
+                desc  = L["When a talent or proc empowered the cast that dealt this damage (e.g. Secrets of the Coven on Shadow Bolt), show both icons: the original spell, then the empowerer. Off shows only the original spell's icon. Proc tracking and learned data are unaffected."],
+                width = "full",
+                order = 3.49,
+                disabled = function() return ZSBT.db.profile.outgoing.showSpellIcons ~= true end,
+                hidden = function() return ZSBT.db.profile.outgoing.showSpellIcons ~= true end,
+                get   = function() return ZSBT.db.profile.outgoing.showEmpowerIcons ~= false end,
+                set   = function(_, val) ZSBT.db.profile.outgoing.showEmpowerIcons = val and true or false end,
             },
             iconSide = {
                 type  = "select",

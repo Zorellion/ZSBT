@@ -2538,9 +2538,10 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
 		local zbt = ZSBT.ZBattleText
 		if zbt and zbt.Audit then
 			local txt = (ZSBT.IsSafeString and ZSBT.IsSafeString(text)) and text or "<secret>"
-			zbt:Audit(("AUDRNDR tid=%s sid=%s icon=%s stream=%s crit=%s text=%s")
+			zbt:Audit(("AUDRNDR tid=%s sid=%s icon=%s icon2=%s stream=%s crit=%s text=%s")
 				:format(tostring(meta and meta.traceId), tostring(meta and meta.spellId),
-					tostring(meta and meta.spellIcon), tostring(meta and meta.stream),
+					tostring(meta and meta.spellIcon), tostring(meta and meta.spellIcon2),
+					tostring(meta and meta.stream),
 					tostring(meta and meta.isCrit == true), tostring(txt)))
 		end
 	end
@@ -2797,13 +2798,18 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
 
     if meta and meta.spellIcon then
         local iconRight = (meta.iconSide == "right")
+        -- Empower claims carry a second texture: base cast icon then the
+        -- proc icon (e.g. Shadow Bolt + Secrets of the Coven).
+        local iconStr = "|T" .. meta.spellIcon .. ":" .. iconSize .. ":" .. iconSize .. "|t"
+        if meta.spellIcon2 then
+            iconStr = iconStr .. "|T" .. meta.spellIcon2 .. ":" .. iconSize .. ":" .. iconSize .. "|t"
+        end
         -- For Center alignment, keep the TEXT centered by itself.
         -- Inline icons become part of the string width and shift the letters to the right.
         -- Use a separate icon FontString instead.
         if anchorH == "CENTER" then
             iconFS = AcquireIconFS(parent)
             iconFS:SetFont(fontFace, effectiveFontSize, outlineFlag or "OUTLINE")
-            local iconStr = "|T" .. meta.spellIcon .. ":" .. iconSize .. ":" .. iconSize .. "|t"
             iconFS:SetText(iconStr)
             if iconRight then
                 iconFS:SetPoint("LEFT", fs, "RIGHT", 2, 0)
@@ -2816,18 +2822,15 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             if ZSBT.IsSafeString(text) then
                 -- Clean text: inline icon escape
                 if iconRight then
-                    local iconStr = "|T" .. meta.spellIcon .. ":" .. iconSize .. ":" .. iconSize .. "|t"
                     fs:SetText(text .. " " .. iconStr)
                 else
-                    local iconStr = "|T" .. meta.spellIcon .. ":" .. iconSize .. ":" .. iconSize .. L["|t "]
-                    fs:SetText(iconStr .. text)
+                    fs:SetText(iconStr .. L["|t "] .. text)
                 end
                 hasInlineIcon = true
             else
                 -- Tainted: use separate icon FontString with embedded texture escape
                 iconFS = AcquireIconFS(parent)
                 iconFS:SetFont(fontFace, effectiveFontSize, outlineFlag or "OUTLINE")
-                local iconStr = "|T" .. meta.spellIcon .. ":" .. iconSize .. ":" .. iconSize .. "|t"
                 iconFS:SetText(iconStr)
                 if iconRight then
                     iconFS:SetPoint("LEFT", fs, "RIGHT", 2, 0)

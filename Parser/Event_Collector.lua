@@ -324,10 +324,14 @@ local function emit(eventType, payload)
 		-- cast evidence and pet claims — both are stronger provenance.
 		if payload.spellId == nil and payload.petSpellId == nil
 			and payload.schoolMask ~= 1 and payload._petRoute ~= false then
-			local ssid = claimSignature(Collector, payload.timestamp or now(), payload.schoolMask)
+			local ssid, trig = claimSignature(Collector, payload.timestamp or now(), payload.schoolMask)
 			if ssid ~= nil then
 				payload.spellId = ssid
 				payload._sigClaim = true
+				-- The trigger cast that seeded this claim (Shadow Bolt
+				-- for Secrets of the Coven). Display metadata only —
+				-- attribution evidence stays keyed to the proc sid.
+				payload.baseSpellId = trig
 			end
 		end
 		-- Class school whitelist: after every attribution attempt, a still-
@@ -1929,7 +1933,7 @@ claimSignature = function(self, tNow, hitSchool)
 			tostring(best), tostring(bestVia), bestScore or 0,
 			bestDt or 0, tostring(hitSchool), tostring(bn)))
 	end
-	return best
+	return best, bestVia
 end
 
 -- /zsbt sb + the class page read learned bindings for display.
