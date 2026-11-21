@@ -562,7 +562,6 @@ local BLIZZARD_FCT_CVARS = {
 -- best-effort separation: Blizzard routing is shared, but these CVars gate
 -- which kinds of messages actually render.
 local BLIZZARD_FCT_OUTGOING_CVARS = {
-	"enableFloatingCombatText",
 	"floatingCombatTextCombatDamage",
 	"floatingCombatTextCombatDamage_v2",
 	"floatingCombatTextCombatDamageAllAutos",
@@ -572,7 +571,6 @@ local BLIZZARD_FCT_OUTGOING_CVARS = {
 -- Best-effort: CVars that primarily affect "incoming" style text (heals/mitigation)
 -- while leaving outgoing damage numbers off.
 local BLIZZARD_FCT_INCOMING_CVARS = {
-	"enableFloatingCombatText",
 	"floatingCombatTextCombatHealing",
 	"floatingCombatTextCombatHealing_v2",
 	"floatingCombatTextCombatHealingAbsorbSelf",
@@ -893,8 +891,49 @@ function Core:SuppressBlizzardFCT()
     if st then st.worldTextMinimized = true end
 end
 
-function Core:RestoreBlizzardFCT()
+-- Reset one CVar to the client's own default (GetCVarDefault), falling
+-- back to a supplied value on clients that cannot report one.
+local function setCVarDefaultOr(cvar, fallback)
+	local v = nil
+	if type(GetCVarDefault) == "function" then
+		local ok, d = pcall(GetCVarDefault, cvar)
+		if ok and type(d) == "string" and d ~= "" then v = d end
+	end
+	trySetCVar(cvar, v or fallback)
+end
+
+-- No-backup full revert: every CVar this addon touches goes back to the
+-- client's reported default (or a sane fallback). Used for explicit
+-- restores (panic button, /zsbt restorefct, uninstall preparation) when
+-- the snapshot was lost — reinstalls, cleared SavedVariables, crashes.
+local function revertFCTToDefaults()
+	for _, cvar in ipairs(BLIZZARD_FCT_CVARS) do
+		setCVarDefaultOr(cvar, "1")
+	end
+	for _, cvar in ipairs(BLIZZARD_WORLDTEXT_SCALE_CVARS) do
+		setCVarDefaultOr(cvar, "1")
+	end
+	for _, cvar in ipairs(BLIZZARD_WORLDTEXT_Y_CVARS) do
+		setCVarDefaultOr(cvar, "0.5")
+	end
+	-- UNIT_COMBAT gates we force on — defaults are 1 everywhere known.
+	trySetCVar("CombatDamage", "1")
+	trySetCVar("CombatHealing", "1")
+end
+
+function Core:RestoreBlizzardFCT(force)
     setXPGainChatFilter(false)
+
+    -- Passive restores (config transitions, zone/regen re-apply) must not
+    -- write CVars when ZSBT never suppressed: the user's own FCT settings
+    -- are not ours to stomp. Explicit calls (panic button, slash command,
+    -- restore prompt) pass force=true and always revert.
+    local st = getFCTStateTable()
+    if force ~= true and st
+        and st.suppressedByZSBT ~= true and st.hasBackup ~= true then
+        return false
+    end
+
     if restoreBlizzardFCTFromBackup() then
         restoreCombatTextFrames()
         restoreCombatTextAddFns()
@@ -902,15 +941,9 @@ function Core:RestoreBlizzardFCT()
         return true
     end
 
-	-- Fallback: explicitly re-enable the most important Blizzard FCT CVars.
-	-- This is used when the user clicks the restore button or sets suppression to None,
-	-- but no snapshot exists (nolib installs, prior restores, or other edge cases).
-	trySetCVar("enableFloatingCombatText", "1")
-	trySetCVar("floatingCombatTextCombatDamage", "1")
-	trySetCVar("floatingCombatTextCombatHealing", "1")
-	trySetCVar("floatingCombatTextCombatDamage_v2", "1")
-	trySetCVar("floatingCombatTextCombatHealing_v2", "1")
-	trySetCVar("floatingCombatTextReactives_v2", "1")
+	-- Fallback: no snapshot exists — revert everything we touch to client
+	-- defaults, including the WorldText scale/Y inflation used to hide XP.
+	revertFCTToDefaults()
 
 	restoreCombatTextFrames()
 	restoreCombatTextAddFns()
@@ -926,7 +959,10 @@ end
 
 function Core:MaybePromptRestoreBlizzardFCT()
     if not ZSBT.db or not ZSBT.db.profile or not ZSBT.db.profile.general then return end
-    if ZSBT.db.profile.general.suppressBlizzardFCT == true then return end
+    local g = ZSBT.db.profile.general
+    -- No prompt while the user has suppression configured on: suppressed
+    -- CVars are the expected state there, not leftovers to restore.
+    if g.hideBlizzardFCT == true or g.suppressBlizzardFCT == true then return end
 
     local st = getFCTStateTable()
     if not st or st.promptShown == true then return end
@@ -942,7 +978,7 @@ function Core:MaybePromptRestoreBlizzardFCT()
         whileDead = true,
         hideOnEscape = true,
         OnAccept = function()
-            Core:RestoreBlizzardFCT()
+            Core:RestoreBlizzardFCT(true)
         end,
         OnCancel = function()
         end,
@@ -1015,6 +1051,33 @@ function Core:ApplyBlizzardFCTCVars()
 
 	trySetCVarGroup(BLIZZARD_FCT_OUTGOING_CVARS, hideOutgoing and "0" or "1")
 	trySetCVarGroup(BLIZZARD_FCT_INCOMING_CVARS, hideInHeal and "0" or "1")
+	-- CVars outside every category group (CombatState, FloatMode,
+	-- FriendlyHealers): a full suppress must take them down like the rest,
+	-- and a partial config should put back what a previous suppress
+	-- zeroed — otherwise they stay stuck at 0 until a full restore.
+	if not self._fctGroupedSet then
+		local grouped = { enableCombatText = true, enableFloatingCombatText = true }
+		for _, grp in ipairs({
+			BLIZZARD_FCT_OUTGOING_CVARS, BLIZZARD_FCT_INCOMING_CVARS,
+			BLIZZARD_FCT_INCOMING_DAMAGE_CVARS, BLIZZARD_FCT_REACTIVES_CVARS,
+			BLIZZARD_FCT_XP_REP_HONOR_CVARS, BLIZZARD_FCT_RESOURCE_GAINS_CVARS,
+			BLIZZARD_FCT_PET_CVARS,
+		}) do
+			for _, c in ipairs(grp) do grouped[c] = true end
+		end
+		self._fctGroupedSet = grouped
+	end
+	local orphanSt = getFCTStateTable()
+	for _, cvar in ipairs(BLIZZARD_FCT_CVARS) do
+		if not self._fctGroupedSet[cvar] then
+			if hideAll then
+				trySetCVar(cvar, "0")
+			else
+				local bval = orphanSt and orphanSt.backup and orphanSt.backup[cvar]
+				if bval ~= nil then trySetCVar(cvar, bval) end
+			end
+		end
+	end
 	trySetCVarGroup(BLIZZARD_FCT_INCOMING_DAMAGE_CVARS, hideInDmg and "0" or "1")
 	trySetCVarGroup(BLIZZARD_FCT_REACTIVES_CVARS, hideReact and "0" or "1")
 	trySetCVarGroup(BLIZZARD_FCT_XP_REP_HONOR_CVARS, hideXP and "0" or "1")
