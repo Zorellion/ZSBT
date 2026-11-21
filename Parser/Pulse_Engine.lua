@@ -529,9 +529,10 @@ function Engine:_flushPetMerge(t)
 	end
 
 	local area = pm.area or petConf.scrollArea or "Outgoing"
+	local petCrit = petConf and petConf.critDamage
 	local color
 	local baseCol = petConf and petConf.outgoingDamageColor
-	local critCol = petConf and petConf.outgoingCritColor
+	local critCol = (petCrit and petCrit.color) or (petConf and petConf.outgoingCritColor)
 	if pm.isCrit and type(critCol) == "table" then
 		color = { r = critCol.r or 1, g = critCol.g or 1, b = critCol.b or 0 }
 	elseif (not pm.isCrit) and type(baseCol) == "table" then
@@ -557,6 +558,23 @@ function Engine:_flushPetMerge(t)
 			meta.iconSide = (prof and prof.outgoing and prof.outgoing.iconSide) or "left"
 			local tex = ZSBT.CleanSpellIcon and ZSBT.CleanSpellIcon(pm.sidSeen)
 			if tex then meta.spellIcon = tex end
+		end
+	end
+	-- Pet crit styling: sticky flags mirror the player crit path; optional
+	-- routing sends pet crits to their own scroll area.
+	if pm.isCrit == true and type(petCrit) == "table" then
+		if petCrit.sticky ~= false then
+			meta.stickyCrit = true
+			meta.stickyJiggle = (petCrit.stickyJiggle ~= false)
+			meta.stickyScale = 1.12
+			meta.stickyDurationMult = 1.25
+		end
+		local prof = ZSBT.db and ZSBT.db.profile
+		local forceInline = prof and prof.general and prof.general.forceCritsInline == true
+		if (not forceInline) and petCrit.enabled == true
+			and type(petCrit.scrollArea) == "string" and petCrit.scrollArea ~= "" then
+			area = petCrit.scrollArea
+			meta.critRouted = true
 		end
 	end
 	if ZSBT._auditTrace == true and pm.traceIds and #pm.traceIds > 0 then
@@ -1501,8 +1519,9 @@ function Engine:flushBucket()
 							end
 						end
 						local color
+						local petCrit = petConf and petConf.critDamage
 						local baseCol = petConf and petConf.outgoingDamageColor
-						local critCol = petConf and petConf.outgoingCritColor
+						local critCol = (petCrit and petCrit.color) or (petConf and petConf.outgoingCritColor)
 						-- School colors apply to pet damage too — Fel
 						-- Firebolt should burn orange, Dreadbite shadow
 						-- purple. Physical stays neutral. Pet crit color
@@ -1534,6 +1553,22 @@ function Engine:flushBucket()
 								meta.iconSide = (prof.outgoing and prof.outgoing.iconSide) or "left"
 								local tex = ZSBT.CleanSpellIcon and ZSBT.CleanSpellIcon(petSid)
 								if tex then meta.spellIcon = tex end
+							end
+						end
+						-- Pet crit styling: sticky flags mirror the player crit
+						-- path; optional routing sends pet crits to their own area.
+						if sample.isCrit == true and type(petCrit) == "table" then
+							if petCrit.sticky ~= false then
+								meta.stickyCrit = true
+								meta.stickyJiggle = (petCrit.stickyJiggle ~= false)
+								meta.stickyScale = 1.12
+								meta.stickyDurationMult = 1.25
+							end
+							local forceInline = prof.general and prof.general.forceCritsInline == true
+							if (not forceInline) and petCrit.enabled == true
+								and type(petCrit.scrollArea) == "string" and petCrit.scrollArea ~= "" then
+								area = petCrit.scrollArea
+								meta.critRouted = true
 							end
 						end
 						if ZSBT.Core and ZSBT.Core.Display and ZSBT.Core.Display.Emit then

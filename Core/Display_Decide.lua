@@ -131,6 +131,14 @@ local function ResolveCritFont(meta)
                 critConf = oc
             end
         end
+    elseif meta and meta.kind == "pet" then
+        -- Outgoing pet crits carry no stream — their override lives at
+        -- pets.critDamage.critFont (Crits > Outgoing Pet Crits).
+        local pc = profile.pets and profile.pets.critDamage
+        local cf = pc and pc.critFont
+        if type(cf) == "table" and cf.enabled == true then
+            critConf = cf
+        end
     end
     local general = profile.general.font or {}
 
