@@ -1001,9 +1001,20 @@ function ZB:AuditDamageEvent(eventType, payload)
     else
         amtStr = "secret"
     end
-    ZB:Audit(("AUD ht=%.3f %s sid=%s name=%s school=%s crit=%s amt=%s src=%s tgt=%s pid=%s tid=%s"):format(
+    -- Binding identity for learner evidence: which attribution source owns
+    -- this claim. dot:/cast: split on the periodic flag; pet and generic
+    -- get their own lanes so fidelity is scored per binding, not per spell.
+    local bind = "generic"
+    if src == "pet" then
+        bind = "pet:" .. audSafe(sid)
+    elseif src == "auto" then
+        bind = "auto"
+    elseif sid ~= nil then
+        bind = (p.isPeriodic == true) and ("dot:" .. audSafe(sid)) or ("cast:" .. audSafe(sid))
+    end
+    ZB:Audit(("AUD ht=%.3f %s sid=%s name=%s school=%s crit=%s amt=%s src=%s bind=%s tgt=%s pid=%s tid=%s"):format(
         tonumber(p.timestamp) or 0, eventType, audSafe(sid), audSafe(name),
-        audSafe(p.schoolMask), tostring(p.isCrit == true), amtStr, src,
+        audSafe(p.schoolMask), tostring(p.isCrit == true), amtStr, src, bind,
         audSafe(p.targetName), audSafe(p.rawPipeId), audSafe(p.traceId)))
 end
 
