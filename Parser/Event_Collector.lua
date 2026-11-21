@@ -1758,9 +1758,17 @@ local function sigPersist(self, trig, proc, e)
 	local prof = ZSBT.db and ZSBT.db.profile
 	if type(prof) ~= "table" then return end
 	prof.learnedProcLinks = prof.learnedProcLinks or {}
+	-- Persist the WHOLE trigger bucket: unclaimed edges' window counts
+	-- are still fire-rate evidence — losing them to reload would
+	-- undercount opportunities for procs that simply never fired.
+	local b = sigBindings(self)
+	local src = b[trig]
+	if not src then return end
 	local t = prof.learnedProcLinks[trig]
 	if not t then t = {} prof.learnedProcLinks[trig] = t end
-	t[proc] = { n = e.n, w = e.w, rel = e.rel, schools = e.schools }
+	for p, ent in pairs(src) do
+		t[p] = { n = ent.n, w = ent.w, rel = ent.rel, schools = ent.schools }
+	end
 end
 
 local function sigExpire(self, tNow)
