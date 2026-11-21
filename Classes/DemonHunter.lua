@@ -101,6 +101,8 @@ mod.castBudget = {
 	[473728]  = 12, -- Void Ray (fallback; the channel usually catches it)
 	[1245483] = 4,  -- Pierce the Veil
 	[1250088] = 4,  -- Midnight
+	[1217605] = 8,  -- Void Metamorphosis (confirmed damage sid; leap AoE)
+	[471306] = 8,   -- Void Metamorphosis (talent-granted sid, same name)
 }
 
 -- Provable damage schools: 1 physical (melee, Blade Dance, glaives),
