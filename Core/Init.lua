@@ -2302,7 +2302,7 @@ function Addon:HandleSlashCommand(input)
         return
     elseif cmd == "restorefct" then
         if ZSBT.Core and ZSBT.Core.RestoreBlizzardFCT then
-            ZSBT.Core:RestoreBlizzardFCT()
+            ZSBT.Core:RestoreBlizzardFCT(true)
             self:Print(L["Restored Blizzard Floating Combat Text settings."])
         end
         return

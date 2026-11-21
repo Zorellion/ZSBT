@@ -1668,7 +1668,7 @@ function ZSBT.BuildTab_QuickStart()
 					return mode == "none"
 				end,
 				func = function()
-					local c = core(); if c and c.RestoreBlizzardFCT then c:RestoreBlizzardFCT() end
+					local c = core(); if c and c.RestoreBlizzardFCT then c:RestoreBlizzardFCT(true) end
 				end,
 			},
 
@@ -2306,7 +2306,7 @@ function ZSBT.BuildTab_General()
 				end,
 				func = function()
 					if ZSBT.Core and ZSBT.Core.RestoreBlizzardFCT then
-						ZSBT.Core:RestoreBlizzardFCT()
+						ZSBT.Core:RestoreBlizzardFCT(true)
 						LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 					end
 				end,
