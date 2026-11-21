@@ -6,7 +6,7 @@ You are an expert World of Warcraft addon developer specializing in the modern R
 - **Garbage Collection (GC) Mitigation**: Prioritize table recycling pools (`Wipe` / object pooling) for high-frequency events (`COMBAT_LOG_EVENT_UNFILTERED`).
 - **Secure Frames**: Ensure all UI frame rendering adheres to modern anchoring and secure frame templates. Do not trigger interface taints during combat lockdown.
 
-## ZCT combat core transplant (in progress, unreleased)
+## Combat core restructure (verified in-game; transplant framing superseded — the pipeline was rebuilt inside ZSBT directly, ZCT was not kept as a separate transplant)
 
 The combat attribution/display-detection core is being replaced by a transplant of **Zore's Combat Text (ZCT)**, namespaced under `ZSBT.ZCT` (`ZCT/Core/*.lua`, TOC lines ~61-77). ZCT's own `Display/`, `UI/`, `FCT`, `Notify`, `Interrupts`, `Loot`, `Auras`, `Minimap`, `ResourceCounter` modules were deliberately NOT ported — ZSBT keeps its own display/rules/fonts/animations.
 
@@ -20,7 +20,7 @@ Persistence: ZCT settings live at `ZSBTDB.ZCT` (bound in `ZCT/Core/Init.lua` OnL
 
 Legacy attribution toggles REMOVED (ZCT Context/groupPolicy/contention handles strictness automatically): the Dungeon/Raid, PvP, and Open-World tuning sections were cut from `UI/ConfigTabs.lua`, the Instance/Open World/PvP dropdowns were cut from `UI/QuickControlBar.lua` (bar is now label+Unlock only), the `IsPvPStrictActive` auto-suppression was removed from `Parser/Outgoing_Detect.lua`, and the damage-meter combat-text fallback polls were disabled in `Parser/Pulse_Engine.lua` (`shouldPollDamageMeter*` return false — they emitted unattributed numbers). Saved db keys remain but have no UI and no live consumers outside dead code paths.
 
-NOT yet verified in-game. Stage 3 (optional): delete dead combat paths inside `Event_Collector.lua`/`Pulse_Engine.lua` and the now-dead Core gating helpers once the bridge proves out.
+Verified in-game on Retail and Forever (era) solo combat via `/zsbt arep` + `/zsbt auditreport`. Remaining untested surface: instanced group content (raid) — contention/strictness paths only exercise there. Stage 3 (optional): delete dead combat paths inside `Event_Collector.lua`/`Pulse_Engine.lua` and the now-dead Core gating helpers once the bridge proves out.
 
 ## Development & Release Workflow
 
