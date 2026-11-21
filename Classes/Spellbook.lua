@@ -29,6 +29,8 @@ ZSBT.Spellbook = Spellbook
 
 Spellbook._entries = {}   -- [spellId] = { name, role, duration, tickMin, masks = {m1,...} }
 Spellbook._byName = {}    -- [name] = spellId
+Spellbook._pairs = {}     -- [talentSid] = bookSid — same-name empowerment twins
+Spellbook._links = {}     -- [triggerSid] = { [procSid] = "strong"|"mention" }
 Spellbook._masks = {}     -- [mask] = true  (union over all book spells)
 Spellbook._petEntries = {}-- [spellId] = { name }
 Spellbook._scanned = false
@@ -403,7 +405,7 @@ local function enumTalentSpells(sink, have)
 	if not (okC and type(cInfo) == "table" and type(cInfo.treeIDs) == "table") then
 		return bail("cinfo")
 	end
-	local tset = {}
+	local tset, subMap = {}, {}
 	for _, treeID in ipairs(cInfo.treeIDs) do
 		dbg.trees = dbg.trees + 1
 		local okT, nodeIDs = pcall(C_Traits.GetTreeNodes, treeID)
@@ -422,6 +424,13 @@ local function enumTalentSpells(sink, have)
 					and (tonumber(nInfo.currentRank) or 0) > 0
 					and type(entryID) == "number" then
 					dbg.entry = dbg.entry + 1
+					-- Hero-talent provenance: nodes living in a hero
+					-- subtree carry subTreeID. Count hits so the dump
+					-- shows whether the client exposes the field.
+					local sub = tonumber(nInfo.subTreeID)
+					if type(sub) == "number" then
+						dbg.sub = (dbg.sub or 0) + 1
+					end
 					local okE, eInfo = pcall(C_Traits.GetEntryInfo,
 						configID, entryID)
 					local defID = okE and type(eInfo) == "table" and eInfo.definitionID or nil
@@ -439,6 +448,9 @@ local function enumTalentSpells(sink, have)
 						-- not the book already has it. Also the pick-list
 						-- a future teach UI would want.
 						tset[sid] = true
+						if type(sub) == "number" then
+							subMap[sid] = sub
+						end
 					end
 					if type(sid) == "number" and sid > 0 and not have[sid] then
 						have[sid] = true
@@ -474,7 +486,7 @@ local function enumTalentSpells(sink, have)
 			end
 		end
 	end
-	return tset, dbg
+	return tset, dbg, subMap
 end
 
 function Spellbook:Scan()
@@ -483,16 +495,19 @@ function Spellbook:Scan()
 	enumBank(Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player, raw)
 	local have = {}
 	for _, e in ipairs(raw) do have[e.sid] = true end
-	local tset, tdbg = enumTalentSpells(raw, have)
+	local tset, tdbg, subMap = enumTalentSpells(raw, have)
 	self._talents = tset
 	self._talentDbg = tdbg
+	self._subMap = subMap or {}
 	local petRaw = {}
 	enumBank(Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Pet, petRaw)
 
 	local entries, byName, masks, petEntries = {}, {}, {}, {}
+	local descs = {}
 	for _, e in ipairs(raw) do
 		local rec = { sid = e.sid, name = e.name, role = "cast",
-			talent = e.talent or (tset and tset[e.sid]) or nil }
+			talent = e.talent or (tset and tset[e.sid]) or nil,
+			subTree = subMap and subMap[e.sid] or nil }
 		-- Node override text wins when present; else the spell's own
 		-- description. Name isn't required — sid-keyed records still
 		-- feed the school gate either way.
@@ -501,7 +516,9 @@ function Spellbook:Scan()
 			local ok, d2 = pcall(C_Spell.GetSpellDescription, e.sid)
 			if ok and type(d2) == "string" then desc = d2 end
 		end
-		if type(desc) == "string" then
+		if type(desc) == "string"
+			and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(desc)) then
+			descs[e.sid] = desc
 			local parsed = Spellbook.ParseDesc(desc, e.sid)
 			if parsed then
 				rec.role = parsed.role
@@ -527,10 +544,70 @@ function Spellbook:Scan()
 		end
 	end
 
+	-- Correlation layer ----------------------------------------------
+	-- Pairs: a talent-granted sid that shares a name with a base-book
+	-- sid (Void Metamorphosis 471306 vs 1217605) is that spell's
+	-- empowerment twin — a cast on either opens the same window.
+	local pairs_ = {}
+	for sid in pairs(tset or {}) do
+		local rec = entries[sid]
+		if rec and rec.name then
+			local other = byName[rec.name]
+			if type(other) == "number" and other ~= sid then
+				pairs_[sid] = other
+			end
+		end
+	end
+	-- Links: descriptions referencing other known spells by name are
+	-- trigger/modifier edges — "your Reap has a chance to", "dealing
+	-- damage with Voidblade", "when you cast X". Longest names first so
+	-- "Void Metamorphosis" wins over a bare "Void"-prefixed name.
+	local names = {}
+	for name, sid in pairs(byName) do
+		if type(name) == "string" and #name >= 4 then
+			names[#names + 1] = { name = name, sid = sid }
+		end
+	end
+	table.sort(names, function(a, b) return #a.name > #b.name end)
+	local TRIGGER_CTX = {
+		"cast", "dealing damage", "damage with", "when ", "after ",
+		"hits", "using ", "strikes", "consumes", "your ",
+	}
+	local links = {}
+	for sid, desc in pairs(descs) do
+		local selfName = entries[sid] and entries[sid].name or nil
+		for _, n in ipairs(names) do
+			if n.sid ~= sid and n.name ~= selfName then
+				local pos = desc:find(n.name, 1, true)
+				while pos do
+					local before = pos > 1 and desc:sub(pos - 1, pos - 1) or " "
+					local after = desc:sub(pos + #n.name, pos + #n.name)
+					local boundary = not before:match("%a") and not after:match("%a")
+					if boundary then
+						local ctx = desc:sub(math.max(1, pos - 48), pos - 1):lower()
+						local strong = false
+						for _, w in ipairs(TRIGGER_CTX) do
+							if ctx:find(w, 1, true) then strong = true break end
+						end
+						local edge = links[n.sid]
+						if not edge then edge = {} links[n.sid] = edge end
+						if not edge[sid] or strong then
+							edge[sid] = strong and "strong" or "mention"
+						end
+						break
+					end
+					pos = desc:find(n.name, pos + 1, true)
+				end
+			end
+		end
+	end
+
 	self._entries = entries
 	self._byName = byName
 	self._masks = masks
 	self._petEntries = petEntries
+	self._pairs = pairs_
+	self._links = links
 	self._scanned = true
 	self._scanMs = (debugprofilestop and t0 > 0) and (debugprofilestop() - t0) or 0
 end
@@ -566,6 +643,27 @@ function Spellbook:HasPeriodic()
 		if rec.role == "dot" or rec.role == "channel" then return true end
 	end
 	return false
+end
+
+-- Empowerment twin: talent sid sharing a name with a book sid.
+-- Both sids should open the same attribution window.
+function Spellbook:PairOf(spellId)
+	ensureScanned(self)
+	return self._pairs[spellId]
+end
+
+-- Trigger edges: spells named in trigger context inside this spell's
+-- description. Returns { [procSid] = "strong"|"mention" } or nil.
+function Spellbook:LinksFrom(triggerSid)
+	ensureScanned(self)
+	return self._links[triggerSid]
+end
+
+-- Hero-tree membership flag for learner priors (nil = not hero-tree).
+function Spellbook:SubTreeOf(spellId)
+	ensureScanned(self)
+	local rec = self._entries[spellId]
+	return rec and rec.subTree or nil
 end
 
 ---------------------------------------------------------------------------
@@ -632,9 +730,38 @@ function Spellbook:Dump(printFn, showAll)
 		:format(n, talents, dots, chans, (function() local c = 0 for _ in pairs(self._petEntries) do c = c + 1 end return c end)(), self._scanMs or 0))
 	local d = self._talentDbg
 	if d then
-		p(("  talent-dbg: trees=%d nodes=%d ranked=%d entry=%d sid=%d bail=%s")
+		p(("  talent-dbg: trees=%d nodes=%d ranked=%d entry=%d sid=%d sub=%d bail=%s")
 			:format(d.trees or 0, d.nodes or 0, d.ranked or 0,
-				d.entry or 0, d.sid or 0, tostring(d.bail or "")))
+				d.entry or 0, d.sid or 0, d.sub or 0, tostring(d.bail or "")))
+	end
+	local np = 0 for _ in pairs(self._pairs or {}) do np = np + 1 end
+	local nl = 0 for _, t in pairs(self._links or {}) do for _ in pairs(t) do nl = nl + 1 end end
+	p(("  correlations: %d pairs, %d trigger links"):format(np, nl))
+	if showAll then
+		for sid, other in pairs(self._pairs or {}) do
+			local a = self._entries[sid]
+			p(("  pair: %s (%d) -> %s (%d)"):format(
+				a and a.name or "?", sid,
+				(self._entries[other] and self._entries[other].name) or "?", other))
+		end
+		for trig, edge in pairs(self._links or {}) do
+			local tn = self._entries[trig] and self._entries[trig].name or tostring(trig)
+			local parts = {}
+			for proc, str in pairs(edge) do
+				local pn = self._entries[proc] and self._entries[proc].name or tostring(proc)
+				parts[#parts + 1] = pn .. (str == "strong" and "!" or "")
+			end
+			table.sort(parts)
+			p(("  link: %s -> %s"):format(tn, table.concat(parts, ", ")))
+		end
+		local subRecs = {}
+		for sid, rec in pairs(self._entries) do
+			if rec.subTree then subRecs[#subRecs + 1] = (rec.name or sid) .. "(" .. sid .. ")" end
+		end
+		if #subRecs > 0 then
+			table.sort(subRecs)
+			p("  hero-tree: " .. table.concat(subRecs, ", "))
+		end
 	end
 	local masks = {}
 	for m in pairs(self._masks) do masks[#masks + 1] = m end
