@@ -1992,7 +1992,11 @@ function Addon:HandleAuditReport()
 					local pid = rest:match(" tid=(%S+)$") or rest:match(" pid=(%S+)$")
 					local sid = rest:match(" sid=(%S+)")
 					if pid and pid ~= "nil" then
-						emits[#emits + 1] = { ts = lts, pid = pid, sid = sid }
+						emits[#emits + 1] = {
+							ts = lts, pid = pid, sid = sid,
+							bind = rest:match(" bind=(%S+)"),
+							school = rest:match(" school=(%S+)"),
+						}
 					end
 				elseif rest:match("^AUDRNDR") then
 					renders[#renders + 1] = {
@@ -2051,14 +2055,18 @@ function Addon:HandleAuditReport()
 		local esid, rsid = e.sid or "nil", render.sid or "nil"
 		if esid == rsid then
 			sidMatch = sidMatch + 1
+			e.outcome = "ok"
 		elseif rsid == "nil" then
 			sidLost = sidLost + 1
+			e.outcome = "lost"
 			anomalies[#anomalies + 1] = ("  %.3f %s emit pid=%s sid=%s -> render sid=nil (identity lost en route)")
 				:format(render.ts, label, tostring(tid), tostring(esid))
 		elseif esid == "nil" then
 			sidResolved = sidResolved + 1
+			e.outcome = "late"
 		else
 			sidChanged = sidChanged + 1
+			e.outcome = "changed"
 			anomalies[#anomalies + 1] = ("  %.3f %s emit pid=%s sid=%s -> render sid=%s (WRONG ICON)")
 				:format(render.ts, label, tostring(tid), tostring(esid), tostring(rsid))
 		end
@@ -2090,6 +2098,48 @@ function Addon:HandleAuditReport()
 		if not pairedEmit[e] then unrendered = unrendered + 1 end
 	end
 
+	-- Learner evidence: fold this session's emit outcomes into persisted
+	-- per-binding counters (same ratchet pattern as learnedSpellSchools —
+	-- accumulates across fights and /reload). "ok" means the rendered line
+	-- carried the binding's identity; lost/changed/late count the ways a
+	-- claim can fail downstream; unrendered = claimed but never displayed.
+	-- Generics also aggregate by school for discovery — a recurring
+	-- generic:<school> burst is a binding the learner should have made.
+	local prof = ZSBT.db and ZSBT.db.profile
+	local evd = nil
+	if type(prof) == "table" then
+		prof.learnerEvidence = prof.learnerEvidence or {}
+		evd = prof.learnerEvidence
+	end
+	if evd then
+		for _, e in ipairs(emits) do
+			local keys = {}
+			local k = e.bind
+			if type(k) == "string" and k ~= "" and k ~= "nil" then
+				keys[#keys + 1] = k
+			else
+				keys[1] = "generic"
+			end
+			if keys[1] == "generic" and type(e.school) == "string"
+				and e.school ~= "nil" then
+				keys[#keys + 1] = "generic:" .. e.school
+			end
+			for _, key in ipairs(keys) do
+				local rec = evd[key]
+				if type(rec) ~= "table" then
+					rec = { n = 0, ok = 0, lost = 0, changed = 0, late = 0, unrendered = 0 }
+					evd[key] = rec
+				end
+				rec.n = rec.n + 1
+				if e.outcome == "ok" then rec.ok = rec.ok + 1
+				elseif e.outcome == "lost" then rec.lost = rec.lost + 1
+				elseif e.outcome == "changed" then rec.changed = rec.changed + 1
+				elseif e.outcome == "late" then rec.late = rec.late + 1
+				else rec.unrendered = rec.unrendered + 1 end
+			end
+		end
+	end
+
 	-- Persist alongside the ring so the report survives /reload for
 	-- post-fight review (same pattern as auditLog itself).
 	local out = {}
@@ -2107,6 +2157,23 @@ function Addon:HandleAuditReport()
 		:format(mergeContrib, unrendered))
 	if secretSkipped > 0 then
 		say(("  skipped %d secret ring entries (unmatchable under taint)"):format(secretSkipped))
+	end
+	if evd then
+		local ranked = {}
+		for key, rec in pairs(evd) do
+			if type(rec) == "table" and type(rec.n) == "number" and rec.n > 0 then
+				ranked[#ranked + 1] = { key = key, rec = rec }
+			end
+		end
+		table.sort(ranked, function(a, b) return a.rec.n > b.rec.n end)
+		if #ranked > 0 then
+			say("  learner evidence (lifetime):")
+			for i = 1, math.min(#ranked, 10) do
+				local r = ranked[i]
+				say(("    %s claims=%d ok=%d lost=%d changed=%d late=%d unrendered=%d")
+					:format(r.key, r.rec.n, r.rec.ok, r.rec.lost, r.rec.changed, r.rec.late, r.rec.unrendered))
+			end
+		end
 	end
 	if #anomalies > 0 then
 		say("  anomalies:")
