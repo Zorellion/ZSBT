@@ -797,8 +797,13 @@ end
 local dumpFrame
 function Spellbook:DumpWindow()
 	if not dumpFrame then
-		local f = CreateFrame("Frame", "ZSBT_SpellbookDump",
-			UIParent, "BackdropTemplateMixin and BackdropTemplate")
+		local f = CreateFrame("Frame", "ZSBT_SpellbookDump", UIParent)
+		-- BackdropTemplate's virtual inherit is gone on new clients;
+		-- apply the mixin when the global survives, else fall back to
+		-- a plain color-texture background.
+		if type(BackdropTemplateMixin) == "table" and type(Mixin) == "function" then
+			Mixin(f, BackdropTemplateMixin)
+		end
 		f:SetSize(780, 560)
 		f:SetPoint("CENTER")
 		f:SetFrameStrata("DIALOG")
@@ -807,14 +812,20 @@ function Spellbook:DumpWindow()
 		f:RegisterForDrag("LeftButton")
 		f:SetScript("OnDragStart", f.StartMoving)
 		f:SetScript("OnDragStop", f.StopMovingOrSizing)
-		f:SetBackdrop({
-			bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-			edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-			edgeSize = 14,
-			insets = { left = 3, right = 3, top = 3, bottom = 3 },
-		})
-		f:SetBackdropColor(0.05, 0.05, 0.08, 0.95)
-		f:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+		if type(f.SetBackdrop) == "function" then
+			f:SetBackdrop({
+				bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+				edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+				edgeSize = 14,
+				insets = { left = 3, right = 3, top = 3, bottom = 3 },
+			})
+			f:SetBackdropColor(0.05, 0.05, 0.08, 0.95)
+			f:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+		else
+			local bg = f:CreateTexture(nil, "BACKGROUND")
+			bg:SetAllPoints()
+			bg:SetColorTexture(0.05, 0.05, 0.08, 0.95)
+		end
 		if type(UISpecialFrames) == "table" then
 			UISpecialFrames[#UISpecialFrames + 1] = "ZSBT_SpellbookDump"
 		end
