@@ -7477,8 +7477,8 @@ function ZSBT.BuildTab_Outgoing()
             },
             showEmpowerIcons = {
                 type  = "toggle",
-                name  = L["Show Empowering Proc Icon"],
-                desc  = L["When a talent or proc empowered the cast that dealt this damage (e.g. Secrets of the Coven on Shadow Bolt), show both icons: the original spell, then the empowerer. Off shows only the original spell's icon. Proc tracking and learned data are unaffected."],
+                name  = L["Show Empowering Proc Icon (experimental)"],
+                desc  = L["When a talent or proc empowered the cast that dealt this damage (e.g. Secrets of the Coven on Shadow Bolt), show both icons: the original spell, then the empowerer. Off shows only the original spell's icon. Requires the client to prove the proc is active, so it may never appear on secret-value builds. Proc tracking and learned data are unaffected."],
                 width = "full",
                 order = 3.49,
                 disabled = function() return ZSBT.db.profile.outgoing.showSpellIcons ~= true end,
