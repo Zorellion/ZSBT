@@ -5719,7 +5719,7 @@ ZSBT._BUCKET_ORDER = {
 	},
 	petOutgoingDamage = {
 		"enabled", "scrollArea", "casterMode", "aggregation",
-		"minThreshold", "mergeWindowSec", "showCount",
+		"minThreshold", "showSpellIcons", "mergeWindowSec", "showCount",
 		"outgoingDamageColor", "outgoingCritColor",
 	},
 }
@@ -5735,6 +5735,7 @@ end
 local PET_BUCKET_KEYS = {
 	outgoing = {
 		enabled=1, casterMode=1, scrollArea=1, aggregation=1, minThreshold=1,
+		showSpellIcons=1,
 		outgoingDamageColor=1, outgoingCritColor=1, mergeWindowSec=1,
 		showCount=1,
 	},
@@ -8914,6 +8915,15 @@ function ZSBT.BuildTab_Pets()
                 step    = 50,
                 get     = function() return ZSBT.db.profile.pets.minThreshold end,
                 set     = function(_, val) ZSBT.db.profile.pets.minThreshold = val end,
+            },
+            showSpellIcons = {
+                type  = "toggle",
+                name  = L["Show Pet Spell Icons (may be inaccurate)"],
+                desc  = L["Display the pet spell's icon next to pet damage (e.g. the imp's Firebolt icon). Attribution on modern WoW can be uncertain, so icons may be wrong. Merged lines show an icon only when all contributors share the same spell."],
+                width = "full",
+                order = 5.1,
+                get   = function() return ZSBT.db.profile.pets.showSpellIcons end,
+                set   = function(_, val) ZSBT.db.profile.pets.showSpellIcons = val end,
             },
 			outgoingDamageColor = {
 				type  = "color",

@@ -493,6 +493,8 @@ local function resetPetMerge(self)
 	pm.area = nil
 	pm.isCrit = false
 	pm.school = nil
+	pm.sidSeen = nil
+	pm.mixedSid = nil
 	if pm.traceIds then wipe(pm.traceIds) end
 end
 
@@ -545,6 +547,18 @@ function Engine:_flushPetMerge(t)
 		school = pm.school,
 		traceId = pm.traceIds and pm.traceIds[1],
 	}
+	-- All-same-sid merges keep the sid (verifiable identity); opt-in icon
+	-- shows the shared pet spell's texture.
+	if type(pm.sidSeen) == "number"
+		and (not ZSBT.IsSafeNumber or ZSBT.IsSafeNumber(pm.sidSeen)) then
+		meta.spellId = pm.sidSeen
+		if petConf.showSpellIcons == true then
+			local prof = ZSBT.db and ZSBT.db.profile
+			meta.iconSide = (prof and prof.outgoing and prof.outgoing.iconSide) or "left"
+			local tex = ZSBT.CleanSpellIcon and ZSBT.CleanSpellIcon(pm.sidSeen)
+			if tex then meta.spellIcon = tex end
+		end
+	end
 	if ZSBT._auditTrace == true and pm.traceIds and #pm.traceIds > 0 then
 		local zbt = ZSBT.ZBattleText
 		if zbt and zbt.Audit then
@@ -1422,6 +1436,18 @@ function Engine:flushBucket()
 										pm.deadline = now() + mergeWin
 										pm.prefix = prefix
 										pm.aggMode = aggMode
+										-- Shared spell id only when every
+										-- contributor agrees — a mixed merge
+										-- keeps no sid, no icon, no false claim.
+										local psid = sample.petSpellId or sample.spellId
+										if pm.mixedSid ~= true then
+											if pm.sidSeen == nil then
+												pm.sidSeen = psid
+											elseif pm.sidSeen ~= psid then
+												pm.sidSeen = nil
+												pm.mixedSid = true
+											end
+										end
 										local prof = ZSBT.db and ZSBT.db.profile
 										local areaName = petConf.scrollArea or "Outgoing"
 										if prof and prof.scrollAreas and type(areaName) == "string" then
@@ -1496,6 +1522,20 @@ function Engine:flushBucket()
 							end
 						end
 						local meta = { kind = "pet", isCrit = sample.isCrit == true, school = sample.schoolMask, traceId = sample.traceId }
+						-- petSpellId is our own attribution — carrying it lets
+						-- AUDRNDR verify the render instead of counting the
+						-- line unverifiable, and (opt-in) shows the pet's
+						-- spell icon: imp's Firebolt wears its own icon.
+						local petSid = sample.petSpellId or sample.spellId
+						if type(petSid) == "number"
+							and (not ZSBT.IsSafeNumber or ZSBT.IsSafeNumber(petSid)) then
+							meta.spellId = petSid
+							if petConf.showSpellIcons == true then
+								meta.iconSide = (prof.outgoing and prof.outgoing.iconSide) or "left"
+								local tex = ZSBT.CleanSpellIcon and ZSBT.CleanSpellIcon(petSid)
+								if tex then meta.spellIcon = tex end
+							end
+						end
 						if ZSBT.Core and ZSBT.Core.Display and ZSBT.Core.Display.Emit then
 							ZSBT.Core.Display:Emit(area, text, color, meta)
 						elseif ZSBT.DisplayText then
