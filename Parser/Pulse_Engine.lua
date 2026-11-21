@@ -493,6 +493,7 @@ local function resetPetMerge(self)
 	pm.area = nil
 	pm.isCrit = false
 	pm.school = nil
+	if pm.traceIds then wipe(pm.traceIds) end
 end
 
 function Engine:_flushPetMerge(t)
@@ -542,7 +543,15 @@ function Engine:_flushPetMerge(t)
 		kind = "pet",
 		isCrit = pm.isCrit == true,
 		school = pm.school,
+		traceId = pm.traceIds and pm.traceIds[1],
 	}
+	if ZSBT._auditTrace == true and pm.traceIds and #pm.traceIds > 0 then
+		local zbt = ZSBT.ZBattleText
+		if zbt and zbt.Audit then
+			zbt:Audit(("AUDMRG tids=%s sid=%s cnt=%d text=%s")
+				:format(table.concat(pm.traceIds, ","), tostring(nil), #pm.traceIds, tostring(text)))
+		end
+	end
 
 	if ZSBT.Core and ZSBT.Core.Display and ZSBT.Core.Display.Emit then
 		ZSBT.Core.Display:Emit(area, text, color, meta)
@@ -940,6 +949,7 @@ function Engine:flushBucket()
 						amount = sample.amount,
 						amountText = sample.amountText,
 						rawPipeId = sample.rawPipeId,
+						traceId = sample.traceId,
 						spellName = (et == "FALL_DAMAGE") and "Fall" or nil,
 						spellId = nil,
 						targetName = safeUnitName and safeUnitName("player") or nil,
@@ -962,6 +972,7 @@ function Engine:flushBucket()
 					amount = sample.amount,
 					amountText = sample.amountText,
 					rawPipeId = sample.rawPipeId,
+					traceId = sample.traceId,
 					spellName = nil,
 					spellId = nil,
 					targetName = safeUnitName and safeUnitName("player") or nil,
@@ -996,6 +1007,7 @@ function Engine:flushBucket()
 						amount = nil,
 						amountText = tostring(math.floor(amtNum + 0.5)),
 						rawPipeId = sample.rawPipeId,
+						traceId = sample.traceId,
 						spellName = nil,
 						spellId = sample.spellId,
 						targetName = sample.targetName,
@@ -1015,6 +1027,7 @@ function Engine:flushBucket()
 						amount = nil,
 						amountText = sample.amountText,
 						rawPipeId = sample.rawPipeId,
+						traceId = sample.traceId,
 						spellName = nil,
 						spellId = sample.spellId,
 						targetName = sample.targetName,
@@ -1048,6 +1061,7 @@ function Engine:flushBucket()
 					amount = nil,
 					amountText = nil,
 					rawPipeId = sample.rawPipeId,
+					traceId = sample.traceId,
 					spellName = "Environmental",
 					spellId = nil,
 					targetName = sample.targetName,
@@ -1195,6 +1209,7 @@ function Engine:flushBucket()
 					amount = sample.amount,
 					amountText = sample.amountText,
 					rawPipeId = sample.rawPipeId,
+					traceId = sample.traceId,
 					spellName = nil,
 					spellId = sample.spellId,
 					dbgChatId = sample.dbgChatId,
@@ -1216,6 +1231,7 @@ function Engine:flushBucket()
 					amount = nil,
 					amountText = nil,
 					rawPipeId = sample.rawPipeId,
+					traceId = sample.traceId,
 					spellName = nil,
 					spellId = sample.spellId,
 					amountSource = sample.amountSource,
@@ -1234,6 +1250,7 @@ function Engine:flushBucket()
 					missType = sample.amountText,
 					amountText = sample.amountText,
 					rawPipeId = sample.rawPipeId,
+					traceId = sample.traceId,
 					spellName = nil,
 					spellId = sample.spellId,
 					amountSource = sample.amountSource,
@@ -1279,7 +1296,7 @@ function Engine:flushBucket()
 								else
 									color = _PET_HEAL_COLOR_BASE
 								end
-								local meta = { kind = "pet_heal", isCrit = sample.isCrit == true }
+								local meta = { kind = "pet_heal", isCrit = sample.isCrit == true, traceId = sample.traceId }
 								if ZSBT.Core and ZSBT.Core.Display and ZSBT.Core.Display.Emit then
 									ZSBT.Core.Display:Emit(area, text, color, meta)
 								elseif ZSBT.DisplayText then
@@ -1394,6 +1411,10 @@ function Engine:flushBucket()
 										pm.active = true
 										pm.sum = (pm.sum or 0) + val
 										pm.count = (pm.count or 0) + 1
+										if sample.traceId ~= nil then
+											pm.traceIds = pm.traceIds or {}
+											if #pm.traceIds < 32 then pm.traceIds[#pm.traceIds + 1] = sample.traceId end
+										end
 										pm.deadline = now() + mergeWin
 										pm.prefix = prefix
 										pm.aggMode = aggMode
@@ -1470,7 +1491,7 @@ function Engine:flushBucket()
 								color = _PET_DMG2_COLOR_BASE
 							end
 						end
-						local meta = { kind = "pet", isCrit = sample.isCrit == true, school = sample.schoolMask }
+						local meta = { kind = "pet", isCrit = sample.isCrit == true, school = sample.schoolMask, traceId = sample.traceId }
 						if ZSBT.Core and ZSBT.Core.Display and ZSBT.Core.Display.Emit then
 							ZSBT.Core.Display:Emit(area, text, color, meta)
 						elseif ZSBT.DisplayText then
@@ -1520,7 +1541,7 @@ function Engine:flushBucket()
 							else
 								color = _PET_IN_DMG_COLOR_BASE
 							end
-							local meta = { kind = "pet_in_damage", isCrit = sample.isCrit == true, school = sample.schoolMask }
+							local meta = { kind = "pet_in_damage", isCrit = sample.isCrit == true, school = sample.schoolMask, traceId = sample.traceId }
 							if ZSBT.Core and ZSBT.Core.Display and ZSBT.Core.Display.Emit then
 								ZSBT.Core.Display:Emit(area, text, color, meta)
 							elseif ZSBT.DisplayText then
