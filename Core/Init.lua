@@ -1972,6 +1972,7 @@ function Addon:HandleAuditReport()
 	end
 
 	local emits, renders, merges = {}, {}, {}
+	local rejects = {}
 	local secretSkipped = 0
 	for i = 1, #log do
 		local line = log[i]
@@ -2014,6 +2015,16 @@ function Addon:HandleAuditReport()
 						sid = rest:match(" sid=(%S+)"),
 						cnt = tonumber(rest:match("cnt=(%d+)")) or 0,
 						text = rest:match(" text=(.+)$"),
+					}
+				elseif rest:match("^AUDD reason=") then
+					-- Gate refusals: a binding that keeps trying to claim and
+					-- keeps getting rejected is the dishonesty pressure signal —
+					-- counted per reason + sid so it persists like evidence.
+					rejects[#rejects + 1] = {
+						ts = lts,
+						reason = rest:match("reason=(%S+)"),
+						sid = rest:match("spellId=(%S+)") or rest:match(" sid=(%S+)"),
+						ret = rest:match("ret=(%S+)"),
 					}
 				end
 			end
@@ -2138,6 +2149,23 @@ function Addon:HandleAuditReport()
 				else rec.unrendered = rec.unrendered + 1 end
 			end
 		end
+		-- Honesty pressure: gate refusals keyed by reason+sid live in the
+		-- same table as plain counters (number values, not records) so the
+		-- print layer can distinguish them from binding records.
+		for _, r in ipairs(rejects) do
+			local key
+			if r.reason == "DOTDISAMBIG" then
+				if r.ret == "nil" or r.ret == nil then
+					key = "disambig_forfeit"
+				else
+					key = "disambig_win:" .. tostring(r.ret)
+				end
+			else
+				key = "rej:" .. tostring(r.reason) .. ":" .. tostring(r.sid)
+			end
+			evd[key] = (type(evd[key]) == "number" and evd[key]) or 0
+			evd[key] = evd[key] + 1
+		end
 	end
 
 	-- Persist alongside the ring so the report survives /reload for
@@ -2172,6 +2200,19 @@ function Addon:HandleAuditReport()
 				local r = ranked[i]
 				say(("    %s claims=%d ok=%d lost=%d changed=%d late=%d unrendered=%d")
 					:format(r.key, r.rec.n, r.rec.ok, r.rec.lost, r.rec.changed, r.rec.late, r.rec.unrendered))
+			end
+		end
+		-- Honesty pressure: plain counters (gate refusals, disambig
+		-- forfeits/wins) — a binding's rejection rate over time.
+		local pr = {}
+		for key, v in pairs(evd) do
+			if type(v) == "number" and v > 0 then pr[#pr + 1] = { key = key, n = v } end
+		end
+		table.sort(pr, function(a, b) return a.n > b.n end)
+		if #pr > 0 then
+			say("  honesty pressure (gate refusals + disambig, lifetime):")
+			for i = 1, math.min(#pr, 10) do
+				say(("    %s = %d"):format(pr[i].key, pr[i].n))
 			end
 		end
 	end
