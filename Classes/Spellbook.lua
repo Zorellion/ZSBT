@@ -769,9 +769,11 @@ function Spellbook:Dump(printFn, showAll)
 		if type(binds) == "table" then
 			local rows = {}
 			for trig, t in pairs(binds) do
-				local tn = self._entries[trig] and self._entries[trig].name or tostring(trig)
+				local tk = tonumber(trig) or trig
+				local tn = self._entries[tk] and self._entries[tk].name or tostring(trig)
 				for proc, e in pairs(t) do
-					local pn = self._entries[proc] and self._entries[proc].name or tostring(proc)
+					local pk = tonumber(proc) or proc
+					local pn = self._entries[pk] and self._entries[pk].name or tostring(proc)
 					rows[#rows + 1] = ("  learned: %s -> %s n=%d w=%d rel=%d")
 						:format(tn, pn, e.n or 0, e.w or 0, e.rel or 0)
 				end

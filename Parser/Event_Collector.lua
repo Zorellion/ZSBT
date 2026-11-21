@@ -1571,6 +1571,11 @@ local function expirePendingCasts(self, tNow)
 end
 
 local function enqueuePendingCast(self, spellId, spellName, tNow)
+	-- Some intake paths deliver spellIds as strings ("1226019"); a
+	-- string sid silently misses every == / table-key compare below
+	-- (pending-cast wants, exclusion lists, signature links). Coerce
+	-- at the boundary so the whole pool is number-keyed.
+	spellId = tonumber(spellId) or spellId
 	self._pendingCastNextToken = (self._pendingCastNextToken or 0) + 1
 	local helpful = nil
 	if IsHelpfulSpell then
@@ -1739,6 +1744,8 @@ local function sigBindings(self)
 end
 
 local function sigBindEntry(self, trig, proc)
+	trig = tonumber(trig) or trig
+	proc = tonumber(proc) or proc
 	local b = sigBindings(self)
 	local bt = b[trig]
 	if not bt then bt = {} b[trig] = bt end
@@ -1880,6 +1887,8 @@ end
 
 consumeBestPendingCast = function(self, tNow, wantSpellId, maxWindowSec, doConsume, hitSchool)
 	expirePendingCasts(self, tNow)
+	-- String sids miss every == below; coerce (see enqueuePendingCast).
+	wantSpellId = tonumber(wantSpellId) or wantSpellId
 	local window = maxWindowSec or PENDING_CAST_WINDOW_SEC
 	local bestI, best, bestDt
 	local excl = ZSBT.ClassDB and ZSBT.ClassDB.ExcludedSpellId or nil
