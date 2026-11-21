@@ -264,6 +264,21 @@ local function FlushMergeByKey(key)
         end
     end
 
+    -- Audit: prove which emit(s) actually became this on-screen line.
+    if entry.count > 1 and ZSBT._auditTrace == true then
+        local zbt = ZSBT.ZBattleText
+        if zbt and zbt.Audit then
+            local ids = entry.traceIds
+            local idStr = "?"
+            if type(ids) == "table" and #ids > 0 then
+                idStr = table.concat(ids, ",")
+            end
+            local m = entry.meta
+            local txt = (ZSBT.IsSafeString and ZSBT.IsSafeString(text)) and text or "<secret>"
+            zbt:Audit(("AUDMRG tids=%s sid=%s cnt=%d text=%s")
+                :format(idStr, tostring(m and m.spellId), entry.count, tostring(txt)))
+        end
+    end
     ZSBT.FireTestText(text, entry.area, entry.fontFace, entry.fontSize,
         entry.outlineFlag, entry.fontAlpha, entry.anchorH, entry.dirMult,
         entry.duration, entry.color, entry.meta)
@@ -353,6 +368,11 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
 		if elapsed < window and existing.count < maxMerge then
 			existing.count = existing.count + 1
 			existing.lastUpdate = GetTime()
+			if meta and meta.traceId ~= nil then
+				local ids = existing.traceIds
+				if not ids then ids = {} ; existing.traceIds = ids end
+				if #ids < maxMerge then ids[#ids + 1] = meta.traceId end
+			end
 			if existing.mode == "numeric" and mode == "numeric" and numVal and type(existing.totalAmount) == "number" then
 				existing.totalAmount = existing.totalAmount + numVal
 			else
@@ -376,6 +396,7 @@ local function TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag,
 	mergeBuffer[key] = {
 		areaName = areaName,
 		showCount = showCount,
+		traceIds = (meta and meta.traceId ~= nil) and { meta.traceId } or nil,
 		text = text,
 		mode = mode,
 		totalAmount = (mode == "numeric" and numVal) or nil,
