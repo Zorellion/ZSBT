@@ -756,6 +756,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			isAuto = evt.isAuto == true,
 			isCrit = evt.isCrit == true,
 			school = evt.schoolMask,
+			traceId = evt.rawPipeId,
 		}
 		local forceInline = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general and ZSBT.db.profile.general.forceCritsInline == true
 		if type(resolvedSpellID) == "number" then
@@ -999,6 +1000,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
             kind = kind,
             isCrit = evt.isCrit == true,
             school = evt.schoolMask,
+            traceId = evt.rawPipeId,
         }
 		local forceInline = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general and ZSBT.db.profile.general.forceCritsInline == true
 		if type(resolvedSpellID) == "number" then

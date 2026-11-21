@@ -2531,6 +2531,19 @@ end
 --                      uses ZSBT.COLORS.ACCENT.
 function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
                            fontAlpha, anchorH, dirMult, duration, color, meta)
+	-- Audit: the actual render record — pairs with the emit-side
+	-- "AUD ... pid=N" via meta.traceId so a screen line can be traced
+	-- back to the wound that claimed it (and vice versa).
+	if ZSBT._auditTrace == true then
+		local zbt = ZSBT.ZBattleText
+		if zbt and zbt.Audit then
+			local txt = (ZSBT.IsSafeString and ZSBT.IsSafeString(text)) and text or "<secret>"
+			zbt:Audit(("AUDRNDR tid=%s sid=%s icon=%s stream=%s crit=%s text=%s")
+				:format(tostring(meta and meta.traceId), tostring(meta and meta.spellId),
+					tostring(meta and meta.spellIcon), tostring(meta and meta.stream),
+					tostring(meta and meta.isCrit == true), tostring(txt)))
+		end
+	end
 	local tok = ZSBT.Addon and ZSBT.Addon.PerfBegin and ZSBT.Addon:PerfBegin("UI.FireText")
     -- Validate area data with safe defaults
     local xOff = (type(area.xOffset) == "number") and area.xOffset or 0

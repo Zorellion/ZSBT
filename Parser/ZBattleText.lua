@@ -982,10 +982,10 @@ function ZB:AuditDamageEvent(eventType, payload)
     else
         amtStr = "secret"
     end
-    ZB:Audit(("AUD ht=%.3f %s sid=%s name=%s school=%s crit=%s amt=%s src=%s tgt=%s"):format(
+    ZB:Audit(("AUD ht=%.3f %s sid=%s name=%s school=%s crit=%s amt=%s src=%s tgt=%s pid=%s"):format(
         tonumber(p.timestamp) or 0, eventType, audSafe(sid), audSafe(name),
         audSafe(p.schoolMask), tostring(p.isCrit == true), amtStr, src,
-        audSafe(p.targetName)))
+        audSafe(p.targetName), audSafe(p.rawPipeId)))
 end
 
 -- Returns true when the caller should emit immediately; false when the
