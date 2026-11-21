@@ -1862,15 +1862,19 @@ claimSignature = function(self, tNow, hitSchool)
 		local bn = -1
 		if sigCanLearn() then
 			local e = sigBindEntry(self, bestVia, best)
-			-- School drift: a bound proc suddenly reporting a school it
-			-- never produced = the binding learned the wrong stream.
-			-- Wipe to zero and count the relearn — the edge must re-earn.
+			-- School drift: a bound proc reporting a school that shares NO
+			-- bits with anything it produced before = the binding learned
+			-- the wrong stream. Composite overlap is same-family, not
+			-- drift (Dark Matter ticks 36 and 4 — 4 is inside 36).
 			if type(hitSchool) == "number" then
-				local seen = false
-				for s in pairs(e.schools) do if s == hitSchool then seen = true end end
-				local any = false
-				for _ in pairs(e.schools) do any = true break end
-				if any and not seen then
+				local related, any = false, false
+				for s in pairs(e.schools) do
+					any = true
+					if s == hitSchool or (sigBand and sigBand(s, hitSchool) ~= 0) then
+						related = true
+					end
+				end
+				if any and not related then
 					e.n = 0
 					e.rel = e.rel + 1
 					e.schools = {}

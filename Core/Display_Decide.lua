@@ -241,7 +241,25 @@ local function FlushMergeByKey(key)
             if ZSBT.IsSafeString(text) then
                 text = text .. L[" (x"] .. entry.count .. ")"
             else
-                text = L["Hits (x"] .. entry.count .. ")"
+                -- Prefer the spell name over bare "Hits" — the merge
+                -- key's spellId survives even when the amount is secret.
+                local nm = nil
+                local sid = entry.meta and entry.meta.spellId
+                if type(sid) == "number"
+                    and (not ZSBT.IsSafeNumber or ZSBT.IsSafeNumber(sid))
+                    and C_Spell and C_Spell.GetSpellName then
+                    local ok, n = pcall(C_Spell.GetSpellName, sid)
+                    if ok and type(n) == "string"
+                        and (not ZSBT.IsSafeString or ZSBT.IsSafeString(n))
+                        and n ~= "" then
+                        nm = n
+                    end
+                end
+                if nm then
+                    text = nm .. L[" (x"] .. entry.count .. ")"
+                else
+                    text = L["Hits (x"] .. entry.count .. ")"
+                end
             end
         end
     end
