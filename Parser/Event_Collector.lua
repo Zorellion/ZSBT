@@ -4799,6 +4799,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- moments ago: if the last cast was a non-dot spell within ~1.5s,
 				-- leave attribution to the make-it-work window below.
 				local dotBlockedByRecentCast = false
+				local eraClient = ZSBT.ClassDB and ZSBT.ClassDB.IsForever
+					and ZSBT.ClassDB.IsForever() == true or nil
+				local blockedDotCastId = nil
 				local lastCastAt = self._lastPlayerSpellAt
 				local lastCastId = self._lastPlayerSpellId
 				if type(lastCastAt) == "number" and type(lastCastId) == "number"
@@ -4807,6 +4810,15 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					and not (ZSBT.ClassDB and ZSBT.ClassDB.ExcludedSpellId
 						and ZSBT.ClassDB.ExcludedSpellId(lastCastId)) then
 					dotBlockedByRecentCast = true
+					-- Era: the cast veto is mutual. castSchoolOk exempts player
+					-- casts on Forever (wound schools lie there), so a frequent
+					-- recast like wand Shoot can block a surviving dot pick and
+					-- then take the same wound no-line. When a pick was actually
+					-- vetoed, the blocking cast cannot claim noline either —
+					-- the wound goes generic rather than wearing a wrong name.
+					if eraClient and dotSpellId ~= nil then
+						blockedDotCastId = lastCastId
+					end
 				end
 				local chanPick = isLiveChannelPick(self, t, dotSpellId)
 				if dotSpellId and (not dotBlockedByRecentCast or chanPick) then
@@ -4963,6 +4975,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						if age >= 0 and age <= maxAge and castSchoolOk(self, lastId, school)
 							and not (ZSBT.ClassDB and ZSBT.ClassDB.ExcludedSpellId
 								and ZSBT.ClassDB.ExcludedSpellId(lastId))
+							and blockedDotCastId ~= lastId
 							and miwClaim(self, lastId, lastAt, t, school) then
 							matchedCast = { spellId = lastId, eligibleIcon = true }
 						else
@@ -5001,6 +5014,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								maxAge = 2.50
 							end
 							if age >= 0 and age <= maxAge and castSchoolOk(self, lastId, school)
+								and blockedDotCastId ~= lastId
 								and miwClaim(self, lastId, lastAt, t, school) then
 								matchedCast = { spellId = lastId, eligibleIcon = true }
 							else
