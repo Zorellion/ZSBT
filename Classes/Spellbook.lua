@@ -346,24 +346,98 @@ end
 
 -- Pet spellbook: no skill lines — probe the slot space linearly and
 -- stop after a consecutive-empty run. Pet books are small (< ~20).
+-- Non-retail clients (e.g. Camelot) may lack the Pet spell bank or
+-- C_SpellBook entirely; fall back through the legacy pet-book globals
+-- and finally the pet action bar, all pcall-guarded.
 local function enumPetBank(bank, sink)
-	local added, emptyRun = 0, 0
-	for i = 1, 60 do
-		local ok, it = pcall(C_SpellBook.GetSpellBookItemInfo, i, bank)
-		local it2 = ok and it or nil
-		if type(it2) ~= "table" or it2.itemType ~= Enum.SpellBookItemType.Spell then
-			emptyRun = emptyRun + 1
-			if emptyRun >= 10 then break end
-		else
-			emptyRun = 0
-			local sid = it2.spellID or it2.actionID
-			if type(sid) == "number" and sid > 0 then
-				local name = type(it2.name) == "string" and it2.name or nil
-				if name and ZSBT.IsSafeString and not ZSBT.IsSafeString(name) then
-					name = nil
+	local added = 0
+	local spellT = Enum and Enum.SpellBookItemType and Enum.SpellBookItemType.Spell
+	local petAction = Enum and Enum.SpellBookItemType and Enum.SpellBookItemType.PetAction
+	local function unmask(sid)
+		-- PetAction ids pack the spell id in the low 24 bits.
+		if type(sid) == "number" and sid > 0xFFFFFF then
+			if bit and bit.band then return bit.band(sid, 0xFFFFFF) end
+			return sid % 0x1000000
+		end
+		return sid
+	end
+	if type(bank) == "number" and C_SpellBook
+		and C_SpellBook.GetSpellBookItemInfo and spellT then
+		local emptyRun = 0
+		for i = 1, 60 do
+			local ok, it = pcall(C_SpellBook.GetSpellBookItemInfo, i, bank)
+			local it2 = ok and it or nil
+			if type(it2) ~= "table" or (it2.itemType ~= spellT
+				and it2.itemType ~= petAction) then
+				emptyRun = emptyRun + 1
+				if emptyRun >= 10 then break end
+			else
+				emptyRun = 0
+				local sid = unmask(it2.spellID or it2.actionID)
+				if type(sid) == "number" and sid > 0 then
+					local name = type(it2.name) == "string" and it2.name or nil
+					if name and ZSBT.IsSafeString and not ZSBT.IsSafeString(name) then
+						name = nil
+					end
+					sink[#sink + 1] = { sid = sid, name = name }
+					added = added + 1
 				end
-				sink[#sink + 1] = { sid = sid, name = name }
-				added = added + 1
+			end
+		end
+	end
+	if added == 0 and type(GetSpellBookItemInfo) == "function" then
+		local numSpells = 0
+		if type(HasPetSpells) == "function" then
+			local okN, n2 = pcall(HasPetSpells)
+			numSpells = okN and tonumber(n2) or 0
+		elseif C_SpellBook and type(C_SpellBook.HasPetSpells) == "function" then
+			local okN, n2 = pcall(C_SpellBook.HasPetSpells)
+			numSpells = okN and tonumber(n2) or 0
+		end
+		for i = 1, math.min(numSpells, 60) do
+			local ok, st, id = pcall(GetSpellBookItemInfo, i, "pet")
+			if ok and (st == "SPELL" or st == "PETACTION") and type(id) == "number" then
+				local sid = unmask(id)
+				if sid > 0 then
+					local name = nil
+					if type(GetSpellBookItemName) == "function" then
+						local ok2, n2 = pcall(GetSpellBookItemName, i, "pet")
+						if ok2 and type(n2) == "string" then name = n2 end
+					end
+					if name == nil and type(GetSpellInfo) == "function" then
+						local ok2, n2 = pcall(GetSpellInfo, sid)
+						if ok2 and type(n2) == "string" then name = n2 end
+					end
+					if name and ZSBT.IsSafeString and not ZSBT.IsSafeString(name) then
+						name = nil
+					end
+					sink[#sink + 1] = { sid = sid, name = name }
+					added = added + 1
+				end
+			end
+		end
+	end
+	if added == 0 and type(GetPetActionInfo) == "function"
+		and type(GetSpellInfo) == "function" then
+		local maxSlots = _G.NUM_PET_ACTION_SLOTS
+		if type(maxSlots) ~= "number" or maxSlots <= 0 then maxSlots = 12 end
+		local seen = {}
+		for i = 1, maxSlots do
+			local ok, name, _, _, isToken = pcall(GetPetActionInfo, i)
+			if ok and type(name) == "string" and name ~= "" then
+				if isToken == true and type(_G[name]) == "string" then
+					name = _G[name]
+				end
+				local sid = nil
+				pcall(function() sid = select(7, GetSpellInfo(name)) end)
+				if type(sid) == "number" and sid > 0 and not seen[sid] then
+					seen[sid] = true
+					if ZSBT.IsSafeString and not ZSBT.IsSafeString(name) then
+						name = nil
+					end
+					sink[#sink + 1] = { sid = sid, name = name }
+					added = added + 1
+				end
 			end
 		end
 	end
@@ -371,12 +445,15 @@ local function enumPetBank(bank, sink)
 end
 
 local function enumBank(bank, sink)
+	local petBank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Pet
+	if bank == petBank then
+		-- bank may be nil on clients lacking the Pet enum member;
+		-- enumPetBank has pcall-guarded legacy fallbacks.
+		return enumPetBank(bank, sink)
+	end
 	if not (C_SpellBook and C_SpellBook.GetSpellBookItemInfo
 		and Enum and Enum.SpellBookSpellBank and Enum.SpellBookItemType) then
 		return 0
-	end
-	if bank == Enum.SpellBookSpellBank.Pet then
-		return enumPetBank(bank, sink)
 	end
 	return enumPlayerBank(bank, sink)
 end
