@@ -923,7 +923,13 @@ function ZB:FileLog(msg)
         prof.ucdropLog = log
     end
     local t = GetTime and GetTime() or 0
-    log[#log + 1] = ("%.3f %s"):format(t, tostring(msg))
+    local line = ("%.3f %s"):format(t, tostring(msg))
+    -- A secret string in any field poisons the whole formatted line; a
+    -- tainted ring entry hard-errors any consumer that matches on it.
+    if ZSBT.IsSafeString and not ZSBT.IsSafeString(line) then
+        line = ("%.3f AUDSEC <audit line contained a secret value>"):format(t)
+    end
+    log[#log + 1] = line
     if #log > 4000 then
         table.remove(log, 1)
     end
@@ -943,7 +949,13 @@ function ZB:Audit(msg)
         prof.auditLog = log
     end
     local t = GetTime and GetTime() or 0
-    log[#log + 1] = ("%.3f %s"):format(t, tostring(msg))
+    local line = ("%.3f %s"):format(t, tostring(msg))
+    -- A secret string in any field poisons the whole formatted line; a
+    -- tainted ring entry hard-errors any consumer that matches on it.
+    if ZSBT.IsSafeString and not ZSBT.IsSafeString(line) then
+        line = ("%.3f AUDSEC <audit line contained a secret value>"):format(t)
+    end
+    log[#log + 1] = line
     if #log > 8000 then
         table.remove(log, 1)
     end

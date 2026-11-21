@@ -1972,8 +1972,16 @@ function Addon:HandleAuditReport()
 	end
 
 	local emits, renders, merges = {}, {}, {}
+	local secretSkipped = 0
 	for i = 1, #log do
 		local line = log[i]
+		-- Secret strings can land in the ring (e.g. an audit field carrying
+		-- a secret amount); type() still says "string" but match() under
+		-- taint hard-errors. Skip and count them.
+		if type(line) == "string" and ZSBT.IsSafeString and not ZSBT.IsSafeString(line) then
+			secretSkipped = secretSkipped + 1
+			line = nil
+		end
 		if type(line) == "string" then
 			local lts, rest = line:match("^(%S+)%s+(.*)$")
 			lts = tonumber(lts) or 0
@@ -2097,6 +2105,9 @@ function Addon:HandleAuditReport()
 		:format(incoming, orphanOut, noncombat))
 	say(("  merge contributors=%d  unrendered emits=%d (vetoed/suppressed/approx)")
 		:format(mergeContrib, unrendered))
+	if secretSkipped > 0 then
+		say(("  skipped %d secret ring entries (unmatchable under taint)"):format(secretSkipped))
+	end
 	if #anomalies > 0 then
 		say("  anomalies:")
 		for i = 1, math.min(#anomalies, 10) do

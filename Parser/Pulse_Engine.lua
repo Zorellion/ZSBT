@@ -548,8 +548,9 @@ function Engine:_flushPetMerge(t)
 	if ZSBT._auditTrace == true and pm.traceIds and #pm.traceIds > 0 then
 		local zbt = ZSBT.ZBattleText
 		if zbt and zbt.Audit then
+			local mtxt = (ZSBT.IsSafeString and ZSBT.IsSafeString(text)) and text or "<secret>"
 			zbt:Audit(("AUDMRG tids=%s sid=%s cnt=%d text=%s")
-				:format(table.concat(pm.traceIds, ","), tostring(nil), #pm.traceIds, tostring(text)))
+				:format(table.concat(pm.traceIds, ","), tostring(nil), #pm.traceIds, mtxt))
 		end
 	end
 
