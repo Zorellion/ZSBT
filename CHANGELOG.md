@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.3.9.2-beta
+
+### Added
+- **Composed crit animations:** crit animations (Stomp, Slam, Shockwave, Ignite, Chromatic, ScreenPunch, Shatter, Afterimage, Rumble) now play on top of the scroll area's motion instead of replacing it — a crit in a Parabola area travels the curve while the effect plays, and crits spread across normal lanes instead of stacking in the center. Pow keeps its classic centered-sticky behavior. New toggle: General > Crit Animations Ride Scroll Motion (default on; off restores centered crits).
+- **Outgoing Pet Crits section (Crits page):** pet crits get the same per-stream crit options as incoming/outgoing — scroll-area routing, sticky + jiggle, and a full crit font override (face, size/scale, outline, all crit animations with intensity sliders). Pet crit color moved here from the pet damage settings; existing colors carry over.
+- **Pet spell icons (opt-in):** Pets > Show Pet Spell Icons puts the pet's own spell icon next to pet damage (e.g. the imp's Firebolt). Merged pet lines only show an icon when every contributor shares the same spell.
+- **Dual empower/proc icons (experimental):** Outgoing > Show Empowering Proc Icon renders the triggering cast's icon alongside the proc that empowered it, when the client can prove the proc's state. Degrades cleanly to a single icon on secret-value builds.
+- **Learner evidence reporting:** `/zsbt arep` now reports per-binding claim fidelity (cast/dot/channel/pet/generic lanes), and the spellbook import maps talent-tree trigger-to-proc correlations for spec context. `/zsbt sb` dumps the derived book.
+
+### Changed
+- **Merged outgoing lines honor Show Spell Names:** secret-amount merges no longer display a spell name unless Outgoing > Show Spell Names is enabled — they now read "Hits (xN)".
+
+### Fixed
+- **Attribution honesty layer:** talent-node spell IDs can no longer claim wounds (they're modifiers, not damage events); proc claims now require tooltip damage proof or a clean learned binding (no school drift); learned-binding score boosts stop self-reinforcing after drift; pet render lines count as unverifiable instead of falsely lost.
+- `/zsbt arep` no longer crashes on learner records saved before the unverifiable counter existed.
+
 ## 3.3.9.1-Beta
 
 ### Added
