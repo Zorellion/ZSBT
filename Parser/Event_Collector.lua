@@ -1836,7 +1836,7 @@ claimSignature = function(self, tNow, hitSchool)
 	if not (sb and sb.LinksFrom and sb.PairOf) then return nil end
 	sigExpire(self, tNow)
 	local excl = ZSBT.ClassDB and ZSBT.ClassDB.ExcludedSpellId or nil
-	local best, bestScore, bestDt, bestVia
+	local best, bestScore, bestDt, bestVia, refusedSid
 	for _, w in ipairs(self._sigCasts) do
 		local seen = {}
 		for _, trig in ipairs({ w.sid, sb:PairOf(w.sid) }) do
@@ -1849,11 +1849,22 @@ claimSignature = function(self, tNow, hitSchool)
 							and (excl == nil or excl(procSid) ~= true) then
 							local rec = sb:Entry(procSid)
 							local facts = SpellFacts(procSid)
+							local bind = sigBindings(self)[trig]
+							bind = bind and bind[procSid] or nil
+							-- Proc-icon honesty: a linked proc may only wear a
+							-- wound (its icon reaches the screen) when the proc
+							-- ITSELF provably deals damage — positive damage
+							-- text in its own tooltip, or a binding that
+							-- already earned >=MIN claims with a clean drift
+							-- record (rel>0 means it learned a wrong stream
+							-- before — n inherited from the loose gate is not
+							-- proof). Buff/passive links still feed correlation
+							-- (w/n counters, link map) but can never claim.
+							local damagesProven = (facts and facts.damages == true)
+								or (bind and bind.n >= SIG_LEARN_MIN and bind.rel == 0)
 							if type(rec) == "table"
 								and (not facts or facts.damages ~= false)
 								and sigMaskFit(rec, hitSchool) then
-								local bind = sigBindings(self)[trig]
-								bind = bind and bind[procSid] or nil
 								local score = (strength == "strong" and 2 or 0)
 									+ (rec.subTree ~= nil and 1 or 0)
 									+ (type(rec.masks) == "table" and #rec.masks > 0 and 1 or 0)
@@ -1864,10 +1875,14 @@ claimSignature = function(self, tNow, hitSchool)
 									score = score + 2
 								end
 								if score >= 3 then
-									local dt = tNow - w.at
-									if bestScore == nil or score > bestScore
-										or (score == bestScore and dt < bestDt) then
-										best, bestScore, bestDt, bestVia = procSid, score, dt, trig
+									if damagesProven then
+										local dt = tNow - w.at
+										if bestScore == nil or score > bestScore
+											or (score == bestScore and dt < bestDt) then
+											best, bestScore, bestDt, bestVia = procSid, score, dt, trig
+										end
+									else
+										refusedSid = refusedSid or procSid
 									end
 								end
 							end
@@ -1876,6 +1891,12 @@ claimSignature = function(self, tNow, hitSchool)
 				end
 			end
 		end
+	end
+	-- A qualifying proc refused only on damage-proof leaves a trail —
+	-- surfaces in the pressure ledger as rej:SIG_NODAMAGE:<sid>.
+	if best == nil and refusedSid ~= nil then
+		auditNote(("AUDD reason=SIG_NODAMAGE spellId=%s school=%s"):format(
+			dbgSafe(refusedSid), dbgSafe(hitSchool)))
 	end
 	if best then
 		local bn = -1

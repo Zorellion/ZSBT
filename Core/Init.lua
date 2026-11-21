@@ -2045,6 +2045,7 @@ function Addon:HandleAuditReport()
 	end
 
 	local paired, sidMatch, sidLost, sidChanged, sidResolved = 0, 0, 0, 0, 0
+	local unverifiable = 0
 	local incoming, noncombat, orphanOut = 0, 0, 0
 	local anomalies = {}
 	local pairedEmit = {}
@@ -2068,10 +2069,17 @@ function Addon:HandleAuditReport()
 			sidMatch = sidMatch + 1
 			e.outcome = "ok"
 		elseif rsid == "nil" then
-			sidLost = sidLost + 1
-			e.outcome = "lost"
-			anomalies[#anomalies + 1] = ("  %.3f %s emit pid=%s sid=%s -> render sid=nil (identity lost en route)")
-				:format(render.ts, label, tostring(tid), tostring(esid))
+			-- Pet renders carry no spell identity by design ("Pet 1234"
+			-- text, no icon) — sid=nil isn't lost, it's unverifiable.
+			if type(e.bind) == "string" and e.bind:sub(1, 4) == "pet:" then
+				unverifiable = unverifiable + 1
+				e.outcome = "unverifiable"
+			else
+				sidLost = sidLost + 1
+				e.outcome = "lost"
+				anomalies[#anomalies + 1] = ("  %.3f %s emit pid=%s sid=%s -> render sid=nil (identity lost en route)")
+					:format(render.ts, label, tostring(tid), tostring(esid))
+			end
 		elseif esid == "nil" then
 			sidResolved = sidResolved + 1
 			e.outcome = "late"
@@ -2138,14 +2146,17 @@ function Addon:HandleAuditReport()
 			for _, key in ipairs(keys) do
 				local rec = evd[key]
 				if type(rec) ~= "table" then
-					rec = { n = 0, ok = 0, lost = 0, changed = 0, late = 0, unrendered = 0 }
+					rec = { n = 0, ok = 0, lost = 0, changed = 0, late = 0, unrendered = 0, unverifiable = 0 }
 					evd[key] = rec
 				end
+				-- Legacy records predate the unverifiable field.
+				rec.unverifiable = rec.unverifiable or 0
 				rec.n = rec.n + 1
 				if e.outcome == "ok" then rec.ok = rec.ok + 1
 				elseif e.outcome == "lost" then rec.lost = rec.lost + 1
 				elseif e.outcome == "changed" then rec.changed = rec.changed + 1
 				elseif e.outcome == "late" then rec.late = rec.late + 1
+				elseif e.outcome == "unverifiable" then rec.unverifiable = rec.unverifiable + 1
 				else rec.unrendered = rec.unrendered + 1 end
 			end
 		end
@@ -2177,8 +2188,8 @@ function Addon:HandleAuditReport()
 	end
 	say(("auditreport: ring=%d emits=%d renders=%d merges=%d")
 		:format(#log, #emits, #renders, #merges))
-	say(("  paired=%d: sid match=%d  lost=%d  changed=%d  resolved-late=%d")
-		:format(paired, sidMatch, sidLost, sidChanged, sidResolved))
+	say(("  paired=%d: sid match=%d  lost=%d  changed=%d  resolved-late=%d  unverifiable=%d")
+		:format(paired, sidMatch, sidLost, sidChanged, sidResolved, unverifiable))
 	say(("  unpaired: incoming=%d (no emit records)  orphan=%d  noncombat=%d")
 		:format(incoming, orphanOut, noncombat))
 	say(("  merge contributors=%d  unrendered emits=%d (vetoed/suppressed/approx)")
@@ -2198,8 +2209,8 @@ function Addon:HandleAuditReport()
 			say("  learner evidence (lifetime):")
 			for i = 1, math.min(#ranked, 10) do
 				local r = ranked[i]
-				say(("    %s claims=%d ok=%d lost=%d changed=%d late=%d unrendered=%d")
-					:format(r.key, r.rec.n, r.rec.ok, r.rec.lost, r.rec.changed, r.rec.late, r.rec.unrendered))
+				say(("    %s claims=%d ok=%d lost=%d changed=%d late=%d unrendered=%d unverifiable=%d")
+					:format(r.key, r.rec.n, r.rec.ok, r.rec.lost, r.rec.changed, r.rec.late, r.rec.unrendered, r.rec.unverifiable or 0))
 			end
 		end
 		-- Honesty pressure: plain counters (gate refusals, disambig
