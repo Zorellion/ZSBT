@@ -2534,6 +2534,18 @@ critInlineHeader = {
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},
+			critsRidePath = {
+				type  = "toggle",
+				name  = L["Crit Animations Ride Scroll Motion"],
+				desc  = L["Crit animations (Stomp, Slam, Shockwave, etc.) play on top of the scroll area's motion — a crit in a Parabola area keeps traveling the curve while the crit effect plays, instead of jumping to the center. Pow stays a centered sticky crit either way. Disable for the classic centered crit behavior."],
+				order = 0.0525,
+				width = "full",
+				get   = function() return ZSBT.db.profile.general.critsRidePath ~= false end,
+				set   = function(_, v)
+					ZSBT.db.profile.general.critsRidePath = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
 			inlineCritHeader = {
 				type  = "header",
 				name  = L["Inline Crit Style"],
@@ -5766,6 +5778,7 @@ local GENERAL_GROUP_KEYS = {
 		resetDefaults=1, reloadUI=1,
 		headerUI=1, headerQuickActions=1,
 		critInlineHeader=1, forceCritsInline=1, forceCritsInlineHelp=1,
+		critsRidePath=1,
 		inlineCritHeader=1, inlineCritHelp=1, inlineCritScale=1,
 		inlineCritDurationMult=1, inlineCritFx=1, inlineCritFxIntensity=1,
 		inlineCritFontFace=1, inlineCritFontOutline=1, inlineCritUseScale=1,
@@ -5803,6 +5816,7 @@ local GENERAL_ORDER = {
 	hideBlizzardFCTXPRepHonor = 15, hideBlizzardFCTResourceGains = 16,
 	hideBlizzardFCTPet = 17, restoreBlizzardFCTNow = 18,
 	critInlineHeader = 20, forceCritsInline = 21, forceCritsInlineHelp = 22,
+	critsRidePath = 22.5,
 	inlineCritHeader = 23, inlineCritHelp = 24, inlineCritScale = 25,
 	inlineCritDurationMult = 26, inlineCritFx = 27, inlineCritFxIntensity = 28,
 	inlineCritFontFace = 29, inlineCritFontOutline = 30, inlineCritUseScale = 31,

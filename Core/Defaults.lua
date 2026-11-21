@@ -32,6 +32,7 @@ ZSBT.DEFAULTS = {
 			damageMeterIncomingFallback = true,
 			autoAttackRestrictFallback = true,
 			forceCritsInline = false,
+			critsRidePath = true,
 			inlineCrit = {
 				scale = 1.12,
 				durationMult = 1.15,
