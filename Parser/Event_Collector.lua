@@ -75,6 +75,7 @@ local castSchoolOk -- fwd decl; real def below
 local consumeBestPendingCast -- fwd decl; emit() calls it before the real def below
 local claimSignature -- fwd decl; emit() calls it before the real def below
 local sigBaseForTrigger -- fwd decl; same reason
+local sigEmpowerForTrigger -- fwd decl; same reason
 local sigSeed -- fwd decl; enqueuePendingCast calls it before the real def below
 local anySwingRecent -- fwd decl; emit() stamps _swingProven before the real def below
 
@@ -444,9 +445,18 @@ local function emit(eventType, payload)
 	-- record, pair twin, or sig). Stamp the trigger so the render can
 	-- show [cast icon][proc icon] — display metadata, not attribution.
 	if sinkType == "OUTGOING_DAMAGE_COMBAT" and payload
-		and payload.spellId ~= nil and payload.baseSpellId == nil then
-		local trig = sigBaseForTrigger(Collector, payload.timestamp or now(), payload.spellId)
-		if trig ~= nil then payload.baseSpellId = trig end
+		and payload.spellId ~= nil then
+		if payload.baseSpellId == nil then
+			local trig = sigBaseForTrigger(Collector, payload.timestamp or now(), payload.spellId)
+			if trig ~= nil then payload.baseSpellId = trig end
+		end
+		-- Trigger-side pair: the claim is a plain cast sid — a linked
+		-- proc's active buff proves the empowerment, so show its icon
+		-- alongside the cast's.
+		if payload.baseSpellId == nil and payload.empowerId == nil then
+			local proc = sigEmpowerForTrigger(Collector, payload.timestamp or now(), payload.spellId)
+			if proc ~= nil then payload.empowerId = proc end
+		end
 	end
 	if Collector._sink then
 		auditEmit(sinkType, payload)
@@ -1984,6 +1994,39 @@ sigBaseForTrigger = function(self, tNow, claimSid)
 		end
 	end
 	return best
+end
+
+-- Empower-pair display, trigger side: the wound was claimed by a plain
+-- cast sid (Shadow Bolt) that is itself a link trigger — the empowered
+-- variant can't be told from a normal bolt by identity. Presence of a
+-- linked proc's buff on the player is the honest signal: Secrets of
+-- the Coven active when the bolt's damage lands means the pair
+-- [bolt][Secrets] is evidence, not decoration.
+sigEmpowerForTrigger = function(self, tNow, claimSid)
+	if type(claimSid) ~= "number" then return nil end
+	local sb = ZSBT.Spellbook
+	if not (sb and sb.LinksFrom and sb.Entry) then return nil end
+	-- Existence check only — FindAuraBySpellId answers "is an aura with
+	-- this sid up" without touching any secret name/field. Same pattern
+	-- as the trigger system's proc-alert detection (Triggers.lua).
+	local find = AuraUtil and AuraUtil.FindAuraBySpellId
+	if type(find) ~= "function" then return nil end
+	for _, trig in ipairs({ claimSid, sb:PairOf(claimSid) }) do
+		if type(trig) == "number" then
+			local links = sb:LinksFrom(trig)
+			if type(links) == "table" then
+				for procSid in pairs(links) do
+					if type(procSid) == "number" then
+						local ok, aura = pcall(find, procSid, "player", "HELPFUL")
+						if ok and aura ~= nil then
+							return procSid
+						end
+					end
+				end
+			end
+		end
+	end
+	return nil
 end
 
 -- /zsbt sb + the class page read learned bindings for display.

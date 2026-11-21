@@ -831,6 +831,8 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			-- alone. The learned binding is untouched either way.
 			local baseSid = (evt and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(evt.baseSpellId))
 				and evt.baseSpellId or nil
+			local empSid = (evt and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(evt.empowerId))
+				and evt.empowerId or nil
 			if baseSid ~= nil then
 				local tex = ZSBT.CleanSpellIcon(baseSid)
 				if tex then meta.spellIcon = tex end
@@ -841,6 +843,11 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 			else
 				local tex = ZSBT.CleanSpellIcon(resolvedSpellID)
 				if tex then meta.spellIcon = tex end
+				-- Trigger-side pair: [claim icon][empowering proc icon]
+				if empSid ~= nil and prof.showEmpowerIcons ~= false then
+					local tex2 = ZSBT.CleanSpellIcon(empSid)
+					if tex2 then meta.spellIcon2 = tex2 end
+				end
 			end
 		end
 
