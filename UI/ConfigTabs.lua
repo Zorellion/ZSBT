@@ -1657,18 +1657,17 @@ function ZSBT.BuildTab_QuickStart()
 			restoreBlizzardFCTNow = {
 				type = "execute",
 				name = L["Restore Blizzard Combat Text Now"],
-				desc = L["Restore Blizzard combat text now (panic button)."],
+				desc = L["Restore Blizzard combat text now (panic button). Also turns off ZSBT's suppression so it is not re-applied."],
 				order = 22,
 				width = "full",
 				disabled = function()
-					local g = general(); if not g then return true end
-					if g.hideBlizzardFCT == true then return false end
-					local mode = g.blizzardFCTSuppressMode
-					if mode == nil then return g.suppressBlizzardFCT ~= true end
-					return mode == "none"
+					return general() == nil
 				end,
 				func = function()
+					local g = general()
+					if g then g.hideBlizzardFCT = false end
 					local c = core(); if c and c.RestoreBlizzardFCT then c:RestoreBlizzardFCT(true) end
+					notify()
 				end,
 			},
 
@@ -2296,15 +2295,15 @@ function ZSBT.BuildTab_General()
 			restoreBlizzardFCTNow = {
 				type  = "execute",
 				name  = L["Restore Blizzard Combat Text Now"],
-				desc  = L["Restore Blizzard combat text now (panic button)."],
+				desc  = L["Restore Blizzard combat text now (panic button). Also turns off ZSBT's suppression so it is not re-applied."],
 				order = 3.58,
 				width = "full",
 				disabled = function()
-					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
-					if not g then return true end
-					return g.hideBlizzardFCT ~= true
+					return not (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general)
 				end,
 				func = function()
+					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+					if g then g.hideBlizzardFCT = false end
 					if ZSBT.Core and ZSBT.Core.RestoreBlizzardFCT then
 						ZSBT.Core:RestoreBlizzardFCT(true)
 						LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
