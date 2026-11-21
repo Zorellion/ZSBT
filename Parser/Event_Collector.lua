@@ -74,6 +74,7 @@ end
 local castSchoolOk -- fwd decl; real def below
 local consumeBestPendingCast -- fwd decl; emit() calls it before the real def below
 local claimSignature -- fwd decl; emit() calls it before the real def below
+local sigBaseForTrigger -- fwd decl; same reason
 local sigSeed -- fwd decl; enqueuePendingCast calls it before the real def below
 local anySwingRecent -- fwd decl; emit() stamps _swingProven before the real def below
 
@@ -437,6 +438,15 @@ local function emit(eventType, payload)
 				zbt3:FileLog(("PET_ROUTE petSid=%s school=%s"):format(tostring(payload.petSpellId), tostring(payload.schoolMask)))
 			end
 		end
+	end
+	-- Empower-pair display: the claimed sid may be a linked proc of a
+	-- recent trigger cast regardless of which path claimed it (own cast
+	-- record, pair twin, or sig). Stamp the trigger so the render can
+	-- show [cast icon][proc icon] — display metadata, not attribution.
+	if sinkType == "OUTGOING_DAMAGE_COMBAT" and payload
+		and payload.spellId ~= nil and payload.baseSpellId == nil then
+		local trig = sigBaseForTrigger(Collector, payload.timestamp or now(), payload.spellId)
+		if trig ~= nil then payload.baseSpellId = trig end
 	end
 	if Collector._sink then
 		auditEmit(sinkType, payload)
@@ -1840,7 +1850,7 @@ claimSignature = function(self, tNow, hitSchool)
 	if not (sb and sb.LinksFrom and sb.PairOf) then return nil end
 	sigExpire(self, tNow)
 	local excl = ZSBT.ClassDB and ZSBT.ClassDB.ExcludedSpellId or nil
-	local best, bestScore, bestDt, bestVia, refusedSid
+	local best, bestScore, bestDt, bestVia, refusedSid, refusedTalentSid
 	for _, w in ipairs(self._sigCasts) do
 		local seen = {}
 		for _, trig in ipairs({ w.sid, sb:PairOf(w.sid) }) do
@@ -1866,6 +1876,12 @@ claimSignature = function(self, tNow, hitSchool)
 							-- (w/n counters, link map) but can never claim.
 							local damagesProven = (facts and facts.damages == true)
 								or (bind and bind.n >= SIG_LEARN_MIN and bind.rel == 0)
+							-- Talent-node sids are not damage events — the
+							-- talent modifies a cast, it never fires itself.
+							-- A linked talent feeds correlation (w/n, the sb
+							-- map, the empower-pair icon) but can never own a
+							-- wound's identity.
+							local isTalent = (type(rec) == "table" and rec.talent == true)
 							if type(rec) == "table"
 								and (not facts or facts.damages ~= false)
 								and sigMaskFit(rec, hitSchool) then
@@ -1873,13 +1889,17 @@ claimSignature = function(self, tNow, hitSchool)
 									+ (rec.subTree ~= nil and 1 or 0)
 									+ (type(rec.masks) == "table" and #rec.masks > 0 and 1 or 0)
 								-- A corroborated binding is its own
-								-- evidence: earned confidence, still
-								-- gated by window + school fit.
-								if bind and bind.n >= SIG_LEARN_MIN then
+								-- evidence: earned confidence, still gated by
+								-- window + school fit — and a drift-flagged
+								-- binding (rel>0 learned a wrong stream before)
+								-- can't self-boost.
+								if bind and bind.n >= SIG_LEARN_MIN and bind.rel == 0 then
 									score = score + 2
 								end
 								if score >= 3 then
-									if damagesProven then
+									if isTalent then
+										refusedTalentSid = refusedTalentSid or procSid
+									elseif damagesProven then
 										local dt = tNow - w.at
 										if bestScore == nil or score > bestScore
 											or (score == bestScore and dt < bestDt) then
@@ -1896,9 +1916,13 @@ claimSignature = function(self, tNow, hitSchool)
 			end
 		end
 	end
-	-- A qualifying proc refused only on damage-proof leaves a trail —
-	-- surfaces in the pressure ledger as rej:SIG_NODAMAGE:<sid>.
-	if best == nil and refusedSid ~= nil then
+	-- Refused candidates leave a trail in the pressure ledger:
+	-- rej:SIG_NODAMAGE:<sid> (no damage proof) or rej:SIG_TALENT:<sid>
+	-- (talent-node sid — correlation only, never an icon).
+	if best == nil and refusedTalentSid ~= nil then
+		auditNote(("AUDD reason=SIG_TALENT spellId=%s school=%s"):format(
+			dbgSafe(refusedTalentSid), dbgSafe(hitSchool)))
+	elseif best == nil and refusedSid ~= nil then
 		auditNote(("AUDD reason=SIG_NODAMAGE spellId=%s school=%s"):format(
 			dbgSafe(refusedSid), dbgSafe(hitSchool)))
 	end
@@ -1934,6 +1958,32 @@ claimSignature = function(self, tNow, hitSchool)
 			bestDt or 0, tostring(hitSchool), tostring(bn)))
 	end
 	return best, bestVia
+end
+
+-- Empower-pair display: a wound legitimately claimed by its own cast
+-- evidence may still be a linked proc of a recent trigger (Secrets of
+-- the Coven via Shadow Bolt). Stamp the trigger so the render can show
+-- the pair — correlation as display metadata, never attribution.
+sigBaseForTrigger = function(self, tNow, claimSid)
+	if type(claimSid) ~= "number" then return nil end
+	sigExpire(self, tNow)
+	local sb = ZSBT.Spellbook
+	if not (sb and sb.LinksFrom) then return nil end
+	local best, bestDt
+	for _, w in ipairs(self._sigCasts) do
+		for _, trig in ipairs({ w.sid, sb:PairOf(w.sid) }) do
+			if type(trig) == "number" then
+				local links = sb:LinksFrom(trig)
+				if type(links) == "table" and links[claimSid] ~= nil then
+					local dt = tNow - w.at
+					if bestDt == nil or dt < bestDt then
+						best, bestDt = trig, dt
+					end
+				end
+			end
+		end
+	end
+	return best
 end
 
 -- /zsbt sb + the class page read learned bindings for display.
