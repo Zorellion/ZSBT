@@ -631,6 +631,22 @@ function ClassDB.OnPlayerCast(self, spellId, spellName, t)
 	if mod and mod.onCast then
 		mod.onCast(self, spellId, spellName, t)
 	end
+	-- Generic channel seed: any module-declared or taught channel opens
+	-- its tick window on cast. The registry owns this seed — module-side
+	-- seeds lacked startedAt, which left the channel invisible to the
+	-- cadence-disambig pool. +0.4 grace lets the final tick land.
+	local ch = ClassDB.ChannelMatch(spellId)
+	if ch then
+		self._channel = {
+			startedAt = t,
+			untilAt = t + (ch.duration or 6.0) + 0.4,
+			lastTickAt = 0,
+			spellId = spellId,
+			tickMin = ch.tickMin or 0.12,
+			interval = ch.interval,
+			school = ch.school,
+		}
+	end
 end
 
 function ClassDB.OnMatchedPhysical(self, spellId, t, amount)

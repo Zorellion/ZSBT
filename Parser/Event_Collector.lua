@@ -1367,6 +1367,16 @@ local function pickDotForWound(self, t, school, amount, isCrit)
 	return getMostRecentPeriodicSpellId(self, t)
 end
 
+-- The picked sid is the live channel itself: its ticks must bypass the
+-- DoT-only gates downstream (target-debuff presence, dedup window, the
+-- recent-cast veto — the "recent cast" IS this channel).
+local function isLiveChannelPick(self, t, sid)
+	local ch = self._channel
+	return type(ch) == "table" and type(sid) == "number"
+		and ch.spellId == sid
+		and type(ch.untilAt) == "number" and t <= ch.untilAt
+end
+
 -- Learned tick amounts: EMA of a sid's claimed non-crit tick amounts.
 -- Era dots tick for a consistent per-rank value, so the learned average
 -- is a strong discriminator when phase-locking leaves collisions. Only
@@ -3855,7 +3865,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- Safety: only treat it as a DoT tick if the target actually has the debuff.
 					-- Without this, any recent non-periodic cast (e.g. Shadow Bolt) can "stick"
 					-- as the spellId for unrelated magic WOUND ticks.
-					if dotSpellId and (not cachedHasTargetDebuffSpellId(dotSpellId)) then
+					local chanPick = isLiveChannelPick(self, t, dotSpellId)
+					if dotSpellId and not chanPick and (not cachedHasTargetDebuffSpellId(dotSpellId)) then
 						local allowDot = false
 						local de2 = dotEntryForSpellId(dotSpellId)
 						if de2 and de2.school and ZSBT.IsSafeNumber(school) and school == de2.school then
@@ -3874,7 +3885,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							auditNote(("AUDD reason=DOT_HUGE_SUPPRESS spellId=%s school=%s"):format(dbgSafe(dotSpellId), dbgSafe(school)))
 							return
 						end
-						if isDuplicateDotEmit(self, t, dotSpellId) then
+						if not chanPick and isDuplicateDotEmit(self, t, dotSpellId) then
 							auditNote(("AUDD reason=DOT_DUP spellId=%s"):format(dbgSafe(dotSpellId)))
 							return
 						end
@@ -4582,7 +4593,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				local dotSpellId = pickDotForWound(self, t, school, amount, isCrit)
 				-- Safety: only treat it as a DoT tick if the target actually has the debuff.
 				local debuffOk = nil
-				if dotSpellId then
+				local chanPick = isLiveChannelPick(self, t, dotSpellId)
+				if dotSpellId and not chanPick then
 					debuffOk = cachedHasTargetDebuffSpellId(dotSpellId)
 					if debuffOk ~= true then
 						local allowDot = false
@@ -4604,7 +4616,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						ECPrint(("BIG_HIT DOT token=%s spellId=%s amt=%s")
 							:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(amount)))
 					end
-					if isDuplicateDotEmit(self, t, dotSpellId) then
+					if not chanPick and isDuplicateDotEmit(self, t, dotSpellId) then
 						return
 					end
 					self._recentPeriodicSpellAt[dotSpellId] = t
@@ -4666,7 +4678,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						and ZSBT.ClassDB.ExcludedSpellId(lastCastId)) then
 					dotBlockedByRecentCast = true
 				end
-				if dotSpellId and not dotBlockedByRecentCast then
+				local chanPick = isLiveChannelPick(self, t, dotSpellId)
+				if dotSpellId and (not dotBlockedByRecentCast or chanPick) then
 					if ZSBT.ClassDB and ZSBT.ClassDB.DotGuard then
 						if ZSBT.ClassDB.DotGuard(dotEntryForSpellId(dotSpellId), school) == false then
 							dotSpellId = nil
@@ -4676,7 +4689,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					if dotEntry and dotEntry.school and ZSBT.IsSafeNumber(school) and school ~= dotEntry.school then
 						dotSpellId = nil
 					end
-					if dotSpellId then
+					if dotSpellId and not chanPick then
 						local debuffOk = cachedHasTargetDebuffSpellId(dotSpellId)
 						if debuffOk ~= true then
 							local allowDot = false
@@ -4694,7 +4707,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						if not dotCadenceOk(self, t, dotSpellId) then
 							dotSpellId = nil
 						else
-						if isDuplicateDotEmit(self, t, dotSpellId) then
+						if not chanPick and isDuplicateDotEmit(self, t, dotSpellId) then
 							return
 						end
 						if OutDbgLevel() >= 4 then
