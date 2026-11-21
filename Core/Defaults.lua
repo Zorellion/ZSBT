@@ -351,6 +351,7 @@ ZSBT.DEFAULTS = {
             minThreshold  = 0,
             mergeWindowSec = 0,
             showCount = true,
+            showSpellIcons = false,
 			outgoingDamageColor = { r = 1.00, g = 1.00, b = 1.00 },
 			outgoingCritColor = { r = 1.00, g = 1.00, b = 0.00 },
             showHealing = false,
