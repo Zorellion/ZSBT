@@ -1216,6 +1216,7 @@ function Engine:flushBucket()
 					dbgChatId = sample.dbgChatId,
 					amountSource = sample.amountSource,
 					isAuto = sample.isAuto == true,
+					channelClaim = sample.channelClaim == true,
 					schoolMask = sample.schoolMask,
 					targetName = sample.targetName,
 					isCrit = sample.isCrit,

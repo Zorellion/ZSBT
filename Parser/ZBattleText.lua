@@ -1010,7 +1010,14 @@ function ZB:AuditDamageEvent(eventType, payload)
     elseif src == "auto" then
         bind = "auto"
     elseif sid ~= nil then
-        bind = (p.isPeriodic == true) and ("dot:" .. audSafe(sid)) or ("cast:" .. audSafe(sid))
+        -- Channel claims get their own lane: a live channel claiming
+        -- tick-rate wounds is *expected* physics, while a direct cast
+        -- claiming them would be an honesty violation.
+        if p.channelClaim == true then
+            bind = "chan:" .. audSafe(sid)
+        else
+            bind = (p.isPeriodic == true) and ("dot:" .. audSafe(sid)) or ("cast:" .. audSafe(sid))
+        end
     end
     ZB:Audit(("AUD ht=%.3f %s sid=%s name=%s school=%s crit=%s amt=%s src=%s bind=%s tgt=%s pid=%s tid=%s"):format(
         tonumber(p.timestamp) or 0, eventType, audSafe(sid), audSafe(name),

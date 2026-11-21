@@ -3905,6 +3905,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							targetName = tName,
 							isCrit = isCrit,
 							isPeriodic = true,
+							channelClaim = chanPick == true,
 							schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil,
 						})
 						self._lastOutgoingCombatAt = t
@@ -4552,6 +4553,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							targetName = safeUnitName("target"),
 							isCrit = isCrit,
 							isPeriodic = true,
+							channelClaim = true,
 							schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil,
 						})
 						return
@@ -4635,6 +4637,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						targetName = tName,
 						isCrit = isCrit,
 						isPeriodic = true,
+						channelClaim = chanPick == true,
 						schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil,
 					})
 					self._lastOutgoingCombatAt = t
@@ -4730,6 +4733,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							targetName = tName,
 							isCrit = isCrit,
 							isPeriodic = true,
+							channelClaim = chanPick == true,
 							schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil,
 						})
 						return
