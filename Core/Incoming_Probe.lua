@@ -437,7 +437,7 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
             kind = kind,
             targetName = evt.targetName,
             spellId = sid,
-            traceId = evt.traceId or evt.rawPipeId,
+            traceId = evt.traceId,
         }
         if ZSBT.DisplayText then
             ZSBT.DisplayText(area, missText, color, meta)
@@ -675,7 +675,7 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
         targetName = (kind == "heal" and playerName) or evt.targetName,
         isCrit = evt.isCrit == true,
         school = evt.schoolMask,
-        traceId = evt.traceId or evt.rawPipeId,
+        traceId = evt.traceId,
     }
 
     maybePlayCritSound(resolvedCritConf, rawPipeValue, isTainted)
