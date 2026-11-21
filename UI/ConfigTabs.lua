@@ -1941,6 +1941,7 @@ function ZSBT.BuildTab_Crits()
             incomingCritHealing = ZSBT._shellMode and ZSBT._CritBucketGroup(L["Incoming Crit Heals"], ZSBT._critBuckets.incoming and ZSBT._critBuckets.incoming.heal, 41) or nil,
             outgoingCritDamage = ZSBT._shellMode and ZSBT._CritBucketGroup(L["Outgoing Crit Damage"], ZSBT._critBuckets.outgoing and ZSBT._critBuckets.outgoing.damage, 42) or nil,
             outgoingCritHealing = ZSBT._shellMode and ZSBT._CritBucketGroup(L["Outgoing Crit Heals"], ZSBT._critBuckets.outgoing and ZSBT._critBuckets.outgoing.heal, 43) or nil,
+            outgoingPetCritDamage = ZSBT._shellMode and ZSBT._CritBucketGroup(L["Outgoing Pet Crits"], ZSBT._critBuckets.pets and ZSBT._critBuckets.pets.damage, 44) or nil,
             		},
 	}
 end
@@ -5732,7 +5733,7 @@ ZSBT._BUCKET_ORDER = {
 	petOutgoingDamage = {
 		"enabled", "scrollArea", "casterMode", "aggregation",
 		"minThreshold", "showSpellIcons", "mergeWindowSec", "showCount",
-		"outgoingDamageColor", "outgoingCritColor",
+		"outgoingDamageColor",
 	},
 }
 
@@ -5744,11 +5745,25 @@ function ZSBT._orderBucket(args, rank)
 	end
 end
 
+-- Pet crit args live on the Crits page (Outgoing Pet Crits), not the pet
+-- combat buckets. Whitelist so pet incoming/heal crit colors stay put.
+local PET_CRIT_KEYS = {
+	petCritDamageEnabled=1, petCritDamageScrollArea=1,
+	petCritDamageSticky=1, petCritDamageStickyJiggle=1,
+	petCritDamageFontEnabled=1, petCritDamageFontFace=1,
+	petCritDamageFontSize=1, petCritDamageUseScale=1,
+	petCritDamageAnim=1, petCritDamageFontOutline=1, petCritDamageFontScale=1,
+	petCritDamageShockwaveIntensity=1, petCritDamageIgniteIntensity=1,
+	petCritDamageChromaticIntensity=1, petCritDamageStompIntensity=1,
+	petCritDamageScreenPunchIntensity=1, petCritDamageShatterIntensity=1,
+	petCritDamageAfterimageIntensity=1, petCritDamageRumbleIntensity=1,
+	petCritDamageColor=1,
+}
 local PET_BUCKET_KEYS = {
 	outgoing = {
 		enabled=1, casterMode=1, scrollArea=1, aggregation=1, minThreshold=1,
 		showSpellIcons=1,
-		outgoingDamageColor=1, outgoingCritColor=1, mergeWindowSec=1,
+		outgoingDamageColor=1, mergeWindowSec=1,
 		showCount=1,
 	},
 	healing = {
@@ -5906,11 +5921,15 @@ end
 
 function ZSBT._harvestPetArgs(args)
 	ZSBT._combatBuckets.pets = {}
+	ZSBT._critBuckets.pets = { damage = {} }
 	local buckets = ZSBT._combatBuckets.pets
 	local strip = ZSBT._shellMode == true
 	for key, val in pairs(args) do
 		local lk = key:lower()
 		if lk:sub(1, 6) == "header" then
+			if strip then args[key] = nil end
+		elseif PET_CRIT_KEYS[key] then
+			ZSBT._critBuckets.pets.damage[key] = val
 			if strip then args[key] = nil end
 		else
 			local kind = PET_BUCKET_KEYS.outgoing[key] and "outgoing"
@@ -8954,19 +8973,21 @@ function ZSBT.BuildTab_Pets()
 					ZSBT.db.profile.pets.outgoingDamageColor = { r = r, g = g, b = b }
 				end,
 			},
-			outgoingCritColor = {
+			petCritDamageColor = {
 				type  = "color",
-				name  = L["Outgoing Crit Color"],
+				name  = L["Outgoing Pet Crit Color"],
 				desc  = L["Color for outgoing pet damage crits."],
 				order = 5.3,
 				disabled = function() return ZSBT.db.profile.pets.enabled ~= true end,
 				get = function()
-					local col = ZSBT.db.profile.pets.outgoingCritColor
+					local cd = ZSBT.db.profile.pets.critDamage
+					local col = (cd and cd.color) or ZSBT.db.profile.pets.outgoingCritColor
 					if type(col) ~= "table" then return 1, 1, 0 end
 					return col.r or 1, col.g or 1, col.b or 0
 				end,
 				set = function(_, r, g, b)
-					ZSBT.db.profile.pets.outgoingCritColor = { r = r, g = g, b = b }
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.color = { r = r, g = g, b = b }
 				end,
 			},
 			mergeWindowSec = {
@@ -8991,6 +9012,463 @@ function ZSBT.BuildTab_Pets()
 				set   = function(_, val) ZSBT.db.profile.pets.showCount = val and true or false end,
 			},
 
+			headerPetCrits = {
+				type  = "header",
+				name  = L["Outgoing Pet Crits"],
+				order = 7.4,
+			},
+			petCritDamageEnabled = {
+				type  = "toggle",
+				name  = L["Route Outgoing Pet Crits to a Different Scroll Area"],
+				desc  = L["If enabled, outgoing pet crits use the crit scroll area below."],
+				width = "full",
+				order = 7.41,
+				get   = function()
+					local c = ZSBT.db.profile.pets.critDamage
+					return c and c.enabled == true
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.enabled = v and true or false
+				end,
+			},
+			petCritDamageScrollArea = {
+				type   = "select",
+				name   = L["Pet Crit Scroll Area"],
+				desc   = L["Scroll area to use for outgoing pet crits when routing is enabled."],
+				order  = 7.42,
+				values = function() return ZSBT.GetScrollAreaNames() end,
+				disabled = function()
+					local c = ZSBT.db.profile.pets.critDamage
+					return not (c and c.enabled == true)
+				end,
+				get = function()
+					local c = ZSBT.db.profile.pets.critDamage
+					return (c and type(c.scrollArea) == "string" and c.scrollArea ~= "") and c.scrollArea or "Outgoing"
+				end,
+				set = function(_, v)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.scrollArea = v
+				end,
+			},
+			petCritDamageSticky = {
+				type  = "toggle",
+				name  = L["Sticky Pet Crits (slightly bigger + longer)"],
+				desc  = L["Makes outgoing pet crits feel more impactful by slightly increasing size and on-screen duration."],
+				width = "full",
+				order = 7.43,
+				get   = function()
+					local c = ZSBT.db.profile.pets.critDamage
+					return c == nil or c.sticky ~= false
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.sticky = v and true or false
+				end,
+			},
+			petCritDamageStickyJiggle = {
+				type  = "toggle",
+				name  = L["Sticky Jiggle (shake)"],
+				desc  = L["When Sticky is enabled, also apply the shake/jiggle animation. Disable this if you want Sticky sizing/placement without shaking."],
+				width = "full",
+				order = 7.44,
+				hidden = function()
+					local c = ZSBT.db.profile.pets.critDamage
+					return not (c == nil or c.sticky ~= false)
+				end,
+				get   = function()
+					local c = ZSBT.db.profile.pets.critDamage
+					return c == nil or c.stickyJiggle ~= false
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.stickyJiggle = v and true or false
+				end,
+			},
+			petCritDamageFontEnabled = {
+				type  = "toggle",
+				name  = L["Override Crit Font (Outgoing Pet Crits)"],
+				desc  = L["If enabled, outgoing pet crits use this crit font instead of the Global Crit Font."],
+				order = 7.45,
+				width = "full",
+				get   = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return type(cf) == "table" and cf.enabled == true
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.critFont = ZSBT.db.profile.pets.critDamage.critFont or {}
+					ZSBT.db.profile.pets.critDamage.critFont.enabled = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			petCritDamageFontFace = {
+				type   = "select",
+				name   = L["Crit Font Face"],
+				desc   = L["Font used for outgoing pet crits."],
+				order  = 7.46,
+				values = function() return ZSBT.BuildFontDropdown() end,
+				disabled = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get    = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return cf and cf.face or "__use_master__"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.critFont = ZSBT.db.profile.pets.critDamage.critFont or {}
+					if val == "__use_master__" then
+						ZSBT.db.profile.pets.critDamage.critFont.face = nil
+					else
+						ZSBT.db.profile.pets.critDamage.critFont.face = val
+					end
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			petCritDamageFontSize = {
+				type  = "range",
+				name  = L["Crit Font Size"],
+				desc  = L["Font size for outgoing pet crit text."],
+				order = 7.47,
+				min   = ZSBT.FONT_SIZE_MIN,
+				max   = 48,
+				step  = 1,
+				disabled = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true) or (cf and cf.useScale == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return (cf and cf.size) or 28
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.critFont = ZSBT.db.profile.pets.critDamage.critFont or {}
+					ZSBT.db.profile.pets.critDamage.critFont.size = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			petCritDamageUseScale = {
+				type  = "toggle",
+				name  = L["Use Crit Scale (instead of fixed size)"],
+				desc  = L["When enabled, pet crit size is derived from your normal font size using Crit Scale."],
+				order = 7.48,
+				width = "full",
+				disabled = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return cf and cf.useScale == true
+				end,
+				set   = function(_, v)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.critFont = ZSBT.db.profile.pets.critDamage.critFont or {}
+					ZSBT.db.profile.pets.critDamage.critFont.useScale = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			petCritDamageAnim = {
+				type   = "select",
+				name   = L["Crit Animation"],
+				desc   = L["Choose how pet crits animate. Pow/Slam/Shockwave/Ignite/Chromatic/Stomp/ScreenPunch/Shatter/Afterimage/Rumble are centered (sticky-style). Use Scroll Area Animation makes crits follow the scroll area's normal flow."],
+				order  = 7.49,
+				values = { Pow = L["Pow (Sticky)"], Slam = L["Slam (Impact)"], Shockwave = "Shockwave", Ignite = "Ignite", Chromatic = "Chromatic", Stomp = "Stomp", ScreenPunch = "ScreenPunch", Shatter = "Shatter", Afterimage = "Afterimage", Rumble = "Rumble", Area = L["Use Scroll Area Animation"] },
+				disabled = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get    = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return (cf and (cf.anim == "Area" or cf.anim == "Pow" or cf.anim == "Slam" or cf.anim == "Shockwave" or cf.anim == "Ignite" or cf.anim == "Chromatic" or cf.anim == "Stomp" or cf.anim == "ScreenPunch" or cf.anim == "Shatter" or cf.anim == "Afterimage" or cf.anim == "Rumble")) and cf.anim or "Pow"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.critFont = ZSBT.db.profile.pets.critDamage.critFont or {}
+					ZSBT.db.profile.pets.critDamage.critFont.anim = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			petCritDamageFontOutline = {
+				type   = "select",
+				name   = L["Crit Outline"],
+				desc   = L["Outline style for outgoing pet crit text."],
+				order  = 7.5,
+				values = { None = "None", Thin = "Thin", Thick = "Thick", Monochrome = "Monochrome" },
+				disabled = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get    = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return (cf and cf.outline) or "Thick"
+				end,
+				set    = function(_, val)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.critFont = ZSBT.db.profile.pets.critDamage.critFont or {}
+					ZSBT.db.profile.pets.critDamage.critFont.outline = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			petCritDamageFontScale = {
+				type  = "range",
+				name  = L["Crit Scale"],
+				desc  = L["Scale multiplier vs normal font size."],
+				order = 7.51,
+				min   = 1.0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true) or not (cf and cf.useScale == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return (cf and cf.scale) or 1.5
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.critFont = ZSBT.db.profile.pets.critDamage.critFont or {}
+					ZSBT.db.profile.pets.critDamage.critFont.scale = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+
+			petCritDamageShockwaveIntensity = {
+				type  = "range",
+				name  = L["Shockwave Intensity"],
+				order = 7.52,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Shockwave")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return (type(cf) == "table" and type(cf.shockwaveIntensity) == "number") and cf.shockwaveIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.critFont = ZSBT.db.profile.pets.critDamage.critFont or {}
+					ZSBT.db.profile.pets.critDamage.critFont.shockwaveIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			petCritDamageIgniteIntensity = {
+				type  = "range",
+				name  = L["Ignite Intensity"],
+				order = 7.53,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Ignite")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return (type(cf) == "table" and type(cf.igniteIntensity) == "number") and cf.igniteIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.critFont = ZSBT.db.profile.pets.critDamage.critFont or {}
+					ZSBT.db.profile.pets.critDamage.critFont.igniteIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			petCritDamageChromaticIntensity = {
+				type  = "range",
+				name  = L["Chromatic Intensity"],
+				order = 7.54,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Chromatic")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return (type(cf) == "table" and type(cf.chromaticIntensity) == "number") and cf.chromaticIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.critFont = ZSBT.db.profile.pets.critDamage.critFont or {}
+					ZSBT.db.profile.pets.critDamage.critFont.chromaticIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			petCritDamageStompIntensity = {
+				type  = "range",
+				name  = L["Stomp Intensity"],
+				order = 7.55,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Stomp")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return (type(cf) == "table" and type(cf.stompIntensity) == "number") and cf.stompIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.critFont = ZSBT.db.profile.pets.critDamage.critFont or {}
+					ZSBT.db.profile.pets.critDamage.critFont.stompIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			petCritDamageScreenPunchIntensity = {
+				type  = "range",
+				name  = L["ScreenPunch Intensity"],
+				order = 7.56,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "ScreenPunch")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return (type(cf) == "table" and type(cf.screenPunchIntensity) == "number") and cf.screenPunchIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.critFont = ZSBT.db.profile.pets.critDamage.critFont or {}
+					ZSBT.db.profile.pets.critDamage.critFont.screenPunchIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			petCritDamageShatterIntensity = {
+				type  = "range",
+				name  = L["Shatter Intensity"],
+				order = 7.57,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Shatter")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return (type(cf) == "table" and type(cf.shatterIntensity) == "number") and cf.shatterIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.critFont = ZSBT.db.profile.pets.critDamage.critFont or {}
+					ZSBT.db.profile.pets.critDamage.critFont.shatterIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			petCritDamageAfterimageIntensity = {
+				type  = "range",
+				name  = L["Afterimage Intensity"],
+				order = 7.58,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Afterimage")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return (type(cf) == "table" and type(cf.afterimageIntensity) == "number") and cf.afterimageIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.critFont = ZSBT.db.profile.pets.critDamage.critFont or {}
+					ZSBT.db.profile.pets.critDamage.critFont.afterimageIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			petCritDamageRumbleIntensity = {
+				type  = "range",
+				name  = L["Rumble Intensity"],
+				order = 7.59,
+				min   = 0,
+				max   = 3.0,
+				step  = 0.1,
+				disabled = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true)
+				end,
+				hidden = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return not (type(cf) == "table" and cf.enabled == true and cf.anim == "Rumble")
+				end,
+				get   = function()
+					local cf = ZSBT.db.profile.pets.critDamage and ZSBT.db.profile.pets.critDamage.critFont
+					return (type(cf) == "table" and type(cf.rumbleIntensity) == "number") and cf.rumbleIntensity or 1.0
+				end,
+				set   = function(_, val)
+					ZSBT.db.profile.pets.critDamage = ZSBT.db.profile.pets.critDamage or {}
+					ZSBT.db.profile.pets.critDamage.critFont = ZSBT.db.profile.pets.critDamage.critFont or {}
+					ZSBT.db.profile.pets.critDamage.critFont.rumbleIntensity = val
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
 			headerPetHealing = {
 				type  = "header",
 				name  = L["Incoming Pet Healing"],
