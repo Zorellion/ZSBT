@@ -2329,6 +2329,7 @@ function Addon:HandleSlashCommand(input)
             prof.learnedSpellSchools = nil
             prof.learnedTickAmounts = nil
             prof.learnedDotPeriods = nil
+            prof.learnerEvidence = nil
         end
         local col = ZSBT.Parser and ZSBT.Parser.EventCollector
         if type(col) == "table" then
