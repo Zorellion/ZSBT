@@ -1690,8 +1690,71 @@ end
 -- they do not teach schools.
 local SIG_WINDOW = 2.5
 local SIG_MAX = 16
+local SIG_LEARN_MIN = 2      -- observations before a binding boosts score
+local SIG_LEARN_MAX = 99     -- bound the counter so stale data decays
 local sigBand = (bit and bit.band) or (bit32 and bit32.band)
 Collector._sigCasts = Collector._sigCasts or {}
+
+-- Instance write gate: solo/world is school — bindings form, windows
+-- count, claims corroborate. Group content applies bindings read-only:
+-- target overlap + proc soup make timing evidence weakest exactly
+-- where volume is highest, so a poisoned edge costs nothing there.
+local function sigCanLearn()
+	if not IsInInstance then return true end
+	local inInst = IsInInstance()
+	return not (inInst == true)
+end
+
+-- Learned trigger->proc bindings, persisted sid-keyed like
+-- learnedSpellSchools. n = fires observed, w = windows offered
+-- (fire rate), rel = relearn counter (bindings wiped by drift).
+Collector._procBindings = Collector._procBindings or nil
+
+local function sigBindings(self)
+	if self._procBindings ~= nil then return self._procBindings end
+	self._procBindings = {}
+	local prof = ZSBT.db and ZSBT.db.profile
+	local saved = type(prof) == "table" and prof.learnedProcLinks or nil
+	if type(saved) == "table" then
+		for trig, t in pairs(saved) do
+			local tt = tonumber(trig)
+			if tt and type(t) == "table" then
+				local rec = self._procBindings[tt]
+				if not rec then rec = {} self._procBindings[tt] = rec end
+				for proc, e in pairs(t) do
+					local pp = tonumber(proc)
+					if pp and type(e) == "table" then
+						rec[pp] = {
+							n = tonumber(e.n) or 0,
+							w = tonumber(e.w) or 0,
+							rel = tonumber(e.rel) or 0,
+							schools = type(e.schools) == "table" and e.schools or {},
+						}
+					end
+				end
+			end
+		end
+	end
+	return self._procBindings
+end
+
+local function sigBindEntry(self, trig, proc)
+	local b = sigBindings(self)
+	local bt = b[trig]
+	if not bt then bt = {} b[trig] = bt end
+	local e = bt[proc]
+	if not e then e = { n = 0, w = 0, rel = 0, schools = {} } bt[proc] = e end
+	return e
+end
+
+local function sigPersist(self, trig, proc, e)
+	local prof = ZSBT.db and ZSBT.db.profile
+	if type(prof) ~= "table" then return end
+	prof.learnedProcLinks = prof.learnedProcLinks or {}
+	local t = prof.learnedProcLinks[trig]
+	if not t then t = {} prof.learnedProcLinks[trig] = t end
+	t[proc] = { n = e.n, w = e.w, rel = e.rel, schools = e.schools }
+end
 
 local function sigExpire(self, tNow)
 	local l = self._sigCasts
@@ -1704,6 +1767,24 @@ sigSeed = function(self, spellId, tNow)
 	local l = self._sigCasts
 	l[#l + 1] = { sid = spellId, at = tNow }
 	if #l > SIG_MAX then table.remove(l, 1) end
+	-- Opportunity counter: every open window is a chance for each linked
+	-- proc to fire. Only counted where writes are allowed.
+	if not sigCanLearn() then return end
+	local sb = ZSBT.Spellbook
+	if not (sb and sb.LinksFrom) then return end
+	for _, trig in ipairs({ spellId, sb:PairOf(spellId) }) do
+		if type(trig) == "number" then
+			local links = sb:LinksFrom(trig)
+			if type(links) == "table" then
+				for procSid in pairs(links) do
+					if type(procSid) == "number" then
+						local e = sigBindEntry(self, trig, procSid)
+						e.w = e.w + 1
+					end
+				end
+			end
+		end
+	end
 end
 
 local function sigMaskFit(rec, hitSchool)
@@ -1737,9 +1818,17 @@ claimSignature = function(self, tNow, hitSchool)
 							if type(rec) == "table"
 								and (not facts or facts.damages ~= false)
 								and sigMaskFit(rec, hitSchool) then
+								local bind = sigBindings(self)[trig]
+								bind = bind and bind[procSid] or nil
 								local score = (strength == "strong" and 2 or 0)
 									+ (rec.subTree ~= nil and 1 or 0)
 									+ (type(rec.masks) == "table" and #rec.masks > 0 and 1 or 0)
+								-- A corroborated binding is its own
+								-- evidence: earned confidence, still
+								-- gated by window + school fit.
+								if bind and bind.n >= SIG_LEARN_MIN then
+									score = score + 2
+								end
 								if score >= 3 then
 									local dt = tNow - w.at
 									if bestScore == nil or score > bestScore
@@ -1755,11 +1844,38 @@ claimSignature = function(self, tNow, hitSchool)
 		end
 	end
 	if best then
-		auditNote(("AUDSIG sid=%s via=%s score=%d dt=%.2f school=%s"):format(
+		local bn = -1
+		if sigCanLearn() then
+			local e = sigBindEntry(self, bestVia, best)
+			-- School drift: a bound proc suddenly reporting a school it
+			-- never produced = the binding learned the wrong stream.
+			-- Wipe to zero and count the relearn — the edge must re-earn.
+			if type(hitSchool) == "number" then
+				local seen = false
+				for s in pairs(e.schools) do if s == hitSchool then seen = true end end
+				local any = false
+				for _ in pairs(e.schools) do any = true break end
+				if any and not seen then
+					e.n = 0
+					e.rel = e.rel + 1
+					e.schools = {}
+				end
+				e.schools[hitSchool] = true
+			end
+			e.n = math.min(e.n + 1, SIG_LEARN_MAX)
+			sigPersist(self, bestVia, best, e)
+			bn = e.n
+		end
+		auditNote(("AUDSIG sid=%s via=%s score=%d dt=%.2f school=%s bind=%s"):format(
 			tostring(best), tostring(bestVia), bestScore or 0,
-			bestDt or 0, tostring(hitSchool)))
+			bestDt or 0, tostring(hitSchool), tostring(bn)))
 	end
 	return best
+end
+
+-- /zsbt sb + the class page read learned bindings for display.
+function Collector:ProcBindings()
+	return sigBindings(self)
 end
 
 consumeBestPendingCast = function(self, tNow, wantSpellId, maxWindowSec, doConsume, hitSchool)
