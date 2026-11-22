@@ -1146,6 +1146,7 @@ local function queuePendingHotHeal(self, unit, t, amount, school, isCrit)
 						emit("OUTGOING_HEAL_COMBAT", {
 							timestamp = e.t,
 							rawPipeId = pipeId,
+							amountText = e.amount,
 							spellId = hsid ~= 0 and hsid or nil,
 							targetName = safeUnitName(e.unit),
 							isCrit = e.isCrit == true,
@@ -3789,6 +3790,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					emit("OUTGOING_HEAL_COMBAT", {
 						timestamp = tH,
 						rawPipeId = pipeId,
+						amountText = amount,
 						spellId = hsid ~= 0 and hsid or nil,
 						targetName = safeUnitName(unit),
 						isCrit = isCritH,
@@ -4510,6 +4512,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						emit("OUTGOING_HEAL_COMBAT", {
 							timestamp = t,
 							rawPipeId = pipeId,
+							amountText = amount,
 							spellId = hsid ~= 0 and hsid or nil,
 							targetName = safeUnitName("target"),
 							isCrit = isCrit,
@@ -4591,6 +4594,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			emit("OUTGOING_HEAL_COMBAT", {
 				timestamp = t,
 				rawPipeId = pipeId,
+				amountText = amount,
 				spellId = spellId,
 				targetName = safeUnitName("target"),
 				isCrit = isCrit,
