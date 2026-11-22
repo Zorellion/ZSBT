@@ -1459,6 +1459,7 @@ local function autoContested(self, t, feed)
 	local prof = ZSBT.db and ZSBT.db.profile
 	local dmg = prof and prof.outgoing and prof.outgoing.damage
 	if dmg and dmg.hideAutoContested == false then return false end
+	local contested = (self._autoContestUntil or 0) > t
 	if feed ~= false then
 		-- Only target-path callers feed: off-target nameplate traffic
 		-- (foreign cleave on OTHER mobs) must not arm target contention,
@@ -1468,9 +1469,44 @@ local function autoContested(self, t, feed)
 		if type(last) == "number" and (t - last) > 0
 			and (t - last) < autoContestWindow(self) then
 			self._autoContestUntil = t + AUTO_CONTEST_GRACE
+			contested = true
+		end
+		if not contested then
+			-- Uncontested physical UC on our target is presumed ours:
+			-- advance the swing-phase anchor used to accept on-schedule
+			-- hits once contention arms.
+			self._swingAnchor = t
 		end
 	end
-	return (self._autoContestUntil or 0) > t
+	return contested
+end
+
+-- Phase gate: while contested, a candidate survives only if it lands on
+-- our learned swing grid (anchor + n*speed within tolerance). Foreign
+-- hits usually fall between grid points and drop; accepted hits snap to
+-- the grid point (never to their own timestamp) so a coincidentally
+-- on-phase foreign hit cannot shift our cadence and chain-accept.
+local function autoPhaseOK(self, t)
+	local anchor = self._swingAnchor
+	local speed = nil
+	if UnitAttackSpeed then
+		local okS, mh = pcall(UnitAttackSpeed, "player")
+		if okS and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(mh) and mh > 0 then
+			speed = mh
+		end
+	end
+	if type(anchor) ~= "number" or type(speed) ~= "number" then
+		return false
+	end
+	local n = math.floor((t - anchor) / speed + 0.5)
+	if n < 0 then n = 0 end
+	local expect = anchor + n * speed
+	local tol = math.max(0.12, speed * 0.18)
+	if math.abs(t - expect) <= tol then
+		self._swingAnchor = expect
+		return true
+	end
+	return false
 end
 
 -- Forward declaration needed so the cache wrapper defined below can reference it.
@@ -4936,10 +4972,16 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- (which falls through to BYPASS_RESTRICT_PHYS -> AUDQ under veto,
 			-- where the foreign candidate claims melee lines anyway) and it
 			-- must see EVERY unmatched physical UC or the detector starves.
-			-- Cast-matched (named) hits skip this entirely.
+			-- Cast-matched (named) hits skip this entirely. While contested,
+			-- on-phase candidates still pass (marked _phasePass so the queue
+			-- gate honors them) — the phase grid keeps our autos visible.
+			local contestedPhasePass = false
 			if restrict and (not matchedCast) and autoContested(self, t) then
-				dbgDrop("CONTESTED", self._castToken, school)
-				return
+				if not autoPhaseOK(self, t) then
+					dbgDrop("CONTESTED", self._castToken, school)
+					return
+				end
+				contestedPhasePass = true
 			end
 			if restrict and (not matchedCast) and allowAutoFallback == true then
 				-- Last-resort: show an auto-attack-like hit even though UNIT_COMBAT(target)
@@ -4986,6 +5028,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						rawPipeId = pipeId,
 						spellId = nil,
 						isAuto = true,
+						_phasePass = contestedPhasePass or nil,
 						amountSource = "UNIT_COMBAT_AUTO_FALLBACK",
 						targetName = safeUnitName("target"),
 						isCrit = isCrit,
@@ -5028,8 +5071,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- swinging. This reduces leakage when other players are also attacking your target.
 			if (restrict ~= true) and (quietMode ~= true) and (spellId == nil) then
 				if autoContested(self, t) then
-					dbgDrop("CONTESTED", self._castToken, school)
-					return
+					if not autoPhaseOK(self, t) then
+						dbgDrop("CONTESTED", self._castToken, school)
+						return
+					end
+					contestedPhasePass = true
 				end
 				local okSwing = true
 				local inPlayerCombat = false
@@ -5148,6 +5194,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				timestamp = t,
 				rawPipeId = pipeId,
 				spellId = spellId,
+				_phasePass = contestedPhasePass or nil,
 				_sidLearn = (matchedCast ~= nil and spellId ~= nil) or nil,
 				isAuto = (spellId == nil and swingOk),
 				_petRoute = petRoutePhys,
@@ -5439,7 +5486,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							if okA and a == false then canAtk = false end
 						end
 						if inPlayerCombat and canAtk and (not (members and members > 1))
-							and not autoContested(self, t) and swingExplainsHit(self, t) then
+							and (not autoContested(self, t) or autoPhaseOK(self, t)) and swingExplainsHit(self, t) then
 							-- Same dedup as the physical branch: the fallback and
 							-- physical paths can both fire for one white swing.
 							local lastAuto = self._lastAutoOutgoingAt or 0
@@ -5457,6 +5504,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								rawPipeId = pipeId,
 								spellId = nil,
 								isAuto = true,
+								_phasePass = ((self._autoContestUntil or 0) > t) or nil,
 								amountSource = "UNIT_COMBAT_AUTO_FALLBACK",
 								targetName = safeUnitName("target"),
 								isCrit = isCrit,
@@ -6318,6 +6366,7 @@ function Collector:Disable()
 	self._healClaimByName = nil
 	self._lastAutoCandAt = nil
 	self._autoContestUntil = nil
+	self._swingAnchor = nil
 	local zb = ZSBT.ZBattleText
 	if zb and zb._healLineHook then
 		zb._healLineHook = nil
