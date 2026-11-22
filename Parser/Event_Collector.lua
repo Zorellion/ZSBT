@@ -994,6 +994,8 @@ local function matchOutgoingHotTick(self, unit, t)
 	if type(st) ~= "table" then st = {} ; self._hotTickState = st end
 	local us = st[key]
 	if type(us) ~= "table" then us = {} ; st[key] = us end
+	local prof = ZSBT.db and ZSBT.db.profile
+	local learnedPer = type(prof) == "table" and prof.learnedHotPeriods or nil
 	local cadSid, cadScore = nil, nil
 	local firstSid, firstDelta = nil, nil
 	local auraMiss, auraErr = 0, 0
@@ -1008,8 +1010,15 @@ local function matchOutgoingHotTick(self, unit, t)
 			elseif type(aura) ~= "table" then
 				auraMiss = auraMiss + 1
 			else
-				local iv = rec.interval or HOT_DEFAULT_TICK_INTERVAL
 				local ts = us[sid]
+				-- Learned period (confirmed tick gaps this session, then
+				-- persisted) outranks module/book intervals — the model
+				-- adapts to what this client actually schedules, same as
+				-- the DoT learner.
+				local tsPer = (type(ts) == "table" and type(ts.period) == "number"
+					and ts.period > 0) and ts.period or nil
+				local iv = tsPer or (learnedPer and learnedPer[sid])
+					or rec.interval or HOT_DEFAULT_TICK_INTERVAL
 				local lastAt = (type(ts) == "table") and ts.lastAt or nil
 				if type(lastAt) == "number" then
 					local dt = t - lastAt
@@ -1042,7 +1051,22 @@ local function matchOutgoingHotTick(self, unit, t)
 	end
 	local sid = cadSid or firstSid
 	if sid ~= nil then
-		us[sid] = { lastAt = t }
+		local prev = us[sid]
+		local period = nil
+		if type(prev) == "table" and type(prev.lastAt) == "number" then
+			local gap = t - prev.lastAt
+			if gap > 0.3 and gap < 6 then
+				period = (type(prev.period) == "number" and prev.period > 0)
+					and (prev.period * 0.6 + gap * 0.4) or gap
+				if prof then
+					prof.learnedHotPeriods = prof.learnedHotPeriods or {}
+					prof.learnedHotPeriods[sid] = period
+				end
+			elseif type(prev.period) == "number" then
+				period = prev.period
+			end
+		end
+		us[sid] = { lastAt = t, period = period }
 		return sid
 	end
 	if auraErr > 0 then return nil, "aura_err" end
