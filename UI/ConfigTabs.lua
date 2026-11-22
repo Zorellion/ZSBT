@@ -7578,6 +7578,15 @@ function ZSBT.BuildTab_Outgoing()
                 get    = function() return ZSBT.db.profile.outgoing.damage.autoAttackMode end,
                 set    = function(_, val) ZSBT.db.profile.outgoing.damage.autoAttackMode = val end,
             },
+            hideAutoContested = {
+                type  = "toggle",
+                name  = L["Hide Auto-Attacks When Contested"],
+                desc  = L["Suppress auto-attack numbers while another attacker is hitting your target (unattributed hits cannot be proven yours)."],
+                width = "full",
+                order = 6.05,
+                get   = function() return ZSBT.db.profile.outgoing.damage.hideAutoContested ~= false end,
+                set   = function(_, val) ZSBT.db.profile.outgoing.damage.hideAutoContested = val end,
+            },
             thresholdTip = {
                 type     = "description",
                 name     = L["Tip: You can type a value above the slider (up to 15000)."],

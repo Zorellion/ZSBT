@@ -1434,6 +1434,40 @@ local function swingExplainsHit(self, t)
 	return anySwingRecent(self, t)
 end
 
+-- Contention detection for unattributed physical hits. UC carries no
+-- source on Retail, so when a second player (or follower/pet the gates
+-- didn't catch) melees the same target, each would-be auto claim is a
+-- coin flip over who owns it. Two auto candidates landing inside ~80%
+-- of our own swing cannot both be ours — while that contention is live,
+-- suppress auto-fallback emits instead of showing someone else's number.
+-- Detection runs on post-twin-dedup candidates, so our own
+-- nameplate->target re-reports never false-trigger it.
+local AUTO_CONTEST_MIN = 0.55
+local AUTO_CONTEST_GRACE = 3.0
+local function autoContestWindow(self)
+	local win = AUTO_CONTEST_MIN
+	if UnitAttackSpeed then
+		local okS, mh = pcall(UnitAttackSpeed, "player")
+		if okS and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(mh) and mh > 0 then
+			win = math.max(win, mh * 0.8)
+		end
+	end
+	return win
+end
+
+local function autoContested(self, t)
+	local prof = ZSBT.db and ZSBT.db.profile
+	local dmg = prof and prof.outgoing and prof.outgoing.damage
+	if dmg and dmg.hideAutoContested == false then return false end
+	local last = self._lastAutoCandAt
+	self._lastAutoCandAt = t
+	if type(last) == "number" and (t - last) > 0
+		and (t - last) < autoContestWindow(self) then
+		self._autoContestUntil = t + AUTO_CONTEST_GRACE
+	end
+	return (self._autoContestUntil or 0) > t
+end
+
 -- Forward declaration needed so the cache wrapper defined below can reference it.
 local hasTargetDebuffSpellId
 
@@ -4913,6 +4947,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				if canShow and not swingExplainsHit(self, t) then
 					canShow = false
 				end
+				-- Contested target: suppress rather than show a foreign
+				-- attacker's white damage as ours.
+				if canShow and autoContested(self, t) then
+					canShow = false
+					dbgDrop("CONTESTED", self._castToken, school)
+				end
 				if canShow then
 					self._lastAutoRestrictAt = t
 					local pipeId = self._rawPipeCount + 1
@@ -5373,7 +5413,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							local okA, a = pcall(UnitCanAttack, "player", "target")
 							if okA and a == false then canAtk = false end
 						end
-						if inPlayerCombat and canAtk and (not (members and members > 1)) and swingExplainsHit(self, t) then
+						if inPlayerCombat and canAtk and (not (members and members > 1))
+							and not autoContested(self, t) and swingExplainsHit(self, t) then
 							-- Same dedup as the physical branch: the fallback and
 							-- physical paths can both fire for one white swing.
 							local lastAuto = self._lastAutoOutgoingAt or 0
@@ -6250,6 +6291,8 @@ function Collector:Disable()
 	self._hotTickState = nil
 	self._healClaimByGuid = nil
 	self._healClaimByName = nil
+	self._lastAutoCandAt = nil
+	self._autoContestUntil = nil
 	local zb = ZSBT.ZBattleText
 	if zb and zb._healLineHook then
 		zb._healLineHook = nil
