@@ -960,33 +960,46 @@ local function healUnitKeys(unit)
 		local okG, g = pcall(UnitGUID, unit)
 		if okG and ZSBT.IsSafeString and ZSBT.IsSafeString(g) then guid = g end
 	end
-	if safeUnitName then name = safeUnitName(unit) end
+	if safeUnitName then
+		local n = safeUnitName(unit)
+		-- KString names are unique objects per token — they can never
+		-- dedup-match, so only safe strings are usable as keys.
+		if n ~= nil and ZSBT.IsSafeString and ZSBT.IsSafeString(n) then name = n end
+	end
 	return guid, name
 end
 
+-- Per-unit claim maps: alias claims for different units interleave (a
+-- hot tick on party2 between a dummy heal's target+softfriend reports),
+-- so a single last-claim slot gets clobbered and misses real dups.
 local function isHealAliasDup(self, unit, t)
 	if type(t) ~= "number" then return false end
-	local la = self._healClaimAt
-	if type(la) ~= "number" or math.abs(t - la) > HEAL_ALIAS_WINDOW then
-		return false
-	end
 	local guid, name = healUnitKeys(unit)
-	if guid ~= nil and self._healClaimGuid ~= nil then
-		local okE, eq = pcall(function() return guid == self._healClaimGuid end)
-		if okE and eq == true then return true end
+	local g = self._healClaimByGuid
+	if guid ~= nil and g ~= nil then
+		local la = g[guid]
+		if type(la) == "number" and math.abs(t - la) <= HEAL_ALIAS_WINDOW then
+			return true
+		end
 	end
-	if name ~= nil and self._healClaimName ~= nil then
-		local okN, nq = pcall(function() return name == self._healClaimName end)
-		if okN and nq == true then return true end
+	local n = self._healClaimByName
+	if name ~= nil and n ~= nil then
+		local la = n[name]
+		if type(la) == "number" and math.abs(t - la) <= HEAL_ALIAS_WINDOW then
+			return true
+		end
 	end
 	return false
 end
 
 local function noteHealClaim(self, unit, t)
 	local guid, name = healUnitKeys(unit)
-	self._healClaimGuid = guid
-	self._healClaimName = name or unit
-	self._healClaimAt = t
+	local g = self._healClaimByGuid
+	if g == nil then g = {} ; self._healClaimByGuid = g end
+	local n = self._healClaimByName
+	if n == nil then n = {} ; self._healClaimByName = n end
+	if guid ~= nil then g[guid] = t end
+	n[name or unit] = t
 end
 
 -- Outgoing heal attribution (UNIT_COMBAT HEAL on a healed unit's token —
@@ -6230,9 +6243,8 @@ function Collector:Disable()
 	self._bestOutgoingByToken = {}
 	self._pendingHotHeal = nil
 	self._hotTickState = nil
-	self._healClaimGuid = nil
-	self._healClaimName = nil
-	self._healClaimAt = nil
+	self._healClaimByGuid = nil
+	self._healClaimByName = nil
 	local zb = ZSBT.ZBattleText
 	if zb and zb._healLineHook then
 		zb._healLineHook = nil
