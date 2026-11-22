@@ -770,6 +770,22 @@ local function dotEntryForSpellId(spellId)
 	return nil
 end
 
+-- Dot/channel entries may declare school as a scalar or as a set
+-- (composite-school ticks — e.g. Voltaic Blaze burns report fire|nature
+-- 12 while the impact is pure nature 8). nil decl = unconstrained;
+-- returns true/false/nil matching DeclaredSchoolFits semantics.
+local function dotEntrySchoolEq(decl, school)
+	if decl == nil then return nil end
+	if type(decl) == "table" then
+		if decl[school] == true then return true end
+		for _, m in ipairs(decl) do
+			if m == school then return true end
+		end
+		return false
+	end
+	return decl == school
+end
+
 local function isKnownPeriodicSpellId(spellId)
 	if type(spellId) ~= "number" then return false end
 	local ClassDB = ZSBT.ClassDB
@@ -1717,9 +1733,9 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 				-- a ~1s interval would accept nearly every wound's phase —
 				-- including it here only manufactures collisions.
 				rejChan = rejChan + 1
-			elseif entry.school and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school) and entry.school ~= school then
+			elseif entry.school and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school) and dotEntrySchoolEq(entry.school, school) == false then
 				rejSchool = rejSchool + 1
-			elseif pendingPet ~= nil and entry.school and ZSBT.IsSafeNumber(school) and entry.school == school then
+			elseif pendingPet ~= nil and entry.school and ZSBT.IsSafeNumber(school) and dotEntrySchoolEq(entry.school, school) == true then
 				-- Wound is contested by a proven pet claim: don't let a
 				-- same-school dot steal it. Falls through to the pet path.
 				rejSchool = rejSchool + 1
@@ -4696,7 +4712,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- School safety: a DoT entry may declare its school; never attribute
 					-- hits of a different school to it (spellId variants included).
 					local dotEntry = dotSpellId and dotEntryForSpellId(dotSpellId) or nil
-					if dotEntry and dotEntry.school and ZSBT.IsSafeNumber(school) and school ~= dotEntry.school then
+					if dotEntry and dotEntry.school and ZSBT.IsSafeNumber(school) and dotEntrySchoolEq(dotEntry.school, school) == false then
 						dotSpellId = nil
 					end
 					if dl >= 4 and ZSBT.IsSafeNumber(amount) and amount > 0 and (not isPhysicalEarly) and (ZSBT.IsSafeNumber(school) and school == 4) then
@@ -5682,14 +5698,14 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						end
 					end
 					local dotEntry = dotSpellId and dotEntryForSpellId(dotSpellId) or nil
-					if dotEntry and dotEntry.school and ZSBT.IsSafeNumber(school) and school ~= dotEntry.school then
+					if dotEntry and dotEntry.school and ZSBT.IsSafeNumber(school) and dotEntrySchoolEq(dotEntry.school, school) == false then
 						dotSpellId = nil
 					end
 					if dotSpellId and not chanPick then
 						local debuffOk = cachedHasTargetDebuffSpellId(dotSpellId)
 						if debuffOk ~= true then
 							local allowDot = false
-							if dotEntry and dotEntry.school and ZSBT.IsSafeNumber(school) and school == dotEntry.school then
+							if dotEntry and dotEntry.school and ZSBT.IsSafeNumber(school) and dotEntrySchoolEq(dotEntry.school, school) == true then
 								allowDot = true
 							end
 							if not allowDot then
