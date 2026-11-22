@@ -301,6 +301,24 @@ function ZSBT.ResolveDisplayAmount(numericAmount, amountText, kind)
     return nil, true
 end
 
+-- Round a display-bound amount without breaking secret values.
+-- Safe numbers round via math.floor. Retail secret numbers cannot do
+-- arithmetic, but the secret userdata exposes :floor()/:round() — the
+-- result stays secret so it can pass straight to SetText. Anything
+-- without a usable round path is returned unchanged.
+function ZSBT.RoundDisplayValue(v)
+    if ZSBT.IsSafeNumber(v) then
+        return math.floor(v + 0.5)
+    end
+    if v == nil then return nil end
+    if type(v) == "string" then return v end
+    local ok, r = pcall(function() return v:round() end)
+    if ok and r ~= nil then return r end
+    local ok2, r2 = pcall(function() return v:floor() end)
+    if ok2 and r2 ~= nil then return r2 end
+    return v
+end
+
 ZSBT.NUMBER_FORMATS = {
     none = "None",
     short1 = "Short (K/M/B, 1 decimal)",

@@ -625,7 +625,9 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
                     text = tostring(math.floor(rawPipeValue + 0.5))
                 end
             else
-                text = rawPipeValue  -- tainted, pass through for pcall SetText
+                -- Tainted, pass through for pcall SetText; round secret
+                -- floats first (see RoundDisplayValue).
+                text = ZSBT.RoundDisplayValue and ZSBT.RoundDisplayValue(rawPipeValue) or rawPipeValue
             end
         else
             text = displayText
@@ -978,11 +980,14 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
                 end
                 text = text .. " (OH " .. overText .. ")"
             end
-        elseif rawPipeValue ~= nil then
-            -- Tainted raw pipe (dungeon) — pass through
-            text = rawPipeValue
-        elseif isTainted and displayText then
+        elseif displayText then
+            -- amountText parsed to a clean formatted string (safe
+            -- string amounts) — prefer it over the raw passthrough.
             text = displayText
+        elseif rawPipeValue ~= nil then
+            -- Tainted raw pipe (dungeon) — pass through; round secret
+            -- floats so 1845.3333 renders as 1845 via :floor()/:round().
+            text = ZSBT.RoundDisplayValue and ZSBT.RoundDisplayValue(rawPipeValue) or rawPipeValue
         else
             return
         end
