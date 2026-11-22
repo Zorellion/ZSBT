@@ -3636,7 +3636,14 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		-- neither gate and drop as before.
 		do
 			local aH = (ZSBT.IsSafeString and ZSBT.IsSafeString(action)) and action or nil
-			if aH == "HEAL" and amount ~= nil then
+			-- aH == nil covers secret/tainted action strings: periodic
+			-- heals report a tainted action on 12.0 while direct heals
+			-- read "HEAL" plainly. WOUNDs on party tokens were never
+			-- observed in UC_RAW (followers fighting produced only HEAL
+			-- lines), so a nil-action amount event on a friendly token is
+			-- a heal candidate; the aura+cadence gates inside the matcher
+			-- keep anything else out.
+			if (aH == "HEAL" or aH == nil) and amount ~= nil then
 				local tH = now()
 				local hsid = matchOutgoingHotTick(self, unit, tH)
 				if hsid ~= nil then
@@ -4348,6 +4355,32 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		if UnitCanAttack and actionStr ~= "HEAL" then
 			local okH2, h2 = pcall(UnitCanAttack, "player", "target")
 			if okH2 and h2 == false then
+				-- Secret-action HoT ticks: periodic heals on a friendly
+				-- target report a tainted action (actionStr == nil) on
+				-- 12.0 — observed as ~1s-cadence AUDCAND rows dropping
+				-- here while a player HoT ticked on a healing dummy. A
+				-- non-attackable unit cannot be wounded, so an
+				-- amount-carrying event that aura-verifies against a live
+				-- hot record is the player's own tick.
+				if amount ~= nil then
+					local hsid = matchOutgoingHotTick(self, "target", t)
+					if hsid ~= nil then
+						local pipeId = self._rawPipeCount + 1
+						self._rawPipeCount = pipeId
+						self._rawPipe[pipeId] = amount
+						auditNote(("AUDH unit=target sid=%s"):format(tostring(hsid)))
+						emit("OUTGOING_HEAL_COMBAT", {
+							timestamp = t,
+							rawPipeId = pipeId,
+							spellId = hsid,
+							targetName = safeUnitName("target"),
+							isCrit = isCrit,
+							isPeriodic = true,
+							schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
+						})
+						return
+					end
+				end
 				auditNote("AUDD reason=NOT_ATTACKABLE")
 				return
 			end
