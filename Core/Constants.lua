@@ -312,11 +312,19 @@ function ZSBT.RoundDisplayValue(v)
         return math.floor(v + 0.5)
     end
     if v == nil then return nil end
-    if type(v) == "string" then return v end
+    -- Safe strings pass through. Secret strings (KString) have
+    -- type(v)=="string" too — they must fall through to the rounding
+    -- attempts, otherwise a fractional secret string renders at full
+    -- precision ("21222.2300").
+    if type(v) == "string" then
+        if not ZSBT.IsSafeString or ZSBT.IsSafeString(v) then return v end
+    end
     local ok, r = pcall(function() return v:round() end)
     if ok and r ~= nil then return r end
     local ok2, r2 = pcall(function() return v:floor() end)
     if ok2 and r2 ~= nil then return r2 end
+    local okN, rN = pcall(math.floor, v)
+    if okN and rN ~= nil then return rN end
     -- Secret number without math methods: format it C-side through a
     -- scratch FontString — SetFormattedText("%.0f", secret) evaluates
     -- where the real value is visible and GetText yields a displayable
