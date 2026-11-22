@@ -4761,6 +4761,16 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								return
 							end
 						end
+						-- Shared-target guard: a co-attacker's pet melee is
+						-- indistinguishable from ours (same school-1 signature,
+						-- no source in UNIT_COMBAT). Line-less wounds feed the
+						-- contested detector — our own pet hits carry MINE
+						-- pet lines and never feed — and while it's armed the
+						-- claim dies here instead of wearing our pet's name.
+						if autoContested(self, t) then
+							dbgDrop("CONTESTED", self._castToken, school)
+							return
+						end
 						-- Dedup: the same pet swing can arrive twice via UNIT_COMBAT
 						-- or once here and once via the "Your pet hits" chat line.
 						local lastPetFb = self._lastPetFallbackAt or 0
@@ -5874,6 +5884,22 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		elseif matchedCast then
 			spellId = (matchedCast.eligibleIcon == true) and matchedCast.spellId or nil
 			sidLearn = (matchedCast.spellId ~= nil) or nil
+		end
+
+		-- Shared-target guard for the generic emit: a wound that earned no
+		-- name is indistinguishable from a co-attacker's hit on the same
+		-- mob. In instances it can never be proven ours; in the open world
+		-- it feeds the contested detector (line-less wounds only — own
+		-- damage carries a MINE line and never feeds) and dies while armed.
+		if spellId == nil then
+			if inInst == true then
+				dbgDrop("INST_UNATTR", self._castToken, school)
+				return
+			end
+			if autoContested(self, t) then
+				dbgDrop("CONTESTED", self._castToken, school)
+				return
+			end
 		end
 
 		local schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil
