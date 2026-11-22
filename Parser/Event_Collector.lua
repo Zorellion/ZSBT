@@ -1471,51 +1471,8 @@ local function autoContested(self, t, feed)
 			self._autoContestUntil = t + AUTO_CONTEST_GRACE
 			contested = true
 		end
-		if not contested then
-			-- Uncontested physical UC on our target is presumed ours:
-			-- advance the swing-phase anchor used to accept on-schedule
-			-- hits once contention arms.
-			self._swingAnchor = t
-		end
 	end
 	return contested
-end
-
--- Phase gate: while contested, a candidate survives only if it lands on
--- our learned swing grid (anchor + n*speed within tolerance). Foreign
--- hits usually fall between grid points and drop; accepted hits snap to
--- the grid point (never to their own timestamp) so a coincidentally
--- on-phase foreign hit cannot shift our cadence and chain-accept.
-local function autoPhaseOK(self, t)
-	-- Prefer the melee-line anchor: MINE-palette "melee" lines are provably
-	-- our own swings, so the grid tracks our cadence even while foreign
-	-- candidates are what armed contention. _swingAnchor (last uncontested
-	-- candidate) is the fallback when no filtered line has arrived yet.
-	local anchorIsMelee = (type(self._meleeAnchor) == "number")
-	local anchor = anchorIsMelee and self._meleeAnchor or self._swingAnchor
-	local speed = nil
-	if UnitAttackSpeed then
-		local okS, mh = pcall(UnitAttackSpeed, "player")
-		if okS and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(mh) and mh > 0 then
-			speed = mh
-		end
-	end
-	if type(anchor) ~= "number" or type(speed) ~= "number" then
-		return false
-	end
-	local n = math.floor((t - anchor) / speed + 0.5)
-	if n < 0 then n = 0 end
-	local expect = anchor + n * speed
-	local tol = math.max(0.12, speed * 0.18)
-	if math.abs(t - expect) <= tol then
-		if anchorIsMelee then
-			self._meleeAnchor = expect
-		else
-			self._swingAnchor = expect
-		end
-		return true
-	end
-	return false
 end
 
 -- Forward declaration needed so the cache wrapper defined below can reference it.
@@ -4090,6 +4047,19 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							end
 							if offSid ~= nil or tgtStarved then
 								if offSid == nil then
+									-- In instances another attacker is guaranteed —
+									-- an unattributed off-target hit can never be
+									-- proven ours. Named off-target DoT ticks
+									-- (offSid ~= nil) still pass through.
+									local instOff = false
+									if IsInInstance then
+										local okI, resI = pcall(IsInInstance)
+										if okI and resI == true then instOff = true end
+									end
+									if instOff then
+										dbgDrop("OFFT_INST", self._castToken, school)
+										return
+									end
 									-- An unattributed off-target hit can only be
 									-- ours if we are actually fighting. With no
 									-- combat of our own, nameplate traffic from
@@ -5039,16 +5009,18 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- (which falls through to BYPASS_RESTRICT_PHYS -> AUDQ under veto,
 			-- where the foreign candidate claims melee lines anyway) and it
 			-- must see EVERY unmatched physical UC or the detector starves.
-			-- Cast-matched (named) hits skip this entirely. While contested,
-			-- on-phase candidates still pass (marked _phasePass so the queue
-			-- gate honors them) — the phase grid keeps our autos visible.
-			local contestedPhasePass = false
-			if restrict and (not matchedCast) and autoContested(self, t) then
-				if not autoPhaseOK(self, t) then
+			-- Cast-matched (named) hits skip this entirely. In instances an
+			-- unattributed physical hit can never be proven ours (another
+			-- attacker is guaranteed) — drop it without feeding detection.
+			if restrict and (not matchedCast) then
+				if inInst == true then
+					dbgDrop("INST_UNATTR", self._castToken, school)
+					return
+				end
+				if autoContested(self, t) then
 					dbgDrop("CONTESTED", self._castToken, school)
 					return
 				end
-				contestedPhasePass = true
 			end
 			if restrict and (not matchedCast) and allowAutoFallback == true then
 				-- Last-resort: show an auto-attack-like hit even though UNIT_COMBAT(target)
@@ -5095,7 +5067,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						rawPipeId = pipeId,
 						spellId = nil,
 						isAuto = true,
-						_phasePass = contestedPhasePass or nil,
 						amountSource = "UNIT_COMBAT_AUTO_FALLBACK",
 						targetName = safeUnitName("target"),
 						isCrit = isCrit,
@@ -5137,12 +5108,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- "white hits" (spellId nil) if we have strong evidence the player is actually
 			-- swinging. This reduces leakage when other players are also attacking your target.
 			if (restrict ~= true) and (quietMode ~= true) and (spellId == nil) then
+				if inInst == true then
+					dbgDrop("INST_UNATTR", self._castToken, school)
+					return
+				end
 				if autoContested(self, t) then
-					if not autoPhaseOK(self, t) then
-						dbgDrop("CONTESTED", self._castToken, school)
-						return
-					end
-					contestedPhasePass = true
+					dbgDrop("CONTESTED", self._castToken, school)
+					return
 				end
 				local okSwing = true
 				local inPlayerCombat = false
@@ -5261,7 +5233,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				timestamp = t,
 				rawPipeId = pipeId,
 				spellId = spellId,
-				_phasePass = contestedPhasePass or nil,
 				_sidLearn = (matchedCast ~= nil and spellId ~= nil) or nil,
 				isAuto = (spellId == nil and swingOk),
 				_petRoute = petRoutePhys,
@@ -5553,7 +5524,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							if okA and a == false then canAtk = false end
 						end
 						if inPlayerCombat and canAtk and (not (members and members > 1))
-							and (not autoContested(self, t) or autoPhaseOK(self, t)) and swingExplainsHit(self, t) then
+							and (not inInst)
+							and (not autoContested(self, t)) and swingExplainsHit(self, t) then
 							-- Same dedup as the physical branch: the fallback and
 							-- physical paths can both fire for one white swing.
 							local lastAuto = self._lastAutoOutgoingAt or 0
@@ -5571,7 +5543,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								rawPipeId = pipeId,
 								spellId = nil,
 								isAuto = true,
-								_phasePass = ((self._autoContestUntil or 0) > t) or nil,
 								amountSource = "UNIT_COMBAT_AUTO_FALLBACK",
 								targetName = safeUnitName("target"),
 								isCrit = isCrit,
@@ -6144,19 +6115,6 @@ end
 function Collector:Enable()
 	if self._enabled then return end
 	resetFallingState()
-	-- Damage-line hook: filtered "melee" lines are MINE-palette — provably
-	-- our own white swings and the only uncontestable phase reference on
-	-- this client. Anchoring the contested swing grid to them means foreign
-	-- candidates can never lock the grid onto someone else's cadence.
-	local zbE = ZSBT.ZBattleText
-	if zbE and zbE._damageLineHook == nil then
-		local selfRefE = self
-		zbE._damageLineHook = function(tl, kind)
-			if kind == "melee" then
-				selfRefE._meleeAnchor = tl
-			end
-		end
-	end
 	local dl = OutDbgLevel()
 	if dl >= 5 and self._dbgWWInferGatePrinted ~= true then
 		self._dbgWWInferGatePrinted = true
@@ -6446,14 +6404,9 @@ function Collector:Disable()
 	self._healClaimByName = nil
 	self._lastAutoCandAt = nil
 	self._autoContestUntil = nil
-	self._swingAnchor = nil
-	self._meleeAnchor = nil
 	local zb = ZSBT.ZBattleText
 	if zb and zb._healLineHook then
 		zb._healLineHook = nil
-	end
-	if zb and zb._damageLineHook then
-		zb._damageLineHook = nil
 	end
 	self._enabled = false
 	self._lastHealth = {}
