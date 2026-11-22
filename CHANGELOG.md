@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.3.9.4-beta
+
+### Changed
+- **Custom media now survives addon updates:** custom fonts/sounds registered via `Display → Media` default to `Interface\CustomMedia\Fonts\` and `Interface\CustomMedia\Sounds\` — a folder inside `Interface` next to `AddOns` that no addon manager manages, so files dropped there are never wiped by clean installs. Bare filenames resolve there automatically; any full `Interface\...` path is also accepted, so files can live anywhere. Bundled media in `ZSBT\Media` is unchanged. (MSBT-style path resolution: bare name → default folder, full path → used as-is.)
+
 ## 3.3.9.3-beta
 
 ### Fixed
