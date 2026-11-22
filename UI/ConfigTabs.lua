@@ -10807,6 +10807,19 @@ function ZSBT.BuildTab_Media()
         return s
     end
 
+    local function resolveCustomMediaPath(input, defaultDir, ext)
+        local s = tostring(input or "")
+        s = s:gsub("^%s+", ""):gsub("%s+$", "")
+        s = s:gsub("[/]+", "\\")
+        if s == "" then return nil end
+        if s:find("\\", 1, true) then
+            return s
+        end
+        local base = normalizeBaseFilename(s)
+        if base == "" then return nil end
+        return defaultDir .. base .. ext
+    end
+
     local function openRegisteredMediaWindow()
         local AceGUI = LibStub("AceGUI-3.0", true)
         if not AceGUI then return end
@@ -10998,7 +11011,7 @@ function ZSBT.BuildTab_Media()
             },
             customMediaDesc = {
                 type  = "description",
-                name  = L["1) Put fonts in: Interface\\AddOns\\ZSBT\\Media\\Fonts (TTF). 2) Put sounds in: Interface\\AddOns\\ZSBT\\Media\\Sounds (OGG). 3) Enter the filename (no extension) and click Add."],
+                name  = L["1) Create the folders Interface\\CustomMedia\\Fonts and Interface\\CustomMedia\\Sounds (inside Interface, next to AddOns — this keeps your files safe from addon updates). 2) Put your fonts (TTF) and sounds (OGG) there. 3) Enter the filename (no extension) and click Add."],
                 order = 7,
                 width = "full",
                 fontSize = "medium",
@@ -11017,7 +11030,7 @@ function ZSBT.BuildTab_Media()
             customFontFile = {
                 type  = "input",
                 name  = L["Font Filename"],
-                desc  = L["Example: MyFont (will load ZSBT\\Media\\Fonts\\MyFont.ttf)"],
+                desc  = L["Example: MyFont loads Interface\\CustomMedia\\Fonts\\MyFont.ttf, or enter any full Interface path"],
                 order = 9,
                 width = "double",
                 dialogControl = "ZSBT_InstantEditBox",
@@ -11036,10 +11049,8 @@ function ZSBT.BuildTab_Media()
                     local custom = ensureCustomTables()
                     if not custom then return end
                     local name = tostring(customFontName or "")
-                    local base = normalizeBaseFilename(customFontFile)
-                    if name == "" or base == "" then return end
-
-                    local path = "Interface\\AddOns\\ZSBT\\Media\\Fonts\\" .. base .. ".ttf"
+                    local path = resolveCustomMediaPath(customFontFile, "Interface\\CustomMedia\\Fonts\\", ".ttf")
+                    if name == "" or not path then return end
 
                     custom.fonts[name] = path
                     registerCustom("font", name, path)
@@ -11062,7 +11073,7 @@ function ZSBT.BuildTab_Media()
             customSoundFile = {
                 type  = "input",
                 name  = L["Sound Filename"],
-                desc  = L["Example: MySound (will load ZSBT\\Media\\Sounds\\MySound.ogg)"],
+                desc  = L["Example: MySound loads Interface\\CustomMedia\\Sounds\\MySound.ogg, or enter any full Interface path"],
                 order = 12,
                 width = "double",
                 dialogControl = "ZSBT_InstantEditBox",
@@ -11081,10 +11092,8 @@ function ZSBT.BuildTab_Media()
                     local custom = ensureCustomTables()
                     if not custom then return end
                     local name = tostring(customSoundName or "")
-                    local base = normalizeBaseFilename(customSoundFile)
-                    if name == "" or base == "" then return end
-
-                    local path = "Interface\\AddOns\\ZSBT\\Media\\Sounds\\" .. base .. ".ogg"
+                    local path = resolveCustomMediaPath(customSoundFile, "Interface\\CustomMedia\\Sounds\\", ".ogg")
+                    if name == "" or not path then return end
 
                     custom.sounds[name] = path
                     registerCustom("sound", name, path)

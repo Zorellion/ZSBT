@@ -13,14 +13,23 @@ Media controls sound events and custom media registration.
 ## Custom media
 If you have your own font or sound file, you can register it in the `Custom Media` section.
 
+**Important:** store your custom files in `Interface\CustomMedia\` — a folder
+inside `Interface`, next to `Interface\AddOns`. Addon updaters wipe the `ZSBT`
+folder on every update, so files inside `Interface\AddOns\ZSBT\Media\` can be
+deleted. `Interface\CustomMedia\` is never touched by any addon manager.
+
+Create it once and your files are safe forever:
+- `Interface\CustomMedia\Fonts\` — font files (`.ttf`)
+- `Interface\CustomMedia\Sounds\` — sound files (`.ogg`)
+
 ### Step-by-step: add a custom font
 1. **Get a font file**
    - Format: `.ttf`
-2. **Put the file in the ZSBT fonts folder**
+2. **Put the file in your custom fonts folder**
    - Copy your font file to:
-     - `World of Warcraft\_retail_\Interface\AddOns\ZSBT\Media\Fonts\`
+     - `World of Warcraft\_retail_\Interface\CustomMedia\Fonts\`
    - Example:
-     - `...\ZSBT\Media\Fonts\MyFont.ttf`
+     - `...\Interface\CustomMedia\Fonts\MyFont.ttf`
 3. **Open the Media tab**
    - Type `/zsbt`
    - Click `Display` -> `Media`
@@ -33,6 +42,8 @@ If you have your own font or sound file, you can register it in the `Custom Medi
      - `Font Filename`
        - Enter the filename **without** the extension.
        - Example: if the file is `MyFont.ttf`, type `MyFont`
+       - You can also enter any full `Interface\...` path if your file
+         lives somewhere else.
    - Click `Add Font`.
 5. **Use the font**
    - Go to `General` (master font) or `Display` -> `Scroll Areas` (per-area font override).
@@ -41,11 +52,11 @@ If you have your own font or sound file, you can register it in the `Custom Medi
 ### Step-by-step: add a custom sound
 1. **Get a sound file**
    - Format: `.ogg`
-2. **Put the file in the ZSBT sounds folder**
+2. **Put the file in your custom sounds folder**
    - Copy your sound file to:
-     - `World of Warcraft\_retail_\Interface\AddOns\ZSBT\Media\Sounds\`
+     - `World of Warcraft\_retail_\Interface\CustomMedia\Sounds\`
    - Example:
-     - `...\ZSBT\Media\Sounds\MySound.ogg`
+     - `...\Interface\CustomMedia\Sounds\MySound.ogg`
 3. **Open the Media tab**
    - Type `/zsbt`
    - Click `Display` -> `Media`
@@ -58,6 +69,8 @@ If you have your own font or sound file, you can register it in the `Custom Medi
      - `Sound Filename`
        - Enter the filename **without** the extension.
        - Example: if the file is `MySound.ogg`, type `MySound`
+       - You can also enter any full `Interface\...` path if your file
+         lives somewhere else.
    - Click `Add Sound`.
 5. **Test the sound**
    - Still on the `Media` tab, pick your sound for an event like `Cooldown Ready`.
@@ -69,8 +82,8 @@ If you have your own font or sound file, you can register it in the `Custom Medi
 
 ### Common mistakes (quick checklist)
 - **Wrong folder**
-  - Fonts must be in `ZSBT\Media\Fonts\`
-  - Sounds must be in `ZSBT\Media\Sounds\`
+  - Fonts go in `Interface\CustomMedia\Fonts\`
+  - Sounds go in `Interface\CustomMedia\Sounds\`
 - **Typed the extension**
   - In `Font Filename` / `Sound Filename`, do **not** type `.ttf` or `.ogg`.
 - **Filename mismatch**
