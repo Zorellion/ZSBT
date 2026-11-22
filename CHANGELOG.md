@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.3.9.5-beta
+
+### Fixed
+- **Outgoing HoT/direct-heal ticks now emit (Retail):** periodic heals (Rejuvenation, Regrowth, etc.) on friendly units were silently dropped — they arrive with tainted action strings and no aura API can verify ownership on Retail (auras are secret). Ownership now comes from the source-restricted filtered combat log: `SPELL_HEAL`/`SPELL_PERIODIC_HEAL` lines buffer in a separate ring and prove the heal is ours, with either-order UC/CLM pairing, per-line consumption dedup, cast-seeded naming, and a persisted learned-period EMA for cadence.
+- **"Really long number" on heals:** secret heal/damage amounts passed through the raw pipe rendered at full float precision. Amounts now round before display — safe numbers via `math.floor`, secrets via the `:round()`/`:floor()` methods Retail secret userdata exposes (falling back to the raw passthrough if unavailable).
+- **Forever: two same-time hits collapsing into one number.** The merge bucket exists for duplicate reports of a *single* cast, but every wound after the last cast shared one key — so Judgement + strike (different spells) and seal + weapon proc (different schools) merged to max and ate one hit. Wounds carrying a different spell identity, or a different school against an unnamed bucket, now emit separately.
+- **Forever: swing-proven auto-attacks no longer starve.** A spell wound consuming the melee combat-log line left the real auto attack queued until drop (`AUDROP src=auto`). A `PLAYER_SWING`-proven hit is provenance equal to a consumed cast record — on Forever's incomplete feed it now emits line-free after the retry, same as spell-attributed hits already did.
+
 ## 3.3.9.4-beta
 
 ### Changed
