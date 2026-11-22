@@ -1326,14 +1326,27 @@ local function resolveOffTargetDot(self, unit, t, school)
 		local dist = math.min(phase, iv - phase)
 		if bestDist == nil or dist < bestDist then best, bestDist = sid, dist end
 	end
+	local guidSeen = nil
 	if g and type(gm) == "table" then
 		for sid, sm in pairs(gm) do
-			if type(sm) == "table" then consider(sid, sm[g]) end
+			if type(sm) == "table" then
+				guidSeen = guidSeen or {}
+				guidSeen[sid] = true
+				consider(sid, sm[g])
+			end
 		end
 	end
 	if n and type(nm) == "table" then
 		for sid, sm in pairs(nm) do
-			if type(sm) == "table" then consider(sid, sm[n]) end
+			-- When the unit's GUID resolves and this dot keeps GUID
+			-- records, a missing record is proof this mob never got our
+			-- bleed — the name map cannot vouch for a different
+			-- same-named mob (adjacent identical training dummies).
+			-- Name records remain the fallback only where GUID
+			-- evidence is absent (secret GUIDs, unrecorded sid).
+			if type(sm) == "table" and not (guidSeen and guidSeen[sid]) then
+				consider(sid, sm[n])
+			end
 		end
 	end
 	-- AoE-declared dots (ground sigils, self-aura pulses): one cast debuffs
@@ -5023,18 +5036,28 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 			-- Physical DoT ticks (feral/warrior bleeds) never reach the
 			-- non-physical dot path — they surface here. A school-1 wound
-			-- earns a bleed name only when the target verifiably carries
-			-- that bleed (debuff presence is the proof our dot is ticking
-			-- there) and the wound lands on the tick grid; everything else
-			-- falls through to the white-hit machinery unchanged.
+			-- earns a bleed name only when a MINE-filtered "tick" line
+			-- corroborates that a periodic hit of ours just fired, and the
+			-- wound lands on the picked dot's own tick grid; everything
+			-- else falls through to the white-hit machinery unchanged.
 			if not matchedCast then
 				local dotSpellId = pickDotForWound(self, t, school, amount, isCrit)
-				local debuffOk = dotSpellId and cachedHasTargetDebuffSpellId(dotSpellId) or nil
-				local cadOk = (dotSpellId and debuffOk == true) and dotCadenceOk(self, t, dotSpellId) or nil
-				auditNote(("AUDD reason=PDOT_EVAL ret=%s dbf=%s cad=%s dis=%s")
-					:format(dbgSafe(dotSpellId), dbgSafe(debuffOk), dbgSafe(cadOk),
+				-- Aura reads are unreliable on secret-value clients — the
+				-- corroborating evidence is the MINE-filtered "tick" line:
+				-- our bleed ticks always produce one, a foreign white hit
+				-- never does. Cadence then phase-locks the wound to the
+				-- picked dot's own tick grid.
+				local tickOk = nil
+				if dotSpellId then
+					local zbt = ZSBT.ZBattleText
+					tickOk = (zbt and zbt.PeekDamageLine)
+						and (zbt:PeekDamageLine(t, 0.30, { tick = true }) ~= nil) or nil
+				end
+				local cadOk = (dotSpellId and tickOk) and dotCadenceOk(self, t, dotSpellId) or nil
+				auditNote(("AUDD reason=PDOT_EVAL ret=%s tk=%s cad=%s dis=%s")
+					:format(dbgSafe(dotSpellId), dbgSafe(tickOk), dbgSafe(cadOk),
 						dbgSafe(ZSBT.ClassDB and ZSBT.ClassDB.DotCadenceDisambig and ZSBT.ClassDB.DotCadenceDisambig() or nil)))
-				if debuffOk ~= true then
+				if not tickOk then
 					dotSpellId = nil
 				end
 				if dotSpellId and cadOk then
