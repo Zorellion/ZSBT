@@ -1273,18 +1273,6 @@ local function queuePendingHotHeal(self, unit, t, amount, school, isCrit)
 			end
 		end
 	end
-	-- Damage-line hook: filtered "melee" lines are MINE-palette — provably
-	-- our own white swings and the only uncontestable phase reference on
-	-- this client. Anchoring the contested swing grid to them means foreign
-	-- candidates can never lock the grid onto someone else's cadence.
-	if zb and zb._damageLineHook == nil then
-		local selfRef3 = self
-		zb._damageLineHook = function(tl, kind)
-			if kind == "melee" then
-				selfRef3._meleeAnchor = tl
-			end
-		end
-	end
 end
 
 local function offTargetDotsEnabled()
@@ -6156,6 +6144,19 @@ end
 function Collector:Enable()
 	if self._enabled then return end
 	resetFallingState()
+	-- Damage-line hook: filtered "melee" lines are MINE-palette — provably
+	-- our own white swings and the only uncontestable phase reference on
+	-- this client. Anchoring the contested swing grid to them means foreign
+	-- candidates can never lock the grid onto someone else's cadence.
+	local zbE = ZSBT.ZBattleText
+	if zbE and zbE._damageLineHook == nil then
+		local selfRefE = self
+		zbE._damageLineHook = function(tl, kind)
+			if kind == "melee" then
+				selfRefE._meleeAnchor = tl
+			end
+		end
+	end
 	local dl = OutDbgLevel()
 	if dl >= 5 and self._dbgWWInferGatePrinted ~= true then
 		self._dbgWWInferGatePrinted = true
