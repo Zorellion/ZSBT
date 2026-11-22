@@ -5,6 +5,7 @@ You are an expert World of Warcraft addon developer specializing in the modern R
 - **Zero Legacy Globals**: Strictly use the modern `C_` namespaces (e.g., `C_Timer`, `C_ChatInfo`, `C_CombatLog`).
 - **Garbage Collection (GC) Mitigation**: Prioritize table recycling pools (`Wipe` / object pooling) for high-frequency events (`COMBAT_LOG_EVENT_UNFILTERED`).
 - **Secure Frames**: Ensure all UI frame rendering adheres to modern anchoring and secure frame templates. Do not trigger interface taints during combat lockdown.
+- **Verify spell mechanics against research, not just logs**: before modeling a class-module spell (dots, applicators, channels, budgets, pets/guardians), look up its current behavior (Wowhead/Icy Veins). `/zsbt sb` output and audit wounds show *what hits*, not *what the spell does* — inferring mechanics from wound data alone already produced wrong models (Voltaic Blaze declared a dot when it is an applicator of Flame Shock; Ascendance's 6-target FS spread and Stormkeeper's Primal Storm Elemental missed entirely).
 
 ## Combat core restructure (verified in-game; transplant framing superseded — the pipeline was rebuilt inside ZSBT directly, ZCT was not kept as a separate transplant)
 
