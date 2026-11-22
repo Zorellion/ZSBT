@@ -17,7 +17,12 @@ if not ZSBT or not ZSBT.ClassDB then return end
 local mod = {}
 
 mod.dots = {
-	{ names = { "Voltaic Blaze" }, ids = { 470057 },          school = 8 },
+	-- Voltaic Blaze: impact reports nature (8) but the burn ticks report
+	-- elemental-composite fire|nature (12) — dual-school declaration or
+	-- every tick fails the school-fit gate and goes generic. The DoT
+	-- also spreads to nearby enemies, so it gets the multi-mob anchor
+	-- (aoe) letting off-target ticks claim too.
+	{ names = { "Voltaic Blaze" }, ids = { 470057 },          school = { 8, 12 }, aoe = true },
 	{ names = { "Flame Shock" },   ids = { 188389, 8050 },    school = 4 },
 }
 
