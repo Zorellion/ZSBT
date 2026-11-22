@@ -4181,13 +4181,22 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- Collapse exact school+crit twins inside 50ms so duplicates
 			-- cannot steal palette lines from distinct hits. Only dedups
 			-- safe-number schools; secret schools always pass through.
+			-- Amount joins the signature whenever it is safe (Forever's
+			-- amounts are readable; Retail's are secret) — a re-report is
+			-- identical in every field, while two genuinely distinct hits
+			-- sharing school+crit (Judgement + Holy Strike) almost always
+			-- differ in amount and must not collapse.
 			if ZSBT.IsSafeNumber(school) then
+				local amtSig = (ZSBT.IsSafeNumber(amount) and amount) or nil
 				local sig = self._lastTargetWoundSig
 				if sig and (t - sig.t) >= 0 and (t - sig.t) < 0.05
-					and sig.school == school and sig.crit == isCrit then
+					and sig.school == school and sig.crit == isCrit
+					and sig.amount == amtSig then
+					auditNote(("AUDTWIN school=%s crit=%s amt=%s"):format(
+						dbgSafe(school), tostring(isCrit == true), dbgSafe(amount)))
 					return
 				end
-				self._lastTargetWoundSig = { t = t, school = school, crit = isCrit }
+				self._lastTargetWoundSig = { t = t, school = school, crit = isCrit, amount = amtSig }
 			end
 			local zbtc = ZSBT.ZBattleText
 			if zbtc and zbtc.FileLog then
