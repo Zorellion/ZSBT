@@ -213,9 +213,6 @@ local function recordLine(r, g, b)
         table.remove(lines, 1)
     end
     lines[#lines + 1] = { at = t, kind = kind, consumed = false }
-    if ZB._damageLineHook then
-        ZB._damageLineHook(t, kind)
-    end
 end
 
 -- Consume the nearest unconsumed heal-kind line within `window` of tHit.
@@ -1168,15 +1165,23 @@ function ZB:OfferOutgoing(payload)
         -- none can queue and steal a filtered line. Tier-1 (sid-bearing)
         -- candidates are unaffected. Not a veto rejection.
         local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
-        if ec and type(ec._autoContestUntil) == "number"
-            and not (payload and payload._phasePass == true) then
-            local tNow = GetTime and GetTime() or 0
-            if tNow < ec._autoContestUntil then
-                ZB:Audit(("AUDSUPP ht=%.3f school=%s crit=%s src=%s why=contested"):format(
-                    tonumber(tHit) or 0, audSafe(payload.schoolMask), tostring(payload.isCrit == true),
-                    tostring(payload._petRoute == true and "pet" or "generic")))
-                return false
+        local tNow = GetTime and GetTime() or 0
+        local gateLive = (ec and type(ec._autoContestUntil) == "number" and tNow < ec._autoContestUntil) or false
+        local why = gateLive and "contested" or nil
+        if not gateLive and IsInInstance then
+            -- In instances another attacker is guaranteed: unattributed
+            -- candidates from any path can never be proven ours.
+            local okI, inInst = pcall(IsInInstance)
+            if okI and inInst == true then
+                gateLive = true
+                why = "instance"
             end
+        end
+        if gateLive then
+            ZB:Audit(("AUDSUPP ht=%.3f school=%s crit=%s src=%s why=%s"):format(
+                tonumber(tHit) or 0, audSafe(payload.schoolMask), tostring(payload.isCrit == true),
+                tostring(payload._petRoute == true and "pet" or "generic"), why))
+            return false
         end
     end
 
