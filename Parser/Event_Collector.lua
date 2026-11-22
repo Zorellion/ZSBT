@@ -1094,10 +1094,12 @@ local function matchOutgoingHotTick(self, unit, t)
 				dsid = self._lastPlayerSpellId
 			end
 		end
-		noteHealClaim(self, unit, claimAt)
 		if dsid == 0 and not unnamedHealsAllowed() then
+			-- Suppressed, not emitted: do not poison the dedup map or
+			-- the real UC for this heal drops against a phantom claim.
 			return nil, nil, "unnamed"
 		end
+		noteHealClaim(self, unit, claimAt)
 		return dsid, false, nil
 	end
 	-- "hot" line: a periodic heal of ours (SPELL_PERIODIC_HEAL).
@@ -1109,10 +1111,10 @@ local function matchOutgoingHotTick(self, unit, t)
 	-- the mob targets that member) — GUID collapses them to one state.
 	local recs = self._hotRecs
 	if type(recs) ~= "table" or next(recs) == nil then
-		noteHealClaim(self, unit, claimAt)
 		if not unnamedHealsAllowed() then
 			return nil, nil, "unnamed"
 		end
+		noteHealClaim(self, unit, claimAt)
 		return 0, true, nil -- proven ours, nothing armed to name it
 	end
 	local key = unit
@@ -1179,10 +1181,10 @@ local function matchOutgoingHotTick(self, unit, t)
 	local sid = cadSid or firstSid
 	if sid == nil and liveCount == 1 then sid = singleSid end
 	if sid == nil then
-		noteHealClaim(self, unit, claimAt)
 		if not unnamedHealsAllowed() then
 			return nil, nil, "unnamed"
 		end
+		noteHealClaim(self, unit, claimAt)
 		return 0, true, nil -- proven ours, unnamed
 	end
 	local prev = us[sid]
@@ -4692,23 +4694,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- already checked and recorded this UC's own claim (checking
 			-- again would self-dup and suppress this emit).
 			if castNamed then
-				-- Consume this emit's direct-heal line and claim at the
-				-- LINE's timestamp: the tainted twin for this same heal
-				-- arrives up to ~0.2s later, steals whatever line is
-				-- buffered, and would emit a duplicate.
-				local zP = ZSBT.ZBattleText
-				local lat = nil
-				if zP and zP.PeekHealLine then
-					local _, l = zP:PeekHealLine(t, HOT_LINE_WINDOW, { heal = true })
-					lat = l
-				end
-				if isHealAliasDup(self, "target", lat or t) then
+				if isHealAliasDup(self, "target", t) then
 					return
 				end
-				if zP and zP.TakeHealLine then
-					zP:TakeHealLine(t, HOT_LINE_WINDOW, { heal = true })
-				end
-				noteHealClaim(self, "target", lat or t)
+				noteHealClaim(self, "target", t)
 			end
 
 			local zH = ZSBT.ZBattleText
