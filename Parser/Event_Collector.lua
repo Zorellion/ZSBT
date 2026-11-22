@@ -1146,7 +1146,7 @@ local function queuePendingHotHeal(self, unit, t, amount, school, isCrit)
 						emit("OUTGOING_HEAL_COMBAT", {
 							timestamp = e.t,
 							rawPipeId = pipeId,
-							amountText = e.amount,
+							amountText = (ZSBT.IsSafeNumber(e.amount) and tostring(e.amount)) or nil,
 							spellId = hsid ~= 0 and hsid or nil,
 							targetName = safeUnitName(e.unit),
 							isCrit = e.isCrit == true,
@@ -3790,7 +3790,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					emit("OUTGOING_HEAL_COMBAT", {
 						timestamp = tH,
 						rawPipeId = pipeId,
-						amountText = amount,
+						amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
 						spellId = hsid ~= 0 and hsid or nil,
 						targetName = safeUnitName(unit),
 						isCrit = isCritH,
@@ -4521,7 +4521,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						emit("OUTGOING_HEAL_COMBAT", {
 							timestamp = t,
 							rawPipeId = pipeId,
-							amountText = amount,
+							amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
 							spellId = hsid ~= 0 and hsid or nil,
 							targetName = safeUnitName("target"),
 							isCrit = isCrit,
@@ -4603,7 +4603,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			emit("OUTGOING_HEAL_COMBAT", {
 				timestamp = t,
 				rawPipeId = pipeId,
-				amountText = amount,
+				amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
 				spellId = spellId,
 				targetName = safeUnitName("target"),
 				isCrit = isCrit,
@@ -6138,6 +6138,16 @@ function Collector:Disable()
 		end
 	end
 	resetFallingState()
+	-- Drop queued/deferred work so nothing emits against pre-disable
+	-- state on re-enable: merge buckets, deferred heal pairing, and the
+	-- line-arrival hook all reference wounds that are already dead.
+	self._bestOutgoingByToken = {}
+	self._pendingHotHeal = nil
+	self._hotTickState = nil
+	local zb = ZSBT.ZBattleText
+	if zb and zb._healLineHook then
+		zb._healLineHook = nil
+	end
 	self._enabled = false
 	self._lastHealth = {}
 	self._lastPlayerSpellName = nil
