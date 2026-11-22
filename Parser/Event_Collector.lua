@@ -780,6 +780,43 @@ local function isKnownPeriodicSpellId(spellId)
 	return spellId == 172 or spellId == 980 or spellId == 30108 or spellId == 27243
 end
 
+-- Record one dot application: recency + spell-level anchor + per-target
+-- (name) and per-mob (GUID) records. Used by the dot-cast seeding path
+-- and by applicator casts (Ravage -> Dreadful Wound). _dotAppliedAoe is
+-- deliberately NOT written here — only genuine multi-mob applications
+-- (aoe-flagged casts, aoe-marked applicators) earn that anchor.
+local function seedDotApplication(self, spellId, at)
+	self._recentPeriodicSpellAt[spellId] = at
+	self._dotAppliedAt = self._dotAppliedAt or {}
+	self._dotAppliedAt[spellId] = at
+	-- Per-target application map for the disambiguation path:
+	-- tab-dotting needs each mob's own phase anchor, and a wound on
+	-- the current target must not claim a dot applied elsewhere.
+	local tgtName = safeUnitName("target")
+	-- IsSafeString: safeUnitName returns secrets as-is for
+	-- SetText; they can't be compared or used as map keys.
+	if ZSBT.IsSafeString and ZSBT.IsSafeString(tgtName) then
+		local map = self._dotAppliedTarget
+		if not map then map = {} ; self._dotAppliedTarget = map end
+		local sm = map[spellId]
+		if not sm then sm = {} ; map[spellId] = sm end
+		sm[tgtName] = at
+	end
+	-- GUID-keyed mirror for nameplate lookup: off-target DoT
+	-- attribution needs a collision-free mob identity (two
+	-- same-named mobs each holding a dot).
+	if UnitGUID then
+		local okG, g = pcall(UnitGUID, "target")
+		if okG and ZSBT.IsSafeString and ZSBT.IsSafeString(g) then
+			local gm = self._dotAppliedGuid
+			if not gm then gm = {} ; self._dotAppliedGuid = gm end
+			local sm = gm[spellId]
+			if not sm then sm = {} ; gm[spellId] = sm end
+			sm[g] = at
+		end
+	end
+end
+
 local isPlayerClassTag
 local isWhirlwindSpellId
 
@@ -1349,14 +1386,13 @@ local function resolveOffTargetDot(self, unit, t, school)
 			end
 		end
 	end
-	-- AoE-declared dots (ground sigils, self-aura pulses): one cast debuffs
-	-- every mob in range, so the spell-level apply anchor is a valid phase
-	-- reference for any nameplate — no per-mob record exists to consult.
-	-- Single-target dots still require a per-mob record; cadence gates
-	-- everything either way.
-	for sid, at in pairs(self._dotAppliedAt or {}) do
-		local entry = dotEntryForSpellId(sid)
-		if entry and entry.aoe == true then consider(sid, at) end
+	-- Multi-mob application anchors (AoE casts, applicator-seeded dots):
+	-- a recorded mass application makes the cast's own time a valid phase
+	-- reference for any nameplate in range — no per-mob record needed.
+	-- Single-target applications never write this map, so a direct Rip
+	-- cast cannot vouch for wounds on mobs it never touched.
+	for sid, at in pairs(self._dotAppliedAoe or {}) do
+		consider(sid, at)
 	end
 	return best
 end
@@ -1646,11 +1682,17 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 					and ZSBT.IsSafeString(woundTgt) then
 					if map[woundTgt] ~= nil then
 						appliedOv = map[woundTgt]
-					elseif next(map) ~= nil and not (entry and entry.aoe == true) then
-						-- AoE-applied dots (Primal Wrath Rip, Thrash) debuff
-						-- every mob in range — the spell-level anchor is a
-						-- valid phase reference on any of them.
-						tgtOk = false
+					elseif next(map) ~= nil then
+						-- Only a recorded multi-mob application excuses a
+						-- missing per-mob record (AoE cast or applicator);
+						-- a single-target application elsewhere cannot
+						-- vouch for a wound on this mob.
+						local aoeAt = self._dotAppliedAoe and self._dotAppliedAoe[sid]
+						if type(aoeAt) == "number" then
+							appliedOv = aoeAt
+						else
+							tgtOk = false
+						end
 					end
 				end
 				if not tgtOk then
@@ -2629,52 +2671,40 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 		end
 		local spellName = self._lastPlayerSpellName
 		enqueuePendingCast(self, spellId, spellName, self._lastPlayerSpellAt)
-		-- AoE applicators (Primal Wrath -> Rip): the cast id is not a dot
-		-- but applies one to every enemy in range, so seed the applied
-		-- dot's anchors — without this an AoE-applied bleed leaves no
-		-- application record and its ticks can never name.
+		-- Applicator casts: the cast id is not a dot but applies one
+		-- (Primal Wrath -> Rip, Ravage -> Dreadful Wound, Starfall ->
+		-- its tick sid). Seeding gives the applied sid its application
+		-- records so its ticks can name. _dotAppliedAoe is only written
+		-- for entries marked aoe (true multi-mob applications); single-
+		-- target applicators get per-target records only.
 		if ZSBT.ClassDB and ZSBT.ClassDB.DotApplicators then
 			local applied = ZSBT.ClassDB.DotApplicators(spellId)
 			if type(applied) == "table" then
-				for _, dsid in ipairs(applied) do
+				for _, e in ipairs(applied) do
+					-- Entries are { sid, aoe=bool } or a bare sid.
+					-- aoe=nil means the applicator hits only its target
+					-- (Ravage -> Dreadful Wound) — per-target records,
+					-- no multi-mob anchor.
+					local dsid = (type(e) == "table") and e.sid or e
 					if type(dsid) == "number" then
-						self._recentPeriodicSpellAt[dsid] = self._lastPlayerSpellAt
-						self._dotAppliedAt = self._dotAppliedAt or {}
-						self._dotAppliedAt[dsid] = self._lastPlayerSpellAt
+						seedDotApplication(self, dsid, self._lastPlayerSpellAt)
+						if type(e) == "table" and e.aoe == true then
+							self._dotAppliedAoe = self._dotAppliedAoe or {}
+							self._dotAppliedAoe[dsid] = self._lastPlayerSpellAt
+						end
 					end
 				end
 			end
 		end
 		if isKnownPeriodicSpellId(spellId) then
-			self._recentPeriodicSpellAt[spellId] = self._lastPlayerSpellAt
-			self._dotAppliedAt = self._dotAppliedAt or {}
-			self._dotAppliedAt[spellId] = self._lastPlayerSpellAt
-			-- Per-target application map for the disambiguation path:
-			-- tab-dotting needs each mob's own phase anchor, and a wound on
-			-- the current target must not claim a dot applied elsewhere.
-			-- Only read by mod.dotCadenceDisambig paths.
-			local tgtName = safeUnitName("target")
-			-- IsSafeString: safeUnitName returns secrets as-is for
-			-- SetText; they can't be compared or used as map keys.
-			if ZSBT.IsSafeString and ZSBT.IsSafeString(tgtName) then
-				local map = self._dotAppliedTarget
-				if not map then map = {} ; self._dotAppliedTarget = map end
-				local sm = map[spellId]
-				if not sm then sm = {} ; map[spellId] = sm end
-				sm[tgtName] = self._lastPlayerSpellAt
-			end
-			-- GUID-keyed mirror for nameplate lookup: off-target DoT
-			-- attribution needs a collision-free mob identity (two
-			-- same-named mobs each holding a dot).
-			if UnitGUID then
-				local okG, g = pcall(UnitGUID, "target")
-				if okG and ZSBT.IsSafeString and ZSBT.IsSafeString(g) then
-					local gm = self._dotAppliedGuid
-					if not gm then gm = {} ; self._dotAppliedGuid = gm end
-					local sm = gm[spellId]
-					if not sm then sm = {} ; gm[spellId] = sm end
-					sm[g] = self._lastPlayerSpellAt
-				end
+			seedDotApplication(self, spellId, self._lastPlayerSpellAt)
+			-- The dot's own cast is inherently AoE (Thrash, Sunfire,
+			-- Starfall): it debuffs everything in range, so the cast also
+			-- stands as a multi-mob application anchor.
+			local castEntry = dotEntryForSpellId(spellId)
+			if castEntry and castEntry.aoe == true then
+				self._dotAppliedAoe = self._dotAppliedAoe or {}
+				self._dotAppliedAoe[spellId] = self._lastPlayerSpellAt
 			end
 		end
 
