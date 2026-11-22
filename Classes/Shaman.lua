@@ -44,6 +44,14 @@ mod.channels = {
 	-- Earthquake: instant ground AoE, ticks ~1s for ~6s (haste-scaled).
 	-- Ticks carry no cast record — the cast seeds a claim window.
 	{ names = { "Earthquake" }, ids = { 462620, 61882 }, duration = 6.5, tickMin = 0.6, school = 8 },
+	-- Stormkeeper + Fury of the Storms: the cast summons a Greater Storm
+	-- Elemental for ~12s (Stormwell) whose Call Lightning / Wind Gust are
+	-- pure nature and report as player-source wounds — a guaranteed
+	-- periodic entity exactly like EQ's ground window. Honest caveat:
+	-- other unclaimed nature wounds in the window (Lightning Rod
+	-- discharges, stray overloads) may also wear the Stormkeeper name.
+	-- Single _channel slot: a later EQ cast replaces this window.
+	{ names = { "Stormkeeper" }, ids = { 191634 }, duration = 12, tickMin = 0.4, school = 8 },
 }
 
 -- Zero-enemy-damage casts: a wound can never honestly wear these
@@ -51,7 +59,6 @@ mod.channels = {
 -- make-it-work recency claim, and they must not suppress DoT
 -- attribution as a "recent cast". NEVER list a dot/channel name.
 mod.exclude = {
-	"Stormkeeper",
 	"Ascendance",
 	"Astral Shift",
 	"Spirit Walk",
