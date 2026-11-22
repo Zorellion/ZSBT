@@ -3821,8 +3821,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				Collector[key] = tt
 				local aType = type(action)
 				local aPrev = (aType == "string" and ZSBT.IsSafeString and ZSBT.IsSafeString(action)) and action or aType
-				z:FileLog(("UC_RAW unit=%s action=%s amtNil=%s school=%s"):format(
-					tostring(unit), tostring(aPrev), tostring(amount == nil), tostring(school)))
+				z:FileLog(("UC_RAW unit=%s action=%s amtNil=%s amtT=%s descT=%s school=%s"):format(
+					tostring(unit), tostring(aPrev), tostring(amount == nil),
+					tostring(type(amount)), tostring(type(descriptor)), tostring(school)))
 			end
 		end
 	end
