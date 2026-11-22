@@ -5029,10 +5029,15 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- falls through to the white-hit machinery unchanged.
 			if not matchedCast then
 				local dotSpellId = pickDotForWound(self, t, school, amount, isCrit)
-				if dotSpellId and cachedHasTargetDebuffSpellId(dotSpellId) ~= true then
+				local debuffOk = dotSpellId and cachedHasTargetDebuffSpellId(dotSpellId) or nil
+				local cadOk = (dotSpellId and debuffOk == true) and dotCadenceOk(self, t, dotSpellId) or nil
+				auditNote(("AUDD reason=PDOT_EVAL ret=%s dbf=%s cad=%s dis=%s")
+					:format(dbgSafe(dotSpellId), dbgSafe(debuffOk), dbgSafe(cadOk),
+						dbgSafe(ZSBT.ClassDB and ZSBT.ClassDB.DotCadenceDisambig and ZSBT.ClassDB.DotCadenceDisambig() or nil)))
+				if debuffOk ~= true then
 					dotSpellId = nil
 				end
-				if dotSpellId and dotCadenceOk(self, t, dotSpellId) then
+				if dotSpellId and cadOk then
 					if not isDuplicateDotEmit(self, t, dotSpellId) then
 						self._recentPeriodicSpellAt[dotSpellId] = t
 						local tName = safeUnitName("target")
