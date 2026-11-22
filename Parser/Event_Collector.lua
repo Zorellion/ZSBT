@@ -1513,12 +1513,24 @@ local function autoContested(self, t, feed)
 		-- Only target-path callers feed: off-target nameplate traffic
 		-- (foreign cleave on OTHER mobs) must not arm target contention,
 		-- or nearby AoE suppresses our own target autos unnecessarily.
-		local last = self._lastAutoCandAt
-		self._lastAutoCandAt = t
-		if type(last) == "number" and (t - last) > 0
-			and (t - last) < autoContestWindow(self) then
-			self._autoContestUntil = t + AUTO_CONTEST_GRACE
-			contested = true
+		-- A wound carrying its own evidence is never a second attacker:
+		-- a class hook that just claimed it as a named tick stamps
+		-- _lastDotEmitAt == t, and a buffered MINE combat-log line means
+		-- our own feed already reported it (bleed ticks, autos). Without
+		-- this, a solo bleed class's own tick/auto cadence keeps the
+		-- detector permanently armed and suppresses real hits.
+		local zbt = ZSBT.ZBattleText
+		local lineBacked = self._lastDotEmitAt == t
+			or (zbt and zbt.PeekDamageLine
+				and zbt:PeekDamageLine(t, 0.30) ~= nil) or nil
+		if not lineBacked then
+			local last = self._lastAutoCandAt
+			self._lastAutoCandAt = t
+			if type(last) == "number" and (t - last) > 0
+				and (t - last) < autoContestWindow(self) then
+				self._autoContestUntil = t + AUTO_CONTEST_GRACE
+				contested = true
+			end
 		end
 	end
 	return contested
