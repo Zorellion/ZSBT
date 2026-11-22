@@ -951,6 +951,44 @@ local HOT_LINE_WINDOW = 0.30
 -- are spaced far wider than this.
 local HEAL_ALIAS_WINDOW = 0.12
 
+-- Unit identity for alias dedup: GUID when it resolves, unit name as
+-- fallback (soft-target tokens may not expose a GUID). Either matching
+-- the last claim's key counts as the same unit.
+local function healUnitKeys(unit)
+	local guid, name = nil, nil
+	if UnitGUID then
+		local okG, g = pcall(UnitGUID, unit)
+		if okG and ZSBT.IsSafeString and ZSBT.IsSafeString(g) then guid = g end
+	end
+	if safeUnitName then name = safeUnitName(unit) end
+	return guid, name
+end
+
+local function isHealAliasDup(self, unit, t)
+	if type(t) ~= "number" then return false end
+	local la = self._healClaimAt
+	if type(la) ~= "number" or math.abs(t - la) > HEAL_ALIAS_WINDOW then
+		return false
+	end
+	local guid, name = healUnitKeys(unit)
+	if guid ~= nil and self._healClaimGuid ~= nil then
+		local okE, eq = pcall(function() return guid == self._healClaimGuid end)
+		if okE and eq == true then return true end
+	end
+	if name ~= nil and self._healClaimName ~= nil then
+		local okN, nq = pcall(function() return name == self._healClaimName end)
+		if okN and nq == true then return true end
+	end
+	return false
+end
+
+local function noteHealClaim(self, unit, t)
+	local guid, name = healUnitKeys(unit)
+	self._healClaimGuid = guid
+	self._healClaimName = name or unit
+	self._healClaimAt = t
+end
+
 -- Outgoing heal attribution (UNIT_COMBAT HEAL on a healed unit's token —
 -- partyN/raidN/focus/targettarget/target — carries no source unit).
 -- Ownership proof is a filtered combat-log line: the ZBattleText filter
@@ -1005,22 +1043,8 @@ local function matchOutgoingHotTick(self, unit, t)
 	-- same heal renders twice. A claim already recorded for the same
 	-- unit within the alias window means this UC re-reports a rendered
 	-- heal.
-	local unitKey = unit
-	if UnitGUID then
-		local okG, g = pcall(UnitGUID, unit)
-		if okG and ZSBT.IsSafeString and ZSBT.IsSafeString(g) then
-			unitKey = g
-		end
-	end
-	if type(t) == "number" then
-		local lk, la = self._healClaimKey, self._healClaimAt
-		if lk ~= nil and type(la) == "number"
-			and math.abs(t - la) <= HEAL_ALIAS_WINDOW then
-			local okE, eq = pcall(function() return unitKey == lk end)
-			if okE and eq == true then
-				return nil, nil, "dup"
-			end
-		end
+	if isHealAliasDup(self, unit, t) then
+		return nil, nil, "dup"
 	end
 	-- Consume the nearest heal line of either kind up front: presence is
 	-- the ownership proof; consumption is the second dedup layer. Kind
@@ -1039,7 +1063,7 @@ local function matchOutgoingHotTick(self, unit, t)
 				dsid = self._lastPlayerSpellId
 			end
 		end
-		self._healClaimKey, self._healClaimAt = unitKey, t
+		noteHealClaim(self, unit, t)
 		return dsid, false, nil
 	end
 	-- "hot" line: a periodic heal of ours (SPELL_PERIODIC_HEAL).
@@ -1051,7 +1075,7 @@ local function matchOutgoingHotTick(self, unit, t)
 	-- the mob targets that member) — GUID collapses them to one state.
 	local recs = self._hotRecs
 	if type(recs) ~= "table" or next(recs) == nil then
-		self._healClaimKey, self._healClaimAt = unitKey, t
+		noteHealClaim(self, unit, t)
 		return 0, true, nil -- proven ours, nothing armed to name it
 	end
 	local key = unit
@@ -1118,7 +1142,7 @@ local function matchOutgoingHotTick(self, unit, t)
 	local sid = cadSid or firstSid
 	if sid == nil and liveCount == 1 then sid = singleSid end
 	if sid == nil then
-		self._healClaimKey, self._healClaimAt = unitKey, t
+		noteHealClaim(self, unit, t)
 		return 0, true, nil -- proven ours, unnamed
 	end
 	local prev = us[sid]
@@ -1137,7 +1161,7 @@ local function matchOutgoingHotTick(self, unit, t)
 		end
 	end
 	us[sid] = { lastAt = t, period = period }
-	self._healClaimKey, self._healClaimAt = unitKey, t
+	noteHealClaim(self, unit, t)
 	return sid, true, nil
 end
 
@@ -4609,11 +4633,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 
 			local spellId = nil
 			local hotTick = false
+			local castNamed = false
 			if self._lastPlayerSpellAt and self._lastPlayerSpellId then
 				local age = t - (self._lastPlayerSpellAt or 0)
 				if age >= 0 and age <= 1.5
 					and miwClaim(self, self._lastPlayerSpellId, self._lastPlayerSpellAt, t, school) then
 					spellId = self._lastPlayerSpellId
+					castNamed = true
 				end
 			end
 			local provenHeal = false
@@ -4641,6 +4667,19 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 			if restrict and spellId == nil and not provenHeal then
 				return
+			end
+
+			-- Alias dedup: this same direct heal also re-reports on other
+			-- tokens (softfriend/partyN) which route through the matcher —
+			-- when the cast window named it, the matcher never ran, so the
+			-- gate has to live here too. When spellId == nil the matcher
+			-- already checked and recorded this UC's own claim (checking
+			-- again would self-dup and suppress this emit).
+			if castNamed then
+				if isHealAliasDup(self, "target", t) then
+					return
+				end
+				noteHealClaim(self, "target", t)
 			end
 
 			local zH = ZSBT.ZBattleText
@@ -6191,7 +6230,8 @@ function Collector:Disable()
 	self._bestOutgoingByToken = {}
 	self._pendingHotHeal = nil
 	self._hotTickState = nil
-	self._healClaimKey = nil
+	self._healClaimGuid = nil
+	self._healClaimName = nil
 	self._healClaimAt = nil
 	local zb = ZSBT.ZBattleText
 	if zb and zb._healLineHook then
