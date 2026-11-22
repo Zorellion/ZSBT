@@ -292,12 +292,16 @@ end
 -- Non-consuming look at buffered lines: class modules use this for
 -- swing-evidence decisions (e.g. hunter distinguishes its ranged
 -- auto-shot from pet melee by which line kind is present) without
--- burning the line an actual claimant still needs.
-function ZB:PeekDamageLine(tHit, window, kinds)
+-- burning the line an actual claimant still needs. includeConsumed
+-- also accepts lines already claimed — a consumed MINE line is still
+-- proof our own feed reported damage near the hit (used by the
+-- contested feed, where a claimed-then-evicted line would otherwise
+-- let the next own wound masquerade as a second attacker).
+function ZB:PeekDamageLine(tHit, window, kinds, includeConsumed)
     if type(tHit) ~= "number" then return nil end
     for i = 1, #ZB._lines do
         local l = ZB._lines[i]
-        if DAMAGE_KINDS[l.kind] and not l.consumed
+        if DAMAGE_KINDS[l.kind] and (includeConsumed or not l.consumed)
             and (kinds == nil or kinds[l.kind] == true)
             and math.abs(l.at - tHit) <= window then
             return l.kind
