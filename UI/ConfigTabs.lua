@@ -6150,7 +6150,7 @@ function ZSBT.BuildTab_Incoming()
                 disabled = function() return ZSBT.db.profile.incoming.useSchoolColors end,
                 get      = function()
                     local c = ZSBT.db.profile.incoming.customDamageColor
-                    return c.r, c.g, c.b
+                    return c.r or 1, c.g or 1, c.b or 1
                 end,
                 set      = function(_, r, g, b)
                     local c = ZSBT.db.profile.incoming.customDamageColor
@@ -6165,7 +6165,7 @@ function ZSBT.BuildTab_Incoming()
                 disabled = function() return ZSBT.db.profile.incoming.useSchoolColors end,
                 get      = function()
                     local c = ZSBT.db.profile.incoming.customHealingColor
-                    return c.r, c.g, c.b
+                    return c.r or 1, c.g or 1, c.b or 1
                 end,
                 set      = function(_, r, g, b)
                     local c = ZSBT.db.profile.incoming.customHealingColor
@@ -7529,7 +7529,7 @@ function ZSBT.BuildTab_Outgoing()
                 disabled = function() return ZSBT.db.profile.outgoing.useSchoolColors end,
                 get      = function()
                     local c = ZSBT.db.profile.outgoing.customDamageColor
-                    return c.r, c.g, c.b
+                    return c.r or 1, c.g or 1, c.b or 1
                 end,
                 set      = function(_, r, g, b)
                     local c = ZSBT.db.profile.outgoing.customDamageColor
@@ -7544,7 +7544,7 @@ function ZSBT.BuildTab_Outgoing()
                 disabled = function() return ZSBT.db.profile.outgoing.useSchoolColors end,
                 get      = function()
                     local c = ZSBT.db.profile.outgoing.customHealingColor
-                    return c.r, c.g, c.b
+                    return c.r or 1, c.g or 1, c.b or 1
                 end,
                 set      = function(_, r, g, b)
                     local c = ZSBT.db.profile.outgoing.customHealingColor

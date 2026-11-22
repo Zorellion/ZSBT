@@ -634,9 +634,11 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
             return c and c.r == 1 and c.g == 1 and c.b == 1
         end
 
-        -- Primary: split colors
-        if isValidColor(chosen) and not isWhite(chosen) then
-            color = {r = chosen.r, g = chosen.g, b = chosen.b}
+        -- Primary: split colors — the swatch is authoritative; white
+        -- is a real choice and channels missing from partial saves
+        -- fall back to the historical white default.
+        if type(chosen) == "table" then
+            color = {r = tonumber(chosen.r) or 1, g = tonumber(chosen.g) or 1, b = tonumber(chosen.b) or 1}
         else
             -- Legacy fallback: prior single customColor setting
             local legacy = prof.customColor

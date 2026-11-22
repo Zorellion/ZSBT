@@ -290,8 +290,8 @@ ZSBT.DEFAULTS = {
             showSpellIconsFallback = true,
             iconSide        = "left",
             useSchoolColors = true,
-            customDamageColor  = { r = 1, g = 1, b = 1 },
-            customHealingColor = { r = 1, g = 1, b = 1 },
+            customDamageColor  = { r = 1.00, g = 0.25, b = 0.25 },
+            customHealingColor = { r = 0.20, g = 1.00, b = 0.20 },
             customColor     = { r = 1, g = 1, b = 1 },
             misses = {
                 scrollArea = nil,  -- nil -> damage.scrollArea
@@ -333,8 +333,8 @@ ZSBT.DEFAULTS = {
             showEmpowerIcons = true,
             iconSide = "left",
             useSchoolColors = true,
-            customDamageColor  = { r = 1, g = 1, b = 1 },
-            customHealingColor = { r = 1, g = 1, b = 1 },
+            customDamageColor  = { r = 1.00, g = 0.25, b = 0.25 },
+            customHealingColor = { r = 0.20, g = 1.00, b = 0.20 },
             misses = {
                 scrollArea = nil,  -- nil -> damage.scrollArea
                 color      = { r = 0.70, g = 0.70, b = 0.70 },

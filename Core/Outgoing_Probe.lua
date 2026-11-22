@@ -734,11 +734,13 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				color = {r = 1.00, g = 1.00, b = 1.00}
 			end
 		else
+			-- Swatch is authoritative: white is a real choice, and
+			-- channels missing from partial saves fall back to the
+			-- historical white default rather than dropping the
+			-- whole color.
 			local c = prof.customDamageColor
-			if type(c) == "table" and type(c.r) == "number" and type(c.g) == "number" and type(c.b) == "number" then
-				if not (c.r == 1 and c.g == 1 and c.b == 1) then
-					color = { r = c.r, g = c.g, b = c.b }
-				end
+			if type(c) == "table" then
+				color = { r = tonumber(c.r) or 1, g = tonumber(c.g) or 1, b = tonumber(c.b) or 1 }
 			end
 		end
 		local profOut = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.outgoing
@@ -1006,10 +1008,8 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
         local color = {r = 0.20, g = 1.00, b = 0.20}
 		if not prof.useSchoolColors then
 			local c = prof.customHealingColor
-			if type(c) == "table" and type(c.r) == "number" and type(c.g) == "number" and type(c.b) == "number" then
-				if not (c.r == 1 and c.g == 1 and c.b == 1) then
-					color = { r = c.r, g = c.g, b = c.b }
-				end
+			if type(c) == "table" then
+				color = { r = tonumber(c.r) or 1, g = tonumber(c.g) or 1, b = tonumber(c.b) or 1 }
 			end
 		end
 		local critConf = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.outgoing and ZSBT.db.profile.outgoing.crits
