@@ -943,6 +943,105 @@ local function dotCadencePredict(self, t, spellId, appliedAtOverride)
 	return false -- no timing anchor at all: cannot prove cadence
 end
 
+local HOT_DEFAULT_TICK_INTERVAL = 3.0
+local HOT_PHASE_JITTER = 0.5
+
+-- Outgoing HoT tick attribution. UNIT_COMBAT reports HEAL on the healed
+-- unit's token (partyN/raidN/focus/targettarget/target...) with no source
+-- unit, so a tick is only claimed when BOTH gates pass:
+--   (a) a hot record seeded by a real player cast is still live, and
+--   (b) the healed unit verifiably carries the PLAYER's own aura for
+--       that spell (FindAuraBySpellId HELPFUL|PLAYER). Follower/NPC
+--       heals fail (a); heals on units without my HoT fail (b).
+-- Cadence then disambiguates: established ticks need interval spacing
+-- from the last claimed tick; first ticks must land on a tick boundary
+-- phase-locked to the aura's own apply time (expirationTime - duration,
+-- per-unit correct for multi-target hots) or the cast stamp as fallback.
+-- Claiming stamps the tick state so aliased tokens (partyN vs
+-- targettarget reporting the same unit/tick in one frame) self-dedup —
+-- the second sighting lands ~0s after lastAt and fails the window.
+local function matchOutgoingHotTick(self, unit, t)
+	local recs = self._hotRecs
+	if type(recs) ~= "table" then return nil end
+	if next(recs) == nil then
+		self._hotRecs = nil
+		self._hotTickState = nil
+		return nil
+	end
+	local find = AuraUtil and AuraUtil.FindAuraBySpellId
+	if not find then return nil end
+	-- An attackable unit cannot receive the player's healing; if it
+	-- reports a HEAL it is the mob's own regen, not outgoing.
+	if UnitCanAttack then
+		local okH, h = pcall(UnitCanAttack, "player", unit)
+		if okH then
+			local okC, eq = pcall(function() return h == true end)
+			if okC and eq == true then return nil end
+		end
+	end
+	-- Tick state keys on the underlying unit, not the token: the same
+	-- heal can report under aliased tokens (partyN AND targettarget when
+	-- the mob targets that member) — GUID collapses them to one state so
+	-- the second sighting self-dedups against the just-stamped lastAt.
+	local key = unit
+	if UnitGUID then
+		local okG, g = pcall(UnitGUID, unit)
+		if okG and ZSBT.IsSafeString and ZSBT.IsSafeString(g) then
+			key = g
+		end
+	end
+	local st = self._hotTickState
+	if type(st) ~= "table" then st = {} ; self._hotTickState = st end
+	local us = st[key]
+	if type(us) ~= "table" then us = {} ; st[key] = us end
+	local cadSid, cadScore = nil, nil
+	local firstSid, firstDelta = nil, nil
+	for sid, rec in pairs(recs) do
+		if t > (rec.expiresAt or 0) then
+			recs[sid] = nil
+			us[sid] = nil
+		else
+			local okA, aura = pcall(find, sid, unit, "HELPFUL|PLAYER")
+			if okA and type(aura) == "table" then
+				local iv = rec.interval or HOT_DEFAULT_TICK_INTERVAL
+				local ts = us[sid]
+				local lastAt = (type(ts) == "table") and ts.lastAt or nil
+				if type(lastAt) == "number" then
+					local dt = t - lastAt
+					if dt >= (iv * 0.55) and dt <= (iv * 2.5) then
+						local score = math.abs(dt - iv)
+						if cadScore == nil or score < cadScore then
+							cadSid, cadScore = sid, score
+						end
+					end
+				else
+					local applyAt = nil
+					local expT = aura.expirationTime
+					local durT = aura.duration
+					if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(expT)
+						and ZSBT.IsSafeNumber(durT) then
+						applyAt = expT - durT
+					end
+					if type(applyAt) ~= "number" then applyAt = rec.appliedAt end
+					if type(applyAt) == "number" and t >= applyAt then
+						local phase = (t - applyAt) % iv
+						local delta = math.min(phase, iv - phase)
+						if delta <= HOT_PHASE_JITTER
+							and (firstDelta == nil or delta < firstDelta) then
+							firstSid, firstDelta = sid, delta
+						end
+					end
+				end
+			end
+		end
+	end
+	local sid = cadSid or firstSid
+	if sid ~= nil then
+		us[sid] = { lastAt = t }
+	end
+	return sid
+end
+
 local function offTargetDotsEnabled()
 	local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
 	return g == nil or g.showDotsOnOtherEnemies ~= false
@@ -2273,6 +2372,29 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 			end
 		end
 
+		-- Outgoing heal-over-time seeds: a module-declared hot cast arms an
+		-- attribution record. The record alone claims nothing — a HEAL on a
+		-- friendly unit only emits when aura verification proves that unit
+		-- carries the player's own HoT (see matchOutgoingHotTick).
+		if ZSBT.ClassDB and ZSBT.ClassDB.HotEntry then
+			local he = ZSBT.ClassDB.HotEntry(spellId)
+			if he then
+				local sb = ZSBT.Spellbook
+				local sbRec = sb and sb.Entry and sb:Entry(spellId) or nil
+				local iv = (sbRec and type(sbRec.interval) == "number" and sbRec.interval > 0 and sbRec.interval)
+					or (type(he.interval) == "number" and he.interval > 0 and he.interval)
+					or HOT_DEFAULT_TICK_INTERVAL
+				local dur = (type(he.duration) == "number" and he.duration > 0 and he.duration) or 15
+				local recs = self._hotRecs
+				if not recs then recs = {} ; self._hotRecs = recs end
+				recs[spellId] = {
+					appliedAt = self._lastPlayerSpellAt,
+					interval = iv,
+					expiresAt = self._lastPlayerSpellAt + dur + 1.5,
+				}
+			end
+		end
+
 		-- Prime target health baseline to improve first-hit correlation.
 		-- If we acquire a new target and immediately open with a cast, the
 		-- first UNIT_HEALTH delta can be missed because oldHealth is nil.
@@ -3506,6 +3628,39 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 	-- previously dropped them here. If a nameplate token refers to the player's current
 	-- target, remap it to "target" so the existing outgoing pipeline handles the hit.
 	if unit ~= "player" and unit ~= "target" and unit ~= "pet" then
+		-- Outgoing heal-over-time ticks land on the healed unit's token
+		-- (partyN/raidN/focus/targettarget...) — never "target" — and were
+		-- dropped wholesale below. A HEAL here only emits when a
+		-- cast-seeded hot record is live AND the unit verifiably carries
+		-- the player's own HoT aura; follower heals on the same unit pass
+		-- neither gate and drop as before.
+		do
+			local aH = (ZSBT.IsSafeString and ZSBT.IsSafeString(action)) and action or nil
+			if aH == "HEAL" and amount ~= nil then
+				local tH = now()
+				local hsid = matchOutgoingHotTick(self, unit, tH)
+				if hsid ~= nil then
+					local isCritH = false
+					if type(descriptor) == "string" and descriptor:upper():find("CRIT", 1, true) then
+						isCritH = true
+					end
+					local pipeId = self._rawPipeCount + 1
+					self._rawPipeCount = pipeId
+					self._rawPipe[pipeId] = amount
+					auditNote(("AUDH unit=%s sid=%s"):format(dbgSafe(unit), tostring(hsid)))
+					emit("OUTGOING_HEAL_COMBAT", {
+						timestamp = tH,
+						rawPipeId = pipeId,
+						spellId = hsid,
+						targetName = safeUnitName(unit),
+						isCrit = isCritH,
+						isPeriodic = true,
+						schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
+					})
+					return
+				end
+			end
+		end
 		-- "softenemy" is Retail's soft-target enemy token: UnitIsUnit confirms
 		-- it is the player's target, but the token itself is not "target", so
 		-- its UNIT_COMBAT events were being dropped wholesale.
@@ -4223,11 +4378,21 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			self._rawPipe[pipeId] = amount
 
 			local spellId = nil
+			local hotTick = false
 			if self._lastPlayerSpellAt and self._lastPlayerSpellId then
 				local age = t - (self._lastPlayerSpellAt or 0)
 				if age >= 0 and age <= 1.5
 					and miwClaim(self, self._lastPlayerSpellId, self._lastPlayerSpellAt, t, school) then
 					spellId = self._lastPlayerSpellId
+				end
+			end
+			if spellId == nil then
+				-- HoT ticks land far outside the cast window: claim via
+				-- cast-seeded record + aura verification on the target.
+				local hsid = matchOutgoingHotTick(self, "target", t)
+				if hsid ~= nil then
+					spellId = hsid
+					hotTick = true
 				end
 			end
 			if restrict and not spellId then
@@ -4244,6 +4409,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				spellId = spellId,
 				targetName = safeUnitName("target"),
 				isCrit = isCrit,
+				isPeriodic = hotTick or nil,
 				schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
 			})
 			return

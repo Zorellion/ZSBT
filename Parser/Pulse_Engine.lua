@@ -1278,7 +1278,7 @@ function Engine:flushBucket()
 					isCrit = sample.isCrit,
 					timestamp = sample.timestamp,
 					confidence = "HIGH",
-					isPeriodic = false,
+					isPeriodic = sample.isPeriodic == true,
 				})
 			elseif et == "OUTGOING_MISS_COMBAT" then
 				self:_emitOutgoing({

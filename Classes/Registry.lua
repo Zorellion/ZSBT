@@ -5,6 +5,7 @@
 -- for class-specific combat logic instead of hardcoding per-class branches:
 --
 --   module.dots                = { { names={...}, ids={...}, school=N? }, ... }
+--   module.hots                = { { names={...}, ids={...}, interval=N?, duration=N? }, ... }
 --   module.channels            = { { names={...}, ids={...}, duration=N, tickMin=N }, ... }
 --   module.petSchoolHit        = function(school, helpers) -> bool end
 --   module.petSchoolHitRecent  = function(self, school, lastPlayerSpellId, helpers) -> bool end
@@ -139,6 +140,23 @@ local function buildDotIndex(mod)
 	end
 	mod._dotNames = names
 	mod._dotIds = ids
+end
+
+local function buildHotIndex(mod)
+	if mod._hotIndexBuilt then return end
+	mod._hotIndexBuilt = true
+	local names, ids = {}, {}
+	for _, entry in ipairs(mod.hots or {}) do
+		entry._canon = entry.names and entry.names[1] or nil
+		for _, n in ipairs(entry.names or {}) do
+			names[n] = entry
+		end
+		for _, id in ipairs(entry.ids or {}) do
+			ids[id] = entry
+		end
+	end
+	mod._hotNames = names
+	mod._hotIds = ids
 end
 
 local function buildChannelIndex(mod)
@@ -515,6 +533,25 @@ end
 
 function ClassDB.IsDotSpell(spellId)
 	return ClassDB.DotEntry(spellId) ~= nil
+end
+
+-- Resolve a spellId to a heal-over-time entry (module-declared only:
+-- hots are module data, no taught/spellbook fallback — outgoing heal
+-- attribution needs deliberate cadence/duration data, not guesses).
+function ClassDB.HotEntry(spellId)
+	if type(spellId) ~= "number" then return nil end
+	local mod = ClassDB.ActiveModule()
+	if not mod or type(mod.hots) ~= "table" then return nil end
+	buildHotIndex(mod)
+	local sn = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or nil
+	if type(sn) == "string" and sn ~= "" then
+		if sn:find("(", 1, true) then
+			sn = (sn:gsub("%s*%(%s*[Rr]ank%s+%d+%s*%)%s*$", ""))
+		end
+		local e = mod._hotNames[sn]
+		if e then return e end
+	end
+	return mod._hotIds[spellId]
 end
 
 -- Known-school verdict for a cast claim: does a pre-combat source pin
