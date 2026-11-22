@@ -3589,6 +3589,18 @@ function Collector:handleCombatTextUpdate(arg1)
 				return
 			end
 			-- Not attributable as outgoing: treat as incoming combat text damage.
+			-- COMBAT_TEXT_UPDATE fires for nearby combat text — foreign hits
+			-- on other units included — so only accept it as incoming when we
+			-- are actually in combat. Real hits on us flag combat immediately;
+			-- everything else is someone else's number leaking into our scroll.
+			local inCombatCT = false
+			if UnitAffectingCombat then
+				local okC, res = pcall(UnitAffectingCombat, "player")
+				if okC and res == true then inCombatCT = true end
+			end
+			if not inCombatCT then
+				return
+			end
 			emit("COMBAT_TEXT_DAMAGE", {
 				timestamp = tNow,
 				rawPipeId = pipeId,
