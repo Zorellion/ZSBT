@@ -1,8 +1,10 @@
 -- Classes/Shaman.lua — Shaman-specific combat attribution
 --
 -- DoTs (name-primary; ids are fallback fast path):
---   Voltaic Blaze = nature (8) — Stormbringer's Flame Shock replacement
---   Flame Shock = fire (4) — Farseer / non-Stormbringer path
+--   Flame Shock = fire (4) normally; the Stormbringer-empowered variant
+--   applied by Voltaic Blaze reports volcanic fire|nature (12).
+--   Voltaic Blaze is NOT itself a dot — it is the applicator of Flame
+--   Shock (see mod.dotApplicators); its impact names via castBudget.
 -- Ground channel: Earthquake — instant ground AoE, ticks ~1s for ~6s;
 --   same pattern as Warlock Rain of Fire (ticks carry no cast record).
 -- Pets: Storm/Fire/Earth Elementals and Feral Spirit wolves. Elemental
@@ -17,13 +19,21 @@ if not ZSBT or not ZSBT.ClassDB then return end
 local mod = {}
 
 mod.dots = {
-	-- Voltaic Blaze: impact reports nature (8) but the burn ticks report
-	-- elemental-composite fire|nature (12) — dual-school declaration or
-	-- every tick fails the school-fit gate and goes generic. The DoT
-	-- also spreads to nearby enemies, so it gets the multi-mob anchor
-	-- (aoe) letting off-target ticks claim too.
-	{ names = { "Voltaic Blaze" }, ids = { 470057 },          school = { 8, 12 }, aoe = true },
-	{ names = { "Flame Shock" },   ids = { 188389, 8050 },    school = 4 },
+	-- Flame Shock ticks fire (4) as a plain cast; the Voltaic Blaze-
+	-- empowered variant the debuff takes on Stormbringer ticks volcanic
+	-- composite fire|nature (12). Same debuff family, so both masks
+	-- must fit or empowered ticks fail the school gate and go generic.
+	{ names = { "Flame Shock" },   ids = { 188389, 8050 },    school = { 4, 12 } },
+}
+
+-- Applicator casts: the cast id is not a dot but applies one.
+-- Voltaic Blaze applies Flame Shock to every enemy it hits, so each
+-- cast seeds FS application records plus the multi-mob anchor
+-- (aoe=true) that lets off-target ticks claim too. Without this the
+-- FS debuff exists with no observed application — every tick emits
+-- generic, which is also why those ticks had no icon.
+mod.dotApplicators = {
+	[470057] = { { sid = 188389, aoe = true }, { sid = 8050, aoe = true } },
 }
 
 mod.channels = {
