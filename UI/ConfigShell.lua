@@ -538,10 +538,13 @@ local function buildClassPage(pf)
 		if not sid then return end
 		if ClearCursor then ClearCursor() end
 		-- Restore a bar-dragged spell into its source slot; a pickup
-		-- empties the slot before our drop fires. PlaceAction is
-		-- protected in combat — pcall keeps the failure silent there.
+		-- empties the slot before our drop fires. PickupSpell and
+		-- PlaceAction are protected in combat — a block raises
+		-- ADDON_ACTION_BLOCKED, which pcall cannot shield, so the
+		-- restore is skipped under lockdown instead.
 		if srcSlot and type(_G.PickupSpell) == "function"
-			and type(_G.PlaceAction) == "function" then
+			and type(_G.PlaceAction) == "function"
+			and not (InCombatLockdown and InCombatLockdown()) then
 			pcall(PickupSpell, sid)
 			pcall(PlaceAction, srcSlot)
 		end
@@ -708,9 +711,11 @@ local function buildClassPage(pf)
 					tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 					row = { btn = btn, tex = tex }
 					row.btn:SetScript("OnDragStart", function()
-						if row._sid then
+						-- PickupSpell is protected: blocked in combat,
+						-- pcall cannot shield ADDON_ACTION_BLOCKED.
+						if row._sid and not (InCombatLockdown and InCombatLockdown()) then
 							local pick = (C_Spell and C_Spell.PickupSpell) or _G.PickupSpell
-							if type(pick) == "function" then pcall(pick, row._sid) end
+							if type(pick) == "function" then pick(row._sid) end
 						end
 					end)
 					row.btn:SetScript("OnClick", function()
