@@ -4055,15 +4055,31 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								offSid = resolveOffTargetDot(self, unit, now(), school)
 							end
 							if offSid ~= nil or tgtStarved then
-								-- Unattributed off-target hits are contested too:
-								-- a burst of foreign cleave/AoE on shared mobs is
-								-- exactly the traffic that steals filtered lines.
-								-- Feeding these keeps contention live during
-								-- shared-target fights; sid-recorded DoT hits
-								-- skip this (named, provable).
-								if offSid == nil and autoContested(self, now(), false) then
-									dbgDrop("CONTESTED_OFFT", self._castToken, school)
-									return
+								if offSid == nil then
+									-- An unattributed off-target hit can only be
+									-- ours if we are actually fighting. With no
+									-- combat of our own, nameplate traffic from
+									-- nearby players' fights streamed straight
+									-- into the scroll through the cold-feed
+									-- delivery (no lines yet = unconditional
+									-- queue delivery). DoT-recorded hits are
+									-- named/provable and skip this.
+									local inCombat = false
+									if UnitAffectingCombat then
+										local okC, res = pcall(UnitAffectingCombat, "player")
+										if okC and res == true then inCombat = true end
+									end
+									if not inCombat then
+										dbgDrop("OFFT_NOCOMBAT", self._castToken, school)
+										return
+									end
+									-- Unattributed off-target hits are contested too:
+									-- a burst of foreign cleave/AoE on shared mobs is
+									-- exactly the traffic that steals filtered lines.
+									if autoContested(self, now(), false) then
+										dbgDrop("CONTESTED_OFFT", self._castToken, school)
+										return
+									end
 								end
 								local isCritOff = false
 								if type(descriptor) == "string" then
