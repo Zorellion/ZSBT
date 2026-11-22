@@ -23,7 +23,7 @@ mod.dots = {
 	-- empowered variant the debuff takes on Stormbringer ticks volcanic
 	-- composite fire|nature (12). Same debuff family, so both masks
 	-- must fit or empowered ticks fail the school gate and go generic.
-	{ names = { "Flame Shock" },   ids = { 188389, 8050 },    school = { 4, 12 } },
+	{ names = { "Flame Shock" },   ids = { 188389 },          school = { 4, 12 } },
 }
 
 -- Applicator casts: the cast id is not a dot but applies one.
@@ -33,7 +33,10 @@ mod.dots = {
 -- FS debuff exists with no observed application — every tick emits
 -- generic, which is also why those ticks had no icon.
 mod.dotApplicators = {
-	[470057] = { { sid = 188389, aoe = true }, { sid = 8050, aoe = true } },
+	-- 188389 only: 8050 is the legacy FS id — unresolvable on this
+	-- client (name=nil → icon=nil), so ticks that claimed it rendered
+	-- iconless. Every claim must land on the modern id.
+	[470057] = { { sid = 188389, aoe = true } },
 }
 
 mod.channels = {
