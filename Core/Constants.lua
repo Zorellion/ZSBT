@@ -342,15 +342,24 @@ function ZSBT.RoundDisplayValue(v)
     if CreateFrame then
         if _roundFS == nil then
             local f = CreateFrame("Frame")
-            _roundFS = (f and f:CreateFontString()) or false
+            -- A font object is required or SetFormattedText can fail
+            -- on some clients.
+            _roundFS = (f and f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")) or false
         end
         if _roundFS then
-            local ok3, txt = pcall(function()
-                _roundFS:SetFormattedText("%.0f", v)
-                return _roundFS:GetText()
-            end)
-            if ok3 and txt ~= nil then _roundDbg("fs") return txt end
-            _roundDbg("fsfail")
+            -- Split the pcalls: SetFormattedText evaluates the secret
+            -- C-side; GetText may return a KString (still displayable).
+            local okFmt = pcall(_roundFS.SetFormattedText, _roundFS, "%.0f", v)
+            if okFmt then
+                local okG, txt = pcall(_roundFS.GetText, _roundFS)
+                if okG and txt ~= nil then
+                    _roundDbg("fs t=" .. tostring(type(txt)))
+                    return txt
+                end
+                _roundDbg("fsgetfail")
+            else
+                _roundDbg("fsfmtfail")
+            end
         else
             _roundDbg("noframe")
         end
