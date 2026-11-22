@@ -1145,7 +1145,8 @@ function ZB:OfferOutgoing(payload)
         -- none can queue and steal a filtered line. Tier-1 (sid-bearing)
         -- candidates are unaffected. Not a veto rejection.
         local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
-        if ec and type(ec._autoContestUntil) == "number" then
+        if ec and type(ec._autoContestUntil) == "number"
+            and not (payload and payload._phasePass == true) then
             local tNow = GetTime and GetTime() or 0
             if tNow < ec._autoContestUntil then
                 ZB:Audit(("AUDSUPP ht=%.3f school=%s crit=%s src=%s why=contested"):format(
