@@ -1295,10 +1295,24 @@ function Addon:OnInitialize()
 			LSM:Register("sound", "ZSBT: Unstoppable", [[Interface\AddOns\ZSBT\Media\Sounds\unstoppable.ogg]])
 		end)
 		local custom = self.db and self.db.profile and self.db.profile.media and self.db.profile.media.custom
+		local oldPrefix = "interface\\addons\\zsbt\\media\\"
+		local newPrefix = "Interface\\CustomMedia\\"
+		local migratedPaths = false
+		local function migrateCustomPath(path)
+			if type(path) ~= "string" then return path end
+			local lower = path:lower()
+			if lower:sub(1, #oldPrefix) == oldPrefix then
+				migratedPaths = true
+				return newPrefix .. path:sub(#oldPrefix + 1)
+			end
+			return path
+		end
 		local fonts = custom and custom.fonts
 		if type(fonts) == "table" then
 			for name, path in pairs(fonts) do
 				if type(name) == "string" and name ~= "" and type(path) == "string" and path ~= "" then
+					path = migrateCustomPath(path)
+					fonts[name] = path
 					pcall(function() LSM:Register("font", name, path) end)
 				end
 			end
@@ -1307,9 +1321,14 @@ function Addon:OnInitialize()
 		if type(sounds) == "table" then
 			for name, path in pairs(sounds) do
 				if type(name) == "string" and name ~= "" and type(path) == "string" and path ~= "" then
+					path = migrateCustomPath(path)
+					sounds[name] = path
 					pcall(function() LSM:Register("sound", name, path) end)
 				end
 			end
+		end
+		if migratedPaths then
+			print("|cff33ff99ZSBT:|r Custom media paths moved to |cffffff00Interface\\CustomMedia\\|r — move your files there once and addon updates will never delete them.")
 		end
 	end
 
