@@ -553,7 +553,9 @@ function Engine:_flushPetMerge(t)
 	if type(pm.sidSeen) == "number"
 		and (not ZSBT.IsSafeNumber or ZSBT.IsSafeNumber(pm.sidSeen)) then
 		meta.spellId = pm.sidSeen
-		if petConf.showSpellIcons == true then
+		-- 6603 ("Auto Attack") is the pet-melee name claim; its texture is the
+		-- player's equipped weapon icon, not a pet ability — never render it.
+		if petConf.showSpellIcons == true and pm.sidSeen ~= 6603 then
 			local prof = ZSBT.db and ZSBT.db.profile
 			meta.iconSide = (prof and prof.outgoing and prof.outgoing.iconSide) or "left"
 			local tex = ZSBT.CleanSpellIcon and ZSBT.CleanSpellIcon(pm.sidSeen)
@@ -1549,7 +1551,8 @@ function Engine:flushBucket()
 						if type(petSid) == "number"
 							and (not ZSBT.IsSafeNumber or ZSBT.IsSafeNumber(petSid)) then
 							meta.spellId = petSid
-							if petConf.showSpellIcons == true then
+							-- 6603's texture is the player's weapon icon — suppress.
+							if petConf.showSpellIcons == true and petSid ~= 6603 then
 								meta.iconSide = (prof.outgoing and prof.outgoing.iconSide) or "left"
 								local tex = ZSBT.CleanSpellIcon and ZSBT.CleanSpellIcon(petSid)
 								if tex then meta.spellIcon = tex end
