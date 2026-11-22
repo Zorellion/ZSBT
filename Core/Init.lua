@@ -1927,14 +1927,6 @@ function Addon:OnEnable()
     enableFrame:SetScript("OnEvent", function(self, event)
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
 
-        -- Restore persisted trace flags (they survive reloads so a
-        -- cold-state repro can be captured without re-toggling).
-        local diag = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
-        if type(diag) == "table" then
-            ZSBT._ucDropTrace = (diag.ucdropTraceOn == true)
-            ZSBT._auditTrace = (diag.auditTraceOn == true)
-        end
-
         -- UI: initialize quick control bar after UIParent is ready.
         if ZSBT.UI and ZSBT.UI.QuickControlBar and ZSBT.UI.QuickControlBar.Init then
             ZSBT.UI.QuickControlBar:Init()
@@ -2345,10 +2337,7 @@ function Addon:HandleSlashCommand(input)
         ZSBT._ucDropTrace = not (ZSBT._ucDropTrace == true)
         if ZSBT._ucDropTrace == true then
             local diag = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
-            if type(diag) == "table" then diag.ucdropLog = {}; diag.ucdropTraceOn = true end
-        else
-            local diag = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
-            if type(diag) == "table" then diag.ucdropTraceOn = nil end
+            if type(diag) == "table" then diag.ucdropLog = {} end
         end
         self:Print("UC_DROP trace " .. (ZSBT._ucDropTrace and "ON" or "OFF"))
         return
@@ -2387,9 +2376,7 @@ function Addon:HandleSlashCommand(input)
         ZSBT._auditTrace = not (ZSBT._auditTrace == true)
         local diag = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
         if ZSBT._auditTrace == true then
-            if type(diag) == "table" then diag.auditLog = {}; diag.auditTraceOn = true end
-        else
-            if type(diag) == "table" then diag.auditTraceOn = nil end
+            if type(diag) == "table" then diag.auditLog = {} end
         end
         self:Print("AUDIT trace " .. (ZSBT._auditTrace and "ON" or "OFF"))
         return
