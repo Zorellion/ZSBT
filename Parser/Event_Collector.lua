@@ -962,21 +962,21 @@ local HOT_PHASE_JITTER = 0.5
 -- the second sighting lands ~0s after lastAt and fails the window.
 local function matchOutgoingHotTick(self, unit, t)
 	local recs = self._hotRecs
-	if type(recs) ~= "table" then return nil end
+	if type(recs) ~= "table" then return nil, "norecs" end
 	if next(recs) == nil then
 		self._hotRecs = nil
 		self._hotTickState = nil
-		return nil
+		return nil, "recs_empty"
 	end
 	local find = AuraUtil and AuraUtil.FindAuraBySpellId
-	if not find then return nil end
+	if not find then return nil, "no_aurautil" end
 	-- An attackable unit cannot receive the player's healing; if it
 	-- reports a HEAL it is the mob's own regen, not outgoing.
 	if UnitCanAttack then
 		local okH, h = pcall(UnitCanAttack, "player", unit)
 		if okH then
 			local okC, eq = pcall(function() return h == true end)
-			if okC and eq == true then return nil end
+			if okC and eq == true then return nil, "attackable" end
 		end
 	end
 	-- Tick state keys on the underlying unit, not the token: the same
@@ -996,13 +996,18 @@ local function matchOutgoingHotTick(self, unit, t)
 	if type(us) ~= "table" then us = {} ; st[key] = us end
 	local cadSid, cadScore = nil, nil
 	local firstSid, firstDelta = nil, nil
+	local auraMiss, auraErr = 0, 0
 	for sid, rec in pairs(recs) do
 		if t > (rec.expiresAt or 0) then
 			recs[sid] = nil
 			us[sid] = nil
 		else
 			local okA, aura = pcall(find, sid, unit, "HELPFUL|PLAYER")
-			if okA and type(aura) == "table" then
+			if not okA then
+				auraErr = auraErr + 1
+			elseif type(aura) ~= "table" then
+				auraMiss = auraMiss + 1
+			else
 				local iv = rec.interval or HOT_DEFAULT_TICK_INTERVAL
 				local ts = us[sid]
 				local lastAt = (type(ts) == "table") and ts.lastAt or nil
@@ -1038,8 +1043,11 @@ local function matchOutgoingHotTick(self, unit, t)
 	local sid = cadSid or firstSid
 	if sid ~= nil then
 		us[sid] = { lastAt = t }
+		return sid
 	end
-	return sid
+	if auraErr > 0 then return nil, "aura_err" end
+	if auraMiss > 0 then return nil, "no_aura" end
+	return nil, "nocad"
 end
 
 local function offTargetDotsEnabled()
@@ -2392,6 +2400,8 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 					interval = iv,
 					expiresAt = self._lastPlayerSpellAt + dur + 1.5,
 				}
+				auditNote(("AUDHSEED sid=%s iv=%s dur=%s"):format(
+					tostring(spellId), tostring(iv), tostring(dur)))
 			end
 		end
 
@@ -3645,7 +3655,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- keep anything else out.
 			if (aH == "HEAL" or aH == nil) and amount ~= nil then
 				local tH = now()
-				local hsid = matchOutgoingHotTick(self, unit, tH)
+				local hsid, why = matchOutgoingHotTick(self, unit, tH)
+				if hsid == nil then
+					auditNote(("AUDHX unit=%s why=%s"):format(dbgSafe(unit), tostring(why)))
+				end
 				if hsid ~= nil then
 					local isCritH = false
 					if type(descriptor) == "string" and descriptor:upper():find("CRIT", 1, true) then
@@ -4363,7 +4376,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- amount-carrying event that aura-verifies against a live
 				-- hot record is the player's own tick.
 				if amount ~= nil then
-					local hsid = matchOutgoingHotTick(self, "target", t)
+					local hsid, why = matchOutgoingHotTick(self, "target", t)
+					if hsid == nil then
+						auditNote(("AUDHX unit=target why=%s"):format(tostring(why)))
+					end
 					if hsid ~= nil then
 						local pipeId = self._rawPipeCount + 1
 						self._rawPipeCount = pipeId
@@ -4422,7 +4438,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			if spellId == nil then
 				-- HoT ticks land far outside the cast window: claim via
 				-- cast-seeded record + aura verification on the target.
-				local hsid = matchOutgoingHotTick(self, "target", t)
+				local hsid, why = matchOutgoingHotTick(self, "target", t)
+				if hsid == nil then
+					auditNote(("AUDHX unit=target why=%s"):format(tostring(why)))
+				end
 				if hsid ~= nil then
 					spellId = hsid
 					hotTick = true
