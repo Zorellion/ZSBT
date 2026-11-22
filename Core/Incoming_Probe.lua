@@ -568,7 +568,9 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
             mergeMode = "secret"
             -- Damage needs the raw value too: without it text stays nil
             -- and Display:Emit drops the event before any scroll area sees it.
-            text = rawPipeValue
+            -- Round secret floats first (see RoundDisplayValue) so a
+            -- 1845.3333-style value renders as 1845.
+            text = ZSBT.RoundDisplayValue and ZSBT.RoundDisplayValue(rawPipeValue) or rawPipeValue
         end
     else
         text = displayText

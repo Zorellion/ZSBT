@@ -38,6 +38,17 @@ Probe._bufCount = Probe._bufCount or 0
 
 local function Now() return (GetTime and GetTime()) or 0 end
 
+-- Secret-safe tostring for debug fields: secrets can't reach chat and
+-- some (KStrings) hard-error on tostring — both kill the caller when the
+-- arg is evaluated eagerly before the debug-level gate.
+local function dbgV(v)
+	if v == nil then return "nil" end
+	if ZSBT.IsSecret and ZSBT.IsSecret(v) then return "<sec>" end
+	local ok, s = pcall(tostring, v)
+	if ok and type(s) == "string" then return s end
+	return "<err>"
+end
+
 local function Debug(level, ...)
     if Addon and Addon.DebugPrint then Addon:DebugPrint(level, ...) end
 end
@@ -431,18 +442,18 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 
 	Dbg4("|cFFCC66FF[OUTDBG]|r", ("Probe kind=%s amt=%s rawPipeId=%s evtSpellId=%s resolved=%s source=%s lastAge=%s target=%s crit=%s auto=%s secret=%s empty=%s")
 		:format(
-			tostring(kind),
-			tostring(evt and (evt.amountText or evt.amount)),
-			tostring(evt and evt.rawPipeId),
-			tostring(evt and evt.spellId),
-			tostring(resolvedSpellID),
-			tostring(spellSource),
-			tostring(lastAge),
-			tostring(evt and evt.targetName),
-			tostring(evt and evt.isCrit == true),
-			tostring(evt and evt.isAuto == true),
-			tostring(isSecret),
-			tostring(isEmpty)
+			dbgV(kind),
+			dbgV(evt and (evt.amountText or evt.amount)),
+			dbgV(evt and evt.rawPipeId),
+			dbgV(evt and evt.spellId),
+			dbgV(resolvedSpellID),
+			dbgV(spellSource),
+			dbgV(lastAge),
+			dbgV(evt and evt.targetName),
+			dbgV(evt and evt.isCrit == true),
+			dbgV(evt and evt.isAuto == true),
+			dbgV(isSecret),
+			dbgV(isEmpty)
 		))
 	Dbg5("|cFFCC66FF[OUTDBG]|r", ("CORR Probe dbgChatId=%s src=%s evtSpellId=%s resolved=%s spellSource=%s")
 		:format(
@@ -913,10 +924,10 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
 				if tonumber(cleaned) == nil then
 					if Addon and Addon.Dbg then
 						Addon:Dbg("outgoing", 4, ("HEAL_NONNUM amountText=%s amount=%s rawPipeId=%s tainted=%s")
-							:format(tostring(at), tostring(evt and evt.amount), tostring(evt and evt.rawPipeId), tostring(isTainted)))
+							:format(dbgV(at), dbgV(evt and evt.amount), dbgV(evt and evt.rawPipeId), tostring(isTainted)))
 					elseif Addon and Addon.Print then
 						Addon:Print("|cFFCC66FF[OUTDBG]|r", ("HEAL_NONNUM amountText=%s amount=%s rawPipeId=%s tainted=%s")
-							:format(tostring(at), tostring(evt and evt.amount), tostring(evt and evt.rawPipeId), tostring(isTainted)))
+							:format(dbgV(at), dbgV(evt and evt.amount), dbgV(evt and evt.rawPipeId), tostring(isTainted)))
 					end
 				end
 			end
@@ -933,7 +944,7 @@ function Probe:ProcessOutgoingEvent(evt, isReplay)
         if healAmt and healAmt > 50000 then
             if dbg >= 4 then
                 Dbg4("|cFFCC66FF[OUTDBG]|r", ("OUT_HEAL_CLAMP amt=%s rawPipeId=%s spellId=%s target=%s")
-                    :format(tostring(healAmt), tostring(evt and evt.rawPipeId), tostring(evt and evt.spellId), tostring(evt and evt.targetName)))
+                    :format(dbgV(healAmt), dbgV(evt and evt.rawPipeId), dbgV(evt and evt.spellId), dbgV(evt and evt.targetName)))
             end
             return
         end
