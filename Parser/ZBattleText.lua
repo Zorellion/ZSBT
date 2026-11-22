@@ -1138,6 +1138,22 @@ function ZB:OfferOutgoing(payload)
                 tostring(payload._petRoute == true and "pet" or "generic")))
             return false
         end
+        -- Contested target: the collector detected impossible hit
+        -- cadence (a second attacker on our target). Unattributed
+        -- candidates from EVERY emit path — off-target nameplates,
+        -- school-mismatch splits, physical bypass — are refused here so
+        -- none can queue and steal a filtered line. Tier-1 (sid-bearing)
+        -- candidates are unaffected. Not a veto rejection.
+        local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
+        if ec and type(ec._autoContestUntil) == "number" then
+            local tNow = GetTime and GetTime() or 0
+            if tNow < ec._autoContestUntil then
+                ZB:Audit(("AUDSUPP ht=%.3f school=%s crit=%s src=%s why=contested"):format(
+                    tonumber(tHit) or 0, audSafe(payload.schoolMask), tostring(payload.isCrit == true),
+                    tostring(payload._petRoute == true and "pet" or "generic")))
+                return false
+            end
+        end
     end
 
     -- Fast path: the line is already buffered (CLM arrived first).
