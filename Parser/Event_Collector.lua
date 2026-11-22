@@ -3696,42 +3696,6 @@ function Collector:handleCombatTextUpdate(arg1)
 			end
 		end
 
-		-- Recipient gate: COMBAT_TEXT_UPDATE fires for nearby heal text
-		-- with no recipient unit — a nearby player's self-heal arrives
-		-- identically to a heal on you. Accept when the heal is provably
-		-- ours-on-us (sid matches a recent self-cast or an armed hot
-		-- record) or when no heal was just reported on a foreign unit.
-		-- A foreign self-heal reports on its own token at the same
-		-- instant it appears here, so it trips the veto and drops; a
-		-- group healer's heal on the player produces no foreign-unit
-		-- report and passes.
-		local tNow = now()
-		local selfHeal = false
-		if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(ctSpellId) then
-			if self._lastPlayerSpellId == ctSpellId and self._lastPlayerSpellAt
-				and (tNow - self._lastPlayerSpellAt) <= 1.5 then
-				selfHeal = true
-			else
-				local rec = self._hotRecs and self._hotRecs[ctSpellId]
-				if type(rec) == "table"
-					and (type(rec.expiresAt) ~= "number" or rec.expiresAt >= tNow) then
-					selfHeal = true
-				end
-			end
-		end
-		if not selfHeal and self._lastPlayerHealthHealAt
-			and (tNow - self._lastPlayerHealthHealAt) <= 0.30 then
-			selfHeal = true
-		end
-		if not selfHeal and self._lastForeignUnitHealAt
-			and (tNow - self._lastForeignUnitHealAt) <= 0.12 then
-			local zD = ZSBT.ZBattleText
-			if zD and zD.FileLog and ZSBT._ucDropTrace == true then
-				zD:FileLog(("CTH_DROP t=%.3f why=foreign_heal"):format(tNow))
-			end
-			return
-		end
-
 		self._lastCombatTextHealAt = now()
 
 		local pipeId = self._rawPipeCount + 1
@@ -4046,11 +4010,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- the phantom "second tick".
 			if aH == "HEAL" and amount ~= nil then
 				local tH = now()
-				-- A heal reported on a non-player unit is veto evidence for
-				-- the incoming-heal paths: a foreigner's self-heal reports
-				-- here AND misfires onto "player"/combat-text; heals truly
-				-- on the player never produce a foreign-unit report.
-				self._lastForeignUnitHealAt = tH
 				local hsid, hPeriodic, why = matchOutgoingHotTick(self, unit, tH)
 				if hsid == nil then
 					if why == "noline" then
@@ -4336,9 +4295,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		end
 		local actionStr = ZSBT.IsSafeString(action) and action or nil
 		if actionStr == "HEAL" then
-			-- Veto evidence: a heal on the pet token is a foreign-unit heal
-			-- as far as the incoming-player-heal gate is concerned.
-			self._lastForeignUnitHealAt = now()
 			local numAmount = nil
 			local amtText = nil
 			if ZSBT.IsSafeNumber(amount) then
@@ -4908,10 +4864,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		end
 
 		if actionStr == "HEAL" then
-			-- Veto evidence for the incoming-heal paths (see
-			-- _lastForeignUnitHealAt): a heal on the target token is a heal
-			-- on a non-player unit.
-			self._lastForeignUnitHealAt = t
 			-- PvP Strict Mode: UNIT_COMBAT(target) healing has no ownership attribution and
 			-- can frequently represent other players' healing on your target.
 			-- Suppress to prevent green outgoing noise (especially for non-healer classes).
@@ -6101,16 +6053,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 
 	if actionStr == "HEAL" then
 		-- Player received healing.
-		-- Foreign-heal veto: a heal was just reported on a non-player
-		-- unit, so this "player"-token report is likely that heal's
-		-- misfire rather than a heal on the player. On secret-health
-		-- clients this is the only recipient check that can run.
-		do
-			local tF = now()
-			if self._lastForeignUnitHealAt and (tF - self._lastForeignUnitHealAt) <= 0.12 then
-				return
-			end
-		end
 		-- WoW 12.0 quirk: UNIT_COMBAT(player) can misfire and report healing-like
 		-- events even when the player did not actually gain health. Only trust it
 		-- if we also observed a real UNIT_HEALTH(player) increase recently.
