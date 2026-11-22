@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.3.9.6-beta
+
+### Fixed
+- **Enable/disable now hands combat text back to Blizzard live:** disabling ZSBT stopped our text but left Blizzard's floating combat text suppressed — CVars at 0, CombatText frames unregistered, `CombatText_AddMessage*` nulled — so a `/reload` was required to get Blizzard numbers back. `Core:Disable` now restores the suppressed FCT state (only when ZSBT actually suppressed it), and `Core:Enable` re-suppresses per your config — the master toggle works in both directions without a reload.
+- **Master toggle dead call:** one of the "Enable ZSBT" toggles called `Core:SetEnabled`, which didn't exist — the flag flipped but nothing ran. `Core:SetEnabled` now exists and both toggles share one enable/disable path (minimap middle-click included).
+
 ## 3.3.9.5-beta
 
 ### Fixed
