@@ -5465,6 +5465,30 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				flushBestOutgoing(self, token)
 			end
 		else
+			-- The bucket exists to merge the extra wound reports a SINGLE
+			-- cast produces. A wound that attributed a DIFFERENT spell is a
+			-- separate hit, not a duplicate report (two casts landing
+			-- together — Judgement + strike): emit it under its own name
+			-- instead of letting the merge eat its number.
+			if ZSBT.IsSafeNumber(spellId) and ZSBT.IsSafeNumber(bucket.spellId)
+				and spellId ~= bucket.spellId then
+				local pipeIdM = self._rawPipeCount + 1
+				self._rawPipeCount = pipeIdM
+				self._rawPipe[pipeIdM] = amount
+				auditNote(("AUDMSPLIT sid=%s bsid=%s"):format(
+					dbgSafe(spellId), dbgSafe(bucket.spellId)))
+				emit("OUTGOING_DAMAGE_COMBAT", {
+					timestamp = t,
+					rawPipeId = pipeIdM,
+					spellId = spellId,
+					_sidLearn = sidLearn,
+					amountSource = "UNIT_COMBAT_SPLIT",
+					targetName = targetName,
+					isCrit = isCrit,
+					schoolMask = schoolMask,
+				})
+				return
+			end
 			-- A foreign hit must not ride a real spell's merge bucket: when the
 			-- bucket's spell has a learned school and this hit contradicts it,
 			-- emit generic instead of wearing the wrong name and amount.
@@ -5477,6 +5501,30 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					rawPipeId = pipeIdM,
 					spellId = nil,
 					amountSource = "UNIT_COMBAT_SCHOOL_MISMATCH",
+					targetName = targetName,
+					isCrit = isCrit,
+					schoolMask = schoolMask,
+				})
+				return
+			end
+			-- An unnamed bucket + a differently-schooled wound is a second
+			-- source, not a duplicate (seal proc riding a weapon proc) —
+			-- emit it on its own instead of collapsing to max. A sid-bearing
+			-- wound keeps its name here.
+			if bucket.spellId == nil
+				and ZSBT.IsSafeNumber(schoolMask) and ZSBT.IsSafeNumber(bucket.schoolMask)
+				and schoolMask ~= bucket.schoolMask then
+				local pipeIdM = self._rawPipeCount + 1
+				self._rawPipeCount = pipeIdM
+				self._rawPipe[pipeIdM] = amount
+				auditNote(("AUDMSPLIT sid=%s school=%s bschool=%s"):format(
+					dbgSafe(spellId), dbgSafe(schoolMask), dbgSafe(bucket.schoolMask)))
+				emit("OUTGOING_DAMAGE_COMBAT", {
+					timestamp = t,
+					rawPipeId = pipeIdM,
+					spellId = spellId,
+					_sidLearn = sidLearn,
+					amountSource = "UNIT_COMBAT_SPLIT",
 					targetName = targetName,
 					isCrit = isCrit,
 					schoolMask = schoolMask,
