@@ -1402,6 +1402,29 @@ function Core:Disable()
     if self.Cooldowns and self.Cooldowns.Disable then self.Cooldowns:Disable() end
     if self.Triggers and self.Triggers.Disable then self.Triggers:Disable() end
     if self.Display and self.Display.Disable then self.Display:Disable() end
+
+    -- Hand combat text back to Blizzard: undo the FCT suppression we applied
+    -- (passive restore — only reverts if ZSBT actually suppressed, so a user
+    -- who never had suppression on keeps their own FCT settings).
+    self:RestoreBlizzardFCT()
+end
+
+function Core:SetEnabled(enabled)
+    enabled = enabled == true
+    if enabled then
+        self:Enable()
+    else
+        self:Disable()
+    end
+    if ZSBT.Parser then
+        if enabled then
+            if ZSBT.Parser.CombatLog and ZSBT.Parser.CombatLog.Enable then ZSBT.Parser.CombatLog:Enable() end
+            if ZSBT.Parser.Cooldowns and ZSBT.Parser.Cooldowns.Enable then ZSBT.Parser.Cooldowns:Enable() end
+        else
+            if ZSBT.Parser.Cooldowns and ZSBT.Parser.Cooldowns.Disable then ZSBT.Parser.Cooldowns:Disable() end
+            if ZSBT.Parser.CombatLog and ZSBT.Parser.CombatLog.Disable then ZSBT.Parser.CombatLog:Disable() end
+        end
+    end
 end
 
 ------------------------------------------------------------------------

@@ -2128,27 +2128,8 @@ function ZSBT.BuildTab_General()
                     ZSBT.db.profile.general.enabled = val
 
                     -- Drive runtime gating immediately (safe no-ops in skeleton layers).
-                    if ZSBT.Core then
-                        if val and ZSBT.Core.Enable then ZSBT.Core:Enable() end
-                        if (not val) and ZSBT.Core.Disable then ZSBT.Core:Disable() end
-                    end
-
-                    if ZSBT.Parser then
-                        if val then
-                            if ZSBT.Parser.CombatLog and ZSBT.Parser.CombatLog.Enable then
-                                ZSBT.Parser.CombatLog:Enable()
-                            end
-                            if ZSBT.Parser.Cooldowns and ZSBT.Parser.Cooldowns.Enable then
-                                ZSBT.Parser.Cooldowns:Enable()
-                            end
-                        else
-                            if ZSBT.Parser.Cooldowns and ZSBT.Parser.Cooldowns.Disable then
-                                ZSBT.Parser.Cooldowns:Disable()
-                            end
-                            if ZSBT.Parser.CombatLog and ZSBT.Parser.CombatLog.Disable then
-                                ZSBT.Parser.CombatLog:Disable()
-                            end
-                        end
+                    if ZSBT.Core and ZSBT.Core.SetEnabled then
+                        ZSBT.Core:SetEnabled(val == true)
                     end
 
                     LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
