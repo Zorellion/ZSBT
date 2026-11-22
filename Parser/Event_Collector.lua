@@ -1519,10 +1519,13 @@ local function autoContested(self, t, feed)
 		-- our own feed already reported it (bleed ticks, autos). Without
 		-- this, a solo bleed class's own tick/auto cadence keeps the
 		-- detector permanently armed and suppresses real hits.
+		-- includeConsumed: own hits get their line claimed by their own
+		-- emit milliseconds before the next own wound evaluates — at pet-
+		-- swarm densities that evicted line is the only evidence left.
 		local zbt = ZSBT.ZBattleText
 		local lineBacked = self._lastDotEmitAt == t
 			or (zbt and zbt.PeekDamageLine
-				and zbt:PeekDamageLine(t, 0.30) ~= nil) or nil
+				and zbt:PeekDamageLine(t, 0.30, nil, true) ~= nil) or nil
 		if not lineBacked then
 			local last = self._lastAutoCandAt
 			self._lastAutoCandAt = t
