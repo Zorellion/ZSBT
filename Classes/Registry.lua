@@ -840,6 +840,17 @@ end
 -- against EVERY active same-school dot (debuff check + tighter tick-
 -- cadence prediction) instead of blindly naming the most recent cast.
 -- Retail modules leave this unset: single-most-recent behavior stays.
+-- AoE applicator casts (Primal Wrath -> Rip): the cast id is not a dot
+-- but applies one to every enemy in range. Returns a list of applied
+-- dot sids for the collector to seed application anchors with.
+function ClassDB.DotApplicators(spellId)
+	local mod = ClassDB.ActiveModule()
+	if mod and type(mod.dotApplicators) == "table" then
+		return mod.dotApplicators[spellId]
+	end
+	return nil
+end
+
 function ClassDB.DotCadenceDisambig()
 	local mod = ClassDB.ActiveModule()
 	if mod ~= nil then return mod.dotCadenceDisambig == true end

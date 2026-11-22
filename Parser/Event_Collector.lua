@@ -1633,7 +1633,10 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 					and ZSBT.IsSafeString(woundTgt) then
 					if map[woundTgt] ~= nil then
 						appliedOv = map[woundTgt]
-					elseif next(map) ~= nil then
+					elseif next(map) ~= nil and not (entry and entry.aoe == true) then
+						-- AoE-applied dots (Primal Wrath Rip, Thrash) debuff
+						-- every mob in range — the spell-level anchor is a
+						-- valid phase reference on any of them.
 						tgtOk = false
 					end
 				end
@@ -2613,6 +2616,22 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 		end
 		local spellName = self._lastPlayerSpellName
 		enqueuePendingCast(self, spellId, spellName, self._lastPlayerSpellAt)
+		-- AoE applicators (Primal Wrath -> Rip): the cast id is not a dot
+		-- but applies one to every enemy in range, so seed the applied
+		-- dot's anchors — without this an AoE-applied bleed leaves no
+		-- application record and its ticks can never name.
+		if ZSBT.ClassDB and ZSBT.ClassDB.DotApplicators then
+			local applied = ZSBT.ClassDB.DotApplicators(spellId)
+			if type(applied) == "table" then
+				for _, dsid in ipairs(applied) do
+					if type(dsid) == "number" then
+						self._recentPeriodicSpellAt[dsid] = self._lastPlayerSpellAt
+						self._dotAppliedAt = self._dotAppliedAt or {}
+						self._dotAppliedAt[dsid] = self._lastPlayerSpellAt
+					end
+				end
+			end
+		end
 		if isKnownPeriodicSpellId(spellId) then
 			self._recentPeriodicSpellAt[spellId] = self._lastPlayerSpellAt
 			self._dotAppliedAt = self._dotAppliedAt or {}
@@ -5001,6 +5020,41 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- match; allow a short post-cast window to still attribute as Whirlwind.
 			if (not matchedCast) and isWhirlwindSpellId(wantSpellId) and wwRecent then
 				matchedCast = { spellId = wantSpellId, eligibleIcon = true }
+			end
+			-- Physical DoT ticks (feral/warrior bleeds) never reach the
+			-- non-physical dot path — they surface here. A school-1 wound
+			-- earns a bleed name only when the target verifiably carries
+			-- that bleed (debuff presence is the proof our dot is ticking
+			-- there) and the wound lands on the tick grid; everything else
+			-- falls through to the white-hit machinery unchanged.
+			if not matchedCast then
+				local dotSpellId = pickDotForWound(self, t, school, amount, isCrit)
+				if dotSpellId and cachedHasTargetDebuffSpellId(dotSpellId) ~= true then
+					dotSpellId = nil
+				end
+				if dotSpellId and dotCadenceOk(self, t, dotSpellId) then
+					if not isDuplicateDotEmit(self, t, dotSpellId) then
+						self._recentPeriodicSpellAt[dotSpellId] = t
+						local tName = safeUnitName("target")
+						noteDotTickAmount(self, dotSpellId, amount, isCrit, t, tName)
+						local pipeId = self._rawPipeCount + 1
+						self._rawPipeCount = pipeId
+						self._rawPipe[pipeId] = amount
+						emit("OUTGOING_DAMAGE_COMBAT", {
+							timestamp = t,
+							rawPipeId = pipeId,
+							amount = amount,
+							amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
+							spellId = dotSpellId,
+							amountSource = "UNIT_COMBAT_DOT",
+							targetName = tName,
+							isCrit = isCrit,
+							isPeriodic = true,
+							schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
+						})
+					end
+					return
+				end
 			end
 			-- Contested: another attacker on this target makes every
 			-- unattributed physical hit a coin flip — drop it outright so it
