@@ -1273,6 +1273,18 @@ local function queuePendingHotHeal(self, unit, t, amount, school, isCrit)
 			end
 		end
 	end
+	-- Damage-line hook: filtered "melee" lines are MINE-palette — provably
+	-- our own white swings and the only uncontestable phase reference on
+	-- this client. Anchoring the contested swing grid to them means foreign
+	-- candidates can never lock the grid onto someone else's cadence.
+	if zb and zb._damageLineHook == nil then
+		local selfRef3 = self
+		zb._damageLineHook = function(tl, kind)
+			if kind == "melee" then
+				selfRef3._meleeAnchor = tl
+			end
+		end
+	end
 end
 
 local function offTargetDotsEnabled()
@@ -1487,7 +1499,12 @@ end
 -- the grid point (never to their own timestamp) so a coincidentally
 -- on-phase foreign hit cannot shift our cadence and chain-accept.
 local function autoPhaseOK(self, t)
-	local anchor = self._swingAnchor
+	-- Prefer the melee-line anchor: MINE-palette "melee" lines are provably
+	-- our own swings, so the grid tracks our cadence even while foreign
+	-- candidates are what armed contention. _swingAnchor (last uncontested
+	-- candidate) is the fallback when no filtered line has arrived yet.
+	local anchorIsMelee = (type(self._meleeAnchor) == "number")
+	local anchor = anchorIsMelee and self._meleeAnchor or self._swingAnchor
 	local speed = nil
 	if UnitAttackSpeed then
 		local okS, mh = pcall(UnitAttackSpeed, "player")
@@ -1503,7 +1520,11 @@ local function autoPhaseOK(self, t)
 	local expect = anchor + n * speed
 	local tol = math.max(0.12, speed * 0.18)
 	if math.abs(t - expect) <= tol then
-		self._swingAnchor = expect
+		if anchorIsMelee then
+			self._meleeAnchor = expect
+		else
+			self._swingAnchor = expect
+		end
 		return true
 	end
 	return false
@@ -6425,9 +6446,13 @@ function Collector:Disable()
 	self._lastAutoCandAt = nil
 	self._autoContestUntil = nil
 	self._swingAnchor = nil
+	self._meleeAnchor = nil
 	local zb = ZSBT.ZBattleText
 	if zb and zb._healLineHook then
 		zb._healLineHook = nil
+	end
+	if zb and zb._damageLineHook then
+		zb._damageLineHook = nil
 	end
 	self._enabled = false
 	self._lastHealth = {}

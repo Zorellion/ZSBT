@@ -213,6 +213,9 @@ local function recordLine(r, g, b)
         table.remove(lines, 1)
     end
     lines[#lines + 1] = { at = t, kind = kind, consumed = false }
+    if ZB._damageLineHook then
+        ZB._damageLineHook(t, kind)
+    end
 end
 
 -- Consume the nearest unconsumed heal-kind line within `window` of tHit.
