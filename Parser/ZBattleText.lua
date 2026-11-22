@@ -927,6 +927,16 @@ local function flushPending()
                             ZB:Audit(("AUDCLAIM tier=%d sid=%s kind=%s rescue=pet"):format(
                                 pass, audSafe(p.payload.petSpellId), tostring(mk)))
                             deliverOutgoing(p.payload)
+                        elseif ZSBT.ClassDB and ZSBT.ClassDB.IsForever
+                            and ZSBT.ClassDB.IsForever() then
+                            -- Forever's feed is incomplete — a proven auto
+                            -- whose melee line was stolen by a spell claim
+                            -- must still display (same noline rescue as
+                            -- sid-bearing hits below).
+                            ZB._allows = ZB._allows + 1
+                            ZB:Audit(("AUDCLAIM tier=%d sid=%s kind=noline auto=1"):format(
+                                pass, audSafe(p.payload.spellId)))
+                            deliverOutgoing(p.payload)
                         else
                             ZB._drops = ZB._drops + 1
                             ZB:FileLog(("DROP sid=%s"):format(tostring(p.payload and p.payload.spellId)))
@@ -942,7 +952,8 @@ local function flushPending()
                             -- exactly the grouped fights they appear in.
                             if not dp._foreignSchool then sustainedRejection() end
                         end
-                    elseif pass == 1 and p._retried == true and p.payload and p.payload.spellId ~= nil
+                    elseif pass == 1 and p._retried == true and p.payload
+                        and (p.payload.spellId ~= nil or p.payload._swingProven == true)
                         and ZSBT.ClassDB and ZSBT.ClassDB.IsForever and ZSBT.ClassDB.IsForever() then
                         -- Forever's feed is structurally incomplete: some
                         -- player damage (Judgement, seal procs) produces no
