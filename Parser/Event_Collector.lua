@@ -1455,15 +1455,20 @@ local function autoContestWindow(self)
 	return win
 end
 
-local function autoContested(self, t)
+local function autoContested(self, t, feed)
 	local prof = ZSBT.db and ZSBT.db.profile
 	local dmg = prof and prof.outgoing and prof.outgoing.damage
 	if dmg and dmg.hideAutoContested == false then return false end
-	local last = self._lastAutoCandAt
-	self._lastAutoCandAt = t
-	if type(last) == "number" and (t - last) > 0
-		and (t - last) < autoContestWindow(self) then
-		self._autoContestUntil = t + AUTO_CONTEST_GRACE
+	if feed ~= false then
+		-- Only target-path callers feed: off-target nameplate traffic
+		-- (foreign cleave on OTHER mobs) must not arm target contention,
+		-- or nearby AoE suppresses our own target autos unnecessarily.
+		local last = self._lastAutoCandAt
+		self._lastAutoCandAt = t
+		if type(last) == "number" and (t - last) > 0
+			and (t - last) < autoContestWindow(self) then
+			self._autoContestUntil = t + AUTO_CONTEST_GRACE
+		end
 	end
 	return (self._autoContestUntil or 0) > t
 end
@@ -4020,7 +4025,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								-- Feeding these keeps contention live during
 								-- shared-target fights; sid-recorded DoT hits
 								-- skip this (named, provable).
-								if offSid == nil and autoContested(self, now()) then
+								if offSid == nil and autoContested(self, now(), false) then
 									dbgDrop("CONTESTED_OFFT", self._castToken, school)
 									return
 								end
