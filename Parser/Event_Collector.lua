@@ -1002,6 +1002,18 @@ local function noteHealClaim(self, unit, t)
 	n[name or unit] = t
 end
 
+-- sid=0 "proven but unnameable" emits are the moduleless fallback:
+-- classes without a module (Forever-era paladin, etc.) need them or
+-- their heals vanish entirely. With a module active every real
+-- outgoing heal resolves a name through the cast window or armed hot
+-- records, so an unnamed emit means a foreign UC consumed one of our
+-- lines or a tick slipped naming — rendering it bare is the phantom
+-- number users see scrolling next to the real ticks.
+local function unnamedHealsAllowed()
+	return not (ZSBT.ClassDB and ZSBT.ClassDB.ActiveModule
+		and ZSBT.ClassDB.ActiveModule())
+end
+
 -- Outgoing heal attribution (UNIT_COMBAT HEAL on a healed unit's token —
 -- partyN/raidN/focus/targettarget/target — carries no source unit).
 -- Ownership proof is a filtered combat-log line: the ZBattleText filter
@@ -1077,6 +1089,9 @@ local function matchOutgoingHotTick(self, unit, t)
 			end
 		end
 		noteHealClaim(self, unit, t)
+		if dsid == 0 and not unnamedHealsAllowed() then
+			return nil, nil, "unnamed"
+		end
 		return dsid, false, nil
 	end
 	-- "hot" line: a periodic heal of ours (SPELL_PERIODIC_HEAL).
@@ -1089,6 +1104,9 @@ local function matchOutgoingHotTick(self, unit, t)
 	local recs = self._hotRecs
 	if type(recs) ~= "table" or next(recs) == nil then
 		noteHealClaim(self, unit, t)
+		if not unnamedHealsAllowed() then
+			return nil, nil, "unnamed"
+		end
 		return 0, true, nil -- proven ours, nothing armed to name it
 	end
 	local key = unit
@@ -1156,6 +1174,9 @@ local function matchOutgoingHotTick(self, unit, t)
 	if sid == nil and liveCount == 1 then sid = singleSid end
 	if sid == nil then
 		noteHealClaim(self, unit, t)
+		if not unnamedHealsAllowed() then
+			return nil, nil, "unnamed"
+		end
 		return 0, true, nil -- proven ours, unnamed
 	end
 	local prev = us[sid]
@@ -1217,7 +1238,9 @@ local function queuePendingHotHeal(self, unit, t, amount, school, isCrit)
 				local e = pq2[i]
 				if e.claimed ~= true and math.abs(e.t - tl) <= HOT_LINE_WINDOW then
 					local hsid, hPeriodic, hWhy = matchOutgoingHotTick(selfRef, e.unit, e.t)
-					if hWhy == "dup" then
+					-- Any terminal reason (dup/self/attackable/unnamed)
+					-- resolves the entry — only "noline" retries.
+					if hWhy ~= nil and hWhy ~= "noline" then
 						e.claimed = true
 					end
 					if hsid ~= nil then
