@@ -316,6 +316,12 @@ function ZSBT.RoundDisplayValue(v)
         return math.floor(v + 0.5)
     end
     if v == nil then return nil end
+    local sv = "n/a"
+    if type(issecretvalue) == "function" then
+        local okSV, isSV = pcall(issecretvalue, v)
+        sv = okSV and tostring(isSV) or "err"
+    end
+    _roundDbg("in t=" .. tostring(type(v)) .. " sv=" .. sv)
     -- Safe strings pass through. Secret strings (KString) have
     -- type(v)=="string" too — they must fall through to the rounding
     -- attempts, otherwise a fractional secret string renders at full
