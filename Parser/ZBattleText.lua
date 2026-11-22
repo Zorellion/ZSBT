@@ -874,11 +874,31 @@ local function flushPending()
         for i = 1, #pend do
             local p = pend[i]
             if p and candidateTier(p.payload) == pass then
-                -- Never-seen feed counts as untrusted: a candidate that
-                -- queued before we knew the feed was cold must not wait
-                -- for a line that cannot exist.
-                if ZB._vetoDisabled or not ZB._trusted or (ZB._lastLineAt or 0) <= 0 then
+                -- Never-seen feed counts as untrusted ONLY when we have
+                -- our own outgoing evidence flowing: target wounds or a
+                -- recent cast prove the filter feed is genuinely dead
+                -- rather than simply quiet because we are not fighting.
+                -- Without this, foreign candidates (off-target nameplate
+                -- traffic near other players' fights) delivered
+                -- unconditionally into our scroll post-reload.
+                local cold = (ZB._lastLineAt or 0) <= 0
+                local coldOK = false
+                if cold then
+                    local ecC = ZSBT.Parser and ZSBT.Parser.EventCollector
+                    local tC = GetTime and GetTime() or 0
+                    coldOK = ecC ~= nil and (
+                        (tC - (ecC._lastTargetWoundAt or -9)) <= 2.5
+                        or (tC - (ecC._lastPlayerSpellAt or -9)) <= 2.5)
+                end
+                if ZB._vetoDisabled or not ZB._trusted or (cold and coldOK) then
                     deliverOutgoing(p.payload)
+                elseif cold then
+                    ZB:Audit(("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=%s why=cold"):format(
+                        tonumber(p.t) or 0, pass,
+                        audSafe(p.payload and (p.payload.spellId or p.payload.petSpellId)),
+                        audSafe(p.payload and p.payload.schoolMask),
+                        tostring(p.payload and p.payload.isCrit == true),
+                        tostring(p.payload and p.payload._petRoute == true and "pet" or (p.payload and p.payload.isAuto == true and "auto" or (p.payload and p.payload.spellId ~= nil and "spell" or "generic")))))
                 else
                     local kind
                     -- Retried generics keep the tight window — a lingering

@@ -4076,12 +4076,29 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 									-- delivery (no lines yet = unconditional
 									-- queue delivery). DoT-recorded hits are
 									-- named/provable and skip this.
-									local inCombat = false
-									if UnitAffectingCombat then
-										local okC, res = pcall(UnitAffectingCombat, "player")
-										if okC and res == true then inCombat = true end
+									-- "In combat" is not enough — a ticking DoT or a
+									-- stale flag keeps it set while nothing of ours is
+									-- actually swinging. An unattributed off-target hit
+									-- can only be our cleave/AoE when we cast or swung
+									-- very recently; otherwise it is foreign traffic
+									-- stealing lingering filtered lines.
+									local ownActive = false
+									do
+										local lastCast = self._lastPlayerSpellAt
+										if type(lastCast) == "number"
+											and (now() - lastCast) >= 0
+											and (now() - lastCast) <= 2.0 then
+											ownActive = true
+										end
 									end
-									if not inCombat then
+									if not ownActive and UnitAffectingCombat then
+										local okC, res = pcall(UnitAffectingCombat, "player")
+										if okC and res == true
+											and (now() - (self._lastTargetWoundAt or 0)) <= 2.0 then
+											ownActive = true
+										end
+									end
+									if not ownActive then
 										dbgDrop("OFFT_NOCOMBAT", self._castToken, school)
 										return
 									end
