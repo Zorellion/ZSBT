@@ -4914,6 +4914,18 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			if (not matchedCast) and isWhirlwindSpellId(wantSpellId) and wwRecent then
 				matchedCast = { spellId = wantSpellId, eligibleIcon = true }
 			end
+			-- Contested: another attacker on this target makes every
+			-- unattributed physical hit a coin flip — drop it outright so it
+			-- can neither emit nor reach the pending queue and steal our
+			-- filtered lines. This gate must run before the fallback block
+			-- (which falls through to BYPASS_RESTRICT_PHYS -> AUDQ under veto,
+			-- where the foreign candidate claims melee lines anyway) and it
+			-- must see EVERY unmatched physical UC or the detector starves.
+			-- Cast-matched (named) hits skip this entirely.
+			if restrict and (not matchedCast) and autoContested(self, t) then
+				dbgDrop("CONTESTED", self._castToken, school)
+				return
+			end
 			if restrict and (not matchedCast) and allowAutoFallback == true then
 				-- Last-resort: show an auto-attack-like hit even though UNIT_COMBAT(target)
 				-- has no source attribution in 12.0. Gate aggressively to minimize
@@ -4946,12 +4958,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- follower melee gets shown as your auto-attack.
 				if canShow and not swingExplainsHit(self, t) then
 					canShow = false
-				end
-				-- Contested target: suppress rather than show a foreign
-				-- attacker's white damage as ours.
-				if canShow and autoContested(self, t) then
-					canShow = false
-					dbgDrop("CONTESTED", self._castToken, school)
 				end
 				if canShow then
 					self._lastAutoRestrictAt = t
@@ -5006,6 +5012,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- "white hits" (spellId nil) if we have strong evidence the player is actually
 			-- swinging. This reduces leakage when other players are also attacking your target.
 			if (restrict ~= true) and (quietMode ~= true) and (spellId == nil) then
+				if autoContested(self, t) then
+					dbgDrop("CONTESTED", self._castToken, school)
+					return
+				end
 				local okSwing = true
 				local inPlayerCombat = false
 				if UnitAffectingCombat then
