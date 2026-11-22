@@ -36,7 +36,8 @@ mod.dotApplicators = {
 	-- 188389 only: 8050 is the legacy FS id — unresolvable on this
 	-- client (name=nil → icon=nil), so ticks that claimed it rendered
 	-- iconless. Every claim must land on the modern id.
-	[470057] = { { sid = 188389, aoe = true } },
+	[470057] = { { sid = 188389, aoe = true } },  -- Voltaic Blaze applies FS to every target hit
+	[114050] = { { sid = 188389, aoe = true } },  -- Ascendance applies FS to up to 6 enemies
 }
 
 mod.channels = {
