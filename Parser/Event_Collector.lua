@@ -1508,6 +1508,41 @@ local function autoContested(self, t, feed)
 	local prof = ZSBT.db and ZSBT.db.profile
 	local dmg = prof and prof.outgoing and prof.outgoing.damage
 	if dmg and dmg.hideAutoContested == false then return false end
+	-- Deferred-evidence pump: a wound with no MINE line at eval time is
+	-- queued (~0.15s) before it can count as attacker evidence — the
+	-- wound's own line frequently lands a frame or two late. On recheck,
+	-- a wound still bare is a genuine possible-foreign and feeds; a
+	-- wound whose line arrived in the meantime is excused forever.
+	-- Entries older than 2s are discarded, never fed — a stale wound
+	-- from a dead queue must not arm a later fight.
+	local pend = self._autoCandPend
+	if type(pend) == "table" then
+		local zbtD = ZSBT.ZBattleText
+		local i = 1
+		while i <= #pend do
+			local wt = pend[i]
+			local age = t - wt
+			if age >= 0.15 then
+				if age <= 2.0 then
+					local bare = not (self._lastDotEmitAt == wt
+						or (zbtD and zbtD.PeekDamageLine
+							and zbtD:PeekDamageLine(wt, 0.20, nil, true) ~= nil))
+					if bare then
+						local last = self._lastAutoCandAt
+						self._lastAutoCandAt = wt
+						if type(last) == "number" and (wt - last) > 0
+							and (wt - last) < autoContestWindow(self) then
+							self._autoContestUntil = wt + AUTO_CONTEST_GRACE
+						end
+					end
+				end
+				table.remove(pend, i)
+			else
+				i = i + 1
+			end
+		end
+		if #pend == 0 then self._autoCandPend = nil end
+	end
 	local contested = (self._autoContestUntil or 0) > t
 	if feed ~= false then
 		-- Only target-path callers feed: off-target nameplate traffic
@@ -1525,18 +1560,16 @@ local function autoContested(self, t, feed)
 		-- Tight window: own wound/line pairs are the same event and land
 		-- near-simultaneously; a foreign wound can only coincide with our
 		-- line by chance, so a narrow excuse window bounds leak coverage.
+		-- Wounds still bare here defer to the pending queue above rather
+		-- than feeding immediately — see the pump comment.
 		local zbt = ZSBT.ZBattleText
 		local lineBacked = self._lastDotEmitAt == t
 			or (zbt and zbt.PeekDamageLine
 				and zbt:PeekDamageLine(t, 0.12, nil, true) ~= nil) or nil
 		if not lineBacked then
-			local last = self._lastAutoCandAt
-			self._lastAutoCandAt = t
-			if type(last) == "number" and (t - last) > 0
-				and (t - last) < autoContestWindow(self) then
-				self._autoContestUntil = t + AUTO_CONTEST_GRACE
-				contested = true
-			end
+			pend = self._autoCandPend
+			if type(pend) ~= "table" then pend = {} ; self._autoCandPend = pend end
+			pend[#pend + 1] = t
 		end
 	end
 	return contested
