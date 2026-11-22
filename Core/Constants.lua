@@ -306,6 +306,7 @@ end
 -- arithmetic, but the secret userdata exposes :floor()/:round() — the
 -- result stays secret so it can pass straight to SetText. Anything
 -- without a usable round path is returned unchanged.
+local _roundFS = nil
 function ZSBT.RoundDisplayValue(v)
     if ZSBT.IsSafeNumber(v) then
         return math.floor(v + 0.5)
@@ -316,6 +317,23 @@ function ZSBT.RoundDisplayValue(v)
     if ok and r ~= nil then return r end
     local ok2, r2 = pcall(function() return v:floor() end)
     if ok2 and r2 ~= nil then return r2 end
+    -- Secret number without math methods: format it C-side through a
+    -- scratch FontString — SetFormattedText("%.0f", secret) evaluates
+    -- where the real value is visible and GetText yields a displayable
+    -- string. Retail secrets otherwise render floats at full precision.
+    if CreateFrame then
+        if _roundFS == nil then
+            local f = CreateFrame("Frame")
+            _roundFS = (f and f:CreateFontString()) or false
+        end
+        if _roundFS then
+            local ok3, txt = pcall(function()
+                _roundFS:SetFormattedText("%.0f", v)
+                return _roundFS:GetText()
+            end)
+            if ok3 and txt ~= nil then return txt end
+        end
+    end
     return v
 end
 

@@ -946,6 +946,10 @@ end
 local HOT_DEFAULT_TICK_INTERVAL = 3.0
 local HOT_PHASE_JITTER = 0.5
 local HOT_LINE_WINDOW = 0.30
+-- Alias reports of one heal (same UC re-fired on target + softfriend +
+-- partyN tokens) share a UC timestamp; distinct heals to the same unit
+-- are spaced far wider than this.
+local HEAL_ALIAS_WINDOW = 0.12
 
 -- Outgoing heal attribution (UNIT_COMBAT HEAL on a healed unit's token —
 -- partyN/raidN/focus/targettarget/target — carries no source unit).
@@ -966,9 +970,9 @@ local HOT_LINE_WINDOW = 0.30
 -- finds no line is queued briefly and re-paired when its line lands
 -- (see queuePendingHotHeal / zb._healLineHook below).
 --
--- Line consumption IS the dedup: a tick reports under aliased tokens
--- (partyN AND targettarget in one frame); the first UC event consumes
--- the only line, the second finds nothing and never emits.
+-- Dedup is two-layered: a successful claim is recorded per unit
+-- (HEAL_ALIAS_WINDOW) so aliased re-reports collapse, and line
+-- consumption keeps unmatched repeats from finding a second line.
 local function matchOutgoingHotTick(self, unit, t)
 	-- A heal landing on the player is incoming, not outgoing — the
 	-- unit == "player" path already renders it. Tokens that resolve to
@@ -994,10 +998,33 @@ local function matchOutgoingHotTick(self, unit, t)
 	if not (zb and zb.PeekHealLine and zb.TakeHealLine) then
 		return nil, nil, "no_feed"
 	end
+	-- Alias dedup: one heal re-reports under every token resolving to
+	-- the healed unit (target AND softfriend AND partyN in one frame).
+	-- Line consumption alone cannot collapse it — when direct+hot lines
+	-- are buffered together each alias steals a different line and the
+	-- same heal renders twice. A claim already recorded for the same
+	-- unit within the alias window means this UC re-reports a rendered
+	-- heal.
+	local unitKey = unit
+	if UnitGUID then
+		local okG, g = pcall(UnitGUID, unit)
+		if okG and ZSBT.IsSafeString and ZSBT.IsSafeString(g) then
+			unitKey = g
+		end
+	end
+	if type(t) == "number" then
+		local lk, la = self._healClaimKey, self._healClaimAt
+		if lk ~= nil and type(la) == "number"
+			and math.abs(t - la) <= HEAL_ALIAS_WINDOW then
+			local okE, eq = pcall(function() return unitKey == lk end)
+			if okE and eq == true then
+				return nil, nil, "dup"
+			end
+		end
+	end
 	-- Consume the nearest heal line of either kind up front: presence is
-	-- the ownership proof; consumption is the dedup (a tick reported
-	-- under aliased tokens consumes the only line on first sighting).
-	-- Kind decides which naming path applies.
+	-- the ownership proof; consumption is the second dedup layer. Kind
+	-- decides which naming path applies.
 	local nearKind = zb:TakeHealLine(t, HOT_LINE_WINDOW, nil)
 	if nearKind == nil then
 		return nil, nil, "noline"
@@ -1012,6 +1039,7 @@ local function matchOutgoingHotTick(self, unit, t)
 				dsid = self._lastPlayerSpellId
 			end
 		end
+		self._healClaimKey, self._healClaimAt = unitKey, t
 		return dsid, false, nil
 	end
 	-- "hot" line: a periodic heal of ours (SPELL_PERIODIC_HEAL).
@@ -1023,6 +1051,7 @@ local function matchOutgoingHotTick(self, unit, t)
 	-- the mob targets that member) — GUID collapses them to one state.
 	local recs = self._hotRecs
 	if type(recs) ~= "table" or next(recs) == nil then
+		self._healClaimKey, self._healClaimAt = unitKey, t
 		return 0, true, nil -- proven ours, nothing armed to name it
 	end
 	local key = unit
@@ -1088,7 +1117,10 @@ local function matchOutgoingHotTick(self, unit, t)
 	-- would otherwise silently drop every tick).
 	local sid = cadSid or firstSid
 	if sid == nil and liveCount == 1 then sid = singleSid end
-	if sid == nil then return 0, true, nil end -- proven ours, unnamed
+	if sid == nil then
+		self._healClaimKey, self._healClaimAt = unitKey, t
+		return 0, true, nil -- proven ours, unnamed
+	end
 	local prev = us[sid]
 	local period = nil
 	if type(prev) == "table" and type(prev.lastAt) == "number" then
@@ -1105,6 +1137,7 @@ local function matchOutgoingHotTick(self, unit, t)
 		end
 	end
 	us[sid] = { lastAt = t, period = period }
+	self._healClaimKey, self._healClaimAt = unitKey, t
 	return sid, true, nil
 end
 
@@ -1146,7 +1179,10 @@ local function queuePendingHotHeal(self, unit, t, amount, school, isCrit)
 			for i = 1, #pq2 do
 				local e = pq2[i]
 				if e.claimed ~= true and math.abs(e.t - tl) <= HOT_LINE_WINDOW then
-					local hsid, hPeriodic = matchOutgoingHotTick(selfRef, e.unit, e.t)
+					local hsid, hPeriodic, hWhy = matchOutgoingHotTick(selfRef, e.unit, e.t)
+					if hWhy == "dup" then
+						e.claimed = true
+					end
 					if hsid ~= nil then
 						e.claimed = true
 						local pipeId = selfRef._rawPipeCount + 1
@@ -6155,6 +6191,8 @@ function Collector:Disable()
 	self._bestOutgoingByToken = {}
 	self._pendingHotHeal = nil
 	self._hotTickState = nil
+	self._healClaimKey = nil
+	self._healClaimAt = nil
 	local zb = ZSBT.ZBattleText
 	if zb and zb._healLineHook then
 		zb._healLineHook = nil
