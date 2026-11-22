@@ -3590,15 +3590,28 @@ function Collector:handleCombatTextUpdate(arg1)
 			end
 			-- Not attributable as outgoing: treat as incoming combat text damage.
 			-- COMBAT_TEXT_UPDATE fires for nearby combat text — foreign hits
-			-- on other units included — so only accept it as incoming when we
-			-- are actually in combat. Real hits on us flag combat immediately;
-			-- everything else is someone else's number leaking into our scroll.
-			local inCombatCT = false
-			if UnitAffectingCombat then
-				local okC, res = pcall(UnitAffectingCombat, "player")
-				if okC and res == true then inCombatCT = true end
+			-- on other units included — so only accept it as incoming when the
+			-- player is plausibly the victim. UnitAffectingCombat cannot be
+			-- trusted (it can stick true), so corroborate with evidence that
+			-- cannot lie: our health dropped, or we are actively fighting
+			-- (recent cast or outgoing wounds on our target). Standing AFK
+			-- near a dummy fight satisfies neither.
+			local ctOK = false
+			local hNowCT = UnitHealth and UnitHealth("player")
+			local hPrevCT = self._lastHealth and self._lastHealth["player"]
+			if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(hNowCT) and ZSBT.IsSafeNumber(hPrevCT) and hNowCT < hPrevCT then
+				ctOK = true
+			elseif (tNow - (self._lastPlayerSpellAt or 0)) <= 4
+				or (tNow - (self._lastTargetWoundAt or 0)) <= 4
+			then
+				ctOK = true
 			end
-			if not inCombatCT then
+			if not ctOK then
+				local zCt = ZSBT.ZBattleText
+				if zCt and zCt.FileLog and ZSBT._ucDropTrace == true then
+					zCt:FileLog(("CTDROPPED t=%.3f why=no_victim_evidence")
+						:format(tNow))
+				end
 				return
 			end
 			emit("COMBAT_TEXT_DAMAGE", {
