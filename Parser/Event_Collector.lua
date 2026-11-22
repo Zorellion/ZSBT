@@ -4073,9 +4073,63 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						end
 						if hostile then
 							local offSid = nil
+							local offSidIsDot = false
 							local offTgtName = safeUnitName(unit)
 							if offTargetDotsEnabled() then
 								offSid = resolveOffTargetDot(self, unit, now(), school)
+								offSidIsDot = offSid ~= nil
+							end
+							-- Cleave fan-out: one cast wounds every mob in
+							-- range, but only the target's wound can cast-
+							-- match. A nameplate wound school-matching a
+							-- recent cast AND backed by an unconsumed
+							-- "direct" MINE line is our AoE hit — the
+							-- combat log emits one direct line per target
+							-- struck, so claims self-limit to the real hit
+							-- count. The shared sid@castAt budget bounds
+							-- over-naming; consumed casts fall back to the
+							-- recency stamp (same key).
+							if offSid == nil then
+								local tOff = now()
+								local cand, candAt = nil, nil
+								local bestDt = nil
+								for _, c in ipairs(self._pendingCasts or {}) do
+									if c and c.at and c.spellId then
+										local dt = tOff - c.at
+										if dt >= 0 and dt <= 0.5
+											and castSchoolOk(self, c.spellId, school)
+											and (not bestDt or dt < bestDt) then
+											bestDt = dt
+											cand, candAt = c.spellId, c.at
+										end
+									end
+								end
+								if cand == nil then
+									local lastId, lastAt = self._lastPlayerSpellId, self._lastPlayerSpellAt
+									if type(lastId) == "number" and type(lastAt) == "number"
+										and (tOff - lastAt) >= 0 and (tOff - lastAt) <= 0.5
+										and castSchoolOk(self, lastId, school) then
+										cand, candAt = lastId, lastAt
+									end
+								end
+								if cand ~= nil then
+									local zbt = ZSBT.ZBattleText
+									if zbt and zbt.PeekDamageLine
+										and zbt:PeekDamageLine(tOff, 0.35, { direct = true }) then
+										local ck = tostring(cand) .. "@" .. tostring(candAt)
+										self._castClaims = self._castClaims or {}
+										local n = self._castClaims[ck] or 0
+										local budget = 1
+										if ZSBT.ClassDB and ZSBT.ClassDB.CastBudget then
+											local b = ZSBT.ClassDB.CastBudget(cand)
+											if type(b) == "number" and b > 0 then budget = b end
+										end
+										if n < budget then
+											self._castClaims[ck] = n + 1
+											offSid = cand
+										end
+									end
+								end
 							end
 							if offSid ~= nil or tgtStarved then
 								if offSid == nil then
@@ -4138,7 +4192,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								if type(descriptor) == "string" then
 									isCritOff = descriptor:upper():find("CRIT", 1, true) ~= nil
 								end
-								if offSid ~= nil then
+								if offSidIsDot then
 									self._recentPeriodicSpellAt[offSid] = now()
 									noteDotTickAmount(self, offSid, amount, isCritOff, now(), offTgtName)
 								end
@@ -4157,7 +4211,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 									amountSource = "COMBAT_LOG",
 									targetName = offTgtName,
 									isCrit = isCritOff,
-									isPeriodic = (offSid ~= nil) or nil,
+									isPeriodic = offSidIsDot or nil,
 									schoolMask = (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) and school or nil,
 								})
 								emitted = true

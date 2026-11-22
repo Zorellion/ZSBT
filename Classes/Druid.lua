@@ -19,6 +19,21 @@ mod.dots = {
 	{ names = { "Infected Wounds" }, ids = { 1261052 } },
 }
 
+-- AoE casts: one cast wounds every mob in range, so a single cast
+-- instance may legitimately name many hits (shared sid@castAt budget —
+-- the target's own claim counts too). The combat log's one-line-per-hit
+-- direct lines do the real self-limiting; the budget is the backstop.
+mod.castBudget = {
+	[106785] = 8,   -- Swipe (Cat)
+	[213764] = 8,   -- Swipe (Bear)
+	[77758]  = 8,   -- Thrash (Cat: AoE direct + bleed)
+	[106832] = 8,   -- Thrash (Bear)
+	[285381] = 8,   -- Primal Wrath (AoE finisher + Rip)
+	[202028] = 8,   -- Brutal Slash (feral AoE talent)
+	[93402]  = 8,   -- Sunfire (AoE application, balance)
+	[22568]  = 4,   -- Ferocious Bite (Rampant Ferocity splash hits nearby)
+}
+
 -- Casts that debuff every enemy in range but are not dots themselves:
 -- they seed the applied dot's application anchors so ticks can name.
 mod.dotApplicators = {
