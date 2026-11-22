@@ -1068,16 +1068,22 @@ local function matchOutgoingHotTick(self, unit, t)
 	-- same heal renders twice. A claim already recorded for the same
 	-- unit within the alias window means this UC re-reports a rendered
 	-- heal.
-	if isHealAliasDup(self, unit, t) then
+	-- Peek before consuming: the line's timestamp is the canonical
+	-- identity of the heal it proves. Retail reports ONE heal on the
+	-- SAME token twice up to ~0.2s apart — the readable action=HEAL
+	-- report, then a tainted amount twin — beyond the UC-time alias
+	-- window, but the line the twin steals still carries the original
+	-- heal's time. Dedup against claims by line time when a line is
+	-- buffered, else by UC time.
+	local peekKind, peekAt = zb:PeekHealLine(t, HOT_LINE_WINDOW, nil)
+	if isHealAliasDup(self, unit, peekAt or t) then
 		return nil, nil, "dup"
 	end
-	-- Consume the nearest heal line of either kind up front: presence is
-	-- the ownership proof; consumption is the second dedup layer. Kind
-	-- decides which naming path applies.
 	local nearKind = zb:TakeHealLine(t, HOT_LINE_WINDOW, nil)
 	if nearKind == nil then
 		return nil, nil, "noline"
 	end
+	local claimAt = peekAt or t
 	-- A "heal" line is a direct heal of ours (SPELL_HEAL). Name it via
 	-- the cast window when a recent player cast exists.
 	if nearKind == "heal" then
@@ -1088,7 +1094,7 @@ local function matchOutgoingHotTick(self, unit, t)
 				dsid = self._lastPlayerSpellId
 			end
 		end
-		noteHealClaim(self, unit, t)
+		noteHealClaim(self, unit, claimAt)
 		if dsid == 0 and not unnamedHealsAllowed() then
 			return nil, nil, "unnamed"
 		end
@@ -1103,7 +1109,7 @@ local function matchOutgoingHotTick(self, unit, t)
 	-- the mob targets that member) — GUID collapses them to one state.
 	local recs = self._hotRecs
 	if type(recs) ~= "table" or next(recs) == nil then
-		noteHealClaim(self, unit, t)
+		noteHealClaim(self, unit, claimAt)
 		if not unnamedHealsAllowed() then
 			return nil, nil, "unnamed"
 		end
@@ -1173,7 +1179,7 @@ local function matchOutgoingHotTick(self, unit, t)
 	local sid = cadSid or firstSid
 	if sid == nil and liveCount == 1 then sid = singleSid end
 	if sid == nil then
-		noteHealClaim(self, unit, t)
+		noteHealClaim(self, unit, claimAt)
 		if not unnamedHealsAllowed() then
 			return nil, nil, "unnamed"
 		end
@@ -1195,7 +1201,7 @@ local function matchOutgoingHotTick(self, unit, t)
 		end
 	end
 	us[sid] = { lastAt = t, period = period }
-	noteHealClaim(self, unit, t)
+	noteHealClaim(self, unit, claimAt)
 	return sid, true, nil
 end
 
@@ -4713,10 +4719,23 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- already checked and recorded this UC's own claim (checking
 			-- again would self-dup and suppress this emit).
 			if castNamed then
-				if isHealAliasDup(self, "target", t) then
+				-- Consume this emit's direct-heal line and claim at the
+				-- LINE's timestamp: the tainted twin for this same heal
+				-- arrives up to ~0.2s later, steals whatever line is
+				-- buffered, and would emit a duplicate.
+				local zP = ZSBT.ZBattleText
+				local lat = nil
+				if zP and zP.PeekHealLine then
+					local _, l = zP:PeekHealLine(t, HOT_LINE_WINDOW, { heal = true })
+					lat = l
+				end
+				if isHealAliasDup(self, "target", lat or t) then
 					return
 				end
-				noteHealClaim(self, "target", t)
+				if zP and zP.TakeHealLine then
+					zP:TakeHealLine(t, HOT_LINE_WINDOW, { heal = true })
+				end
+				noteHealClaim(self, "target", lat or t)
 			end
 
 			local zH = ZSBT.ZBattleText
