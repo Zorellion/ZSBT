@@ -122,6 +122,16 @@ local DAMAGE_KINDS = {
     direct = true, tick = true, melee = true, ranged = true, shield = true,
 }
 
+-- Kinds that prove an outgoing heal happened: "heal" lines are
+-- SPELL_HEAL (direct heals), "hot" lines are SPELL_PERIODIC_HEAL. The
+-- filter is source-restricted to MINE+MY_PET, so a classified heal line
+-- near a UNIT_COMBAT heal event is provably ours — the same ownership
+-- guarantee the damage veto relies on, no aura reads needed.
+local HEAL_LINE_KINDS = {
+    heal = true, hot = true,
+}
+local HEAL_LINE_MAX = 24
+
 -- Explicit whitelist for the filter's eventList: only the
 -- combat events we color. Everything else — aura applications, fades,
 -- refreshes, energy/rage gains, summons, etc. — is excluded so the
@@ -137,6 +147,7 @@ local LINE_MAX = 96
 local VETO_WINDOW = 0.30
 
 ZB._lines = ZB._lines or {}
+ZB._healLines = ZB._healLines or {}
 
 ------------------------------------------------------------------------
 -- Combat-log line buffer (COMBAT_LOG_MESSAGE -> RGB classify)
@@ -175,7 +186,23 @@ local function recordLine(r, g, b)
     local t = GetTime and GetTime() or 0
     ZB._lastLineAt = t
     ZB:FileLog(("LIN kind=%s rgb=%.2f,%.2f,%.2f"):format(tostring(kind), r, g, b))
-    -- Only damage kinds feed the veto buffer; heal/miss/utility lines are
+    if HEAL_LINE_KINDS[kind] then
+        -- Heal lines get their own small ring: follower/NPC heals can be
+        -- spammy and must not evict damage lines the veto still needs.
+        local hl = ZB._healLines
+        while #hl > 0 and t - hl[1].at > LINE_KEEP_SEC do
+            table.remove(hl, 1)
+        end
+        if #hl >= HEAL_LINE_MAX then
+            table.remove(hl, 1)
+        end
+        hl[#hl + 1] = { at = t, kind = kind, consumed = false }
+        if ZB._healLineHook then
+            ZB._healLineHook(t, kind)
+        end
+        return
+    end
+    -- Only damage kinds feed the veto buffer; miss/utility lines are
     -- classified for completeness but would just crowd the ring.
     if not DAMAGE_KINDS[kind] then return end
     local lines = ZB._lines
@@ -186,6 +213,58 @@ local function recordLine(r, g, b)
         table.remove(lines, 1)
     end
     lines[#lines + 1] = { at = t, kind = kind, consumed = false }
+end
+
+-- Consume the nearest unconsumed heal-kind line within `window` of tHit.
+local function takeHealLine(tHit, window, kinds)
+    local best, bestDt
+    for i = 1, #ZB._healLines do
+        local l = ZB._healLines[i]
+        if HEAL_LINE_KINDS[l.kind] and not l.consumed
+            and (kinds == nil or kinds[l.kind] == true) then
+            local dt = math.abs(l.at - tHit)
+            if dt <= window and (bestDt == nil or dt < bestDt) then
+                best, bestDt = i, dt
+            end
+        end
+    end
+    if best then
+        ZB._healLines[best].consumed = true
+        return ZB._healLines[best].kind
+    end
+    return nil
+end
+
+-- Consume the nearest unconsumed heal/hot line within `window` of tHit.
+-- "hot" proves a SPELL_PERIODIC_HEAL of ours fired; "heal" a direct
+-- SPELL_HEAL. Callers pass kinds to restrict (e.g. { hot = true }).
+function ZB:TakeHealLine(tHit, window, kinds)
+    if type(tHit) ~= "number" then return nil end
+    return takeHealLine(tHit, window, kinds)
+end
+
+-- Non-consuming variant: returns the NEAREST matching line's kind and
+-- timestamp so the caller can branch on kind and only consume on a
+-- successful claim (peek-then-take — a failed name must not burn the
+-- line for the real event still in flight).
+function ZB:PeekHealLine(tHit, window, kinds)
+    if type(tHit) ~= "number" then return nil end
+    local best, bestDt
+    for i = 1, #ZB._healLines do
+        local l = ZB._healLines[i]
+        if HEAL_LINE_KINDS[l.kind] and not l.consumed
+            and (kinds == nil or kinds[l.kind] == true) then
+            local dt = math.abs(l.at - tHit)
+            if dt <= window and (bestDt == nil or dt < bestDt) then
+                best, bestDt = i, dt
+            end
+        end
+    end
+    if best then
+        local l = ZB._healLines[best]
+        return l.kind, l.at
+    end
+    return nil
 end
 
 -- Consume the nearest unconsumed damage-kind line within `window` of tHit.

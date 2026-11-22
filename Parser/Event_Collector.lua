@@ -945,44 +945,75 @@ end
 
 local HOT_DEFAULT_TICK_INTERVAL = 3.0
 local HOT_PHASE_JITTER = 0.5
+local HOT_LINE_WINDOW = 0.30
 
--- Outgoing HoT tick attribution. UNIT_COMBAT reports HEAL on the healed
--- unit's token (partyN/raidN/focus/targettarget/target...) with no source
--- unit, so a tick is only claimed when BOTH gates pass:
---   (a) a hot record seeded by a real player cast is still live, and
---   (b) the healed unit verifiably carries the PLAYER's own aura for
---       that spell (FindAuraBySpellId HELPFUL|PLAYER). Follower/NPC
---       heals fail (a); heals on units without my HoT fail (b).
--- Cadence then disambiguates: established ticks need interval spacing
--- from the last claimed tick; first ticks must land on a tick boundary
--- phase-locked to the aura's own apply time (expirationTime - duration,
--- per-unit correct for multi-target hots) or the cast stamp as fallback.
--- Claiming stamps the tick state so aliased tokens (partyN vs
--- targettarget reporting the same unit/tick in one frame) self-dedup —
--- the second sighting lands ~0s after lastAt and fails the window.
+-- Outgoing heal attribution (UNIT_COMBAT HEAL on a healed unit's token —
+-- partyN/raidN/focus/targettarget/target — carries no source unit).
+-- Ownership proof is a filtered combat-log line: the ZBattleText filter
+-- is source-restricted to MINE+MY_PET, so a classified "hot" or "heal"
+-- line near the UC event proves a heal of OURS just happened. Aura reads
+-- are unavailable on Retail (auras are secret) so no aura gate exists
+-- here — the line IS the gate. Follower/NPC heals produce no filtered
+-- line at all, so they can never pair.
+--
+-- Returns: sid, periodic, why —
+--   sid ~= nil : proven ours, named spell (emit with spellId=sid)
+--   sid == 0   : proven ours, unnamed (emit bare)
+--   nil, why   : no proof — caller drops or queues for deferred pairing
+--
+-- COMBAT_LOG_MESSAGE and UNIT_COMBAT arrive in either order, the same
+-- race OfferOutgoing solves for damage by deferring: a UC event that
+-- finds no line is queued briefly and re-paired when its line lands
+-- (see queuePendingHotHeal / zb._healLineHook below).
+--
+-- Line consumption IS the dedup: a tick reports under aliased tokens
+-- (partyN AND targettarget in one frame); the first UC event consumes
+-- the only line, the second finds nothing and never emits.
 local function matchOutgoingHotTick(self, unit, t)
-	local recs = self._hotRecs
-	if type(recs) ~= "table" then return nil, "norecs" end
-	if next(recs) == nil then
-		self._hotRecs = nil
-		self._hotTickState = nil
-		return nil, "recs_empty"
-	end
-	local find = AuraUtil and AuraUtil.FindAuraBySpellId
-	if not find then return nil, "no_aurautil" end
 	-- An attackable unit cannot receive the player's healing; if it
 	-- reports a HEAL it is the mob's own regen, not outgoing.
 	if UnitCanAttack then
 		local okH, h = pcall(UnitCanAttack, "player", unit)
 		if okH then
 			local okC, eq = pcall(function() return h == true end)
-			if okC and eq == true then return nil, "attackable" end
+			if okC and eq == true then return nil, nil, "attackable" end
 		end
 	end
+	local zb = ZSBT.ZBattleText
+	if not (zb and zb.PeekHealLine and zb.TakeHealLine) then
+		return nil, nil, "no_feed"
+	end
+	-- Consume the nearest heal line of either kind up front: presence is
+	-- the ownership proof; consumption is the dedup (a tick reported
+	-- under aliased tokens consumes the only line on first sighting).
+	-- Kind decides which naming path applies.
+	local nearKind = zb:TakeHealLine(t, HOT_LINE_WINDOW, nil)
+	if nearKind == nil then
+		return nil, nil, "noline"
+	end
+	-- A "heal" line is a direct heal of ours (SPELL_HEAL). Name it via
+	-- the cast window when a recent player cast exists.
+	if nearKind == "heal" then
+		local dsid = 0
+		if self._lastPlayerSpellAt and self._lastPlayerSpellId then
+			local age = t - self._lastPlayerSpellAt
+			if age >= 0 and age <= 1.5 then
+				dsid = self._lastPlayerSpellId
+			end
+		end
+		return dsid, false, nil
+	end
+	-- "hot" line: a periodic heal of ours (SPELL_PERIODIC_HEAL).
+	-- Naming: recs+cadence pick which armed hot ticked. Established ticks
+	-- need interval spacing from the last claimed tick on this unit;
+	-- first ticks must land on a phase boundary of the cast stamp.
 	-- Tick state keys on the underlying unit, not the token: the same
 	-- heal can report under aliased tokens (partyN AND targettarget when
-	-- the mob targets that member) — GUID collapses them to one state so
-	-- the second sighting self-dedups against the just-stamped lastAt.
+	-- the mob targets that member) — GUID collapses them to one state.
+	local recs = self._hotRecs
+	if type(recs) ~= "table" or next(recs) == nil then
+		return 0, true, nil -- proven ours, nothing armed to name it
+	end
 	local key = unit
 	if UnitGUID then
 		local okG, g = pcall(UnitGUID, unit)
@@ -998,80 +1029,134 @@ local function matchOutgoingHotTick(self, unit, t)
 	local learnedPer = type(prof) == "table" and prof.learnedHotPeriods or nil
 	local cadSid, cadScore = nil, nil
 	local firstSid, firstDelta = nil, nil
-	local auraMiss, auraErr = 0, 0
+	local liveCount, singleSid = 0, nil
 	for sid, rec in pairs(recs) do
 		if t > (rec.expiresAt or 0) then
 			recs[sid] = nil
 			us[sid] = nil
 		else
-			local okA, aura = pcall(find, sid, unit, "HELPFUL|PLAYER")
-			if not okA then
-				auraErr = auraErr + 1
-			elseif type(aura) ~= "table" then
-				auraMiss = auraMiss + 1
+			liveCount = liveCount + 1
+			singleSid = sid
+			local ts = us[sid]
+			-- Learned period (confirmed tick gaps this session, then
+			-- persisted) outranks module/book intervals — the model
+			-- adapts to what this client actually schedules, same as
+			-- the DoT learner.
+			local tsPer = (type(ts) == "table" and type(ts.period) == "number"
+				and ts.period > 0) and ts.period or nil
+			local iv = tsPer or (learnedPer and learnedPer[sid])
+				or rec.interval or HOT_DEFAULT_TICK_INTERVAL
+			local lastAt = (type(ts) == "table") and ts.lastAt or nil
+			if type(lastAt) == "number" then
+				local dt = t - lastAt
+				if dt >= (iv * 0.55) and dt <= (iv * 2.5) then
+					local score = math.abs(dt - iv)
+					if cadScore == nil or score < cadScore then
+						cadSid, cadScore = sid, score
+					end
+				end
 			else
-				local ts = us[sid]
-				-- Learned period (confirmed tick gaps this session, then
-				-- persisted) outranks module/book intervals — the model
-				-- adapts to what this client actually schedules, same as
-				-- the DoT learner.
-				local tsPer = (type(ts) == "table" and type(ts.period) == "number"
-					and ts.period > 0) and ts.period or nil
-				local iv = tsPer or (learnedPer and learnedPer[sid])
-					or rec.interval or HOT_DEFAULT_TICK_INTERVAL
-				local lastAt = (type(ts) == "table") and ts.lastAt or nil
-				if type(lastAt) == "number" then
-					local dt = t - lastAt
-					if dt >= (iv * 0.55) and dt <= (iv * 2.5) then
-						local score = math.abs(dt - iv)
-						if cadScore == nil or score < cadScore then
-							cadSid, cadScore = sid, score
-						end
-					end
-				else
-					local applyAt = nil
-					local expT = aura.expirationTime
-					local durT = aura.duration
-					if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(expT)
-						and ZSBT.IsSafeNumber(durT) then
-						applyAt = expT - durT
-					end
-					if type(applyAt) ~= "number" then applyAt = rec.appliedAt end
-					if type(applyAt) == "number" and t >= applyAt then
-						local phase = (t - applyAt) % iv
-						local delta = math.min(phase, iv - phase)
-						if delta <= HOT_PHASE_JITTER
-							and (firstDelta == nil or delta < firstDelta) then
-							firstSid, firstDelta = sid, delta
-						end
+				local applyAt = rec.appliedAt
+				if type(applyAt) == "number" and t >= applyAt then
+					local phase = (t - applyAt) % iv
+					local delta = math.min(phase, iv - phase)
+					if delta <= HOT_PHASE_JITTER
+						and (firstDelta == nil or delta < firstDelta) then
+						firstSid, firstDelta = sid, delta
 					end
 				end
 			end
 		end
 	end
+	if next(recs) == nil then
+		self._hotRecs = nil
+		self._hotTickState = nil
+	end
+	-- Exactly one live hot + a proven periodic-heal line: the tick IS
+	-- that spell even when cadence/phase misses (a wrong seeded interval
+	-- would otherwise silently drop every tick).
 	local sid = cadSid or firstSid
-	if sid ~= nil then
-		local prev = us[sid]
-		local period = nil
-		if type(prev) == "table" and type(prev.lastAt) == "number" then
-			local gap = t - prev.lastAt
-			if gap > 0.3 and gap < 6 then
-				period = (type(prev.period) == "number" and prev.period > 0)
-					and (prev.period * 0.6 + gap * 0.4) or gap
-				if prof then
-					prof.learnedHotPeriods = prof.learnedHotPeriods or {}
-					prof.learnedHotPeriods[sid] = period
+	if sid == nil and liveCount == 1 then sid = singleSid end
+	if sid == nil then return 0, true, nil end -- proven ours, unnamed
+	local prev = us[sid]
+	local period = nil
+	if type(prev) == "table" and type(prev.lastAt) == "number" then
+		local gap = t - prev.lastAt
+		if gap > 0.3 and gap < 6 then
+			period = (type(prev.period) == "number" and prev.period > 0)
+				and (prev.period * 0.6 + gap * 0.4) or gap
+			if prof then
+				prof.learnedHotPeriods = prof.learnedHotPeriods or {}
+				prof.learnedHotPeriods[sid] = period
+			end
+		elseif type(prev.period) == "number" then
+			period = prev.period
+		end
+	end
+	us[sid] = { lastAt = t, period = period }
+	return sid, true, nil
+end
+
+-- Deferred pairing for UC events whose combat-log line has not arrived
+-- yet (either-order delivery — the same race OfferOutgoing defers for
+-- damage). The queued entry holds the raw amount; the emit runs at
+-- line-arrival time with the UC event's original timestamp.
+local HOT_PENDING_MAX = 16
+
+local function queuePendingHotHeal(self, unit, t, amount, school, isCrit)
+	local pq = self._pendingHotHeal
+	if not pq then pq = {} ; self._pendingHotHeal = pq end
+	-- Expire stale entries in place; a heal that never meets its line
+	-- is foreign and stays unemitted by design.
+	local j = 1
+	for i = 1, #pq do
+		local e = pq[i]
+		if e.claimed ~= true and (t - e.t) <= HOT_LINE_WINDOW + 0.2 then
+			pq[j] = e
+			j = j + 1
+		end
+	end
+	for i = #pq, j, -1 do pq[i] = nil end
+	if #pq >= HOT_PENDING_MAX then table.remove(pq, 1) end
+	pq[#pq + 1] = {
+		unit = unit, t = t, amount = amount,
+		school = school, isCrit = isCrit, claimed = false,
+	}
+	-- Register the line-arrival hook once; each newly buffered heal line
+	-- retries every queued UC event against it. The matcher handles both
+	-- kinds: "hot" lines go through rec+cadence naming, "heal" lines pair
+	-- as direct heals named by the cast window.
+	local zb = ZSBT.ZBattleText
+	if zb and zb._healLineHook == nil then
+		local selfRef = self
+		zb._healLineHook = function(tl, kind)
+			local pq2 = selfRef._pendingHotHeal
+			if not pq2 then return end
+			for i = 1, #pq2 do
+				local e = pq2[i]
+				if e.claimed ~= true and math.abs(e.t - tl) <= HOT_LINE_WINDOW then
+					local hsid, hPeriodic = matchOutgoingHotTick(selfRef, e.unit, e.t)
+					if hsid ~= nil then
+						e.claimed = true
+						local pipeId = selfRef._rawPipeCount + 1
+						selfRef._rawPipeCount = pipeId
+						selfRef._rawPipe[pipeId] = e.amount
+						auditNote(("AUDH unit=%s sid=%s defer=1"):format(
+							dbgSafe(e.unit), tostring(hsid)))
+						emit("OUTGOING_HEAL_COMBAT", {
+							timestamp = e.t,
+							rawPipeId = pipeId,
+							spellId = hsid ~= 0 and hsid or nil,
+							targetName = safeUnitName(e.unit),
+							isCrit = e.isCrit == true,
+							isPeriodic = hPeriodic == true or nil,
+							schoolMask = ZSBT.IsSafeNumber(e.school) and e.school or nil,
+						})
+					end
 				end
-			elseif type(prev.period) == "number" then
-				period = prev.period
 			end
 		end
-		us[sid] = { lastAt = t, period = period }
-		return sid
 	end
-	if auraErr > 0 then return nil, "aura_err" end
-	if auraMiss > 0 then return nil, "no_aura" end
-	return nil, "nocad"
 end
 
 local function offTargetDotsEnabled()
@@ -2406,8 +2491,9 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 
 		-- Outgoing heal-over-time seeds: a module-declared hot cast arms an
 		-- attribution record. The record alone claims nothing — a HEAL on a
-		-- friendly unit only emits when aura verification proves that unit
-		-- carries the player's own HoT (see matchOutgoingHotTick).
+		-- friendly unit only emits when a filtered combat-log "hot" line
+		-- (source-restricted MINE+MY_PET) proves the tick is ours and
+		-- cadence names the spell (see matchOutgoingHotTick).
 		if ZSBT.ClassDB and ZSBT.ClassDB.HotEntry then
 			local he = ZSBT.ClassDB.HotEntry(spellId)
 			if he then
@@ -3679,9 +3765,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- keep anything else out.
 			if (aH == "HEAL" or aH == nil) and amount ~= nil then
 				local tH = now()
-				local hsid, why = matchOutgoingHotTick(self, unit, tH)
+				local hsid, hPeriodic, why = matchOutgoingHotTick(self, unit, tH)
 				if hsid == nil then
-					auditNote(("AUDHX unit=%s why=%s"):format(dbgSafe(unit), tostring(why)))
+					if why == "noline" then
+						local isCritQ = false
+						if type(descriptor) == "string" and descriptor:upper():find("CRIT", 1, true) then
+							isCritQ = true
+						end
+						queuePendingHotHeal(self, unit, tH, amount, school, isCritQ)
+					else
+						auditNote(("AUDHX unit=%s why=%s"):format(dbgSafe(unit), tostring(why)))
+					end
 				end
 				if hsid ~= nil then
 					local isCritH = false
@@ -3695,10 +3789,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					emit("OUTGOING_HEAL_COMBAT", {
 						timestamp = tH,
 						rawPipeId = pipeId,
-						spellId = hsid,
+						spellId = hsid ~= 0 and hsid or nil,
 						targetName = safeUnitName(unit),
 						isCrit = isCritH,
-						isPeriodic = true,
+						isPeriodic = hPeriodic == true or nil,
 						schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
 					})
 					return
@@ -4400,9 +4494,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- amount-carrying event that aura-verifies against a live
 				-- hot record is the player's own tick.
 				if amount ~= nil then
-					local hsid, why = matchOutgoingHotTick(self, "target", t)
+					local hsid, hPeriodic, why = matchOutgoingHotTick(self, "target", t)
 					if hsid == nil then
-						auditNote(("AUDHX unit=target why=%s"):format(tostring(why)))
+						if why == "noline" then
+							queuePendingHotHeal(self, "target", t, amount, school, isCrit)
+						else
+							auditNote(("AUDHX unit=target why=%s"):format(tostring(why)))
+						end
 					end
 					if hsid ~= nil then
 						local pipeId = self._rawPipeCount + 1
@@ -4412,10 +4510,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						emit("OUTGOING_HEAL_COMBAT", {
 							timestamp = t,
 							rawPipeId = pipeId,
-							spellId = hsid,
+							spellId = hsid ~= 0 and hsid or nil,
 							targetName = safeUnitName("target"),
 							isCrit = isCrit,
-							isPeriodic = true,
+							isPeriodic = hPeriodic == true or nil,
 							schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
 						})
 						return
@@ -4459,19 +4557,30 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					spellId = self._lastPlayerSpellId
 				end
 			end
+			local provenHeal = false
 			if spellId == nil then
 				-- HoT ticks land far outside the cast window: claim via
-				-- cast-seeded record + aura verification on the target.
-				local hsid, why = matchOutgoingHotTick(self, "target", t)
+				-- filtered heal-line ownership + cast-seeded cadence on
+				-- the target. sid == 0 means the line proved ours but no
+				-- armed hot named it — a bare proven heal still emits.
+				local hsid, hPeriodic, why = matchOutgoingHotTick(self, "target", t)
 				if hsid == nil then
+					if why == "noline" then
+						queuePendingHotHeal(self, "target", t, amount, school, isCrit)
+						return
+					end
 					auditNote(("AUDHX unit=target why=%s"):format(tostring(why)))
 				end
-				if hsid ~= nil then
+				if hsid ~= nil and hsid ~= 0 then
 					spellId = hsid
-					hotTick = true
+					hotTick = hPeriodic == true
+				end
+				if hsid == 0 then
+					provenHeal = true
+					hotTick = hPeriodic == true
 				end
 			end
-			if restrict and not spellId then
+			if restrict and spellId == nil and not provenHeal then
 				return
 			end
 
