@@ -1824,6 +1824,15 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 end
 
 local function pickDotForWound(self, t, school, amount, isCrit)
+	-- A module shipping its own physical-wound classifier owns school-1
+	-- dot naming (Warrior: Rend classifier + Ravager window — its docs
+	-- keep every other physical bleed generic by design). The generic
+	-- pick must not compete: its isDuplicateDotEmit shares _lastDotEmit*
+	-- state with the module hook, so a white swing following a hook
+	-- emit was silently dropped, and surviving swings wore bleed names.
+	local mod = ZSBT.ClassDB and ZSBT.ClassDB.ActiveModule
+		and ZSBT.ClassDB.ActiveModule()
+	if mod and mod.onPhysicalWound then return nil end
 	if ZSBT.ClassDB and ZSBT.ClassDB.DotCadenceDisambig
 		and ZSBT.ClassDB.DotCadenceDisambig() then
 		return pickDotByCadenceDisambig(self, t, school, amount, isCrit)
