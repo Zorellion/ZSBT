@@ -1522,10 +1522,13 @@ local function autoContested(self, t, feed)
 		-- includeConsumed: own hits get their line claimed by their own
 		-- emit milliseconds before the next own wound evaluates — at pet-
 		-- swarm densities that evicted line is the only evidence left.
+		-- Tight window: own wound/line pairs are the same event and land
+		-- near-simultaneously; a foreign wound can only coincide with our
+		-- line by chance, so a narrow excuse window bounds leak coverage.
 		local zbt = ZSBT.ZBattleText
 		local lineBacked = self._lastDotEmitAt == t
 			or (zbt and zbt.PeekDamageLine
-				and zbt:PeekDamageLine(t, 0.30, nil, true) ~= nil) or nil
+				and zbt:PeekDamageLine(t, 0.12, nil, true) ~= nil) or nil
 		if not lineBacked then
 			local last = self._lastAutoCandAt
 			self._lastAutoCandAt = t
