@@ -970,6 +970,17 @@ local HOT_LINE_WINDOW = 0.30
 -- (partyN AND targettarget in one frame); the first UC event consumes
 -- the only line, the second finds nothing and never emits.
 local function matchOutgoingHotTick(self, unit, t)
+	-- A heal landing on the player is incoming, not outgoing — the
+	-- unit == "player" path already renders it. Tokens that resolve to
+	-- self (targettarget while the mob targets us) re-report the same
+	-- heal and would double-render it as ours.
+	if UnitIsUnit then
+		local okU, res = pcall(UnitIsUnit, unit, "player")
+		if okU then
+			local okC, eq = pcall(function() return res == true end)
+			if okC and eq == true then return nil, nil, "self" end
+		end
+	end
 	-- An attackable unit cannot receive the player's healing; if it
 	-- reports a HEAL it is the mob's own regen, not outgoing.
 	if UnitCanAttack then
