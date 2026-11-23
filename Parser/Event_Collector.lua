@@ -171,7 +171,7 @@ local SPELL_SCHOOL_WORDS = {
 	froststorm = 24, shadowstorm = 40, spellstorm = 72,
 	shadowfrost = 48, spellfrost = 80, spellshadow = 96,
 	elemental = 28, cosmic = 106, chromatic = 124, magic = 126, chaos = 127,
-	radiant = 6, twilight = 34, plague = 40, astral = 72, volcanic = 5,
+	radiant = 6, twilight = 34, plague = 40, astral = 72, volcanic = 12,
 }
 local spellFactsCache = {}
 local function SpellFacts(spellId)
@@ -1413,10 +1413,18 @@ local function resolveOffTargetDot(self, unit, t, school)
 		if seen[sid] then return end
 		seen[sid] = true
 		-- School gate: a school-1 melee hit on a dotted nameplate cannot be
-		-- that DoT's tick no matter how clean the phase looks. Same veto
-		-- the target path applies (declared/book/learned), plus the
-		-- module dotGuard hook so pet-school strays stay out here too.
-		if not castSchoolOk(self, sid, school) then return end
+		-- that DoT's tick no matter how clean the phase looks. A declared
+		-- dot school is authoritative for TICK claims (Flame Shock ticks
+		-- report 4/5/12 on the wire while its tooltip says Volcanic — the
+		-- cast's tooltip school is the wrong evidence for tick claims).
+		-- Undeclared dots keep the cast/tooltip veto, plus the module
+		-- dotGuard hook so pet-school strays stay out here too.
+		local dent = dotEntryForSpellId(sid)
+		if dent and dent.school ~= nil then
+			if dotEntrySchoolEq(dent.school, school) ~= true then return end
+		elseif not castSchoolOk(self, sid, school) then
+			return
+		end
 		local entry = dotEntryForSpellId(sid)
 		if entry and ZSBT.ClassDB and ZSBT.ClassDB.DotGuard
 			and ZSBT.ClassDB.DotGuard(entry, school) == false then

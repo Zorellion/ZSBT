@@ -23,7 +23,7 @@ mod.dots = {
 	-- empowered variant the debuff takes on Stormbringer ticks volcanic
 	-- composite fire|nature (12). Same debuff family, so both masks
 	-- must fit or empowered ticks fail the school gate and go generic.
-	{ names = { "Flame Shock" },   ids = { 188389 },          school = { 4, 12 } },
+	{ names = { "Flame Shock" },   ids = { 188389 },          school = { 4, 5, 12 } },
 }
 
 -- Applicator casts: the cast id is not a dot but applies one.
