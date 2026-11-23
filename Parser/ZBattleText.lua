@@ -909,7 +909,16 @@ local function flushPending()
                     -- unattributed wound must not reach a leftover line as
                     -- far out as a proven hit can.
                     local window = (p._retried and pass == 1) and RETRY_WINDOW or DEFER_WINDOW
-                    kind = takeCandidateLine(p.t, window, p.payload)
+                    -- Deferred off-whitelist wound under recent contention:
+                    -- a claimed MINE line only proves our feed fired near
+                    -- t, never that THIS wound was ours. Foreign-school
+                    -- hits can never be proven while a second attacker is
+                    -- armed — force the drop instead of borrowing a line.
+                    local ecF = ZSBT.Parser and ZSBT.Parser.EventCollector
+                    local fsBlocked = p.payload and p.payload._foreignSchool == true
+                        and ecF ~= nil and type(ecF._autoContestUntil) == "number"
+                        and ecF._autoContestUntil > (tonumber(p.t) or 0)
+                    kind = (not fsBlocked) and takeCandidateLine(p.t, window, p.payload) or nil
                     if kind then
                         ZB._allows = ZB._allows + 1
                         ZB:Audit(("AUDCLAIM tier=%d sid=%s kind=%s"):format(
