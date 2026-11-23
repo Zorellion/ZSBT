@@ -248,11 +248,20 @@ local GUARDIAN_SPELLS = {
 		{ sid = 267997, school = 8, budget = 10 } },                -- Bile Spit
 	tyrant = { { sid = 1264093, school = 36 } },                    -- Burning Cleave
 	implord = { { sid = 1277116, school = 4 } },                  -- Greater Felbolt
+	-- Dominion of Argus minor summons (all verified from WoWCombatLog):
+	-- each is player-summoned but each school collides with another group,
+	-- so naming only fires when the colliding window is inactive — the
+	-- ambiguity guard keeps the wrong-name case impossible.
+	motherofchaos = { { sid = 432596, school = 4 } },               -- Chaos Salvo (vs wildimp/implord)
+	overlord = { { sid = 432120, school = 36 } },                   -- Wicked Cleave (vs tyrant)
 	-- Dominion of Argus summons (Alythess Blaze 1282534, Sacrolash Shadow
-	-- Nova 1282507) and Pit Lord Felseeker (434404) are deliberately
-	-- unmapped: their schools (4 / 32 / 127) collide head-on with the
-	-- player's own fire, shadow kit, and Ruination — naming them would
-	-- steal player hits exactly like the infernal/darkglare cases below.
+	-- Nova 1282507), Antoran Jailer Soul Barrage (1292391), and Pit Lord
+	-- Felseeker (434404) are deliberately unmapped: their schools
+	-- (4 / 32 / 127) collide head-on with the player's own fire, shadow
+	-- kit, and Ruination — Soul Barrage is 0x7f, Ruination's exact mask,
+	-- and the Jailer is active during Dominion windows when Ruination is
+	-- flying. Naming them would steal player hits exactly like the
+	-- infernal/darkglare cases below.
 	-- darkglare deliberately has no entries: its Eye Beam (205231) is
 	-- school 32, and during a Darkglare window every unattributed
 	-- school-32 hit — the player's own DoT ticks whose windows lapsed,
@@ -279,6 +288,8 @@ local GUARDIAN_SUMMONS = {
 	[205180] = { { group = "darkglare", duration = 15 } },          -- Summon Darkglare (Aff)
 	[1122] = { { group = "infernal", duration = 30 } },             -- Summon Infernal (Destro)
 	[1276452] = { { group = "implord", duration = 20 } },           -- Grimoire: Imp Lord
+	[428565] = { { group = "motherofchaos", duration = 5 } },       -- Summon Mother of Chaos (~3.5s active)
+	[428571] = { { group = "overlord", duration = 4 } },            -- Summon Overlord (~2s active)
 }
 mod.guardianSummons = GUARDIAN_SUMMONS
 
