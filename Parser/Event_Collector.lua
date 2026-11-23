@@ -1800,11 +1800,7 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 		scanned = scanned + 1
 		local chSchoolOk = true
 		if ch.school ~= nil and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school) then
-			if type(ch.school) == "table" then
-				chSchoolOk = ch.school[school] == true
-			else
-				chSchoolOk = school == ch.school
-			end
+			chSchoolOk = dotEntrySchoolEq(ch.school, school) == true
 		end
 		local iv = (type(ch.interval) == "number" and ch.interval > 0) and ch.interval
 			or dotTickInterval(ch.spellId)
@@ -4730,7 +4726,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					if dotSpellId and not chanPick and (not cachedHasTargetDebuffSpellId(dotSpellId)) then
 						local allowDot = false
 						local de2 = dotEntryForSpellId(dotSpellId)
-						if de2 and de2.school and ZSBT.IsSafeNumber(school) and school == de2.school then
+						if de2 and de2.school and ZSBT.IsSafeNumber(school)
+							and dotEntrySchoolEq(de2.school, school) == true then
 							allowDot = true
 						end
 						if not allowDot then
@@ -5524,11 +5521,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- attribution or generic instead of stealing the name.
 					local schoolOk = true
 					if ch.school ~= nil and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school) then
-						if type(ch.school) == "table" then
-							schoolOk = ch.school[school] == true
-						else
-							schoolOk = school == ch.school
-						end
+						schoolOk = dotEntrySchoolEq(ch.school, school) == true
 					end
 					if not schoolOk then
 						auditNote(("AUDD reason=CHANNEL_SCHOOL school=%s want=%s"):format(
@@ -5598,7 +5591,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					if debuffOk ~= true then
 						local allowDot = false
 						local de3 = dotEntryForSpellId(dotSpellId)
-						if de3 and de3.school and ZSBT.IsSafeNumber(school) and school == de3.school then
+						if de3 and de3.school and ZSBT.IsSafeNumber(school)
+							and dotEntrySchoolEq(de3.school, school) == true then
 							allowDot = true
 						end
 						if not allowDot then
