@@ -152,6 +152,86 @@ ZB._lines = ZB._lines or {}
 ZB._healLines = ZB._healLines or {}
 
 ------------------------------------------------------------------------
+-- v2 signal: lineColorPriority=1 colors each line by SOURCE class via
+-- colors.unitColoring instead of event kind — real provenance data the
+-- kind palette cannot express. A second filter part covers non-self
+-- sources so co-attacker hits arrive as foreign-classed lines: a wound
+-- matching one is provably NOT ours (the first negative evidence the
+-- feed has ever carried). Highlighting doubles each class colour for
+-- heal events, so dim = damage, bright = heal.
+--
+-- v2 own-class lines map back to legacy kind names so the claim path is
+-- unchanged: mine-damage -> "direct", pet-damage -> "melee" (a MY_PET
+-- line proves pet-ness, stronger than the old swing-kind guess),
+-- heal lines -> "heal". Tick/ranged collapse into "direct" — candidate
+-- kind sets are widened in source mode (ZB._srcMode) to match.
+-- Palette channels stay <=0.66 so highlighted variants never collide
+-- with another class or any v1 kind colour (dual classify fallback).
+------------------------------------------------------------------------
+local SRC_CLASSES = {
+    mine       = { 0.50, 0.50, 0.50 },
+    pet        = { 0.20, 0.55, 0.25 },
+    friendly   = { 0.15, 0.40, 0.62 },
+    hostileP   = { 0.62, 0.20, 0.05 },
+    hostileU   = { 0.62, 0.55, 0.05 },
+    neutral    = { 0.55, 0.30, 0.60 },
+    unknown    = { 0.35, 0.55, 0.55 },
+}
+-- class name -> combat-log filter mask global (resolved at install)
+local SRC_MASK_GLOBAL = {
+    mine = "COMBATLOG_FILTER_MINE", pet = "COMBATLOG_FILTER_MY_PET",
+    friendly = "COMBATLOG_FILTER_FRIENDLY_UNITS",
+    hostileP = "COMBATLOG_FILTER_HOSTILE_PLAYERS",
+    hostileU = "COMBATLOG_FILTER_HOSTILE_UNITS",
+    neutral = "COMBATLOG_FILTER_NEUTRAL_UNITS",
+    unknown = "COMBATLOG_FILTER_UNKNOWN_UNITS",
+}
+-- Sources the foreign filter part listens for: everyone who is not us.
+local FOREIGN_CLASSES = {
+    friendly = true, hostileP = true, hostileU = true,
+    neutral = true, unknown = true,
+}
+-- Highlight doubles the colour for these events => dim=damage, bright=heal.
+local HEAL_EVENTS = {
+    SPELL_HEAL = true, SPELL_BUILDING_HEAL = true, SPELL_PERIODIC_HEAL = true,
+}
+-- Damage events only for the foreign part (no heals — we only veto
+-- damage wounds; foreign heal lines would just be noise).
+local FOREIGN_EVENTS = {}
+for event, kind in pairs(EVENT_KINDS) do
+    if DAMAGE_KINDS[kind] then FOREIGN_EVENTS[event] = true end
+end
+
+-- rgb -> {class, heal} lookup for v2 lines (built once; colours const).
+local SRC_LOOKUP = {}
+for cls, rgb in pairs(SRC_CLASSES) do
+    SRC_LOOKUP[#SRC_LOOKUP + 1] = { r = rgb[1], g = rgb[2], b = rgb[3], cls = cls, heal = false }
+    SRC_LOOKUP[#SRC_LOOKUP + 1] = {
+        r = math.min(rgb[1] * 1.5, 1), g = math.min(rgb[2] * 1.5, 1),
+        b = math.min(rgb[3] * 1.5, 1), cls = cls, heal = true,
+    }
+end
+
+local function classifySource(r, g, b)
+    for i = 1, #SRC_LOOKUP do
+        local e = SRC_LOOKUP[i]
+        if math.abs(r - e.r) <= COLOR_TOLERANCE
+            and math.abs(g - e.g) <= COLOR_TOLERANCE
+            and math.abs(b - e.b) <= COLOR_TOLERANCE then
+            return e.cls, e.heal
+        end
+    end
+    return nil
+end
+
+-- v2 own-class -> legacy kind so existing claim kinds keep working.
+local function ownClassToKind(cls, heal)
+    if heal then return "heal" end
+    if cls == "pet" then return "melee" end
+    return "direct"
+end
+
+------------------------------------------------------------------------
 -- Combat-log line buffer (COMBAT_LOG_MESSAGE -> RGB classify)
 ------------------------------------------------------------------------
 local function isSafeChannel(v)
@@ -429,86 +509,6 @@ local COSMETIC_KINDS = {
     interrupt = true, purge = true, cleanse = true, steal = true,
     dispelFailed = true, broke = true, kill = true, extra = true,
 }
-
-------------------------------------------------------------------------
--- v2 signal: lineColorPriority=1 colors each line by SOURCE class via
--- colors.unitColoring instead of event kind — real provenance data the
--- kind palette cannot express. A second filter part covers non-self
--- sources so co-attacker hits arrive as foreign-classed lines: a wound
--- matching one is provably NOT ours (the first negative evidence the
--- feed has ever carried). Highlighting doubles each class colour for
--- heal events, so dim = damage, bright = heal.
---
--- v2 own-class lines map back to legacy kind names so the claim path is
--- unchanged: mine-damage -> "direct", pet-damage -> "melee" (a MY_PET
--- line proves pet-ness, stronger than the old swing-kind guess),
--- heal lines -> "heal". Tick/ranged collapse into "direct" — candidate
--- kind sets are widened in source mode (ZB._srcMode) to match.
--- Palette channels stay <=0.66 so highlighted variants never collide
--- with another class or any v1 kind colour (dual classify fallback).
-------------------------------------------------------------------------
-local SRC_CLASSES = {
-    mine       = { 0.50, 0.50, 0.50 },
-    pet        = { 0.20, 0.55, 0.25 },
-    friendly   = { 0.15, 0.40, 0.62 },
-    hostileP   = { 0.62, 0.20, 0.05 },
-    hostileU   = { 0.62, 0.55, 0.05 },
-    neutral    = { 0.55, 0.30, 0.60 },
-    unknown    = { 0.35, 0.55, 0.55 },
-}
--- class name -> combat-log filter mask global (resolved at install)
-local SRC_MASK_GLOBAL = {
-    mine = "COMBATLOG_FILTER_MINE", pet = "COMBATLOG_FILTER_MY_PET",
-    friendly = "COMBATLOG_FILTER_FRIENDLY_UNITS",
-    hostileP = "COMBATLOG_FILTER_HOSTILE_PLAYERS",
-    hostileU = "COMBATLOG_FILTER_HOSTILE_UNITS",
-    neutral = "COMBATLOG_FILTER_NEUTRAL_UNITS",
-    unknown = "COMBATLOG_FILTER_UNKNOWN_UNITS",
-}
--- Sources the foreign filter part listens for: everyone who is not us.
-local FOREIGN_CLASSES = {
-    friendly = true, hostileP = true, hostileU = true,
-    neutral = true, unknown = true,
-}
--- Highlight doubles the colour for these events => dim=damage, bright=heal.
-local HEAL_EVENTS = {
-    SPELL_HEAL = true, SPELL_BUILDING_HEAL = true, SPELL_PERIODIC_HEAL = true,
-}
--- Damage events only for the foreign part (no heals — we only veto
--- damage wounds; foreign heal lines would just be noise).
-local FOREIGN_EVENTS = {}
-for event, kind in pairs(EVENT_KINDS) do
-    if DAMAGE_KINDS[kind] then FOREIGN_EVENTS[event] = true end
-end
-
--- rgb -> {class, heal} lookup for v2 lines (built once; colours const).
-local SRC_LOOKUP = {}
-for cls, rgb in pairs(SRC_CLASSES) do
-    SRC_LOOKUP[#SRC_LOOKUP + 1] = { r = rgb[1], g = rgb[2], b = rgb[3], cls = cls, heal = false }
-    SRC_LOOKUP[#SRC_LOOKUP + 1] = {
-        r = math.min(rgb[1] * 1.5, 1), g = math.min(rgb[2] * 1.5, 1),
-        b = math.min(rgb[3] * 1.5, 1), cls = cls, heal = true,
-    }
-end
-
-local function classifySource(r, g, b)
-    for i = 1, #SRC_LOOKUP do
-        local e = SRC_LOOKUP[i]
-        if math.abs(r - e.r) <= COLOR_TOLERANCE
-            and math.abs(g - e.g) <= COLOR_TOLERANCE
-            and math.abs(b - e.b) <= COLOR_TOLERANCE then
-            return e.cls, e.heal
-        end
-    end
-    return nil
-end
-
--- v2 own-class -> legacy kind so existing claim kinds keep working.
-local function ownClassToKind(cls, heal)
-    if heal then return "heal" end
-    if cls == "pet" then return "melee" end
-    return "direct"
-end
 
 local function paletteMatches(ec)
     if type(ec) ~= "table" then return false end
