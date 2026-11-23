@@ -675,6 +675,18 @@ end
 ------------------------------------------------------------------------
 local DEFER_SEC = 0.20
 local DEFER_WINDOW = 0.45
+-- Queue flush cadence: how long an emit waits for its combat-log line
+-- before the flush pass decides. Profile-tunable (Outgoing damage
+-- slider); lower feels snappier but gives lagging lines less time to
+-- arrive, so more candidates die unproven in dense fights.
+local function deferSec()
+    local d = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.outgoing
+        and ZSBT.db.profile.outgoing.damage and ZSBT.db.profile.outgoing.damage.linePairDelay
+    if type(d) ~= "number" or d ~= d then return DEFER_SEC end
+    if d < 0.05 then return 0.05 end
+    if d > 0.50 then return 0.50 end
+    return d
+end
 local RETRY_WINDOW = 0.90
 
 ZB._pending = ZB._pending or {}
@@ -1027,8 +1039,8 @@ local function flushPending()
         ZB:FileLog(("REQUEUE n=%d"):format(#requeue))
         if C_Timer and C_Timer.After then
             local tNow = GetTime and GetTime() or 0
-            ZB._flushAt = tNow + DEFER_SEC
-            C_Timer.After(DEFER_SEC, flushPending)
+            ZB._flushAt = tNow + deferSec()
+            C_Timer.After(deferSec(), flushPending)
         end
     end
 end
@@ -1235,8 +1247,8 @@ function ZB:OfferOutgoing(payload)
     auditQueued(payload)
     local tNow = GetTime and GetTime() or 0
     if ZB._flushAt <= tNow and C_Timer and C_Timer.After then
-        ZB._flushAt = tNow + DEFER_SEC
-        C_Timer.After(DEFER_SEC, flushPending)
+        ZB._flushAt = tNow + deferSec()
+        C_Timer.After(deferSec(), flushPending)
     end
     return false
 end
