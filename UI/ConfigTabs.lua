@@ -5649,6 +5649,7 @@ local COMBAT_BUCKET_KEYS = {
 			damageEnabled=1, showSpellNames=1, showSpellIcons=1, showEmpowerIcons=1, iconSide=1,
 			useSchoolColors=1, customDamageColor=1, damageScrollArea=1,
 			showTargets=1, autoAttackMode=1,
+			hideAutoContested=1, linePairDelay=1,
 			damageMinThreshold=1, thresholdTip=1,
 		},
 		heal = {
@@ -5686,6 +5687,7 @@ ZSBT._BUCKET_ORDER = {
 		"damageEnabled", "damageScrollArea",
 		"showSpellNames", "showSpellIcons", "showEmpowerIcons", "iconSide",
 		"showTargets", "autoAttackMode",
+		"hideAutoContested", "linePairDelay",
 		"damageMinThreshold", "thresholdTip",
 		"useSchoolColors", "customDamageColor",
 	},
