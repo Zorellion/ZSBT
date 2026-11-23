@@ -7587,6 +7587,17 @@ function ZSBT.BuildTab_Outgoing()
                 get   = function() return ZSBT.db.profile.outgoing.damage.hideAutoContested ~= false end,
                 set   = function(_, val) ZSBT.db.profile.outgoing.damage.hideAutoContested = val end,
             },
+            linePairDelay = {
+                type    = "range",
+                name    = L["Attribution Delay"],
+                desc    = L["How long outgoing numbers wait for combat-log proof before displaying. Lower feels snappier; higher is more reliable in busy fights."],
+                order   = 6.07,
+                min     = 0.05,
+                max     = 0.50,
+                step    = 0.01,
+                get     = function() return ZSBT.db.profile.outgoing.damage.linePairDelay or 0.20 end,
+                set     = function(_, val) ZSBT.db.profile.outgoing.damage.linePairDelay = val end,
+            },
             thresholdTip = {
                 type     = "description",
                 name     = L["Tip: You can type a value above the slider (up to 15000)."],

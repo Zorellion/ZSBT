@@ -311,6 +311,7 @@ ZSBT.DEFAULTS = {
                 autoAttackMode = "Show All",
                 minThreshold   = 0,
                 showMisses     = true,
+                linePairDelay  = 0.20,
             },
             healing = {
                 enabled       = true,
