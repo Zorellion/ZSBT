@@ -38,6 +38,7 @@ mod.dotApplicators = {
 	-- iconless. Every claim must land on the modern id.
 	[470057] = { { sid = 188389, aoe = true } },  -- Voltaic Blaze applies FS to every target hit
 	[114050] = { { sid = 188389, aoe = true } },  -- Ascendance applies FS to up to 6 enemies
+	[60103]  = { { sid = 188389, aoe = true } },  -- Molten Assault: Lava Lash reapplies FS and spreads it to 5 nearby
 }
 
 mod.channels = {
@@ -52,6 +53,10 @@ mod.channels = {
 	-- discharges, stray overloads) may also wear the Stormkeeper name.
 	-- Single _channel slot: a later EQ cast replaces this window.
 	{ names = { "Stormkeeper" }, ids = { 191634 }, duration = 12, tickMin = 0.4, school = 8 },
+	-- Surging Totem (Totemic): creates a Tremor every ~6s for 25s —
+	-- Flamestrike (school 5) ground ticks with no cast record, same
+	-- claim-window pattern as Earthquake.
+	{ names = { "Surging Totem" }, ids = { 444995 }, duration = 25, tickMin = 0.6, school = 5 },
 }
 
 -- Zero-enemy-damage casts: a wound can never honestly wear these
@@ -135,6 +140,22 @@ mod.castBudget = {
 	[187874] = 6,    -- Crash Lightning (frontal cleave)
 	[117014] = 2,    -- Elemental Blast
 	[196840] = 2,    -- Frost Shock
+	-- Enhancement strikes. Stormstrike reports as 32175/32176 on this
+	-- build (17364 is the legacy id); Windstrike is the Ascendance form.
+	[32175]  = 4,    -- Stormstrike (MH)
+	[32176]  = 4,    -- Stormstrike (OH)
+	[17364]  = 4,    -- Stormstrike (legacy id)
+	[115356] = 6,    -- Windstrike (Ascendance: every GCD + Stormflurry)
+	[60103]  = 4,    -- Lava Lash (+ cleave procs)
+	[467283] = 6,    -- Sundering damage sid (cast button is 197214)
+	-- Totemic: Primordial Storm triggers Fire/Frost/Lightning strikes,
+	-- each an AoE across the group.
+	[1218090] = 4,   -- Primordial Storm (button)
+	[1218113] = 8,   -- Primordial Fire (Flamestrike AoE)
+	[1218116] = 8,   -- Primordial Frost (Froststrike AoE)
+	[1218118] = 8,   -- Primordial Lightning (Stormstrike AoE)
+	[469270] = 8,    -- Doom Winds tick (per-tick AoE pulses)
+	[444995] = 8,    -- Surging Totem Tremor (if SPELLCAST fires per wave)
 }
 
 -- Provable damage schools (derived on Stormbringer Ele: 4, 8, 16, 72):
@@ -144,13 +165,15 @@ mod.castBudget = {
 --   can report wide composites), 72 nature|arcane = Astral (Ascendance-
 --   linked damage). Shadow-bearing masks are deliberately excluded —
 --   an unattributed shadow hit is provably foreign for this class.
-mod.schools = { [1] = true, [4] = true, [8] = true, [12] = true,
-	[16] = true, [20] = true, [24] = true, [28] = true, [72] = true }
+mod.schools = { [1] = true, [4] = true, [5] = true, [8] = true,
+	[9] = true, [12] = true, [16] = true, [17] = true, [20] = true,
+	[24] = true, [28] = true, [72] = true }
 
 -- Union of schools shaman pets can produce: elemental/nature spell
 -- hits (4, 8, 12) and melee (1). A pet-routed hit outside this set is
 -- provably foreign regardless of which pet is out.
-local PET_SCHOOLS = { [1] = true, [4] = true, [8] = true, [12] = true }
+local PET_SCHOOLS = { [1] = true, [4] = true, [5] = true, [8] = true,
+	[9] = true, [12] = true }
 
 function mod.petSchoolAllowed(school, helpers)
 	if not (helpers and helpers.safeNumber and helpers.safeNumber(school)) then
@@ -191,7 +214,13 @@ function mod.petSchoolHit(school, helpers)
 	if school == 4 or school == 12 then
 		if isFireElem(fam) then return true end
 	end
+	if school == 5 then
+		if isFireElem(fam) or isEarthElem(fam) or isSpiritWolf(fam) then return true end
+	end
 	if school == 8 or school == 12 then
+		if isStormElem(fam) or isEarthElem(fam) or isSpiritWolf(fam) then return true end
+	end
+	if school == 9 then
 		if isStormElem(fam) or isEarthElem(fam) or isSpiritWolf(fam) then return true end
 	end
 	return false
@@ -208,6 +237,9 @@ local SHAMAN_FIRE_SPELLS = {
 	["Primordial Wave"] = true,
 	["Fire Nova"] = true,
 	["Lava Lash"] = true,
+	["Sundering"] = true,
+	["Primordial Storm"] = true,
+	["Surging Totem"] = true,
 }
 local SHAMAN_NATURE_SPELLS = {
 	["Lightning Bolt"] = true,
@@ -223,6 +255,10 @@ local SHAMAN_NATURE_SPELLS = {
 	["Icefury"] = true,
 	["Stormstrike"] = true,
 	["Windstrike"] = true,
+	["Sundering"] = true,
+	["Primordial Storm"] = true,
+	["Doom Winds"] = true,
+	["Surging Totem"] = true,
 }
 
 -- Recent-cast variant: claim the hit as pet ONLY when the recent cast
@@ -241,7 +277,17 @@ function mod.petSchoolHitRecent(self, school, lastPlayerSpellId, helpers)
 		if sn and SHAMAN_FIRE_SPELLS[sn] then return false end
 		return true
 	end
+	if school == 5 then
+		if not (isFireElem(fam) or isEarthElem(fam) or isSpiritWolf(fam)) then return false end
+		if sn and SHAMAN_FIRE_SPELLS[sn] then return false end
+		return true
+	end
 	if school == 8 or school == 12 then
+		if not (isStormElem(fam) or isEarthElem(fam) or isSpiritWolf(fam)) then return false end
+		if sn and SHAMAN_NATURE_SPELLS[sn] then return false end
+		return true
+	end
+	if school == 9 then
 		if not (isStormElem(fam) or isEarthElem(fam) or isSpiritWolf(fam)) then return false end
 		if sn and SHAMAN_NATURE_SPELLS[sn] then return false end
 		return true
