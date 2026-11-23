@@ -470,6 +470,7 @@ ZSBT.DEFAULTS = {
 				perf = 0,
 			},
             captureEnabled = false,
+            auditLogMax    = 8000,
             maxEntries     = 1000,
             qHead          = 1,
             qTail          = 0,

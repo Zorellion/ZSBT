@@ -2380,6 +2380,20 @@ function Addon:HandleSlashCommand(input)
         end
         self:Print("AUDIT trace " .. (ZSBT._auditTrace and "ON" or "OFF"))
         return
+    elseif cmd == "auditmax" then
+        local diag = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
+        if type(diag) ~= "table" then
+            self:Print("No diagnostics profile available.")
+            return
+        end
+        local n = tonumber(rest)
+        if n then
+            n = math.floor(n)
+            if n < 1000 then n = 1000 elseif n > 200000 then n = 200000 end
+            diag.auditLogMax = n
+        end
+        self:Print(("Audit ring max lines: %s"):format(tostring(diag.auditLogMax or 8000)))
+        return
     elseif cmd == "auditreport" or cmd == "arep" then
         self:HandleAuditReport()
         return
@@ -2438,7 +2452,7 @@ function Addon:HandleSlashCommand(input)
 	end
 
     self:Print(L["|cFF808C9EUnknown command:|r "] .. cmd)
-	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | reset | version | auratest | restorefct | dumpcvars | ctprobe | ucdrop]"])
+	self:Print(L["|cFF00CC66Usage:|r /zsbt [minimap | debug [show | <0-5> | <channel> <0-5>] | cddebug [0-5] | reset | version | auratest | restorefct | dumpcvars | ctprobe | ucdrop | auditmax <n>]"])
 end
 
 ------------------------------------------------------------------------

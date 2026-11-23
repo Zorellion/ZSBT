@@ -1048,6 +1048,18 @@ end
 -- Trace sink for /zsbt ucdrop sessions: appends to a SavedVariables
 -- ring buffer (ZSBTDB -> WTF/.../SavedVariables/ZSBTDB.lua) so decisions can be
 -- read post-session without chat copy/paste (chat blocks secret values).
+-- Shared cap for both diagnostic rings (audit + ucdrop). A raid boss's
+-- 10-minute trace needs ~80k lines at raid wound density; the profile
+-- key (/zsbt auditmax) lets a tester buy that depth without bloating
+-- everyone's SavedVariables.
+local function ringMax()
+    local d = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
+    local n = d and tonumber(d.auditLogMax)
+    if type(n) ~= "number" or n ~= n or n < 1000 then return 8000 end
+    if n > 200000 then return 200000 end
+    return math.floor(n)
+end
+
 function ZB:FileLog(msg)
     if ZSBT._ucDropTrace ~= true then return end
     local prof = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
@@ -1065,8 +1077,14 @@ function ZB:FileLog(msg)
         line = ("%.3f AUDSEC <audit line contained a secret value>"):format(t)
     end
     log[#log + 1] = line
-    if #log > 4000 then
-        table.remove(log, 1)
+    local cap = ringMax()
+    if #log > cap then
+        -- Block trim: table.remove(1) shifts the whole array per call —
+        -- prohibitive at raid-boss cap sizes. One pass per overflow
+        -- instead of one per line.
+        local cut = math.floor(cap * 0.10) + 1
+        for i = cut + 1, #log do log[i - cut] = log[i] end
+        for i = #log - cut + 1, #log do log[i] = nil end
     end
 end
 
@@ -1091,8 +1109,13 @@ function ZB:Audit(msg)
         line = ("%.3f AUDSEC <audit line contained a secret value>"):format(t)
     end
     log[#log + 1] = line
-    if #log > 8000 then
-        table.remove(log, 1)
+    local cap = ringMax()
+    if #log > cap then
+        -- Same block trim as FileLog: per-line table.remove(1) shifts
+        -- the whole array — prohibitive at raid-boss cap sizes.
+        local cut = math.floor(cap * 0.10) + 1
+        for i = cut + 1, #log do log[i - cut] = log[i] end
+        for i = #log - cut + 1, #log do log[i] = nil end
     end
 end
 
