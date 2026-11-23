@@ -327,6 +327,7 @@ local function emit(eventType, payload)
 				payload._petRoute = true
 				payload.petSpellId = psid
 				payload._petSidLearn = (not resolved) or nil
+				payload.petEvidence = resolved and "resolve" or "cast"
 				payload.petBucket = "summons"
 			end
 		end
@@ -4970,14 +4971,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						end
 						local petSid, petUnit = consumePetCast(self, t, 1.5, school)
 						local petSidTrusted = petSid ~= nil
+						local petEvidence = petSid and "cast" or nil
 						if petSid == nil and ZSBT.ClassDB and ZSBT.ClassDB.ResolvePetSpellId then
 							petSid = ZSBT.ClassDB.ResolvePetSpellId(self, school, t)
+							petEvidence = petSid and "resolve" or nil
 						end
 						if petSid == nil and ZSBT.IsSafeNumber(school) and school == 1
 							and ZSBT.ClassDB and ZSBT.ClassDB.ResolvePetMelee then
 							-- Class may name verified pet melee (warlock:
 							-- "Auto Attack"). Class-guess, not provenance.
 							petSid = ZSBT.ClassDB.ResolvePetMelee(self)
+							petEvidence = petSid and "melee" or nil
 						end
 						if ZSBT.IsSafeNumber(school) and school == 1 and zbtVetoActive() then
 							-- Physical pet hits go through the ownership veto:
@@ -4991,6 +4995,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								petSpellId = petSid,
 								_petSidLearn = petSidTrusted or nil,
 								petUnit = petUnit,
+								petEvidence = petEvidence or "guess",
 								_petRoute = true,
 								amount = amount,
 								amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
@@ -5005,6 +5010,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							petSpellId = petSid,
 							_petSidLearn = petSidTrusted or nil,
 							petUnit = petUnit,
+							petEvidence = petEvidence or "guess",
 							amount = amount,
 							amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
 							isCrit = isCrit,
@@ -5574,19 +5580,23 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			local swingOk = swingExplainsHit(self, t)
 			local petRoutePhys = nil
 			local petSidPhys = nil
+			local petEvidence = nil
 			if spellId == nil and not swingOk
 				and isLikelyPetPhysicalHit(school)
 				and (zbtVetoActive() or not members or members <= 1) then
 				petRoutePhys = true
 				petSidPhys = consumePetCast(self, t, 1.5, school)
 				local petSidPhysTrusted = petSidPhys ~= nil
+				petEvidence = petSidPhys and "cast" or nil
 				if petSidPhys == nil and ZSBT.ClassDB and ZSBT.ClassDB.ResolvePetSpellId then
 					petSidPhys = ZSBT.ClassDB.ResolvePetSpellId(self, school, t)
+					petEvidence = petSidPhys and "resolve" or nil
 				end
 				if petSidPhys == nil and ZSBT.ClassDB and ZSBT.ClassDB.ResolvePetMelee then
 					-- Opt-in pet melee naming (6603 "Auto Attack"): the hit
 					-- still must claim a MY_PET line downstream.
 					petSidPhys = ZSBT.ClassDB.ResolvePetMelee(self)
+					petEvidence = petSidPhys and "melee" or nil
 				end
 			end
 			emit("OUTGOING_DAMAGE_COMBAT", {
@@ -5598,6 +5608,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				_petRoute = petRoutePhys,
 				petSpellId = petSidPhys,
 				_petSidLearn = petSidPhysTrusted or nil,
+				petEvidence = petRoutePhys and (petEvidence or "guess") or nil,
 				amountSource = "UNIT_COMBAT_PHYSICAL",
 				targetName = safeUnitName("target"),
 				isCrit = isCrit,

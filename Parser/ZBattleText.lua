@@ -965,6 +965,7 @@ local function flushPending()
                             local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
                             p.payload.isAuto = nil
                             p.payload._petRoute = true
+                            p.payload.petEvidence = "mline"
                             if ec and cdb.ResolvePetMelee then
                                 p.payload.petSpellId = cdb.ResolvePetMelee(ec)
                             end
@@ -1179,10 +1180,10 @@ function ZB:AuditDamageEvent(eventType, payload)
             bind = (p.isPeriodic == true) and ("dot:" .. audSafe(sid)) or ("cast:" .. audSafe(sid))
         end
     end
-    ZB:Audit(("AUD ht=%.3f %s sid=%s name=%s school=%s crit=%s amt=%s src=%s bind=%s tgt=%s pid=%s tid=%s"):format(
+    ZB:Audit(("AUD ht=%.3f %s sid=%s name=%s school=%s crit=%s amt=%s src=%s bind=%s pe=%s tgt=%s pid=%s tid=%s"):format(
         tonumber(p.timestamp) or 0, eventType, audSafe(sid), audSafe(name),
         audSafe(p.schoolMask), tostring(p.isCrit == true), amtStr, src, bind,
-        audSafe(p.targetName), audSafe(p.rawPipeId), audSafe(p.traceId)))
+        audSafe(p.petEvidence), audSafe(p.targetName), audSafe(p.rawPipeId), audSafe(p.traceId)))
 end
 
 -- Returns true when the caller should emit immediately; false when the
