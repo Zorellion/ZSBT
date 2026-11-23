@@ -166,6 +166,17 @@ mod.castBudget = {
 	[444995] = 8,    -- Surging Totem Tremor (if SPELLCAST fires per wave)
 }
 
+-- Guaranteed on-attack procs with no cast record of their own. A wound
+-- claims one only when: its school matches, a melee weapon attack is
+-- anchored (recent school-1 wound or strike cast), the target is not
+-- contested, and the per-rider cadence cap allows it. Flametongue Weapon
+-- fires on EVERY weapon attack, so a school-4 wound riding a fresh melee
+-- anchor is its proc with near-certainty — the alternative (leaving the
+-- largest generic school on Enhancement anonymous) is strictly worse.
+mod.procRiders = {
+	{ sid = 10444, school = 4, minGap = 0.30 },  -- Flametongue Attack (one proc per weapon attack)
+}
+
 -- Provable damage schools (derived on Stormbringer Ele: 4, 8, 16, 72):
 --   1 pet/player melee, 4 fire, 8 nature, 12 fire|nature (Elemental
 --   Unity, elemental-composite hits), 16 frost (Frost Shock), 20

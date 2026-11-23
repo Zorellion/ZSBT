@@ -596,6 +596,15 @@ function ClassDB.DeclaredSchoolFits(spellId, school)
 	return nil
 end
 
+-- Guaranteed on-attack procs lacking a cast record (mod.procRiders list
+-- of { sid, school, minGap }): the collector may name a same-school wound
+-- when a melee weapon attack is anchored and uncontested. nil = none.
+function ClassDB.ProcRiders()
+	local mod = ClassDB.ActiveModule()
+	if not mod or type(mod.procRiders) ~= "table" then return nil end
+	return mod.procRiders
+end
+
 -- Per-pet-cast claim budget (mod.petCastBudget[spellId]): how many hits
 -- one recorded pet cast may claim. Modules declare single-target pet
 -- nukes at 1 so strays can't ride the cast's window; nil = default cap.

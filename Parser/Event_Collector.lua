@@ -1960,6 +1960,37 @@ local function pickDotForWound(self, t, school, amount, isCrit)
 	return getMostRecentPeriodicSpellIdForSchool(self, t, school)
 end
 
+-- Proc riders (mod.procRiders): guaranteed on-attack procs that fire no
+-- cast record (Flametongue Weapon procs on EVERY weapon attack). The
+-- evidence bar for naming a wound: school matches the rider, a school-1
+-- wound landed within the anchor window (a weapon attack just happened),
+-- the target is not contested (a co-attacker's swing can't feed it), and
+-- the rider's cadence cap admits another claim (one proc per attack).
+local function pickProcRider(self, t, school)
+	local riders = ZSBT.ClassDB and ZSBT.ClassDB.ProcRiders
+		and ZSBT.ClassDB.ProcRiders()
+	if type(riders) ~= "table" then return nil end
+	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) then return nil end
+	local anchor = self._lastPhysWoundAt
+	if type(anchor) ~= "number" or (t - anchor) < 0 or (t - anchor) > 0.35 then
+		return nil
+	end
+	if autoContested(self, t) then return nil end
+	local last = self._procRiderLast
+	for _, r in ipairs(riders) do
+		if type(r) == "table" and type(r.sid) == "number"
+			and dotEntrySchoolEq(r.school, school) == true then
+			local lastAt = last and last[r.sid]
+			if not (type(lastAt) == "number" and (t - lastAt) < (r.minGap or 0.30)) then
+				if type(last) ~= "table" then last = {} ; self._procRiderLast = last end
+				last[r.sid] = t
+				return r.sid
+			end
+		end
+	end
+	return nil
+end
+
 -- The picked sid is the live channel itself: its ticks must bypass the
 -- DoT-only gates downstream (target-debuff presence, dedup window, the
 -- recent-cast veto — the "recent cast" IS this channel).
@@ -5194,6 +5225,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		-- incorrectly collapsed. We only accept physical UNIT_COMBAT(target) when it is
 		-- unambiguous (no pet) or when we can match it to a recent player cast.
 		if isPhysical then
+			-- Melee anchor for proc riders: every school-1 wound proves a
+			-- weapon attack just landed (ours or foreign — the claim gate
+			-- refuses contested targets, so a co-attacker's swing can only
+			-- starve the rider, never feed it).
+			self._lastPhysWoundAt = t
 			-- Midnight: lower the physical noise floor from 50 to 2 so low-level
 			-- characters (whose white swings can be 5-15 damage) still see outgoing.
 			-- On max-level characters, sub-2 physical hits are effectively noise.
@@ -6004,6 +6040,27 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 			if autoContested(self, t) then
 				dbgDrop("CONTESTED", self._castToken, school)
+				return
+			end
+			-- Proc riders (mod.procRiders): guaranteed on-attack procs with
+			-- no cast record. All sid claims failed — a school-matching
+			-- wound riding a fresh melee anchor names itself. Emitted
+			-- directly: it is a separate proc hit, not a duplicate report.
+			local riderSid = pickProcRider(self, t, school)
+			if riderSid then
+				local pipeIdR = self._rawPipeCount + 1
+				self._rawPipeCount = pipeIdR
+				self._rawPipe[pipeIdR] = amount
+				emit("OUTGOING_DAMAGE_COMBAT", {
+					timestamp = t,
+					rawPipeId = pipeIdR,
+					spellId = riderSid,
+					amountSource = "UNIT_COMBAT_PROC",
+					targetName = safeUnitName("target"),
+					isCrit = isCrit,
+					procClaim = true,
+					schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil,
+				})
 				return
 			end
 		end
