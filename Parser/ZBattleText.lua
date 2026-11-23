@@ -8,9 +8,11 @@
 -- that arrives is provably the player's (or pet's) combat event.
 --
 -- Lines carry only RGB + timing (text is a sealed KString, never
--- read). The palette written into the filter's eventColoring gives
--- each damage/heal/miss event kind a distinct colour; we classify
--- lines by matching that palette back.
+-- read). Two filter encodings are supported: v1 colours each
+-- damage/heal/miss event KIND via eventColoring; v2 colours each
+-- line by SOURCE class via unitColoring (lineColorPriority=1) and
+-- adds a foreign-source part whose lines prove "a non-self event
+-- happened" — negative evidence used to veto borrowed claims.
 --
 -- UNIT_COMBAT remains the source of truth for amounts/targets/spells.
 -- This module only answers one question for ambiguous outgoing emits:
@@ -167,8 +169,101 @@ local function classifyColor(r, g, b)
     return nil
 end
 
+ZB._foreignLines = ZB._foreignLines or {}
+local FOREIGN_LINE_MAX = 64
+local FOREIGN_WINDOW = 0.35
+
+local function recordForeignLine(t, cls, heal, r, g, b)
+    local fl = ZB._foreignLines
+    while #fl > 0 and t - fl[1].at > LINE_KEEP_SEC do
+        table.remove(fl, 1)
+    end
+    if #fl >= FOREIGN_LINE_MAX then
+        table.remove(fl, 1)
+    end
+    fl[#fl + 1] = { at = t, cls = cls, heal = heal, consumed = false }
+    ZB._lastForeignLineAt = t
+    ZB:FileLog(("FLIN cls=%s heal=%s rgb=%.2f,%.2f,%.2f"):format(
+        tostring(cls), tostring(heal), r, g, b))
+    if ZSBT._auditTrace == true then
+        ZB:Audit(("FLIN cls=%s heal=%s"):format(tostring(cls), tostring(heal)))
+    end
+end
+
+-- Consume the nearest unconsumed foreign-source line within `window` of
+-- tHit: proof a non-self source produced a combat event at that instant.
+-- Used at flush when no own line claimed the wound — turns "unproven"
+-- into "provably foreign".
+local function takeForeignLine(tHit, window)
+    local best, bestDt
+    for i = 1, #ZB._foreignLines do
+        local l = ZB._foreignLines[i]
+        if not l.consumed then
+            local dt = math.abs(l.at - tHit)
+            if dt <= window and (bestDt == nil or dt < bestDt) then
+                best, bestDt = i, dt
+            end
+        end
+    end
+    if best then
+        ZB._foreignLines[best].consumed = true
+        return ZB._foreignLines[best].cls
+    end
+    return nil
+end
+
+function ZB:PeekForeignLine(tHit, window)
+    if type(tHit) ~= "number" then return nil end
+    for i = 1, #ZB._foreignLines do
+        local l = ZB._foreignLines[i]
+        if math.abs(l.at - tHit) <= window then
+            return l.cls
+        end
+    end
+    return nil
+end
+
 local function recordLine(r, g, b)
     if not (isSafeChannel(r) and isSafeChannel(g) and isSafeChannel(b)) then
+        return
+    end
+    local t0 = GetTime and GetTime() or 0
+    -- v2 first: source-classed colours. A foreign class never feeds the
+    -- claim buffers — it is negative evidence only.
+    local cls, heal = classifySource(r, g, b)
+    if cls then
+        if FOREIGN_CLASSES[cls] then
+            recordForeignLine(t0, cls, heal, r, g, b)
+            return
+        end
+        ZB._srcLinesSeen = (ZB._srcLinesSeen or 0) + 1
+        ZB._srcMode = true
+        ZB:FileLog(("LINv2 cls=%s heal=%s rgb=%.2f,%.2f,%.2f"):format(
+            tostring(cls), tostring(heal), r, g, b))
+        local kind = ownClassToKind(cls, heal)
+        if HEAL_LINE_KINDS[kind] then
+            local hl = ZB._healLines
+            while #hl > 0 and t0 - hl[1].at > LINE_KEEP_SEC do
+                table.remove(hl, 1)
+            end
+            if #hl >= HEAL_LINE_MAX then
+                table.remove(hl, 1)
+            end
+            hl[#hl + 1] = { at = t0, kind = kind, consumed = false }
+            if ZB._healLineHook then
+                ZB._healLineHook(t0, kind)
+            end
+            return
+        end
+        local lines = ZB._lines
+        while #lines > 0 and t0 - lines[1].at > LINE_KEEP_SEC do
+            table.remove(lines, 1)
+        end
+        if #lines >= LINE_MAX then
+            table.remove(lines, 1)
+        end
+        lines[#lines + 1] = { at = t0, kind = kind, consumed = false }
+        ZB._lastLineAt = t0
         return
     end
     local kind = classifyColor(r, g, b)
@@ -335,6 +430,86 @@ local COSMETIC_KINDS = {
     dispelFailed = true, broke = true, kill = true, extra = true,
 }
 
+------------------------------------------------------------------------
+-- v2 signal: lineColorPriority=1 colors each line by SOURCE class via
+-- colors.unitColoring instead of event kind — real provenance data the
+-- kind palette cannot express. A second filter part covers non-self
+-- sources so co-attacker hits arrive as foreign-classed lines: a wound
+-- matching one is provably NOT ours (the first negative evidence the
+-- feed has ever carried). Highlighting doubles each class colour for
+-- heal events, so dim = damage, bright = heal.
+--
+-- v2 own-class lines map back to legacy kind names so the claim path is
+-- unchanged: mine-damage -> "direct", pet-damage -> "melee" (a MY_PET
+-- line proves pet-ness, stronger than the old swing-kind guess),
+-- heal lines -> "heal". Tick/ranged collapse into "direct" — candidate
+-- kind sets are widened in source mode (ZB._srcMode) to match.
+-- Palette channels stay <=0.66 so highlighted variants never collide
+-- with another class or any v1 kind colour (dual classify fallback).
+------------------------------------------------------------------------
+local SRC_CLASSES = {
+    mine       = { 0.50, 0.50, 0.50 },
+    pet        = { 0.20, 0.55, 0.25 },
+    friendly   = { 0.15, 0.40, 0.62 },
+    hostileP   = { 0.62, 0.20, 0.05 },
+    hostileU   = { 0.62, 0.55, 0.05 },
+    neutral    = { 0.55, 0.30, 0.60 },
+    unknown    = { 0.35, 0.55, 0.55 },
+}
+-- class name -> combat-log filter mask global (resolved at install)
+local SRC_MASK_GLOBAL = {
+    mine = "COMBATLOG_FILTER_MINE", pet = "COMBATLOG_FILTER_MY_PET",
+    friendly = "COMBATLOG_FILTER_FRIENDLY_UNITS",
+    hostileP = "COMBATLOG_FILTER_HOSTILE_PLAYERS",
+    hostileU = "COMBATLOG_FILTER_HOSTILE_UNITS",
+    neutral = "COMBATLOG_FILTER_NEUTRAL_UNITS",
+    unknown = "COMBATLOG_FILTER_UNKNOWN_UNITS",
+}
+-- Sources the foreign filter part listens for: everyone who is not us.
+local FOREIGN_CLASSES = {
+    friendly = true, hostileP = true, hostileU = true,
+    neutral = true, unknown = true,
+}
+-- Highlight doubles the colour for these events => dim=damage, bright=heal.
+local HEAL_EVENTS = {
+    SPELL_HEAL = true, SPELL_BUILDING_HEAL = true, SPELL_PERIODIC_HEAL = true,
+}
+-- Damage events only for the foreign part (no heals — we only veto
+-- damage wounds; foreign heal lines would just be noise).
+local FOREIGN_EVENTS = {}
+for event, kind in pairs(EVENT_KINDS) do
+    if DAMAGE_KINDS[kind] then FOREIGN_EVENTS[event] = true end
+end
+
+-- rgb -> {class, heal} lookup for v2 lines (built once; colours const).
+local SRC_LOOKUP = {}
+for cls, rgb in pairs(SRC_CLASSES) do
+    SRC_LOOKUP[#SRC_LOOKUP + 1] = { r = rgb[1], g = rgb[2], b = rgb[3], cls = cls, heal = false }
+    SRC_LOOKUP[#SRC_LOOKUP + 1] = {
+        r = math.min(rgb[1] * 1.5, 1), g = math.min(rgb[2] * 1.5, 1),
+        b = math.min(rgb[3] * 1.5, 1), cls = cls, heal = true,
+    }
+end
+
+local function classifySource(r, g, b)
+    for i = 1, #SRC_LOOKUP do
+        local e = SRC_LOOKUP[i]
+        if math.abs(r - e.r) <= COLOR_TOLERANCE
+            and math.abs(g - e.g) <= COLOR_TOLERANCE
+            and math.abs(b - e.b) <= COLOR_TOLERANCE then
+            return e.cls, e.heal
+        end
+    end
+    return nil
+end
+
+-- v2 own-class -> legacy kind so existing claim kinds keep working.
+local function ownClassToKind(cls, heal)
+    if heal then return "heal" end
+    if cls == "pet" then return "melee" end
+    return "direct"
+end
+
 local function paletteMatches(ec)
     if type(ec) ~= "table" then return false end
     for event, kind in pairs(EVENT_KINDS) do
@@ -346,7 +521,61 @@ local function paletteMatches(ec)
     return true
 end
 
+local function v2PaletteMatches(colors)
+    if type(colors) ~= "table" or type(colors.unitColoring) ~= "table" then
+        return false
+    end
+    local uc = colors.unitColoring
+    for cls, maskName in pairs(SRC_MASK_GLOBAL) do
+        local mask = _G[maskName]
+        if type(mask) ~= "number" then return false end
+        if not colorMatches(uc[mask], SRC_CLASSES[cls]) then return false end
+    end
+    return true
+end
+
+-- v2 structure: part 1 must be exactly MINE+PET sources; every further
+-- part may only add foreign-class sources (never another self part).
+local function v2SourcesOK(f)
+    local mineFlag = COMBATLOG_FILTER_MINE
+    local petFlag = COMBATLOG_FILTER_MY_PET
+    if type(f.filters) ~= "table" or #f.filters < 2 then return false end
+    local p1 = f.filters[1]
+    if type(p1) ~= "table" or type(p1.sourceFlags) ~= "table" then return false end
+    local n = 0
+    for flag, on in pairs(p1.sourceFlags) do
+        if on then
+            if flag ~= mineFlag and flag ~= petFlag then return false end
+            n = n + 1
+        end
+    end
+    if n ~= 2 or p1.sourceFlags[mineFlag] ~= true or p1.sourceFlags[petFlag] ~= true then
+        return false
+    end
+    local sawForeign = false
+    for i = 2, #f.filters do
+        local sf = f.filters[i] and f.filters[i].sourceFlags
+        if type(sf) ~= "table" then return false end
+        local any = false
+        for flag, on in pairs(sf) do
+            if on then
+                any = true
+                local isForeign = false
+                for cls in pairs(FOREIGN_CLASSES) do
+                    if flag == _G[SRC_MASK_GLOBAL[cls]] then isForeign = true break end
+                end
+                if not isForeign then return false end
+            end
+        end
+        if any then sawForeign = true end
+    end
+    return sawForeign
+end
+
 local function sourcesRestricted(f)
+    if f and f.zbtver == 2 then
+        return v2SourcesOK(f)
+    end
     local mineFlag = COMBATLOG_FILTER_MINE
     local petFlag = COMBATLOG_FILTER_MY_PET
     if type(mineFlag) ~= "number" or type(petFlag) ~= "number" then return false end
@@ -418,6 +647,23 @@ function ZB:IsReady()
     if type(settings) ~= "table" or settings.lineColoring ~= true then
         return false, "line coloring off"
     end
+    if f.zbtver == 2 then
+        if settings.lineColorPriority ~= 1 then
+            return false, "v2 source coloring off"
+        end
+        if settings.lineHighlighting ~= true then
+            return false, "v2 heal highlighting off"
+        end
+        if not v2PaletteMatches(f.colors) then
+            return false, "v2 unitColoring palette changed"
+        end
+        if not v2SourcesOK(f) then
+            return false, "v2 source parts changed"
+        end
+        ZB._srcMode = true
+        return true, nil
+    end
+    ZB._srcMode = false
     local colors = f.colors
     if type(colors) ~= "table" or not paletteMatches(colors.eventColoring) then
         return false, "palette changed"
@@ -576,8 +822,9 @@ function ZB:InstallAtLogout()
 
     filter.settings = filter.settings or {}
     filter.settings.lineColoring = true
-    filter.settings.lineColorPriority = 3
-    filter.settings.lineHighlighting = false
+    filter.settings.lineColorPriority = 1
+    filter.settings.lineHighlighting = true
+    filter.zbtver = 2
 
     filter.colors = filter.colors or {}
     filter.colors.eventColoring = filter.colors.eventColoring or {}
@@ -585,20 +832,46 @@ function ZB:InstallAtLogout()
         local c = KIND_COLORS[kind]
         filter.colors.eventColoring[event] = { r = c[1], g = c[2], b = c[3], a = 1 }
     end
-    filter.colors.highlightedEvents = filter.colors.highlightedEvents or {}
+    -- Source-class palette: the line colour carries WHO produced the
+    -- event. Highlighting marks heal lines (dim = damage, bright = heal).
+    filter.colors.unitColoring = filter.colors.unitColoring or {}
+    for cls, maskName in pairs(SRC_MASK_GLOBAL) do
+        local mask = _G[maskName]
+        local c = SRC_CLASSES[cls]
+        if type(mask) == "number" and c then
+            filter.colors.unitColoring[mask] = { r = c[1], g = c[2], b = c[3], a = 1 }
+        end
+    end
+    local hl = {}
+    for ev in pairs(HEAL_EVENTS) do hl[ev] = true end
+    filter.colors.highlightedEvents = hl
 
-    -- Single source part: sourceFlags = you+pet, eventList = explicit
-    -- whitelist of colored combat events only. No dest part: incoming
-    -- lines must never enter the veto buffer.
+    -- Part 1: own sources (you + pet/guardians), full damage+heal event
+    -- whitelist. Part 2: every other source class, damage events only —
+    -- their lines arrive foreign-coloured and feed the veto buffer as
+    -- negative evidence. No dest part: incoming stays out.
     local mineFlag = COMBATLOG_FILTER_MINE
     local petFlag = COMBATLOG_FILTER_MY_PET
     if type(mineFlag) == "number" and type(petFlag) == "number" then
-        local evList = {}
-        for ev in pairs(FILTER_EVENTS) do evList[ev] = true end
+        local ownList = {}
+        for ev, kind in pairs(EVENT_KINDS) do
+            if DAMAGE_KINDS[kind] or HEAL_LINE_KINDS[kind] then ownList[ev] = true end
+        end
+        local foreignFlags = {}
+        for cls in pairs(FOREIGN_CLASSES) do
+            local mask = _G[SRC_MASK_GLOBAL[cls]]
+            if type(mask) == "number" then foreignFlags[mask] = true end
+        end
+        local foreignList = {}
+        for ev in pairs(FOREIGN_EVENTS) do foreignList[ev] = true end
         filter.filters = {
             {
                 sourceFlags = { [mineFlag] = true, [petFlag] = true },
-                eventList = evList,
+                eventList = ownList,
+            },
+            {
+                sourceFlags = foreignFlags,
+                eventList = foreignList,
             },
         }
     end
@@ -790,6 +1063,22 @@ end
 -- Returns up to three kind sets, tried in order; a nil first set means
 -- "any kind" on the first pass.
 local function candidateKinds(payload)
+    -- v2 source mode: lines carry source class, not event kind. Only
+    -- "direct" (MINE damage), "melee" (MY_PET damage) and "heal" exist.
+    -- Own hits claim direct; pet claims claim pet lines (proven pet,
+    -- stronger than the old swing-kind guess); fall back to any.
+    if ZB._srcMode == true then
+        if payload and (payload.isAuto == true or payload._swingProven == true) then
+            return { direct = true }, nil, nil
+        end
+        if payload and payload._petRoute == true then
+            if payload.petEvidence == "melee" then
+                return { melee = true }, nil, nil
+            end
+            return nil, nil, nil
+        end
+        return { direct = true }, nil, nil
+    end
     if payload and (payload.isAuto == true or payload._swingProven == true) then
         return autoLineKinds(), nil, nil
     end
@@ -956,6 +1245,19 @@ local function flushPending()
                             tostring(kind)))
                         ZB:FileLog(("ALLOW kind=%s sid=%s"):format(tostring(kind), tostring(p.payload and p.payload.spellId)))
                         deliverOutgoing(p.payload)
+                    elseif takeForeignLine(tonumber(p.t) or 0, FOREIGN_WINDOW) ~= nil then
+                        -- Negative evidence: a foreign-source line landed
+                        -- within the wound's window and no own line
+                        -- claimed it — this hit belongs to a co-attacker.
+                        -- Drop now instead of burning the retry on a
+                        -- wound that can never be proven ours.
+                        ZB._drops = ZB._drops + 1
+                        ZB:FileLog(("DROP fline sid=%s"):format(tostring(p.payload and p.payload.spellId)))
+                        ZB:Audit(("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=fline"):format(
+                            tonumber(p.t) or 0, pass,
+                            audSafe(p.payload and (p.payload.spellId or p.payload.petSpellId)),
+                            audSafe(p.payload and p.payload.schoolMask),
+                            tostring(p.payload and p.payload.isCrit == true)))
                     elseif p.payload and p._retried ~= true then
                         -- Every candidate gets one retry: feed lines
                         -- routinely land after the first flush (~0.2s) in
