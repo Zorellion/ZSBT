@@ -1129,6 +1129,8 @@ function ZB:AuditDamageEvent(eventType, payload)
         -- claiming them would be an honesty violation.
         if p.channelClaim == true then
             bind = "chan:" .. audSafe(sid)
+        elseif p.procClaim == true then
+            bind = "proc:" .. audSafe(sid)
         else
             bind = (p.isPeriodic == true) and ("dot:" .. audSafe(sid)) or ("cast:" .. audSafe(sid))
         end
