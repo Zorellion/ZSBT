@@ -1538,9 +1538,11 @@ function ZB:OfferOutgoing(payload)
         local tNow = GetTime and GetTime() or 0
         local gateLive = (ec and type(ec._autoContestUntil) == "number" and tNow < ec._autoContestUntil) or false
         local why = gateLive and "contested" or nil
-        if not gateLive and IsInInstance then
+        if not gateLive and IsInInstance and ZB._srcMode ~= true then
             -- In instances another attacker is guaranteed: unattributed
-            -- candidates from any path can never be proven ours.
+            -- candidates from any path can never be proven ours. v2 source
+            -- mode is exempt — foreign lines veto co-attacker wounds at
+            -- flush, so generics may queue for arbitration.
             local okI, inInst = pcall(IsInInstance)
             if okI and inInst == true then
                 gateLive = true

@@ -4364,17 +4364,18 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							if offSid ~= nil or tgtStarved then
 								if offSid == nil then
 									-- In instances another attacker is guaranteed —
-									-- an unattributed off-target hit can never be
-									-- proven ours. Named off-target DoT ticks
-									-- (offSid ~= nil) still pass through.
+									-- but v2 lines can still prove off-target pet
+									-- AoE (MY_PET class) and veto foreign cleave
+									-- (FLIN). Queue for arbitration instead of the
+									-- blanket instance drop. Named off-target DoT
+									-- ticks (offSid ~= nil) still pass through.
 									local instOff = false
 									if IsInInstance then
 										local okI, resI = pcall(IsInInstance)
 										if okI and resI == true then instOff = true end
 									end
 									if instOff then
-										dbgDrop("OFFT_INST", self._castToken, school)
-										return
+										dbgDrop("BYPASS_OFFT_INST", self._castToken, school)
 									end
 									-- An unattributed off-target hit can only be
 									-- ours if we are actually fighting. With no
@@ -4473,7 +4474,24 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 	-- UNIT_COMBAT may emit ABSORB/blocked-style entries with amount==0.
 	-- These are not actual damage/heal events and must be ignored to prevent
 	-- false incoming spam (especially in WoW 12.0 where attribution is limited).
-	if ZSBT.IsSafeNumber(amount) and amount == 0 then
+	-- Secret amounts hide the same zeros — evaluate C-side; only proven
+	-- zeros are dropped (untestable secrets keep their slot).
+	local isZeroAmt = ZSBT.DisplayAmountIsZero and ZSBT.DisplayAmountIsZero(amount)
+	-- When the secret cannot be evaluated at all (opaque KString on this
+	-- client), fall back to the safe school discriminator: the absorb-style
+	-- pseudo-entries report school == 0 while real wounds always carry a
+	-- school >= 1. Only fires for non-safe amounts — a safe nonzero amount
+	-- is trusted regardless of what school rides beside it.
+	if isZeroAmt ~= true
+		and not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(amount))
+		and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school) and school == 0 then
+		isZeroAmt = true
+	end
+	if isZeroAmt == true then
+		local zbtZ = ZSBT.ZBattleText
+		if zbtZ and zbtZ.FileLog then
+			zbtZ:FileLog(("ZERO_DROP unit=%s school=%s"):format(tostring(unit), tostring(school)))
+		end
 		return
 	end
 	wipeStalePipeEntries()
@@ -4933,12 +4951,19 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						-- being misattributed as pet damage.
 						if restrict == true and members and members > 1 then
 							if not isLikelyPetSchoolHit(school) then
-								if dl >= 4 then
-									ECPrint(("PET_FALLBACK_GROUP_SUPPRESS restrict=%s members=%s school=%s amt=%s")
-										:format(dbgSafe(restrict), dbgSafe(members), dbgSafe(school), dbgSafe(amount)))
+								-- v2: a MY_PET line can still prove this hit
+								-- (guardian/pet damage the school table misses);
+								-- foreign lines veto co-attacker wounds at flush.
+								if zbtVetoActive() then
+									auditNote(("AUDD reason=BYPASS_PET_GROUP_SUPPRESS school=%s"):format(dbgSafe(school)))
+								else
+									if dl >= 4 then
+										ECPrint(("PET_FALLBACK_GROUP_SUPPRESS restrict=%s members=%s school=%s amt=%s")
+											:format(dbgSafe(restrict), dbgSafe(members), dbgSafe(school), dbgSafe(amount)))
+									end
+									auditNote(("AUDD reason=PET_GROUP_SUPPRESS school=%s"):format(dbgSafe(school)))
+									return
 								end
-								auditNote(("AUDD reason=PET_GROUP_SUPPRESS school=%s"):format(dbgSafe(school)))
-								return
 							end
 						end
 						-- Shared-target guard: a co-attacker's pet melee is
@@ -4999,11 +5024,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							petSid = ZSBT.ClassDB.ResolvePetMelee(self)
 							petEvidence = petSid and "melee" or nil
 						end
-						if ZSBT.IsSafeNumber(school) and school == 1 and zbtVetoActive() then
-							-- Physical pet hits go through the ownership veto:
-							-- a MY_PET melee line must confirm them (the
-							-- sinkType swap delivers PET_DAMAGE_COMBAT after
-							-- pairing). Foreign melee produces no such line.
+						if zbtVetoActive() then
+							-- Pet hits go through the ownership veto: a MY_PET
+							-- line must confirm them (the sinkType swap delivers
+							-- PET_DAMAGE_COMBAT after pairing). Foreign damage
+							-- produces no such line and FLIN vetoes it.
 							emit("OUTGOING_DAMAGE_COMBAT", {
 								timestamp = t,
 								rawPipeId = pipeId,
@@ -5016,7 +5041,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								amount = amount,
 								amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
 								isCrit = isCrit,
-								schoolMask = 1,
+								petBucket = (ZSBT.IsSafeNumber(school) and school ~= 1) and "summons" or nil,
+								schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
 								targetName = safeUnitName("target"),
 							})
 						else
@@ -5396,10 +5422,18 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- attacker is guaranteed) — drop it without feeding detection.
 			if restrict and (not matchedCast) then
 				if inInst == true then
-					dbgDrop("INST_UNATTR", self._castToken, school)
-					return
+					-- v2: MY_PET/MINE lines can still prove unattributed
+					-- wounds in instances (pet melee, autos); FLIN vetoes
+					-- the guaranteed co-attacker's hits at flush instead.
+					if zbtVetoActive() then
+						dbgDrop("BYPASS_INST_UNATTR", self._castToken, school)
+						matchedCast = { spellId = nil, eligibleIcon = false }
+					else
+						dbgDrop("INST_UNATTR", self._castToken, school)
+						return
+					end
 				end
-				if autoContested(self, t) then
+				if not matchedCast and autoContested(self, t) then
 					dbgDrop("CONTESTED", self._castToken, school)
 					return
 				end
@@ -5491,10 +5525,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- swinging. This reduces leakage when other players are also attacking your target.
 			if (restrict ~= true) and (quietMode ~= true) and (spellId == nil) then
 				if inInst == true then
-					dbgDrop("INST_UNATTR", self._castToken, school)
-					return
-				end
-				if autoContested(self, t) then
+					if zbtVetoActive() then
+						dbgDrop("BYPASS_INST_UNATTR", self._castToken, school)
+					else
+						dbgDrop("INST_UNATTR", self._castToken, school)
+						return
+					end
+				elseif autoContested(self, t) then
 					dbgDrop("CONTESTED", self._castToken, school)
 					return
 				end
@@ -6080,10 +6117,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		-- damage carries a MINE line and never feeds) and dies while armed.
 		if spellId == nil then
 			if inInst == true then
-				dbgDrop("INST_UNATTR", self._castToken, school)
-				return
-			end
-			if autoContested(self, t) then
+				if zbtVetoActive() then
+					dbgDrop("BYPASS_INST_UNATTR", self._castToken, school)
+				else
+					dbgDrop("INST_UNATTR", self._castToken, school)
+					return
+				end
+			elseif autoContested(self, t) then
 				dbgDrop("CONTESTED", self._castToken, school)
 				return
 			end

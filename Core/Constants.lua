@@ -8,7 +8,7 @@ local ADDON_NAME, ZSBT = ...
 ------------------------------------------------------------------------
 -- Version & Identity
 ------------------------------------------------------------------------
-ZSBT.VERSION = "3.3.9.6-beta"
+ZSBT.VERSION = "3.3.9.7-beta"
 ZSBT.ADDON_TITLE = "Zore's Scrolling Battle Text"
 ZSBT.ADDON_SHORT = "ZSBT"
 ZSBT.ADDON_AUTHOR = "Zorellion"
@@ -368,6 +368,67 @@ function ZSBT.RoundDisplayValue(v)
     end
     _roundDbg("raw")
     return v
+end
+
+-- True only when an amount provably displays as zero. UNIT_COMBAT emits
+-- absorb/blocked entries with amount == 0; the safe-number drop can't see
+-- a secret's value, so evaluate it C-side through a scratch FontString
+-- (same trick as RoundDisplayValue). A KString GetText or any failure
+-- returns false — unproven amounts keep their display slot.
+local _zeroFS = nil
+local function scratchFS()
+    if _zeroFS == nil then
+        local f = CreateFrame and CreateFrame("Frame")
+        _zeroFS = (f and f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")) or false
+    end
+    return _zeroFS or nil
+end
+-- C-side evaluate a possibly-secret amount into a displayable string via
+-- SetFormattedText(fmt, v) -> GetText. Returns nil when evaluation fails;
+-- the result may be a KString (still renderable by SetText).
+function ZSBT.EvaluateDisplayAmount(v, fmt)
+    local fs = scratchFS()
+    if not fs then return nil end
+    local okFmt = pcall(fs.SetFormattedText, fs, fmt or "%.0f", v)
+    if not okFmt then return nil end
+    local okG, txt = pcall(fs.GetText, fs)
+    if okG then return txt end
+    return nil
+end
+-- C-side formatted render of mixed safe/secret args through a scratch
+-- FontString — SetFormattedText evaluates secrets where Lua cannot.
+-- Returns the text (possibly a KString, still renderable by SetText)
+-- or nil on evaluation failure.
+function ZSBT.FormatDisplaySecret(fmt, ...)
+    local fs = scratchFS()
+    if not fs then return nil end
+    local okFmt = pcall(fs.SetFormattedText, fs, fmt, ...)
+    if not okFmt then return nil end
+    local okG, txt = pcall(fs.GetText, fs)
+    if okG then return txt end
+    return nil
+end
+
+function ZSBT.DisplayAmountIsZero(v)
+    if v == nil then return false end
+    if ZSBT.IsSafeNumber(v) then return v == 0 end
+    -- Direct comparison: secret-number == is forbidden in tainted
+    -- contexts but cheap to probe.
+    local okEq, eq = pcall(function() return v == 0 end)
+    if okEq then return eq == true end
+    local txt = ZSBT.EvaluateDisplayAmount(v, "%.0f")
+    if ZSBT.IsSafeString(txt) then
+        return txt == "0" or txt == "-0"
+    end
+    -- KString result: C-side string compare may evaluate secrets where
+    -- Lua equality cannot.
+    if txt ~= nil and type(strcmputf8i) == "function" then
+        local okA, rA = pcall(strcmputf8i, txt, "0")
+        if okA and rA == 0 then return true end
+        local okB, rB = pcall(strcmputf8i, txt, "-0")
+        if okB and rB == 0 then return true end
+    end
+    return false
 end
 
 ZSBT.NUMBER_FORMATS = {

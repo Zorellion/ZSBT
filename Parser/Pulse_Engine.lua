@@ -1597,10 +1597,19 @@ function Engine:flushBucket()
 						if rounded and rounded > 0 then
 							text = "-" .. tostring(rounded)
 						elseif not ZSBT.IsSafeNumber(val) then
-							-- Secret value: cannot concatenate "-" onto it, so pass
-							-- the raw value through for SetText() to render.
-							if ZSBT.IsSafeString and ZSBT.IsSafeString(val) then
-								text = "-" .. val
+							-- Secret value: cannot concatenate "-" onto it, and a
+							-- raw secret renders "0" where the context cannot
+							-- evaluate it. Evaluate C-side with the sign baked
+							-- into the format; failure drops the entry rather
+							-- than showing a bogus zero.
+							if ZSBT.EvaluateDisplayAmount then
+								text = ZSBT.EvaluateDisplayAmount(val, "-%.0f")
+								if ZSBT.IsSafeString and ZSBT.IsSafeString(text)
+									and (text == "-0" or text == "0") then
+									text = nil
+								elseif ZSBT.DisplayAmountIsZero and ZSBT.DisplayAmountIsZero(val) then
+									text = nil
+								end
 							else
 								text = val
 							end

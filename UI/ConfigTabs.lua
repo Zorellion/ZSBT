@@ -9691,6 +9691,56 @@ function ZSBT.BuildTab_SpamControl()
             },
 
             ----------------------------------------------------------------
+            -- Incoming burst merging (separate system: area+kind+school key)
+            ----------------------------------------------------------------
+            headerMergeIncoming = {
+                type  = "header",
+                name  = L["Incoming Merging"],
+                order = 6,
+            },
+            mergeIncoming = {
+                type  = "toggle",
+                name  = L["Merge Incoming Bursts"],
+                desc  = L["Combine rapid incoming hits/heals into a single line. Keyed by scroll area, kind, crit, and school — not SpellID."],
+                width = "full",
+                order = 6.1,
+                disabled = function() return not ZSBT.db.profile.spamControl.merging.enabled end,
+                get   = function() return ZSBT.db.profile.spamControl.merging.incomingEnabled ~= false end,
+                set   = function(_, val) ZSBT.db.profile.spamControl.merging.incomingEnabled = val and true or false end,
+            },
+            mergeIncomingWindow = {
+                type     = "range",
+                name     = L["Incoming Merge Window (seconds)"],
+                desc     = L["Time window to group incoming bursts. Kept short by design — incoming spam is sub-second."],
+                order    = 6.2,
+                min      = 0.05,
+                max      = 2.0,
+                step     = 0.05,
+                disabled = function()
+                    return not ZSBT.db.profile.spamControl.merging.enabled
+                        or ZSBT.db.profile.spamControl.merging.incomingEnabled == false
+                end,
+                get      = function() return tonumber(ZSBT.db.profile.spamControl.merging.incomingWindow) or 0.20 end,
+                set      = function(_, val) ZSBT.db.profile.spamControl.merging.incomingWindow = val end,
+            },
+            mergeSecretStyle = {
+                type     = "select",
+                name     = L["Merged Hidden Amounts"],
+                desc     = L["When merged incoming amounts can't be read (hidden values), show the most recent real value plus count (\"1234 x3\") or count only (\"Heals x3\")."],
+                order    = 6.3,
+                values   = {
+                    last  = L["Last value xN"],
+                    count = L["Count only"],
+                },
+                disabled = function()
+                    return not ZSBT.db.profile.spamControl.merging.enabled
+                        or ZSBT.db.profile.spamControl.merging.incomingEnabled == false
+                end,
+                get      = function() return ZSBT.db.profile.spamControl.merging.secretStyle or "last" end,
+                set      = function(_, val) ZSBT.db.profile.spamControl.merging.secretStyle = val end,
+            },
+
+            ----------------------------------------------------------------
             -- Throttling
             ----------------------------------------------------------------
             headerThrottle = {

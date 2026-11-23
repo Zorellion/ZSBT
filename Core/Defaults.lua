@@ -377,6 +377,9 @@ ZSBT.DEFAULTS = {
                 window      = 1.5,
                 showCount   = true,
                 mergeCrits  = false,
+                incomingEnabled = true,
+                incomingWindow  = 0.20,
+                secretStyle     = "last",
             },
             whirlwindAggregate = {
                 enabled = false,

@@ -61,6 +61,25 @@ local function Now() return (GetTime and GetTime()) or 0 end
 local INCOMING_MERGE_WINDOW = 0.20
 local incomingMerge = {}
 
+local function incomingMergeConf()
+    local p = ZSBT.db and ZSBT.db.profile
+    return p and p.spamControl and p.spamControl.merging or nil
+end
+
+local function incomingMergeWindow()
+    local mc = incomingMergeConf()
+    local w = mc and tonumber(mc.incomingWindow) or INCOMING_MERGE_WINDOW
+    if w < 0.05 then w = 0.05 elseif w > 2.0 then w = 2.0 end
+    return w
+end
+
+-- How merged secret amounts display: "last" shows the most recent real
+-- value + count ("1234 x3"); anything else shows count-only ("Heals x3").
+local function incomingMergeSecretStyle()
+    local mc = incomingMergeConf()
+    return (mc and mc.secretStyle) or "last"
+end
+
 local function EmitToDisplay(area, text, color, meta)
 	if Addon and Addon.Dbg then
 		Addon:Dbg("incoming", 4, "EMIT", area, meta and meta.kind, meta and meta.targetName, meta and meta.spellId, text)
@@ -94,7 +113,20 @@ local function FlushIncomingMerge(key)
             end
             text = sumText .. " x" .. tostring(e.count)
         elseif e.mode == "secret" then
-            text = ((e.kind == "heal") and "Heals" or "Hits") .. " x" .. tostring(e.count)
+            -- Secrets can't be summed in Lua. "last" style renders the
+            -- most recent real value C-side ("1234 x3"); falls back to
+            -- count-only when nothing displayable was captured.
+            local t = nil
+            if incomingMergeSecretStyle() ~= "count" then
+                -- lastRaw may be a secret number ("%.0f") or a secret
+                -- string (combat-text heals) — try numeric format first.
+                local v = e.lastRaw ~= nil and e.lastRaw or e.lastText
+                if v ~= nil and ZSBT.FormatDisplaySecret then
+                    t = ZSBT.FormatDisplaySecret("%.0f x%d", v, e.count)
+                        or ZSBT.FormatDisplaySecret("%s x%d", v, e.count)
+                end
+            end
+            text = t or (((e.kind == "heal") and "Heals" or "Hits") .. " x" .. tostring(e.count))
         elseif ZSBT.IsSafeString(text) then
             text = text .. " x" .. tostring(e.count)
         end
@@ -103,16 +135,20 @@ local function FlushIncomingMerge(key)
     EmitToDisplay(e.area, text, e.color, e.meta)
 end
 
-local function PushIncomingMerge(key, area, kind, isCrit, schoolMask, mode, amount, rawText, color, meta)
+local function PushIncomingMerge(key, area, kind, isCrit, schoolMask, mode, amount, rawText, color, meta, rawValue)
+    local window = incomingMergeWindow()
     local existing = incomingMerge[key]
     if existing then
         existing.count = (existing.count or 0) + 1
         if existing.mode == "numeric" and mode == "numeric" and type(amount) == "number" then
             existing.sum = (existing.sum or 0) + amount
         end
+        -- Track the newest value for "last value + count" secret renders.
+        existing.lastText = rawText
+        existing.lastRaw = rawValue
 
         if existing.timer then existing.timer:Cancel() end
-        existing.timer = C_Timer.NewTimer(INCOMING_MERGE_WINDOW, function()
+        existing.timer = C_Timer.NewTimer(window, function()
             FlushIncomingMerge(key)
         end)
         return
@@ -141,9 +177,11 @@ local function PushIncomingMerge(key, area, kind, isCrit, schoolMask, mode, amou
         sum = (mode == "numeric" and type(amount) == "number") and amount or nil,
         count = 1,
         text = baseText,
+        lastText = rawText,
+        lastRaw = rawValue,
         color = color,
         meta = meta,
-        timer = C_Timer.NewTimer(INCOMING_MERGE_WINDOW, function()
+        timer = C_Timer.NewTimer(window, function()
             FlushIncomingMerge(key)
         end),
     }
@@ -737,12 +775,15 @@ function Probe:ProcessIncomingEvent(evt, isReplay)
     end
 
     local mergeConf = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl and ZSBT.db.profile.spamControl.merging
+    -- Incoming has its own sub-toggle and window (default 0.2s); the
+    -- master "Spell Merging" switch still gates everything.
     local mergeEnabled = mergeConf and mergeConf.enabled == true
+        and mergeConf.incomingEnabled ~= false
 
     if mergeEnabled then
         local schoolKey = (ZSBT.IsSafeNumber(evt.schoolMask) and evt.schoolMask) or 0
         local key = tostring(area) .. ":" .. tostring(kind) .. ":" .. (evt.isCrit and "C" or "N") .. ":" .. tostring(schoolKey) .. ":" .. tostring(mergeMode)
-        PushIncomingMerge(key, area, kind, evt.isCrit == true, schoolKey, mergeMode, mergeAmount, text, color, meta)
+        PushIncomingMerge(key, area, kind, evt.isCrit == true, schoolKey, mergeMode, mergeAmount, text, color, meta, rawPipeValue)
         return
     end
 
