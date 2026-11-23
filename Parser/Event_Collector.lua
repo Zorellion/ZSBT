@@ -373,8 +373,22 @@ local function emit(eventType, payload)
 					{ direct = true, tick = true, melee = true, ranged = true, shield = true })
 			end
 			if lineProof then
-				auditNote(("AUDSCH bypass=line school=%s kind=%s"):format(
-					tostring(payload.schoolMask), tostring(lineProof)))
+				-- A MINE line proves "our feed reported damage near t",
+				-- not "THIS wound is ours" — lines carry no school/sid.
+				-- With a second attacker recently armed, an off-whitelist
+				-- wound borrowing a nearby own-line is indistinguishable
+				-- from a trinket proc: kill it rather than display foreign
+				-- damage. Uncontested, the bypass stands (trinkets).
+				local tW = payload.timestamp or now()
+				local contUntil = Collector and Collector._autoContestUntil
+				if type(contUntil) == "number" and contUntil > tW then
+					payload._foreignSchool = true
+					auditNote(("AUDSCH defer-contested school=%s crit=%s"):format(
+						tostring(payload.schoolMask), tostring(payload.isCrit == true)))
+				else
+					auditNote(("AUDSCH bypass=line school=%s kind=%s"):format(
+						tostring(payload.schoolMask), tostring(lineProof)))
+				end
 			else
 				payload._foreignSchool = true
 				auditNote(("AUDSCH defer school=%s crit=%s"):format(
