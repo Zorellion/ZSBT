@@ -7,10 +7,18 @@
 --   Shock (see mod.dotApplicators); its impact names via castBudget.
 -- Ground channel: Earthquake — instant ground AoE, ticks ~1s for ~6s;
 --   same pattern as Warlock Rain of Fire (ticks carry no cast record).
--- Pets: Storm/Fire/Earth Elementals and Feral Spirit wolves. Elemental
--- damage overlaps the player's own schools, so pet claims stay
--- family-gated and recent-cast-vetoed — a bolt near your own Lightning
--- Bolt cast is never the elemental's.
+-- Guardians, not pets (researched + audit-verified): Storm/Fire/Earth
+-- Elementals and Feral Spirit wolves produce NO MY_PET traffic — their
+-- damage arrives as player-source UNIT_COMBAT wounds. Feral Spirit is
+-- passive since 12.0 (Sundering summons a Fire spirit, Doom Winds a
+-- Nature spirit, ~8s each) and grants buffs rather than casting its own
+-- damage sid. Their wounds report schools fully shared with the player's
+-- own kit (1/8/4), so they are structurally unprovable and stay generic —
+-- same honest floor as Lightning Rod. The one exception is the Fury of
+-- the Storms Greater Storm Elemental: a guaranteed summon on Stormkeeper
+-- cast with a known school (8), which gets a claim window like EQ ticks.
+-- The family-gated pet surfaces below remain for clients where a real
+-- pet unit exists — they cost nothing while no pet-path traffic arrives.
 -- Enhancement: NO vetoAuto — melee swings are real throughput there.
 
 local ADDON_NAME, ZSBT = ...
