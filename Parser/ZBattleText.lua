@@ -936,9 +936,17 @@ local function flushPending()
                     -- hits can never be proven while a second attacker is
                     -- armed — force the drop instead of borrowing a line.
                     local ecF = ZSBT.Parser and ZSBT.Parser.EventCollector
+                    local fsSeq = p.payload and p.payload._fschoolSeq
                     local fsBlocked = p.payload and p.payload._foreignSchool == true
-                        and ecF ~= nil and type(ecF._autoContestUntil) == "number"
-                        and ecF._autoContestUntil > (tonumber(p.t) or 0)
+                        and ecF ~= nil and (
+                            (type(ecF._autoContestUntil) == "number"
+                                and ecF._autoContestUntil > (tonumber(p.t) or 0))
+                            -- Foreign stream grew after this wound queued:
+                            -- later off-whitelist hits prove a second
+                            -- attacker was already active at p.t.
+                            or (type(ecF._fschoolCount) == "number"
+                                and type(fsSeq) == "number"
+                                and ecF._fschoolCount > fsSeq))
                     kind = (not fsBlocked) and takeCandidateLine(p.t, window, p.payload) or nil
                     if kind then
                         ZB._allows = ZB._allows + 1

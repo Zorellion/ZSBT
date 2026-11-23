@@ -367,12 +367,23 @@ local function emit(eventType, payload)
 			-- hit here, tag it and let pairing decide: a claimed MINE line
 			-- is stronger proof than any list, and an off-whitelist wound
 			-- that never meets a line dies at flush — foreign as before.
+			-- A non-auto wound can never own a melee/ranged line (autos
+			-- are school-1, shots are whitelisted) — letting an
+			-- off-whitelist wound borrow a white line is provably foreign
+			-- (druid arcane claimed kind=melee on a co-attacker dummy).
 			local lineProof = nil
 			local zbtS = ZSBT.ZBattleText
 			if zbtS and zbtS.PeekDamageLine then
 				lineProof = zbtS:PeekDamageLine(payload.timestamp or now(), 0.30,
-					{ direct = true, tick = true, melee = true, ranged = true, shield = true })
+					{ direct = true, tick = true, shield = true })
 			end
+			-- Sustained-foreign horizon: autoContested lapses between
+			-- spaced foreign ticks, so each wound evaluated alone could
+			-- steal a line mid-stream. A prior off-whitelist wound inside
+			-- the horizon means a foreign stream is active — kill every
+			-- follower. A lone trinket proc still gets its line chance.
+			local tW = payload.timestamp or now()
+			local fsPrior = Collector and Collector._fschoolUntil
 			if lineProof then
 				-- A MINE line proves "our feed reported damage near t",
 				-- not "THIS wound is ours" — lines carry no school/sid.
@@ -380,9 +391,9 @@ local function emit(eventType, payload)
 				-- wound borrowing a nearby own-line is indistinguishable
 				-- from a trinket proc: kill it rather than display foreign
 				-- damage. Uncontested, the bypass stands (trinkets).
-				local tW = payload.timestamp or now()
 				local contUntil = Collector and Collector._autoContestUntil
-				if type(contUntil) == "number" and contUntil > tW then
+				if (type(contUntil) == "number" and contUntil > tW)
+					or (type(fsPrior) == "number" and fsPrior > tW) then
 					payload._foreignSchool = true
 					auditNote(("AUDSCH defer-contested school=%s crit=%s"):format(
 						tostring(payload.schoolMask), tostring(payload.isCrit == true)))
@@ -394,6 +405,11 @@ local function emit(eventType, payload)
 				payload._foreignSchool = true
 				auditNote(("AUDSCH defer school=%s crit=%s"):format(
 					tostring(payload.schoolMask), tostring(payload.isCrit == true)))
+			end
+			if Collector then
+				Collector._fschoolUntil = tW + 2.5
+				Collector._fschoolCount = (Collector._fschoolCount or 0) + 1
+				payload._fschoolSeq = Collector._fschoolCount
 			end
 		end
 		-- PLAYER_SWING provenance: an unattributed school-1 hit inside the
