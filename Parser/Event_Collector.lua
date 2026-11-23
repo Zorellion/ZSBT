@@ -873,6 +873,46 @@ local function getMostRecentPeriodicSpellId(self, tNow)
 	return bestId
 end
 
+-- School-aware variant of getMostRecentPeriodicSpellId: a wound may only
+-- claim a periodic sid whose declared school accepts it (module entry,
+-- else the spellbook record). Without the gate the most-recent seed wins
+-- regardless of school — Flame Shock was observed claiming school-1
+-- melee swings and school-5 totem hits. No declared school means nothing
+-- to disprove, not proof: stay permissive so undeclared dots still claim.
+local function dotSchoolFitsWound(spellId, school)
+	local entry = dotEntryForSpellId(spellId)
+	local decl = entry and entry.school
+	if decl == nil then
+		local sb = ZSBT.Spellbook
+		local rec = sb and sb.Entry and sb:Entry(spellId) or nil
+		decl = rec and rec.school
+	end
+	if decl == nil then return true end
+	return dotEntrySchoolEq(decl, school) == true
+end
+
+local function getMostRecentPeriodicSpellIdForSchool(self, tNow, school)
+	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) then
+		return getMostRecentPeriodicSpellId(self, tNow)
+	end
+	local m = self and self._recentPeriodicSpellAt
+	if type(m) ~= "table" then return nil end
+	local bestId, bestAt
+	for sid, at in pairs(m) do
+		if type(sid) == "number" and type(at) == "number" then
+			local age = tNow - at
+			if age >= 0 and age <= PERIODIC_OUTGOING_WINDOW_SEC then
+				if ((not bestAt) or at > bestAt)
+					and dotSchoolFitsWound(sid, school) then
+					bestAt = at
+					bestId = sid
+				end
+			end
+		end
+	end
+	return bestId
+end
+
 -- The same periodic tick can arrive twice in one frame (UNIT_COMBAT fires for
 -- both the "target" token and the nameplate token remapped to target). Dedup
 -- DOT emits per spellId within a short window so ticks don't double-display.
@@ -929,6 +969,15 @@ local function dotCadenceOk(self, t, spellId)
 	if type(lastAt) == "number" then
 		local dt = t - lastAt
 		if dt >= (iv * 0.55) and dt <= (iv * 2.1) then
+			rec.lastAt = t
+			return true
+		end
+		-- Same-wave multi-target: AoE spread (Lava Lash -> Flame Shock on 5,
+		-- Ascendance spread) applies the debuff to every target at once, so
+		-- all their ticks land in one burst. A wound within ~150ms of a
+		-- claimed tick is another target's copy of the same wave, not a
+		-- foreign interloper — claim it or 4/5 of every wave goes generic.
+		if dt >= 0 and dt <= 0.15 then
 			rec.lastAt = t
 			return true
 		end
@@ -1900,7 +1949,7 @@ local function pickDotForWound(self, t, school, amount, isCrit)
 		and ZSBT.ClassDB.DotCadenceDisambig() then
 		return pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 	end
-	return getMostRecentPeriodicSpellId(self, t)
+	return getMostRecentPeriodicSpellIdForSchool(self, t, school)
 end
 
 -- The picked sid is the live channel itself: its ticks must bypass the
