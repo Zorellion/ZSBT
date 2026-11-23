@@ -247,6 +247,12 @@ local GUARDIAN_SPELLS = {
 	gloomhound = { { sid = 455491, school = 32 },                   -- Gloom Slash
 		{ sid = 267997, school = 8, budget = 10 } },                -- Bile Spit
 	tyrant = { { sid = 1264093, school = 36 } },                    -- Burning Cleave
+	implord = { { sid = 1277116, school = 4 } },                  -- Greater Felbolt
+	-- Dominion of Argus summons (Alythess Blaze 1282534, Sacrolash Shadow
+	-- Nova 1282507) and Pit Lord Felseeker (434404) are deliberately
+	-- unmapped: their schools (4 / 32 / 127) collide head-on with the
+	-- player's own fire, shadow kit, and Ruination — naming them would
+	-- steal player hits exactly like the infernal/darkglare cases below.
 	-- darkglare deliberately has no entries: its Eye Beam (205231) is
 	-- school 32, and during a Darkglare window every unattributed
 	-- school-32 hit — the player's own DoT ticks whose windows lapsed,
@@ -267,7 +273,8 @@ local GUARDIAN_SUMMONS = {
 	[105174] = { { group = "wildimp", duration = 11 } },            -- Hand of Gul'dan (cast id)
 	[104316] = { { group = "dreadstalker", duration = 12 },
 		{ group = "gloomhound", duration = 12 } },                  -- Call Dreadstalkers
-	[264119] = { { group = "gloomhound", duration = 15 } },         -- Summon Vilefiend
+	[455465] = { { group = "gloomhound", duration = 15 } },         -- Summon Gloomhound (12.x id)
+	[264119] = { { group = "gloomhound", duration = 15 } },         -- Summon Vilefiend (legacy id)
 	[265187] = { { group = "tyrant", duration = 18 } },             -- Summon Demonic Tyrant
 	[205180] = { { group = "darkglare", duration = 15 } },          -- Summon Darkglare (Aff)
 	[1122] = { { group = "infernal", duration = 30 } },             -- Summon Infernal (Destro)
