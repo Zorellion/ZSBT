@@ -285,6 +285,15 @@ local function emit(eventType, payload)
 	-- ambiguous outgoing damage must be corroborated by a palette line.
 	-- Untrusted => OfferOutgoing returns true and nothing changes.
 	if eventType == "OUTGOING_DAMAGE_COMBAT" and payload then
+		-- Melee anchor for proc riders: a school-1 wound that actually
+		-- EMITTED as ours (named claim or auto emit) proves a weapon
+		-- attack happened. Stamping at emit time — not wound arrival —
+		-- means a co-attacker's bare swing can never feed the anchor
+		-- during a contested lapse; foreign wounds never get this far.
+		if payload.schoolMask == 1
+			and (payload.isAuto == true or payload.spellId ~= nil) then
+			Collector._lastPhysWoundAt = payload.timestamp or now()
+		end
 		-- Last shot for the player's own cast before pet-claiming: nuke
 		-- hits with travel time (HoG/Implosion/Demonbolt) can miss the
 		-- 0.85s candidate window upstream and would otherwise die
@@ -5225,11 +5234,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		-- incorrectly collapsed. We only accept physical UNIT_COMBAT(target) when it is
 		-- unambiguous (no pet) or when we can match it to a recent player cast.
 		if isPhysical then
-			-- Melee anchor for proc riders: every school-1 wound proves a
-			-- weapon attack just landed (ours or foreign — the claim gate
-			-- refuses contested targets, so a co-attacker's swing can only
-			-- starve the rider, never feed it).
-			self._lastPhysWoundAt = t
 			-- Midnight: lower the physical noise floor from 50 to 2 so low-level
 			-- characters (whose white swings can be 5-15 damage) still see outgoing.
 			-- On max-level characters, sub-2 physical hits are effectively noise.
