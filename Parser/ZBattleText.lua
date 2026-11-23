@@ -794,6 +794,15 @@ local function candidateKinds(payload)
         return autoLineKinds(), nil, nil
     end
     if payload and payload._petRoute == true then
+        -- A melee-guess pet (ResolvePetMelee, no cast record) may only
+        -- own melee/ranged lines: letting "pet Auto Attack" claim
+        -- direct/tick lines let foreign physical hits borrow any nearby
+        -- line — observed: warrior swing on a shared dummy emitted as
+        -- pet:6603 on a kind=direct claim. Cast/resolve pets keep the
+        -- full set (a caster pet's hit produces direct lines).
+        if payload.petEvidence == "melee" then
+            return MELEE_KINDS, nil, nil
+        end
         return nil, nil, nil
     end
     return kindPreference(payload)
