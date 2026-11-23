@@ -236,10 +236,16 @@ end
 -- school is the exact schoolMask the hit reports.
 local GUARDIAN_SPELLS = {
 	wildimp = { { sid = 104318, school = 4 } },                     -- Fel Firebolt
-	dreadstalker = { { sid = 271971, school = 32 },                 -- Dreadbite
-		{ sid = 1276960, school = 40 } },                           -- Blighted Maw (talent rider)
+	-- Blighted Maw (1276960) is deliberately absent: it is a talent rider
+	-- on Dreadbite whose damage events are sourced to the PLAYER (verified
+	-- in WoWCombatLog — 115 events, all Zorellion, ~10 victims per proc).
+	-- Mapping it to the hound renamed the player's own hits as pet damage.
+	dreadstalker = { { sid = 271971, school = 32 } },               -- Dreadbite
+	-- Bile Spit: cast once per summon + ~5 periodic ticks (2s cadence) —
+	-- budget caps resolve claims per armed window so a stream of foreign
+	-- school-8 wounds can't mint the name past the real pattern.
 	gloomhound = { { sid = 455491, school = 32 },                   -- Gloom Slash
-		{ sid = 267997, school = 8 } },                             -- Bile Spit
+		{ sid = 267997, school = 8, budget = 10 } },                -- Bile Spit
 	tyrant = { { sid = 1264093, school = 36 } },                    -- Burning Cleave
 	-- darkglare deliberately has no entries: its Eye Beam (205231) is
 	-- school 32, and during a Darkglare window every unattributed
@@ -284,14 +290,23 @@ function mod.resolvePetSpellId(self, school, t, helpers)
 		return nil
 	end
 	if school == 1 then return nil end -- melee swings stay generic
-	local best, ambiguous = nil, false
+	local best, bestKey, ambiguous = nil, nil, false
 	for group, spells in pairs(GUARDIAN_SPELLS) do
 		local active = self._guardianUntil and (self._guardianUntil[group] or 0) >= t
 		if active then
 			for _, sp in ipairs(spells) do
 				if sp.school == school then
-					if best == nil then best = sp.sid
-					elseif best ~= sp.sid then ambiguous = true end
+					local key = group .. ":" .. tostring(sp.sid)
+					local spent = sp.budget ~= nil
+						and self._guardianClaims
+						and (self._guardianClaims[key] or 0) >= sp.budget
+					if not spent then
+						if best == nil then
+							best, bestKey = sp.sid, key
+						elseif best ~= sp.sid then
+							ambiguous = true
+						end
+					end
 				end
 			end
 		end
@@ -308,6 +323,10 @@ function mod.resolvePetSpellId(self, school, t, helpers)
 		end
 	end
 	if ambiguous then return nil end
+	if bestKey then
+		self._guardianClaims = self._guardianClaims or {}
+		self._guardianClaims[bestKey] = (self._guardianClaims[bestKey] or 0) + 1
+	end
 	return best
 end
 
@@ -340,6 +359,17 @@ function mod.onCast(self, spellId, spellName, t)
 		self._guardianUntil = self._guardianUntil or {}
 		for _, g in ipairs(summon) do
 			self._guardianUntil[g.group] = t + g.duration
+		end
+		-- Fresh summons reset per-window resolve budgets for their groups.
+		if self._guardianClaims then
+			for _, g in ipairs(summon) do
+				local prefix = g.group .. ":"
+				for k in pairs(self._guardianClaims) do
+					if k:sub(1, #prefix) == prefix then
+						self._guardianClaims[k] = nil
+					end
+				end
+			end
 		end
 	end
 end
