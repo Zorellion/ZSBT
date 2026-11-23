@@ -1,5 +1,37 @@
 # Changelog
 
+## 3.3.9.7-beta
+
+### Added
+- **Source-classed combat-log feed:** the attribution filter now tells apart *who* caused each event — your hits, your pet's hits, and five classes of foreign hits (friendly NPCs, hostile units, hostile players, neutral units, unknown). Follower-dungeon companions and co-attackers on your target are now positively identifiable instead of background noise, so the addon can prove a hit is **not** yours — something no battle-text addon could do on this client before.
+- **Foreign-hit veto:** wounds that line up with a foreign-classed line are dropped as provably someone else's, so group and instance traffic from other attackers no longer leaks into your scroll.
+- **Incoming Merging section (Spam Control):** incoming damage/heal bursts now have their own controls, separate from outgoing spell merging — an on/off toggle, a merge-window slider (0.05–2s), and a "Merged Hidden Amounts" style: **Last value xN** (default — shows the newest real amount, e.g. "1234 x3") or **Count only** (the old "Heals x3" style).
+- **Attribution Delay slider:** the wound-to-line pairing window is now profile-tunable (0.05–0.50s) instead of a fixed 0.2s — lower feels snappier, higher catches lagging evidence.
+- **Shaman class module:** Elemental and Enhancement coverage — strikes, the Totemic kit, Flame Shock spread and applicators (Ascendance, Voltaic Blaze, Stormkeeper's fire-elemental window), composite-school DoTs, and guardian handling for elementals and Feral Spirit wolves.
+- **Druid class module:** all-spec coverage, including named physical bleed ticks (feral) and strict AoE application anchors for multi-mob DoTs.
+- **Warlock guardian roster verified** against the client's own combat log: Mother of Chaos, Overlord, Imp Lord, and Gloomhound are mapped; the Antoran Jailer summon is correctly excluded.
+- **On-attack proc naming:** procs that are guaranteed to ride a hit but have no cast record now get named from a proven physical-hit anchor instead of showing as generic hits.
+- **Audit tooling:** `/zsbt auditmax <n>` tunes the audit ring size (default 8000), pet emits carry provenance markers, and physical-DoT decisions are traced for debugging.
+
+### Changed
+- **Instance/group gates now defer to line proof:** the old rule "in an instance another attacker is guaranteed, so unattributed hits are unprovable" no longer kills wounds when the source-classed feed is live — they queue for arbitration (your/pet lines prove them, foreign lines veto them). When the feed can't be trusted, the old strict dropping stays in place.
+- **All pet and guardian damage goes through ownership arbitration:** non-physical pet hits (imp firebolts, dreadbites, guardian attacks) now pair against pet-colored lines instead of displaying unproven or dying upstream — previously only physical pet hits took that path.
+- **Contested-target discipline:** when evidence shows a second attacker on your target, unattributed white hits and generics are refused rather than guessed — the detector is anchored to your own melee lines and auto-attack rhythm, and your own proven hits no longer accidentally arm it.
+- **Merged outgoing lines prefer spell names:** merged hits with hidden amounts show the spell name when Outgoing → Show Spell Names is enabled, "Hits (xN)" otherwise.
+- **Custom damage/heal color swatches are authoritative:** the split swatches now win over the legacy single custom color; partial saves fall back per channel.
+- **Trace flags are session-scoped:** `/zsbt audit` and `/zsbt ucdrop` no longer persist across reloads.
+
+### Fixed
+- **Follower-dungeon damage loss (the big one):** three hard-kill gates dropped unattributed wounds before the line machinery could prove them — which is exactly the hit profile pets, guardians, and AoE produce. Displayed damage roughly doubled in follower-dungeon testing with no foreign leakage.
+- **Zero, "0", and "-0" spam:** the client's absorb-style zero-amount entries are now dropped — plain zeros directly, hidden-value zeros by C-side evaluation, and unevaluable hidden values via the school-0 signature those pseudo-entries carry. Real non-zero hits are unaffected.
+- **Pet incoming shows real numbers:** damage taken by your pet renders actual values instead of zeros — damage shows as `-N`, heals as `+N`.
+- **Heals stopped double-rendering:** outgoing heals no longer emit twice on self-resolving unit tokens, twin reports dedup by combat-log timestamp, and a first-hit duplication gap is closed.
+- **Phantom "second tick" heals:** outgoing heal candidacy now requires a readable HEAL action — periodic damage-class events that used to queue as fake heals are rejected.
+- **Off-target DoT identity leak and bleed pick gate:** ticks on other mobs attribute to their own application records, and a gate bug that misnamed bleeds is fixed.
+- **Pet-melee guesses can't claim spell lines:** unattributed pet melee can no longer borrow direct/tick line evidence.
+- **Protected-call crash under combat lockdown:** spell pickups that could fire during lockdown are now guarded.
+- **Forever dedup:** the wound-twin signature now includes the amount, so two different same-instant hits on Era clients no longer collapse into one number.
+
 ## 3.3.9.6-beta
 
 ### Fixed
