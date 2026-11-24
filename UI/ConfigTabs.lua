@@ -2818,72 +2818,78 @@ critInlineHeader = {
 
 			headerOutgoingOwnership = {
 				type  = "header",
-				name  = L["Outgoing Ownership"],
+				name  = L["Outgoing Accuracy"],
 				order = 3.61,
 			},
 			outgoingOwnershipHelp = {
 				type  = "description",
-				name  = L["ZSBT proves outgoing hits are yours by pairing them with your combat-log lines. That pairing runs automatically everywhere — solo, groups, dungeons, and PvP. Only if the combat-log feed ever goes quiet does ZSBT fall back to conservative attribution: solo stays fully permissive, while grouped or PvP content requires hits to correlate with your casts, swings, or active DoTs so nobody else's damage can bleed in. You normally never need these toggles."],
+				name  = L["Normal mode is always on — every outgoing hit is proven against your combat-log lines automatically. The fallback below stays dormant unless that proof feed dies mid-fight, and normal mode resumes on its own the moment the feed returns. Most players never need to change it."],
 				order = 3.62,
 				width = "full",
 			},
-			requireProof = {
-				type  = "toggle",
-				name  = L["Require Combat-Log Proof for Outgoing"],
-				desc  = L["Strictest mode: outgoing hits must pair with a combat-log line or a consumed cast record before they display. Hits that cannot be proven are hidden entirely — maximum protection against showing other players' damage, at the cost of some real hits going quiet on clients with incomplete combat feeds."],
-				order = 3.63,
-				width = "full",
-				get   = function() return ZSBT.db.profile.general.requireProof == true end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.requireProof = val and true or false
+			deadFeedMode = {
+				type   = "select",
+				style  = "dropdown",
+				name   = L["If the Proof Feed Stops"],
+				desc   = L["Only ever matters during a feed outage (rare, mostly in heavy raid moments) — it does nothing while the feed is alive. Strict shows only hits that can still be proven yours. Relaxed lets unproven hits through — a group member's damage on your target may rarely appear as yours. Damage Meter substitutes Blizzard's running damage totals: fewer per-hit details, no crit flags, but your numbers never go silent."],
+				order  = 3.63,
+				width  = "double",
+				values = {
+					strict  = L["Strict — show only proven hits"],
+					relaxed = L["Relaxed — show unproven hits too"],
+					meter   = L["Damage Meter — aggregate totals (default)"],
+				},
+				get    = function() return ZSBT.db.profile.general.deadFeedMode or "strict" end,
+				set    = function(_, val)
+					ZSBT.db.profile.general.deadFeedMode = val
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},
-			showUnprovenInGroups = {
+			deadFeedModeReset = {
+				type   = "execute",
+				name   = L["Reset to Default"],
+				desc   = L["Restore the default fallback."],
+				order  = 3.631,
+				width  = "half",
+				hidden = function()
+					local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
+					return (g and g.deadFeedMode or "meter")
+						== ZSBT._defaultDeadFeedMode()
+				end,
+				func   = function()
+					ZSBT.db.profile.general.deadFeedMode = ZSBT._defaultDeadFeedMode()
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
+			provenNoLine = {
 				type  = "toggle",
-				name  = L["Show Unproven Outgoing in Groups"],
-				desc  = L["Only applies if the combat-log feed goes quiet while you are in a group, dungeon, raid, or battleground. By default ZSBT then requires hits to correlate with your activity so foreign damage cannot bleed in. Enable this to keep full outgoing flow instead, accepting that a group member's hit on your target could rarely appear as yours."],
+				name  = L["Show Proven Hits Without Lines (Experimental)"],
+				desc  = L["When the feed delivers fewer proof lines than you land hits (dense raids), a hit proven by your own cast or swing normally waits for its line and may die unproven. Enable this to display proven hits even when their line never arrives. Risk: a co-attacker's hit that steals a cast record can also display, wearing your spell's name."],
 				order = 3.64,
 				width = "full",
-				get   = function() return ZSBT.db.profile.general.showUnprovenInGroups == true end,
+				get   = function() return ZSBT.db.profile.outgoing.damage.provenNoLine == true end,
 				set   = function(_, val)
-					ZSBT.db.profile.general.showUnprovenInGroups = val and true or false
+					ZSBT.db.profile.outgoing.damage.provenNoLine = val
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},
-			pvpRelaxed = {
-				type  = "toggle",
-				name  = L["Relaxed Outgoing in PvP"],
-				desc  = L["Only applies inside battlegrounds and arenas, and only if the combat-log feed goes quiet there. By default PvP uses the strictest fallback attribution because enemy players are the highest bleed-through risk. Enable this to treat PvP like normal group content instead."],
-				order = 3.65,
-				width = "full",
-				get   = function() return ZSBT.db.profile.general.pvpRelaxed == true end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.pvpRelaxed = val and true or false
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+			namePetMelee = {
+				type   = "toggle",
+				name   = L["Show Pet Melee Hits as \"Auto Attack\""],
+				desc   = L["Only relevant for pet classes. A pet's physical hits display as \"Auto Attack\" instead of a generic number. The name can only appear when the combat log already proved the hit came from your pet — never applied to unproven hits."],
+				order  = 3.65,
+				width  = "full",
+				hidden = function()
+					return not (ZSBT.ClassDB and ZSBT.ClassDB.SupportsToggle
+						and ZSBT.ClassDB.SupportsToggle("namePetMelee"))
 				end,
-			},
-			damageMeterOutgoingFallback = {
-				type  = "toggle",
-				name  = L["Use Damage Meter Outgoing Fallback (Experimental)"],
-				desc  = L["When outgoing is restricted in group content (combat-log feed quiet) and your numbers go silent, this can use Blizzard's damage meter totals (Retail 12.x) as an outgoing fallback. Less detailed (no crit flags) and can increase duplicate numbers if other sources are also active."],
-				order = 3.66,
-				width = "full",
-				get   = function() return ZSBT.db.profile.general.damageMeterOutgoingFallback == true end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.damageMeterOutgoingFallback = val and true or false
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				get    = function()
+					local cm = ZSBT.db.profile.classModule
+					return cm ~= nil and cm.namePetMelee == true
 				end,
-			},
-			damageMeterIncomingFallback = {
-				type  = "toggle",
-				name  = L["Use Damage Meter Incoming Damage Fallback (Experimental)"],
-				desc  = L["When outgoing is restricted in group content and incoming combat text becomes ambiguous/secret, this can use Blizzard's damage meter damage-taken totals (Retail 12.x) as a last-resort incoming damage fallback. Less detailed (no spell/school/crit flags) and can increase noise."],
-				order = 3.665,
-				width = "full",
-				get   = function() return ZSBT.db.profile.general.damageMeterIncomingFallback == true end,
-				set   = function(_, val)
-					ZSBT.db.profile.general.damageMeterIncomingFallback = val and true or false
+				set    = function(_, val)
+					ZSBT.db.profile.classModule = ZSBT.db.profile.classModule or {}
+					ZSBT.db.profile.classModule.namePetMelee = val
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},
@@ -5649,7 +5655,7 @@ local COMBAT_BUCKET_KEYS = {
 			damageEnabled=1, showSpellNames=1, showSpellIcons=1, showEmpowerIcons=1, iconSide=1,
 			useSchoolColors=1, customDamageColor=1, damageScrollArea=1,
 			showTargets=1, autoAttackMode=1,
-			hideAutoContested=1, linePairDelay=1,
+			linePairDelay=1,
 			damageMinThreshold=1, thresholdTip=1,
 		},
 		heal = {
@@ -5687,7 +5693,7 @@ ZSBT._BUCKET_ORDER = {
 		"damageEnabled", "damageScrollArea",
 		"showSpellNames", "showSpellIcons", "showEmpowerIcons", "iconSide",
 		"showTargets", "autoAttackMode",
-		"hideAutoContested", "linePairDelay",
+		"linePairDelay",
 		"damageMinThreshold", "thresholdTip",
 		"useSchoolColors", "customDamageColor",
 	},
@@ -5792,9 +5798,8 @@ local GENERAL_GROUP_KEYS = {
 	},
 	numbers = { numbersHelp=1, numberFormat=1 },
 	outgoing = {
-		outgoingOwnershipHelp=1, requireProof=1, showUnprovenInGroups=1,
-		pvpRelaxed=1, damageMeterOutgoingFallback=1,
-		damageMeterIncomingFallback=1, showDotsOnOtherEnemies=1,
+		outgoingOwnershipHelp=1, deadFeedMode=1, deadFeedModeReset=1,
+		provenNoLine=1, namePetMelee=1, showDotsOnOtherEnemies=1,
 	},
 }
 local GENERAL_DROP_KEYS = {
@@ -5829,9 +5834,8 @@ local GENERAL_ORDER = {
 	critScreenPunchIntensity = 34, critShatterIntensity = 35,
 	critAfterimageIntensity = 36, critRumbleIntensity = 37,
 	numbersHelp = 1, numberFormat = 2,
-	outgoingOwnershipHelp = 1, requireProof = 2, showUnprovenInGroups = 3,
-	pvpRelaxed = 4, damageMeterOutgoingFallback = 5,
-	damageMeterIncomingFallback = 6, showDotsOnOtherEnemies = 7,
+	outgoingOwnershipHelp = 1, deadFeedMode = 2, deadFeedModeReset = 2.5,
+	provenNoLine = 3, namePetMelee = 4, showDotsOnOtherEnemies = 5,
 }
 
 function ZSBT._groupGeneralArgs(args)
@@ -7579,15 +7583,6 @@ function ZSBT.BuildTab_Outgoing()
                 values = ZSBT.ValuesFromKeys(ZSBT.AUTOATTACK_MODES),
                 get    = function() return ZSBT.db.profile.outgoing.damage.autoAttackMode end,
                 set    = function(_, val) ZSBT.db.profile.outgoing.damage.autoAttackMode = val end,
-            },
-            hideAutoContested = {
-                type  = "toggle",
-                name  = L["Hide Auto-Attacks When Contested"],
-                desc  = L["Suppress auto-attack numbers while another attacker is hitting your target (unattributed hits cannot be proven yours)."],
-                width = "full",
-                order = 6.05,
-                get   = function() return ZSBT.db.profile.outgoing.damage.hideAutoContested ~= false end,
-                set   = function(_, val) ZSBT.db.profile.outgoing.damage.hideAutoContested = val end,
             },
             linePairDelay = {
                 type    = "range",

@@ -252,6 +252,15 @@ end
 ZB._foreignLines = ZB._foreignLines or {}
 local FOREIGN_LINE_MAX = 64
 local FOREIGN_WINDOW = 0.35
+-- Cadence-guessed (_swingGuessed) noline candidates keep a foreign check
+-- but at this tighter radius: a foreign wound's own line arrives
+-- same-frame (~10ms measured on Retail), so 0.12s still vetoes it while
+-- coincidental foreign lines kill far fewer genuine own hits.
+local NOLINE_FOREIGN_WINDOW = 0.12
+-- Max cast-record slot ordinal a noline rescue may carry: wounds that
+-- drained a shared budget past this are theft-suspect (foreign hits
+-- interleaved in the volley). Single-target casts are always slot 1.
+local NOLINE_MAX_ORD = 3
 
 local function recordForeignLine(t, cls, heal, r, g, b)
     local fl = ZB._foreignLines
@@ -459,9 +468,40 @@ local function takeDamageLine(tHit, window, kinds)
     end
     if best then
         ZB._lines[best].consumed = true
-        return ZB._lines[best].kind
+        return ZB._lines[best].kind, best
     end
     return nil
+end
+
+-- Distance to the nearest foreign DAMAGE line — evidence a non-self
+-- source produced a hit at tHit. Heal lines are ignored: a friendly
+-- heal painting near a wound says nothing about who dealt it. Consumed
+-- lines still count — the foreign event happened whether or not
+-- another wound already spent that proof.
+local function nearestForeignDamageDt(tHit)
+    local best
+    for i = 1, #ZB._foreignLines do
+        local l = ZB._foreignLines[i]
+        if l.heal ~= true then
+            local dt = math.abs(l.at - tHit)
+            if best == nil or dt < best then best = dt end
+        end
+    end
+    return best
+end
+
+-- Stolen-line arbitration: an own event paints its own-source line at
+-- ~0ms offset from its wound, while a foreign hit paints a foreign
+-- line at ITS instant. A wound whose claimed own line sits FARTHER
+-- than a foreign damage line is almost certainly that foreign event
+-- borrowing a nearby own line (observed in a two-warlock raid: half
+-- the claimed Fel Firebolts had a foreign line strictly nearer). The
+-- caller must release the claimed line so its real owner can pair.
+local function foreignDamageNearer(tHit, lineIdx)
+    local l = lineIdx and ZB._lines[lineIdx] or nil
+    if l == nil then return false end
+    local fdt = nearestForeignDamageDt(tHit)
+    return fdt ~= nil and fdt < math.abs(l.at - tHit)
 end
 
 -- Non-consuming look at buffered lines: class modules use this for
@@ -962,9 +1002,50 @@ local function deferSec()
 end
 local RETRY_WINDOW = 0.90
 
+-- TESTING flag (outgoing.damage.provenNoLine): lets a cast/swing-proven
+-- candidate emit after its retry confirms no proof line is coming —
+-- the same noline rescue Forever uses, opened on Retail for raid
+-- windows where the own-line feed delivers a small fraction of real
+-- own events. Provenance is still required: unnamed generics are
+-- unaffected. Foreign wounds that stole a cast record can emit too —
+-- that is the accepted cost of the flag.
+local function provenNoLineEnabled()
+    local prof = ZSBT.db and ZSBT.db.profile
+    local d = prof and prof.outgoing and prof.outgoing.damage
+    return d ~= nil and d.provenNoLine == true
+end
+
 ZB._pending = ZB._pending or {}
 ZB._flushAt = ZB._flushAt or 0
 
+
+-- Cold-feed own evidence: no own line has ever classified, so the veto
+-- has nothing to pair against — but a cold bypass may only open while
+-- the player could plausibly produce a wound. A wound on our target
+-- while we are a passive observer (out of combat, no recent cast, no
+-- auto-attack, pet idle) is foreign by construction; auto-allowing it
+-- showed a co-attacker's hits in our scroll. Target wounds cannot serve
+-- as evidence here — UNIT_COMBAT has no source, so a co-attacker's hits
+-- stamp them too (self-fulfilling).
+local function coldFeedOwnEvidence()
+    local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
+    local tC = GetTime and GetTime() or 0
+    if ec and type(ec._lastPlayerSpellAt) == "number"
+        and (tC - ec._lastPlayerSpellAt) <= 2.5 then
+        return true
+    end
+    if IsCurrentSpell then
+        local okAA, resAA = pcall(IsCurrentSpell, 6603)
+        if okAA and resAA == true then return true end
+    end
+    if UnitAffectingCombat then
+        local okP, inC = pcall(UnitAffectingCombat, "player")
+        if okP and inC == true then return true end
+        local okPet, inPC = pcall(UnitAffectingCombat, "pet")
+        if okPet and inPC == true then return true end
+    end
+    return false
+end
 
 local function vetoDisabledNow()
     if ZB._vetoDisabled then return true end
@@ -974,8 +1055,10 @@ local function vetoDisabledNow()
     -- Emit immediately until the first line arrives, same as untrusted.
     -- A quiet-but-seen feed is different: queue and let the wound's own
     -- line prove it when it lands, instead of emitting unproven (which
-    -- would pass party/follower hits on the shared target too).
-    if (ZB._lastLineAt or 0) <= 0 then return true end
+    -- would pass party/follower hits on the shared target too). The
+    -- bypass is additionally gated on own combat evidence: with none,
+    -- no wound can be ours and candidates must queue and die at flush.
+    if (ZB._lastLineAt or 0) <= 0 then return coldFeedOwnEvidence() end
     return false
 end
 
@@ -1065,21 +1148,28 @@ end
 local function candidateKinds(payload)
     -- v2 source mode: lines carry source class, not event kind. Only
     -- "direct" (MINE damage), "melee" (MY_PET damage) and "heal" exist.
-    -- Own hits claim direct; pet claims claim pet lines (proven pet,
-    -- stronger than the old swing-kind guess); fall back to any.
+    -- Own hits claim direct; pet claims claim pet lines only — a pet
+    -- emit requires MY_PET proof, never a borrowed own line.
     if ZB._srcMode == true then
-        if payload and (payload.isAuto == true or payload._swingProven == true) then
+        if payload and (payload.isAuto == true or payload._swingProven == true
+            or payload._swingGuessed == true) then
             return { direct = true }, nil, nil
         end
         if payload and payload._petRoute == true then
-            if payload.petEvidence == "melee" then
-                return { melee = true }, nil, nil
-            end
-            return nil, nil, nil
+            -- MY_PET covers pets AND guardians (0x3111 includes
+            -- TYPE_GUARDIAN): every legit pet hit — controlled pet or
+            -- guardian, melee or caster — produces a melee-kind line.
+            -- Fallback set for non-srcMode-style claims; under srcMode
+            -- takeCandidateLine claims the NEAREST own line across
+            -- melee+direct and the winning kind decides the scroll —
+            -- a direct win proves the wound was a mislabeled own event,
+            -- a melee win proves real pet/guardian damage.
+            return { melee = true }, nil, nil
         end
         return { direct = true }, nil, nil
     end
-    if payload and (payload.isAuto == true or payload._swingProven == true) then
+    if payload and (payload.isAuto == true or payload._swingProven == true
+        or payload._swingGuessed == true) then
         return autoLineKinds(), nil, nil
     end
     if payload and payload._petRoute == true then
@@ -1097,12 +1187,68 @@ local function candidateKinds(payload)
     return kindPreference(payload)
 end
 
+-- Pet noline provenance (FCT petOut/PetAttacking model): hard evidence
+-- (a consumed pet cast/melee record) rescues on its own; guess-evidence
+-- needs a live pet verifiably engaged and an uncontested timeline — a
+-- co-attacker's melee wound routed pet is the false positive this gate
+-- exists to stop. UnitIsUnit is secret-gated in combat on Midnight: a
+-- readable false (pet not on this target) vetoes, unreadable falls back
+-- to UnitExists + the contested gate.
+local function petNolineProven(payload, ecF, tHit)
+	local pe = payload and payload.petEvidence
+	if pe == "cast" or pe == "melee" or pe == "mline" then return true end
+	local okE, petExists = pcall(UnitExists, "pet")
+	if not (okE and petExists == true) then return false end
+	if UnitIsUnit then
+		local okT, same = pcall(UnitIsUnit, "pettarget", "target")
+		if okT then
+			local okB, isSame = pcall(function() return same == true end)
+			if okB and isSame == false then return false end
+		end
+	end
+	local contested = ecF and type(ecF._autoContestUntil) == "number"
+		and ecF._autoContestUntil > (tonumber(tHit) or 0)
+	return not contested
+end
+
 local function takeCandidateLine(tHit, window, payload)
+    if ZB._srcMode == true and payload and payload._petRoute == true then
+        -- The kind of the NEAREST own line decides the scroll: a MY_PET
+        -- line proves a pet/guardian hit; a MINE line proves the wound
+        -- was actually an own event the pet name got guessed onto (AoE
+        -- splash past its cast budget). Distance is the honest arbiter —
+        -- the real event's own line sits ~0ms from its wound while a
+        -- coincident line of the other class is further away.
+        local kindM, idxM = takeDamageLine(tHit, window, { melee = true })
+        -- Hard-evidence pet routes (real pet cast/melee/resolved record)
+        -- can never legitimately claim a MINE direct line — their own
+        -- cls=pet line exists on feeds that carry it, so a coincident
+        -- direct line belongs to an own wound. Letting them race stole
+        -- player lines and stripped real pet hits to generic (observed:
+        -- 16 PET_ROUTE_DIRECT strips/session on retail hunter).
+        local pe = payload.petEvidence
+        if pe == "cast" or pe == "melee" or pe == "resolve"
+            or pe == "mline" then
+            return kindM, idxM
+        end
+        local kindD, idxD = takeDamageLine(tHit, window, { direct = true })
+        if kindM and kindD then
+            local dm = math.abs(ZB._lines[idxM].at - tHit)
+            local dd = math.abs(ZB._lines[idxD].at - tHit)
+            if dd < dm then
+                ZB._lines[idxM].consumed = false
+                return kindD, idxD
+            end
+            ZB._lines[idxD].consumed = false
+        end
+        if kindM then return kindM, idxM end
+        return kindD, idxD
+    end
     local a, b, c = candidateKinds(payload)
-    local kind = takeDamageLine(tHit, window, a)
-    if not kind and b then kind = takeDamageLine(tHit, window, b) end
-    if not kind and c then kind = takeDamageLine(tHit, window, c) end
-    return kind
+    local kind, idx = takeDamageLine(tHit, window, a)
+    if not kind and b then kind, idx = takeDamageLine(tHit, window, b) end
+    if not kind and c then kind, idx = takeDamageLine(tHit, window, c) end
+    return kind, idx
 end
 
 -- Provenance tier for line claiming. Tier 1 = sid-bearing (the hit
@@ -1112,10 +1258,31 @@ end
 -- not value comparison).
 local function candidateTier(payload)
     if payload and (payload.spellId ~= nil or payload.petSpellId ~= nil
-        or payload._swingProven == true) then
+        or payload._swingProven == true or payload._swingGuessed == true) then
         return 1
     end
     return 2
+end
+
+-- Evidence rank for flush claiming order (fit-ranked allocation):
+-- when lines are scarcer than candidates, the strongest evidence
+-- claims first instead of FIFO. Own cast/swing provenance first,
+-- then pet claims backed by a real cast/melee event, then pet
+-- school+window guesses, generics last.
+local function claimOrder(payload)
+    if not payload then return 4 end
+    if payload.spellId ~= nil or payload._swingProven == true
+        or payload._swingGuessed == true then
+        return 1
+    end
+    if payload._petRoute == true or payload.petSpellId ~= nil then
+        local pe = payload.petEvidence
+        if pe == "cast" or pe == "melee" or pe == "mline" then
+            return 2
+        end
+        return 3
+    end
+    return 4
 end
 local function deliverOutgoing(payload)
     local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
@@ -1149,6 +1316,23 @@ local function deliverOutgoing(payload)
         end
         ZB:AuditDamageEvent(ev, payload)
         ec._sink(ev, payload)
+        -- Deferred deliveries bypass emit() and its SHOW record — log the
+        -- same shape here so every display-bound payload leaves a line.
+        local ts = payload and tonumber(payload.timestamp)
+        -- Same cadence anchor as emit(): an emitted school-1 sid=nil own
+        -- hit is a confirmed auto, and noline-rescued autos re-anchor the
+        -- horizon they were predicted from.
+        if ts and ev == "OUTGOING_DAMAGE_COMBAT"
+            and payload.spellId == nil and payload.schoolMask == 1
+            and payload._petRoute ~= true and ec.NoteSwingAnchor then
+            ec:NoteSwingAnchor(ts)
+        end
+        if ts then
+            ZB:FileLog(("SHOW %s sid=%s psid=%s pev=%s ht=%.3f dly=%.2f via=def"):format(
+                ev, tostring(payload.spellId), tostring(payload.petSpellId),
+                tostring(payload.petEvidence), ts,
+                (GetTime and GetTime() or ts) - ts))
+        end
     end
 end
 
@@ -1180,30 +1364,24 @@ local function flushPending()
     -- Swing-proven candidates get one retry at a wider window: on slow
     -- chat feeds their melee line can lag past the first flush.
     local requeue = nil
-    -- Provenance-tiered claiming: sid-bearing candidates (real cast/pet
-    -- record or class-resolved identity) claim lines before unattributed
-    -- generics, so a foreign generic can no longer take the line a proven
-    -- hit needed merely because it queued first. FIFO within each tier.
-    for pass = 1, 2 do
+    -- Fit-ranked claiming (evidence order, not FIFO): own cast/swing
+    -- provenance claims first, then pet hard evidence (cast/melee),
+    -- then pet school+window guesses, generics last — scarce lines go
+    -- to the candidates most likely to own them.
+    for pass = 1, 4 do
         for i = 1, #pend do
             local p = pend[i]
-            if p and candidateTier(p.payload) == pass then
-                -- Never-seen feed counts as untrusted ONLY when we have
-                -- our own outgoing evidence flowing: target wounds or a
-                -- recent cast prove the filter feed is genuinely dead
-                -- rather than simply quiet because we are not fighting.
-                -- Without this, foreign candidates (off-target nameplate
-                -- traffic near other players' fights) delivered
-                -- unconditionally into our scroll post-reload.
+            if p and claimOrder(p.payload) == pass then
+                -- Never-seen feed counts as untrusted ONLY while we are
+                -- plausibly producing wounds: own cast/auto-attack/combat
+                -- evidence means the feed is genuinely dead rather than
+                -- simply quiet because we are not fighting. Foreign
+                -- wounds on our target cannot stand in for this —
+                -- UNIT_COMBAT carries no source, so a co-attacker's
+                -- stream would certify itself (observed: foreign melee
+                -- shown as ours while we were not even fighting).
                 local cold = (ZB._lastLineAt or 0) <= 0
-                local coldOK = false
-                if cold then
-                    local ecC = ZSBT.Parser and ZSBT.Parser.EventCollector
-                    local tC = GetTime and GetTime() or 0
-                    coldOK = ecC ~= nil and (
-                        (tC - (ecC._lastTargetWoundAt or -9)) <= 2.5
-                        or (tC - (ecC._lastPlayerSpellAt or -9)) <= 2.5)
-                end
+                local coldOK = cold and coldFeedOwnEvidence() or false
                 if ZB._vetoDisabled or not ZB._trusted or (cold and coldOK) then
                     deliverOutgoing(p.payload)
                 elseif cold then
@@ -1236,8 +1414,98 @@ local function flushPending()
                             or (type(ecF._fschoolCount) == "number"
                                 and type(fsSeq) == "number"
                                 and ecF._fschoolCount > fsSeq))
-                    kind = (not fsBlocked) and takeCandidateLine(p.t, window, p.payload) or nil
-                    if kind then
+                    -- Late-swing hold (FCT port): on a swing-capable
+                    -- client the per-swing report may follow its wound
+                    -- by up to 0.35s — a queued wound's swing can arrive
+                    -- between emit and this flush. SwingCovers accepts
+                    -- the retroactive window, so re-test and upgrade the
+                    -- stamp before tier/rescue checks below.
+                    if p.payload and p.payload.spellId == nil
+                        and p.payload._swingProven ~= true
+                        and p.payload.schoolMask == 1
+                        and p.payload._petRoute ~= true
+                        and not (ZSBT.ClassDB and ZSBT.ClassDB.VetoAuto
+                            and ZSBT.ClassDB.VetoAuto())
+                        and ecF and ecF._swingSupported == true
+                        and ecF.SwingCovers
+                        and ecF:SwingCovers(tonumber(p.t) or 0) then
+                        p.payload._swingProven = true
+                    end
+                    -- Noline rescue eligibility: a proven candidate that
+                    -- survives to its post-retry flush with no own line may
+                    -- emit on cast/swing provenance alone (provenNoLine
+                    -- flag; always-on for Forever's sparse feed). It must
+                    -- also skip the fline gate below — in raid a foreign
+                    -- line is always in-window, which made the rescue
+                    -- unreachable exactly where it is needed.
+                    -- Budget-ordinal theft gate: a wound that took a LATE
+                    -- slot of a shared cast record (AoE budget) cannot
+                    -- rescue — the record was most plausibly drained by
+                    -- foreign hits interleaved in our volley. Early
+                    -- slots stay rescuable: our own hit wave claims
+                    -- first. Verified in raid: every noline leak wore a
+                    -- stolen 8-budget record's name.
+                    local ordBlocked = p.payload and type(p.payload._claimOrd) == "number"
+                        and p.payload._claimOrd > NOLINE_MAX_ORD
+                    local nolineProven = pass == 1 and p._retried == true
+                        and not fsBlocked and not ordBlocked and p.payload
+                        and (p.payload.spellId ~= nil
+                            or p.payload._swingProven == true
+                            or p.payload._swingGuessed == true)
+                        and (provenNoLineEnabled()
+                            or (ZSBT.ClassDB and ZSBT.ClassDB.IsForever
+                                and ZSBT.ClassDB.IsForever()))
+                    -- Cadence-guessed wounds keep a foreign-line check at
+                    -- the narrowed radius instead of skipping the gate:
+                    -- their provenance is a rhythm guess, not a recorded
+                    -- client event, so a same-frame foreign line still
+                    -- vetoes. SpellId/real-swing provenance skips entirely.
+                    local nolineGuessed = nolineProven
+                        and p.payload and p.payload._swingGuessed == true
+                    -- Pet-route wounds: Forever's feed carries no MY_PET
+                    -- lines at all, so a pet hit can never satisfy the line
+                    -- requirement. Treat the route like a cadence guess —
+                    -- the narrowed same-frame foreign check still vetoes a
+                    -- co-attacker's hit, then the pet noline rescue below
+                    -- emits on route provenance alone.
+                    local petNoline = p.payload and p.payload._petRoute == true
+                        and not fsBlocked
+                        and (provenNoLineEnabled()
+                            or (ZSBT.ClassDB and ZSBT.ClassDB.IsForever
+                                and ZSBT.ClassDB.IsForever()))
+                    local lidx
+                    kind = nil
+                    if not fsBlocked then kind, lidx = takeCandidateLine(p.t, window, p.payload) end
+                    if kind and foreignDamageNearer(tonumber(p.t) or 0, lidx) then
+                        -- Borrowed line: this wound's real line was the
+                        -- foreign one at its instant — release the own
+                        -- line so a queued own candidate can claim it,
+                        -- then drop with the usual foreign proof.
+                        ZB._lines[lidx].consumed = false
+                        kind = nil
+                        takeForeignLine(tonumber(p.t) or 0, FOREIGN_WINDOW)
+                        ZB._drops = ZB._drops + 1
+                        ZB:FileLog(("DROP fnear sid=%s school=%s ht=%.3f"):format(tostring(p.payload and p.payload.spellId), tostring(p.payload and p.payload.schoolMask), tonumber(p.t) or 0))
+                        ZB:Audit(("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=fnear"):format(
+                            tonumber(p.t) or 0, pass,
+                            audSafe(p.payload and (p.payload.spellId or p.payload.petSpellId)),
+                            audSafe(p.payload and p.payload.schoolMask),
+                            tostring(p.payload and p.payload.isCrit == true)))
+                    elseif kind then
+                        if ZB._srcMode == true and kind == "direct"
+                            and p.payload and p.payload._petRoute == true then
+                            -- The nearest own line was MINE — this was
+                            -- an own event the pet guess mislabeled (AoE
+                            -- splash past its cast budget). Strip the
+                            -- route and name; it emits as ordinary
+                            -- outgoing damage instead of a named pet hit.
+                            p.payload._petRoute = nil
+                            p.payload.petSpellId = nil
+                            p.payload.petEvidence = nil
+                            p.payload._petSidLearn = nil
+                            ZB:FileLog(("PET_ROUTE_DIRECT ht=%.3f"):format(
+                                tonumber(p.t) or 0))
+                        end
                         ZB._allows = ZB._allows + 1
                         ZB:Audit(("AUDCLAIM tier=%d sid=%s kind=%s"):format(
                             pass,
@@ -1245,30 +1513,36 @@ local function flushPending()
                             tostring(kind)))
                         ZB:FileLog(("ALLOW kind=%s sid=%s"):format(tostring(kind), tostring(p.payload and p.payload.spellId)))
                         deliverOutgoing(p.payload)
-                    elseif takeForeignLine(tonumber(p.t) or 0, FOREIGN_WINDOW) ~= nil then
+                    elseif (not nolineProven or nolineGuessed)
+                        and (claimOrder(p.payload) > 1 or p._retried == true)
+                        and takeForeignLine(tonumber(p.t) or 0,
+                            ((nolineGuessed or petNoline) and NOLINE_FOREIGN_WINDOW) or FOREIGN_WINDOW) ~= nil then
                         -- Negative evidence: a foreign-source line landed
                         -- within the wound's window and no own line
                         -- claimed it — this hit belongs to a co-attacker.
                         -- Drop now instead of burning the retry on a
                         -- wound that can never be proven ours.
                         ZB._drops = ZB._drops + 1
-                        ZB:FileLog(("DROP fline sid=%s"):format(tostring(p.payload and p.payload.spellId)))
+                        ZB:FileLog(("DROP fline sid=%s school=%s ht=%.3f"):format(tostring(p.payload and p.payload.spellId), tostring(p.payload and p.payload.schoolMask), tonumber(p.t) or 0))
                         ZB:Audit(("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=fline"):format(
                             tonumber(p.t) or 0, pass,
                             audSafe(p.payload and (p.payload.spellId or p.payload.petSpellId)),
                             audSafe(p.payload and p.payload.schoolMask),
                             tostring(p.payload and p.payload.isCrit == true)))
                     elseif p.payload and p._retried ~= true then
-                        -- Every candidate gets one retry: feed lines
-                        -- routinely land after the first flush (~0.2s) in
-                        -- grouped content, and a candidate whose line is
-                        -- still in transit dies without ever meeting it.
-                        -- Retail has no PLAYER_SWING so autos can never be
-                        -- swing-proven — without this, first-hit autos were
-                        -- flushed dead before their melee line arrived.
-                        -- A foreign wound produces no MINE lines anyway, so
-                        -- retrying it just delays its drop one cycle.
-                        p._retried = true
+                        -- Every candidate retries while its line could
+                        -- still be in transit: feed lines routinely land
+                        -- after the first flush (~0.2s) in grouped
+                        -- content. Own-proven (cast/swing) candidates get
+                        -- a second cycle — an in-flight nuke's line lags
+                        -- its hit by up to ~0.35s and the cast evidence
+                        -- already outweighs a coincident foreign line;
+                        -- unproven candidates get one (a foreign wound
+                        -- produces no MINE lines, retrying it only delays
+                        -- its drop).
+                        local maxRetries = claimOrder(p.payload) == 1 and 2 or 1
+                        p._retries = (p._retries or 0) + 1
+                        if p._retries >= maxRetries then p._retried = true end
                         requeue = requeue or {}
                         requeue[#requeue + 1] = p
                     elseif p.payload and p.payload.isAuto == true and p.payload.spellId == nil then
@@ -1292,19 +1566,21 @@ local function flushPending()
                             ZB:Audit(("AUDCLAIM tier=%d sid=%s kind=%s rescue=pet"):format(
                                 pass, audSafe(p.payload.petSpellId), tostring(mk)))
                             deliverOutgoing(p.payload)
-                        elseif ZSBT.ClassDB and ZSBT.ClassDB.IsForever
-                            and ZSBT.ClassDB.IsForever() then
+                        elseif provenNoLineEnabled()
+                            or (ZSBT.ClassDB and ZSBT.ClassDB.IsForever
+                                and ZSBT.ClassDB.IsForever()) then
                             -- Forever's feed is incomplete — a proven auto
                             -- whose melee line was stolen by a spell claim
                             -- must still display (same noline rescue as
-                            -- sid-bearing hits below).
+                            -- sid-bearing hits below). Retail joins via the
+                            -- provenNoLine testing flag.
                             ZB._allows = ZB._allows + 1
                             ZB:Audit(("AUDCLAIM tier=%d sid=%s kind=noline auto=1"):format(
                                 pass, audSafe(p.payload.spellId)))
                             deliverOutgoing(p.payload)
                         else
                             ZB._drops = ZB._drops + 1
-                            ZB:FileLog(("DROP sid=%s"):format(tostring(p.payload and p.payload.spellId)))
+                            ZB:FileLog(("DROP sid=%s school=%s ht=%.3f"):format(tostring(p.payload and p.payload.spellId), tostring(p.payload and p.payload.schoolMask), tonumber(p.t) or 0))
                             local dp = p.payload or {}
                             ZB:Audit(("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=%s%s"):format(
                                 tonumber(p.t) or 0, pass, audSafe(dp.spellId), audSafe(dp.schoolMask),
@@ -1317,25 +1593,41 @@ local function flushPending()
                             -- exactly the grouped fights they appear in.
                             if not dp._foreignSchool then sustainedRejection() end
                         end
-                    elseif pass == 1 and p._retried == true and p.payload
-                        and (p.payload.spellId ~= nil or p.payload._swingProven == true)
-                        and ZSBT.ClassDB and ZSBT.ClassDB.IsForever and ZSBT.ClassDB.IsForever() then
+                    elseif petNoline and p._retried == true
+                        and petNolineProven(p.payload, ecF, tonumber(p.t) or 0) then
+                        -- Forever pet rescue: the retry confirmed no MY_PET
+                        -- line is coming (none can exist on this feed) and
+                        -- the narrowed foreign gate found no same-frame
+                        -- co-attacker line — emit on route provenance.
+                        ZB._allows = ZB._allows + 1
+                        ZB:Audit(("AUDCLAIM tier=%d sid=%s kind=noline pet=1"):format(
+                            pass, audSafe(p.payload and p.payload.petSpellId)))
+                        ZB:FileLog(("ALLOW_NOLINE pet=1 psid=%s pev=%s"):format(
+                            tostring(p.payload and p.payload.petSpellId),
+                            tostring(p.payload and p.payload.petEvidence)))
+                        deliverOutgoing(p.payload)
+                    elseif nolineProven then
                         -- Forever's feed is structurally incomplete: some
                         -- player damage (Judgement, seal procs) produces no
                         -- SPELL_DAMAGE/RANGE_DAMAGE at all, so no classified
                         -- line can exist. A consumed cast record is already
                         -- provenance — after the retry confirms no line is
                         -- coming, dropping it only hides a proven own hit.
-                        -- Retail keeps the strict line requirement; its
-                        -- feed is complete.
+                        -- Retail keeps the strict line requirement unless
+                        -- the provenNoLine testing flag opens this rescue:
+                        -- raid line delivery can starve far below the real
+                        -- own-event rate, the same shape as Forever's feed.
                         ZB._allows = ZB._allows + 1
                         ZB:Audit(("AUDCLAIM tier=1 sid=%s kind=noline"):format(
                             audSafe(p.payload.spellId)))
-                        ZB:FileLog(("ALLOW_NOLINE sid=%s"):format(tostring(p.payload.spellId)))
+                        ZB:FileLog(("ALLOW_NOLINE sid=%s swg=%s ord=%s"):format(
+                            tostring(p.payload.spellId),
+                            tostring(p.payload._swingGuessed == true),
+                            tostring(p.payload._claimOrd)))
                         deliverOutgoing(p.payload)
                     else
                         ZB._drops = ZB._drops + 1
-                        ZB:FileLog(("DROP sid=%s"):format(tostring(p.payload and p.payload.spellId)))
+                        ZB:FileLog(("DROP sid=%s school=%s ht=%.3f"):format(tostring(p.payload and p.payload.spellId), tostring(p.payload and p.payload.schoolMask), tonumber(p.t) or 0))
                         local dp = p.payload or {}
                         ZB:Audit(("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=%s%s"):format(
                             tonumber(p.t) or 0, pass, audSafe(dp.spellId), audSafe(dp.schoolMask),
@@ -1505,6 +1797,19 @@ function ZB:AuditDamageEvent(eventType, payload)
         audSafe(p.petEvidence), audSafe(p.targetName), audSafe(p.rawPipeId), audSafe(p.traceId)))
 end
 
+-- TESTING flag (outgoing.damage.arbitrateGenerics): under v2 source mode
+-- an unattributed candidate may queue for line arbitration instead of
+-- dying at the contested gate. Foreign wounds still lose at flush —
+-- fline veto, or the fnear stolen-line release — while own wounds get a
+-- chance to claim their own line. v1 has no foreign evidence to arbitrate
+-- against, so the flag does nothing without _srcMode.
+local function arbitrateGenericsEnabled()
+    if ZB._srcMode ~= true then return false end
+    local prof = ZSBT.db and ZSBT.db.profile
+    local d = prof and prof.outgoing and prof.outgoing.damage
+    return d == nil or d.arbitrateGenerics ~= false
+end
+
 -- Returns true when the caller should emit immediately; false when the
 -- module took ownership (queued for deferred veto, or vetoed).
 function ZB:OfferOutgoing(payload)
@@ -1513,21 +1818,7 @@ function ZB:OfferOutgoing(payload)
     if type(tHit) ~= "number" then return true end
     if vetoDisabledNow() then return true end
 
-    -- Strict toggle (Class page / quick bar): unattributed candidates get
-    -- no line claim and no display while the filter is trusted. This is
-    -- the correctness-first trade — foreign bleed dies entirely, but own
-    -- hits that earned no identity go quiet too. Not a veto rejection:
-    -- it must not feed sustainedRejection.
     if candidateTier(payload) == 2 then
-        local prof = ZSBT.db and ZSBT.db.profile
-        local strictProof = ZSBT.Core and ZSBT.Core.IsRequireProofEnabled
-            and ZSBT.Core:IsRequireProofEnabled() == true
-        if strictProof or (prof and type(prof.classModule) == "table" and prof.classModule.hideUnattributed == true) then
-            ZB:Audit(("AUDSUPP ht=%.3f school=%s crit=%s src=%s"):format(
-                tonumber(tHit) or 0, audSafe(payload.schoolMask), tostring(payload.isCrit == true),
-                tostring(payload._petRoute == true and "pet" or "generic")))
-            return false
-        end
         -- Contested target: the collector detected impossible hit
         -- cadence (a second attacker on our target). Unattributed
         -- candidates from EVERY emit path — off-target nameplates,
@@ -1550,22 +1841,56 @@ function ZB:OfferOutgoing(payload)
             end
         end
         if gateLive then
-            ZB:Audit(("AUDSUPP ht=%.3f school=%s crit=%s src=%s why=%s"):format(
-                tonumber(tHit) or 0, audSafe(payload.schoolMask), tostring(payload.isCrit == true),
-                tostring(payload._petRoute == true and "pet" or "generic"), why))
-            return false
+            if arbitrateGenericsEnabled() then
+                -- TESTING: the candidate queues for arbitration anyway;
+                -- AUDPASS marks suppressions that now reach the queue so
+                -- the audit can measure how many generics arbitration
+                -- recovers versus vetoes.
+                ZB:Audit(("AUDPASS ht=%.3f school=%s crit=%s src=%s why=%s"):format(
+                    tonumber(tHit) or 0, audSafe(payload.schoolMask), tostring(payload.isCrit == true),
+                    tostring(payload._petRoute == true and "pet" or "generic"), why))
+            else
+                ZB:Audit(("AUDSUPP ht=%.3f school=%s crit=%s src=%s why=%s"):format(
+                    tonumber(tHit) or 0, audSafe(payload.schoolMask), tostring(payload.isCrit == true),
+                    tostring(payload._petRoute == true and "pet" or "generic"), why))
+                return false
+            end
         end
     end
 
     -- Fast path: the line is already buffered (CLM arrived first).
-    -- Restricted to tier-1 (sid-bearing) candidates — an unattributed
-    -- generic must defer into the sorted batch so it cannot grab a line
-    -- a proven candidate arriving moments later will need.
+    -- Restricted to rank 1-2 evidence (own cast/swing, pet cast/melee) —
+    -- school+window pet guesses and unattributed generics must defer
+    -- into the sorted batch so they cannot grab a line a proven
+    -- candidate arriving moments later will need.
     -- An auto-attack claim may ONLY be confirmed by a melee/ranged line —
     -- it must not steal a spell line (pet spells produce lines constantly).
-    if candidateTier(payload) == 1 then
-        local fastKind = takeCandidateLine(tHit, VETO_WINDOW, payload)
+    if candidateTier(payload) == 1 and claimOrder(payload) <= 2 then
+        local fastKind, fastIdx = takeCandidateLine(tHit, VETO_WINDOW, payload)
+        if fastKind and foreignDamageNearer(tHit, fastIdx) then
+            -- Borrowed line: a foreign damage line sits strictly nearer
+            -- this wound than the own line it grabbed. Release the line
+            -- and let the deferred pass re-judge — if the hit is really
+            -- ours, its own line lands by flush at ~0ms and nothing
+            -- foreign can sit strictly nearer than that.
+            ZB._lines[fastIdx].consumed = false
+            fastKind = nil
+            ZB:Audit(("AUDREL ht=%.3f tier=1 sid=%s src=fnear"):format(
+                tonumber(tHit) or 0, audSafe(payload.spellId or payload.petSpellId)))
+        end
         if fastKind then
+            if ZB._srcMode == true and fastKind == "direct"
+                and payload._petRoute == true then
+                -- Same nearest-line rule as the deferred flush: a MINE
+                -- line winning means the pet guess mislabeled an own
+                -- event — strip to generic outgoing, not named pet.
+                payload._petRoute = nil
+                payload.petSpellId = nil
+                payload.petEvidence = nil
+                payload._petSidLearn = nil
+                ZB:FileLog(("PET_ROUTE_DIRECT ht=%.3f fast=1"):format(
+                    tonumber(tHit) or 0))
+            end
             ZB._allows = ZB._allows + 1
             payload._vetoConfirmed = true
             ZB:Audit(("AUDCLAIM tier=1 sid=%s kind=%s fast=1"):format(
@@ -1625,6 +1950,34 @@ if not ZB._frame then
         if event == "COMBAT_LOG_MESSAGE" then
             -- args: text(KString, never read), r, g, b, order
             recordLine(a2, a3, a4)
+            -- Probe: is the KString actually readable? If safe, spell names
+            -- in tick lines are a non-secret attribution channel. First 5
+            -- events + every 500th after — the FileLog ring evicts early
+            -- records in long sessions.
+            -- Probe: is the KString actually readable? If safe, spell names
+            -- in tick lines are a non-secret attribution channel. Persisted
+            -- to profile (survives logout) + rings — the audit ring on
+            -- Forever proved FileLog gating alone can hide results.
+            local pn = (ZB._clmsgProbeN or 0) + 1
+            ZB._clmsgProbeN = pn
+            local profP = ZSBT.db and ZSBT.db.profile
+            if profP and pn <= 5 then
+                local safe = ZSBT.IsSafeString and ZSBT.IsSafeString(a1) or false
+                local sample = (safe and type(a1) == "string") and a1:sub(1, 60) or "?"
+                profP._clmsgProbe = ("n=%d type=%s safe=%s txt=%s")
+                    :format(pn, type(a1), tostring(safe), tostring(sample))
+                profP._clmsgProbeN = pn
+            end
+            local tN = GetTime and GetTime() or 0
+            if pn <= 5 or (tN - (ZB._clmsgProbeT or 0)) > 60 then
+                ZB._clmsgProbeT = tN
+                local safe = ZSBT.IsSafeString and ZSBT.IsSafeString(a1) or false
+                local sample = (safe and type(a1) == "string") and a1:sub(1, 60) or "?"
+                ZB:FileLog(("CLMSG_PROBE n=%d type=%s safe=%s txt=%s")
+                    :format(pn, type(a1), tostring(safe), tostring(sample)))
+                ZB:Audit(("CLMSG_PROBE n=%d type=%s safe=%s txt=%s")
+                    :format(pn, type(a1), tostring(safe), tostring(sample)))
+            end
         elseif event == "PLAYER_REGEN_DISABLED" then
             ZB:HookCombatLogWindow()
             keepFeedOn()

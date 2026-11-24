@@ -23,7 +23,12 @@ ZSBT.DEFAULTS = {
             quietOutgoingWhenIdle = false,
             quietOutgoingAutoAttacks = false,
             -- Context-tiered ownership model (veto-live vs veto-dead).
-            requireProof = false,
+            -- deadFeedMode picks the single dead-feed behavior:
+            -- "strict" (proven only) | "relaxed" (unproven flows) |
+            -- "meter" (damage-meter totals). The four keys below are
+            -- kept dormant for migration reads; UI and readers now use
+            -- deadFeedMode.
+            deadFeedMode = "meter",
             showUnprovenInGroups = false,
             pvpRelaxed = false,
 			pvpStrictEnabled = true,
@@ -312,6 +317,13 @@ ZSBT.DEFAULTS = {
                 minThreshold   = 0,
                 showMisses     = true,
                 linePairDelay  = 0.20,
+                -- Unattributed candidates always queue for line
+                -- arbitration (ranked claiming made gate suppression
+                -- redundant); key kept dormant, UI removed.
+                arbitrateGenerics = true,
+                -- TESTING: let cast/swing-proven hits emit without a
+                -- proof line when the retry confirms none is coming.
+                provenNoLine = false,
             },
             healing = {
                 enabled       = true,
@@ -516,3 +528,10 @@ ZSBT.DEFAULTS = {
         },
     },
 }
+
+-- Shared accessor: the shipped default for the dead-feed fallback mode.
+-- Config UI and the quick bar both use this for "Reset to Default".
+function ZSBT._defaultDeadFeedMode()
+    local g = ZSBT.DEFAULTS and ZSBT.DEFAULTS.profile and ZSBT.DEFAULTS.profile.general
+    return (g and g.deadFeedMode) or "meter"
+end

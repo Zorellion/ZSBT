@@ -2807,6 +2807,20 @@ local function ensureHelpPopup()
 	return helpPopup
 end
 
+-- Generic caller for non-help notices that still benefit from the
+-- selectable/scrollable popup body (migration file lists, diagnostics).
+function ZSBT.OpenTextPopup(titleText, body)
+	local frame = ensureHelpPopup()
+	if not frame then return end
+	if helpPopupTitle then
+		helpPopupTitle:SetText(titleText or L["ZSBT"])
+	end
+	if helpPopupEdit then
+		helpPopupEdit:SetText(body or "")
+		helpPopupEdit:ClearFocus()
+	end
+end
+
 function ZSBT.OpenHelpTopicInPopup(topicKey)
 	local topic = HELP_TOPICS[topicKey]
 	if type(topic) ~= "table" then return end

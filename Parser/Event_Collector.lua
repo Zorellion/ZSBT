@@ -72,12 +72,15 @@ local function spellSchoolFits(learned, school)
 end
 
 local castSchoolOk -- fwd decl; real def below
+local auraSpellName -- fwd decl; pet-evidence veto calls it before the real def below
 local consumeBestPendingCast -- fwd decl; emit() calls it before the real def below
+local miwClaim -- fwd decl; emit() calls it before the real def below
 local claimSignature -- fwd decl; emit() calls it before the real def below
 local sigBaseForTrigger -- fwd decl; same reason
 local sigEmpowerForTrigger -- fwd decl; same reason
 local sigSeed -- fwd decl; enqueuePendingCast calls it before the real def below
 local anySwingRecent -- fwd decl; emit() stamps _swingProven before the real def below
+local swingPredictedNear -- fwd decl; emit() stamps _swingGuessed before the real def below
 
 -- Friendly non-player casts (pet slot, imps, guardians) recorded in
 -- _petCasts. A hit claims one of them instead of taking the most recent
@@ -203,13 +206,28 @@ local function SpellFacts(spellId)
 					or lower:find("ranged damage", 1, true) or lower:find("fires several missiles", 1, true)) then
 					school, harms = 1, true
 				end
-				facts = { school = (not multi) and school or nil, damages = harms }
+				facts = { school = (not multi) and school or nil, damages = harms,
+					heals = (lower:find("heals you") or lower:find("heal you")
+						or lower:find("healing you") or lower:find("friendly target"))
+						and true or nil }
 			else
 				facts = { damages = false }
 			end
 		elseif type(C_Spell.RequestLoadSpellData) == "function" then
 			pcall(C_Spell.RequestLoadSpellData, spellId)
 		end
+	end
+	-- Module-declared facts override the tooltip parse: proc spells whose
+	-- descriptions never say "<school> damage" (Infliction of Sorrow:
+	-- "deals 10% of the remaining damage") parse as damages=false and can
+	-- never name their own hits without an explicit entry.
+	local ovr = ZSBT.ClassDB and ZSBT.ClassDB.SpellFactOverride
+		and ZSBT.ClassDB.SpellFactOverride(spellId) or nil
+	if type(ovr) == "table" then
+		facts = facts or {}
+		if ovr.damages ~= nil then facts.damages = ovr.damages end
+		if type(ovr.school) == "number" then facts.school = ovr.school end
+		if ovr.heals ~= nil then facts.heals = ovr.heals end
 	end
 	if facts then spellFactsCache[spellId] = facts end
 	return facts
@@ -225,14 +243,63 @@ castSchoolOk = function(self, spellId, school)
 	if type(spellId) ~= "number" then return true end
 	-- Secret spellIds can't index or compare — permissive, like unknown.
 	if ZSBT.IsSafeNumber and not ZSBT.IsSafeNumber(spellId) then return true end
+	-- Wand sid: Shoot's own spell school reads 0x1 regardless of the
+	-- equipped wand's element, so facts/tooltips cannot prove a wand
+	-- wound's school — but the learned weapon school can. Once known it
+	-- is authoritative: a wound of another school is never this cast's
+	-- shot (an arcane wand's pending record claimed a school-4 Immolate
+	-- tick). Unknown stays permissive — same contract as below.
+	if ZSBT.ClassDB and ZSBT.ClassDB.PreferRangedLine
+		and ZSBT.ClassDB.PreferRangedLine(spellId) then
+		-- Physical boundary holds even before the element learns: no
+		-- ranged-family sid is ever phys (wand shots are elemental,
+		-- Bleak Arrows is shadow) — a school-1 wound is someone's swing.
+		-- Observed: hunter phys wounds (Cobra/Barbed/melee) consuming the
+		-- Bleak record every ~2.4s auto-swing while _wandSchool bootstraps.
+		if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)
+			and school == 1 then return false end
+		local ws = self._wandSchool
+		if type(ws) == "number" and ZSBT.IsSafeNumber
+			and ZSBT.IsSafeNumber(school) then
+			return spellSchoolFits(ws, school)
+		end
+		-- Bootstrap fallback: the learned school from prior claims gates
+		-- while the wand vote is still collecting (permissive if neither).
+		local learned = self._learnedSpellSchool
+			and self._learnedSpellSchool[spellId]
+		if type(learned) == "number" and ZSBT.IsSafeNumber
+			and ZSBT.IsSafeNumber(school) then
+			return spellSchoolFits(learned, school)
+		end
+		return true
+	end
 	-- Forever: UNIT_COMBAT's wound school is unreliable (paladin Holy
 	-- hits arrive as 32), so it can't veto a *player* cast record's own
 	-- school — age-recency matching stays and the palette line proves
 	-- ownership. Pet records keep the check: their ids aren't player
 	-- spells, and school is all that stops an imp's Firebolt record
 	-- from claiming a melee wound.
+	-- The physical boundary still holds even for player casts: a
+	-- school-1 wound is someone's swing — the paladin anomaly was
+	-- magic-vs-magic, never phys-vs-magic — and letting phys wounds eat
+	-- cast records misattributes pet/co-attacker melee (observed:
+	-- Corruption's pending record claimed a school-1 wound). Only a
+	-- declared/learned school vetoes; undeclared keeps the exemption.
 	if ZSBT.ClassDB and ZSBT.ClassDB.IsForever and ZSBT.ClassDB.IsForever()
 		and isPlayerSpellId(spellId) then
+		if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school) and school == 1 then
+			local facts = SpellFacts(spellId)
+			if facts and facts.damages == false then return false end
+			if facts and type(facts.school) == "number" then
+				return spellSchoolFits(facts.school, school)
+			end
+			if ZSBT.ClassDB and ZSBT.ClassDB.DeclaredSchoolFits then
+				local fits = ZSBT.ClassDB.DeclaredSchoolFits(spellId, school)
+				if fits ~= nil then return fits end
+			end
+			local learned = self._learnedSpellSchool and self._learnedSpellSchool[spellId]
+			if learned ~= nil then return spellSchoolFits(learned, school) end
+		end
 		return true
 	end
 	local facts = SpellFacts(spellId)
@@ -285,6 +352,14 @@ local function emit(eventType, payload)
 	-- ambiguous outgoing damage must be corroborated by a palette line.
 	-- Untrusted => OfferOutgoing returns true and nothing changes.
 	if eventType == "OUTGOING_DAMAGE_COMBAT" and payload then
+		-- Budget-claim ordinal for the noline-theft gate: miwClaim sets
+		-- _miwOrd when a wound takes a slot of a shared cast record.
+		-- Stamp and clear so a stale ordinal can never tag a payload
+		-- whose sid came from a different path.
+		if payload.spellId ~= nil and Collector._miwOrd ~= nil then
+			payload._claimOrd = Collector._miwOrd
+		end
+		Collector._miwOrd = nil
 		-- Melee anchor for proc riders: a school-1 wound that actually
 		-- EMITTED as ours (named claim or auto emit) proves a weapon
 		-- attack happened. Stamping at emit time — not wound arrival —
@@ -294,6 +369,30 @@ local function emit(eventType, payload)
 			and (payload.isAuto == true or payload.spellId ~= nil) then
 			Collector._lastPhysWoundAt = payload.timestamp or now()
 		end
+		-- Wand family anchor: a ranged-declared sid emitting proves a
+		-- shot landed. Auto-shoot wounds continue for the whole wand
+		-- session after the activation's single cast record is spent, so
+		-- the last claimed shot re-arms pickWandShot.
+		if payload.spellId ~= nil and ZSBT.ClassDB
+			and ZSBT.ClassDB.PreferRangedLine
+			and ZSBT.ClassDB.PreferRangedLine(payload.spellId) then
+			Collector._wandSid = payload.spellId
+			Collector._wandAt = payload.timestamp or now()
+			-- Wand-element vote: claimed shots teach the school when the
+			-- ranged-slot tooltip can't be read (FCT wandVotes). Only a
+			-- ranged-line-proven claim votes — a pending-cast claim that
+			-- consumed a wrong-school wound would teach the wrong element
+			-- during bootstrap and then gate real shots out.
+			local wm = payload.schoolMask
+			if payload.wandProven == true
+				and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(wm) and wm ~= 1
+				and Collector._wandSchool == nil then
+				local wv = Collector._wandVotes
+				if not wv then wv = {} ; Collector._wandVotes = wv end
+				wv[wm] = (wv[wm] or 0) + 1
+				if wv[wm] >= 2 then Collector._wandSchool = wm end
+			end
+		end
 		-- Last shot for the player's own cast before pet-claiming: nuke
 		-- hits with travel time (HoG/Implosion/Demonbolt) can miss the
 		-- 0.85s candidate window upstream and would otherwise die
@@ -302,6 +401,21 @@ local function emit(eventType, payload)
 		-- that cast's first legitimate outcome.
 		if payload.spellId == nil and payload.schoolMask ~= 1 and payload._petRoute ~= false then
 			local mc = consumeBestPendingCast(Collector, payload.timestamp or now(), nil, 2.0, true, payload.schoolMask)
+			if mc == nil then
+				-- AoE tail: the cast's pending record is already spent on
+				-- another target's hit, but the per-cast class budget may
+				-- still have room. Without this, Implosion/HoG splash hits
+				-- fall through to pet naming and wear a guardian's name
+				-- into the pet scroll.
+				local lastId, lastAt = Collector._lastPlayerSpellId, Collector._lastPlayerSpellAt
+				local t = payload.timestamp or now()
+				if type(lastId) == "number" and type(lastAt) == "number"
+					and (t - lastAt) >= 0 and (t - lastAt) <= 1.5
+					and castSchoolOk(Collector, lastId, payload.schoolMask)
+					and miwClaim(Collector, lastId, lastAt, t, payload.schoolMask) then
+					mc = { spellId = lastId }
+				end
+			end
 			if mc and mc.spellId ~= nil then
 				payload.spellId = mc.spellId
 				payload._sidLearn = true
@@ -416,25 +530,24 @@ local function emit(eventType, payload)
 		-- swing window is backed by the client's own per-swing report —
 		-- stamp it so the veto treats it as proven (fast melee-line claim,
 		-- one retry on a lagging line) instead of a generic tier-2 guess.
+		-- Retail has no swing event — the learned cadence stamps
+		-- _swingGuessed instead, a weaker proven tier gated through a
+		-- narrowed foreign-line check at the noline rescue.
 		if payload.spellId == nil and payload.schoolMask == 1
-			and Collector._swingSupported == true
-			and anySwingRecent(Collector, payload.timestamp or now()) then
-			payload._swingProven = true
-		end
-	end
-	-- Strict toggle also covers direct pet-path emits: PET_DAMAGE_COMBAT
-	-- bypasses the veto queue entirely, so without this check unnamed pet
-	-- hits would display even with hideUnattributed on.
-	if eventType == "PET_DAMAGE_COMBAT" and payload
-		and payload.spellId == nil and payload.petSpellId == nil then
-		local prof = ZSBT.db and ZSBT.db.profile
-		local strictProof = ZSBT.Core and ZSBT.Core.IsRequireProofEnabled
-			and ZSBT.Core:IsRequireProofEnabled() == true
-		if strictProof or (prof and type(prof.classModule) == "table" and prof.classModule.hideUnattributed == true) then
-			auditNote(("AUDSUPP ht=%.3f school=%s crit=%s src=pet"):format(
-				tonumber(payload.timestamp) or 0, tostring(payload.schoolMask),
-				tostring(payload.isCrit == true)))
-			return
+			and payload._petRoute ~= true
+			and not (ZSBT.ClassDB and ZSBT.ClassDB.VetoAuto
+				and ZSBT.ClassDB.VetoAuto()) then
+			-- _petRoute/vetoAuto exclusions: a pet-routed wound is never our
+			-- swing's hit (a ranged report covers all schools for 2.0s —
+			-- warlock pet melee wore _swingProven and died fnear at tier-1),
+			-- and a no-auto class has no swing to prove.
+			if Collector._swingSupported == true
+				and anySwingRecent(Collector, payload.timestamp or now()) then
+				payload._swingProven = true
+			elseif Collector._swingSupported ~= true
+				and swingPredictedNear(Collector, payload.timestamp or now()) then
+				payload._swingGuessed = true
+			end
 		end
 	end
 	if eventType == "OUTGOING_DAMAGE_COMBAT"
@@ -501,11 +614,23 @@ local function emit(eventType, payload)
 	if Collector._sink then
 		auditEmit(sinkType, payload)
 		Collector._sink(sinkType, payload)
+		-- Cadence anchor for the Retail swing predictor: a school-1 sid=nil
+		-- hit reaching the sink is a confirmed own auto (queued candidates
+		-- that die never get here). Pet-routed payloads are excluded —
+		-- pet melee is not our swing.
+		if sinkType == "OUTGOING_DAMAGE_COMBAT" and payload
+			and payload.schoolMask == 1 and payload.spellId == nil
+			and payload._petRoute ~= true then
+			Collector:NoteSwingAnchor(payload.timestamp or now())
+		end
 		-- Hit->display latency for the ucdrop trace: timestamp is the
 		-- UNIT_COMBAT hit time, so dly captures veto defer + merge +
 		-- dispatch cost. Anything above ~0.5s is pipeline, not scroll anim.
 		if ZSBT.ZBattleText and ZSBT.ZBattleText.FileLog and payload and payload.timestamp then
-			ZSBT.ZBattleText:FileLog(("SHOW %s sid=%s dly=%.2f"):format(sinkType, tostring(payload.spellId), now() - payload.timestamp))
+			ZSBT.ZBattleText:FileLog(("SHOW %s sid=%s psid=%s pev=%s ht=%.3f dly=%.2f"):format(
+				sinkType, tostring(payload.spellId), tostring(payload.petSpellId),
+				tostring(payload.petEvidence), tonumber(payload.timestamp) or 0,
+				now() - payload.timestamp))
 		end
 	end
 end
@@ -733,6 +858,7 @@ local function flushBestOutgoing(self, token)
 		rawPipeId = pipeId,
 		spellId = bucket.spellId,
 		_sidLearn = bucket._sidLearn,
+		wandProven = bucket.wandProven,
 		amountSource = "UNIT_COMBAT_BEST",
 		targetName = bucket.targetName,
 		isCrit = bucket.isCrit,
@@ -841,14 +967,14 @@ end
 -- and by applicator casts (Ravage -> Dreadful Wound). _dotAppliedAoe is
 -- deliberately NOT written here — only genuine multi-mob applications
 -- (aoe-flagged casts, aoe-marked applicators) earn that anchor.
-local function seedDotApplication(self, spellId, at)
+local function seedDotApplicationOnUnit(self, spellId, unit, at)
 	self._recentPeriodicSpellAt[spellId] = at
 	self._dotAppliedAt = self._dotAppliedAt or {}
 	self._dotAppliedAt[spellId] = at
 	-- Per-target application map for the disambiguation path:
 	-- tab-dotting needs each mob's own phase anchor, and a wound on
 	-- the current target must not claim a dot applied elsewhere.
-	local tgtName = safeUnitName("target")
+	local tgtName = safeUnitName(unit)
 	-- IsSafeString: safeUnitName returns secrets as-is for
 	-- SetText; they can't be compared or used as map keys.
 	if ZSBT.IsSafeString and ZSBT.IsSafeString(tgtName) then
@@ -862,7 +988,7 @@ local function seedDotApplication(self, spellId, at)
 	-- attribution needs a collision-free mob identity (two
 	-- same-named mobs each holding a dot).
 	if UnitGUID then
-		local okG, g = pcall(UnitGUID, "target")
+		local okG, g = pcall(UnitGUID, unit)
 		if okG and ZSBT.IsSafeString and ZSBT.IsSafeString(g) then
 			local gm = self._dotAppliedGuid
 			if not gm then gm = {} ; self._dotAppliedGuid = gm end
@@ -871,6 +997,33 @@ local function seedDotApplication(self, spellId, at)
 			sm[g] = at
 		end
 	end
+end
+
+local function seedDotApplication(self, spellId, at)
+	-- A SENT-bound target outranks "target": the press-time recipient is
+	-- the real application mob even if the player re-targeted mid-cast.
+	if self._lastCastTargetAt == at
+		and ZSBT.IsSafeString and ZSBT.IsSafeString(self._lastCastTargetName) then
+		local tn = self._lastCastTargetName
+		self._recentPeriodicSpellAt[spellId] = at
+		self._dotAppliedAt = self._dotAppliedAt or {}
+		self._dotAppliedAt[spellId] = at
+		local map = self._dotAppliedTarget
+		if not map then map = {} ; self._dotAppliedTarget = map end
+		local sm = map[spellId]
+		if not sm then sm = {} ; map[spellId] = sm end
+		sm[tn] = at
+		local tg = self._lastCastTargetGuid
+		if ZSBT.IsSafeString and ZSBT.IsSafeString(tg) then
+			local gm = self._dotAppliedGuid
+			if not gm then gm = {} ; self._dotAppliedGuid = gm end
+			local sg = gm[spellId]
+			if not sg then sg = {} ; gm[spellId] = sg end
+			sg[tg] = at
+		end
+		return
+	end
+	seedDotApplicationOnUnit(self, spellId, "target", at)
 end
 
 local isPlayerClassTag
@@ -980,20 +1133,43 @@ local function dotTickInterval(spellId, entry)
 	local sb = ZSBT.Spellbook
 	local rec = sb and sb.Entry and sb:Entry(spellId) or nil
 	if rec and type(rec.interval) == "number" and rec.interval > 0 then
-		return rec.interval
+		return rec.interval, true
 	end
 	if entry and type(entry.interval) == "number" and entry.interval > 0 then
-		return entry.interval
+		return entry.interval, true
 	end
 	-- Channel-owned sids: the module's channel interval is the tick period
 	-- (era drains tick at 1s; a 2.0 default would reject real ticks).
 	if ZSBT.ClassDB and ZSBT.ClassDB.ChannelMatch then
 		local ch = ZSBT.ClassDB.ChannelMatch(spellId)
 		if ch and type(ch.interval) == "number" and ch.interval > 0 then
-			return ch.interval
+			return ch.interval, true
 		end
 	end
-	return DOT_DEFAULT_TICK_INTERVAL
+	return DOT_DEFAULT_TICK_INTERVAL, false
+end
+
+-- Learned periods (rec.period / persisted learnedDotPeriods) only refine
+-- declared data — they may never replace it outright. A poisoned value
+-- (one bad first gap births rec.period; every real gap then fails the
+-- refine window, sealing the error and persisting it across sessions —
+-- Corruption stuck at 1.994 vs its true 3.0, ratio 0.66) is detected by
+-- bounding the learned value to 0.7-1.4x the declared interval: the band
+-- covers haste-class drift but not a half-rate poison. Untrusted defaults
+-- (no declared source) don't bound: learning is all those sids have.
+local function boundedDotPeriod(self, spellId, entry)
+	entry = entry or dotEntryForSpellId(spellId)
+	local decl, trusted = dotTickInterval(spellId, entry)
+	local st = self._dotTickState
+	local rec = type(st) == "table" and st[spellId] or nil
+	local prof = ZSBT.db and ZSBT.db.profile
+	local learned = (rec and type(rec.period) == "number" and rec.period > 0 and rec.period)
+		or (prof and prof.learnedDotPeriods and prof.learnedDotPeriods[spellId])
+	if type(learned) == "number" and learned > 0
+		and (not trusted or (learned >= decl * 0.7 and learned <= decl * 1.4)) then
+		return learned
+	end
+	return decl
 end
 
 local function dotCadenceOk(self, t, spellId)
@@ -1054,12 +1230,9 @@ local function dotCadencePredict(self, t, spellId, appliedAtOverride)
 	local entry = dotEntryForSpellId(spellId)
 	local st = self._dotTickState
 	local rec = (type(st) == "table") and st[spellId] or nil
-	-- Learned period (confirmed tick gaps) outranks book/module/2.0 —
-	-- the model adapts to what this client actually schedules.
-	local prof = ZSBT.db and ZSBT.db.profile
-	local learnedPer = (rec and type(rec.period) == "number" and rec.period > 0 and rec.period)
-		or (prof and prof.learnedDotPeriods and prof.learnedDotPeriods[spellId])
-	local iv = learnedPer or dotTickInterval(spellId, entry)
+	-- Learned period refines the declared interval within a sanity band —
+	-- never replaces it (boundedDotPeriod rejects poisoned values).
+	local iv = boundedDotPeriod(self, spellId, entry)
 	local jitter = 0.45
 	-- Three timing anchors, any is sufficient: phase-lock from the cast
 	-- (per-target when a name key exists), OR distance from the last
@@ -1442,6 +1615,19 @@ local function resolveOffTargetDot(self, unit, t, school)
 	local un = safeUnitName(unit)
 	if ZSBT.IsSafeString and ZSBT.IsSafeString(un) then n = un end
 	if g == nil and n == nil then return nil end
+	-- Can't-be evidence: a direct/melee/ranged/shield palette line near
+	-- the wound means a direct hit, never a periodic tick — no dot may
+	-- claim it. Peeked only when no tick line exists (both present =
+	-- ambiguous environment; cadence decides instead). Direct hits like
+	-- Blood Mist procs and cleave waves were wearing dot names without
+	-- this veto.
+	local zbtVeto = ZSBT.ZBattleText
+	if zbtVeto and zbtVeto.PeekDamageLine
+		and zbtVeto:PeekDamageLine(t, 0.30, { tick = true }) == nil
+		and zbtVeto:PeekDamageLine(t, 0.30,
+			{ direct = true, melee = true, ranged = true, shield = true }) ~= nil then
+		return nil
+	end
 	local best, bestDist = nil, nil
 	local seen = nil
 	local function consider(sid, at)
@@ -1563,19 +1749,245 @@ local function isLikelyPetPhysicalHit(school)
 	return false
 end
 
--- PLAYER_SWING gives a public per-swing report (melee/ranged) on 12.x.
--- A melee hit lands ~0.45s after its swing; ranged shots fly up to ~2s
--- (FCT measured values).
-local SWING_HIT_WINDOW, RANGED_HIT_WINDOW = 0.9, 2.0
+-- PLAYER_SWING gives a public per-swing report (melee/ranged) — Forever
+-- client only; the event does not exist on Retail. FCT-measured model
+-- (ported from MSBT's Mine.lua): a melee hit lands ~0.45s after its
+-- swing report; ranged shots fly 0.05-2.0s (forward only — a shot never
+-- claims a hit that preceded the report). The lag is learned PER HAND —
+-- a dual wielder's two weapons land after different delays — from wounds
+-- emitted inside the pairing window (NoteSwingAnchor). Before 3 samples
+-- per hand the window is the recorded range [0.25, 0.9]; afterwards it
+-- tightens to lag-0.10 .. lag+0.15 so a teammate's blow landing just
+-- after our swing can't take our swing's slot. Variable hands keep the
+-- wide range. A hit may also arrive one extra animation late (measured
+-- 0.98-1.31s on a rogue): a second window at lag+[0.25, 0.9] covers it
+-- and never teaches. Finally the report may FOLLOW its wound by up to
+-- 0.35s — ZBattleText's flush re-tests queued wounds retroactively.
+local SWING_LAG_SAMPLES = 9
+local SWING_MIN_LAG, SWING_MAX_LAG = 0.25, 0.9
+local SWING_EARLY, SWING_LATE = 0.10, 0.15
+local SWING_DELAYED_FROM, SWING_DELAYED_TO = 0.25, 0.9
+local SWING_USUAL_DELAY = 0.45
+local SWING_LATE_SWING = 0.35
+local RANGED_HIT_WINDOW = 2.0
+
+local _swingHands
+local function swingHandName(swingType)
+	-- Forever passes numeric Enum.PlayerSwingType; accept strings too.
+	if type(swingType) == "string" and swingType ~= "" then return swingType end
+	if not _swingHands then
+		_swingHands = {}
+		local kinds = Enum and Enum.PlayerSwingType
+		if kinds then
+			if kinds.MainHand then _swingHands[kinds.MainHand] = "main" end
+			if kinds.OffHand then _swingHands[kinds.OffHand] = "off" end
+			if kinds.Ranged then _swingHands[kinds.Ranged] = "ranged" end
+		end
+	end
+	return _swingHands[swingType]
+end
+
+local function swingMedianLag(lags)
+	if type(lags) ~= "table" or #lags < 3 then return nil end
+	local sorted = {}
+	for i = 1, #lags do sorted[i] = lags[i] end
+	table.sort(sorted)
+	return sorted[math.floor((#sorted + 1) / 2)]
+end
+
+local function meleeLagWindow(self, hand)
+	local lags = self._swingLags and self._swingLags[hand]
+	local lag = swingMedianLag(lags)
+	if not lag then return SWING_MIN_LAG, SWING_MAX_LAG, SWING_USUAL_DELAY end
+	local early = math.max(0.05, lag - SWING_EARLY)
+	local late = lag + SWING_LATE
+	for _, d in ipairs(lags) do
+		if d < early or d > late then
+			return math.min(SWING_MIN_LAG, early), math.max(SWING_MAX_LAG, late), lag
+		end
+	end
+	return early, late, lag
+end
+
 anySwingRecent = function(self, t)
 	local sw = self._swingAt
 	if type(sw) ~= "table" then return false end
 	for hand, at in pairs(sw) do
-		local w = (hand == "ranged" or hand == "RANGED") and RANGED_HIT_WINDOW or SWING_HIT_WINDOW
 		local dt = t - at
-		if dt >= 0 and dt <= w then return true end
+		if hand == "ranged" or hand == "RANGED" then
+			if dt >= 0.05 and dt <= RANGED_HIT_WINDOW then return true end
+		elseif dt < 0 then
+			if dt >= -SWING_LATE_SWING then return true end
+		else
+			local early, late, lag = meleeLagWindow(self, hand)
+			if (dt >= early and dt <= late)
+				or (dt >= lag + SWING_DELAYED_FROM
+					and dt <= lag + SWING_DELAYED_TO) then
+				return true
+			end
+		end
 	end
 	return false
+end
+
+-- Public for ZBattleText's flush-time late-swing upgrade: a queued wound's
+-- swing may arrive between emit and flush (negative dt above).
+function Collector:SwingCovers(t)
+	return anySwingRecent(self, t)
+end
+
+-- Retail swing cadence: with no per-swing event, learn our own auto
+-- rhythm instead. Every school-1 sid=nil wound that EMITS as ours is a
+-- confirmed auto anchor; the median anchor gap is the swing interval;
+-- wounds within slack of a predicted tick are swing-plausible and get
+-- _swingGuessed — a weaker proven tier that reaches the noline rescue
+-- only through a narrowed foreign-line gate (a foreign wound's own
+-- line arrives same-frame, so a tight window still vetoes it).
+-- Anchors come from emitted shows only, never bare wounds — a
+-- co-attacker's swing can never seed the model.
+local SWING_GUESS_MAX_ANCHORS = 12
+local SWING_GUESS_MIN_GAP, SWING_GUESS_MAX_GAP = 0.4, 5.0
+local SWING_GUESS_HORIZON_TICKS = 2.5
+local SWING_GUESS_SLACK_FRAC, SWING_GUESS_SLACK_MAX = 0.30, 0.35
+
+function Collector:NoteSwingAnchor(t)
+	if type(t) ~= "number" then return end
+	-- Forever path: pair the emitted wound with the melee swing whose
+	-- window it fell inside and learn that hand's lag (median of up to
+	-- SWING_LAG_SAMPLES). In-window hits only — a delayed-window hit
+	-- never teaches, and a wound fitting both hands pairs to the
+	-- nearer report. An emitted wound that fits NO window teaches
+	-- nothing (it was a proc, not a swing's hit).
+	if self._swingSupported == true then
+		local sw = self._swingAt
+		if type(sw) == "table" then
+			local bestHand, bestDt = nil, nil
+			for hand, at in pairs(sw) do
+				if hand ~= "ranged" and hand ~= "RANGED" then
+					local dt = t - at
+					local early, late = meleeLagWindow(self, hand)
+					if dt >= early and dt <= late
+						and (bestDt == nil or dt < bestDt) then
+						bestHand, bestDt = hand, dt
+					end
+				end
+			end
+			if bestHand then
+				self._swingLags = self._swingLags or {}
+				local lags = self._swingLags[bestHand]
+				if type(lags) ~= "table" then
+					lags = {}
+					self._swingLags[bestHand] = lags
+				end
+				lags[#lags + 1] = bestDt
+				while #lags > SWING_LAG_SAMPLES do table.remove(lags, 1) end
+			end
+		end
+		return
+	end
+	local L = self._swingLearn
+	if type(L) ~= "table" then
+		L = { anchors = {} }
+		self._swingLearn = L
+	end
+	local a = L.anchors
+	a[#a + 1] = t
+	if #a > SWING_GUESS_MAX_ANCHORS then table.remove(a, 1) end
+	local gaps = {}
+	for i = math.max(2, #a - 8), #a do
+		local g = a[i] - a[i - 1]
+		if g >= SWING_GUESS_MIN_GAP and g <= SWING_GUESS_MAX_GAP then
+			gaps[#gaps + 1] = g
+		end
+	end
+	if #gaps >= 2 then
+		-- Harmonic voting: sparse anchors produce gaps that are
+		-- multiples of the true interval (a missed show every other
+		-- beat), so a bare median learns a double interval. Each gap
+		-- votes for itself and its /2, /3 divisors — the true root
+		-- collects votes from every multiple; a double interval only
+		-- collects its own. Measured need: 35 anchors in 155s never
+		-- locked a ~1.3s fury cadence under the median.
+		local votes = {}
+		for _, g in ipairs(gaps) do
+			for d = 1, 3 do
+				local iv = g / d
+				if iv >= SWING_GUESS_MIN_GAP then
+					local merged = false
+					for _, v in ipairs(votes) do
+						if math.abs(v.iv - iv) <= 0.15 then
+							v.n = v.n + 1
+							v.iv = (v.iv * (v.n - 1) + iv) / v.n
+							merged = true
+							break
+						end
+					end
+					if not merged then
+						votes[#votes + 1] = { iv = iv, n = 1 }
+					end
+				end
+			end
+		end
+		local best = nil
+		for _, v in ipairs(votes) do
+			if not best or v.n > best.n then best = v end
+		end
+		if best then L.interval = best.iv end
+	end
+	-- Refresh the horizon on every anchor whenever an interval exists —
+	-- a UnitAttackSpeed-seeded interval engages prediction from the
+	-- first anchor instead of waiting for a second emitted gap.
+	if type(L.interval) == "number" then
+		L.horizon = t + L.interval * SWING_GUESS_HORIZON_TICKS
+	end
+end
+
+swingPredictedNear = function(self, t, slackMul)
+	local L = self._swingLearn
+	if type(L) ~= "table" then
+		L = { anchors = {} }
+		self._swingLearn = L
+	end
+	-- Cold-start seed: before emitted anchors teach the cadence, fall
+	-- back to the weapon speed when the client exposes it (returns
+	-- secret in combat on some builds — the IsSafeNumber gate skips it
+	-- there). Retry on a throttle rather than burning one attempt: a
+	-- build that answers out of combat or after a haste shift still
+	-- gets seeded. Dual wield seeds the combined rate (hits land ~at
+	-- 1/(1/mh + 1/oh)); a single speed under-predicts rather than
+	-- over-predicts, which is the safe miss direction. Learned anchor
+	-- gaps overwrite the seed the moment two shows land.
+	if type(L.interval) ~= "number" and t - (L.seedTryAt or 0) > 5 then
+		L.seedTryAt = t
+		if UnitAttackSpeed then
+			local okS, mh, oh = pcall(UnitAttackSpeed, "player")
+			if okS and ZSBT.IsSafeNumber then
+				local iv = nil
+				if ZSBT.IsSafeNumber(mh) and mh > 0 then
+					iv = mh
+					if ZSBT.IsSafeNumber(oh) and oh > 0 then
+						iv = 1 / (1 / mh + 1 / oh)
+					end
+				end
+				if iv then
+					L.interval = math.max(SWING_GUESS_MIN_GAP,
+						math.min(SWING_GUESS_MAX_GAP, iv))
+				end
+			end
+		end
+	end
+	if type(L.interval) ~= "number" then return false end
+	if type(L.horizon) ~= "number" or t > L.horizon then return false end
+	local last = L.anchors[#L.anchors]
+	if type(last) ~= "number" then return false end
+	local k = math.floor((t - last) / L.interval + 0.5)
+	if k < -1 or k > math.ceil(SWING_GUESS_HORIZON_TICKS) then return false end
+	-- slackMul shrinks the beat window for precision-sensitive callers:
+	-- the phys claim gate passes ~0.35 (real swings land ±~0.05s of the
+	-- predicted beat; a wide window eats ability hits that merely
+	-- coincide). Classifier vetoes use the default (recall-friendly).
+	local slack = math.min(SWING_GUESS_SLACK_MAX, L.interval * SWING_GUESS_SLACK_FRAC) * (slackMul or 1)
+	return math.abs(t - (last + k * L.interval)) <= slack
 end
 
 -- true when a player swing plausibly produced this hit. When PLAYER_SWING
@@ -1618,9 +2030,10 @@ local function autoContestWindow(self)
 end
 
 local function autoContested(self, t, feed)
-	local prof = ZSBT.db and ZSBT.db.profile
-	local dmg = prof and prof.outgoing and prof.outgoing.damage
-	if dmg and dmg.hideAutoContested == false then return false end
+	-- Always-on: the detector arms the contested gate and suppresses
+	-- unattributed auto wounds when a second attacker cadence shows.
+	-- The former hideAutoContested toggle had wider scope than its name
+	-- implied and was removed from the UI; db key is dormant.
 	-- Deferred-evidence pump: a wound with no MINE line at eval time is
 	-- queued (~0.15s) before it can count as attacker evidence — the
 	-- wound's own line frequently lands a frame or two late. On recheck,
@@ -1766,6 +2179,45 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 				{ direct = true, melee = true, ranged = true, shield = true })
 		end
 	end
+	-- Wand veto: while a wand family is live a RANGED line near the
+	-- wound is the client's proof a shot fired — such a wound is never a
+	-- dot tick (the derived NOT: ranged line => not-periodic). A tick
+	-- line still wins a same-instant collision (real tick + real shot).
+	-- includeConsumed: the shot's own claim may have eaten the line.
+	if tickLine == nil and self._wandSid ~= nil and zbt and zbt.PeekDamageLine
+		and zbt:PeekDamageLine(t, 0.35, { ranged = true }, true) ~= nil then
+		return nil
+	end
+	-- Drain co-heal evidence: entries flagging drains damage AND heal
+	-- each tick, so a heal line co-timed with the wound is the client's
+	-- own proof a drain fired. Two provenance channels: a heal LINE in
+	-- the buffer, or a self-sourced COMBAT_TEXT_UPDATE heal (healer name
+	-- readable on Forever). Bonus-only in scoring — absence is never
+	-- penalized because suppression behavior is unverified.
+	local healLine = nil
+	if zbt and zbt.PeekHealLine then
+		healLine = zbt:PeekHealLine(t, 0.35, nil)
+	end
+	if healLine == nil and type(self._drainHealAt) == "number"
+		and (t - self._drainHealAt) >= 0 and (t - self._drainHealAt) <= 0.5 then
+		healLine = "ctheal"
+	end
+	-- Amount-matched leech (FCT Leech()): a self-heal for EXACTLY the wound
+	-- amount in the same moment is proof-positive a drain fired — an
+	-- unrelated heal can't fake the equality. nil = unproven (suppression
+	-- means absence is never trusted), true = proven.
+	local leech = nil
+	local ph = self._playerHeals
+	if type(ph) == "table" and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(amount) then
+		for i = #ph, 1, -1 do
+			local h = ph[i]
+			if (t - h.at) > 0.5 then break end
+			if h.amount == amount and math.abs(h.at - t) <= 0.06 then
+				leech = true
+				break
+			end
+		end
+	end
 	local pick, count = nil, 0
 	-- Survivor pool + scores for the scored race (reused tables — no
 	-- per-wound allocation).
@@ -1773,16 +2225,40 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 	if pool then wipe(pool) else pool = {} ; self._disambigPool = pool end
 	local scores = self._disambigScores
 	if scores then wipe(scores) else scores = {} ; self._disambigScores = scores end
-	local rejNoEntry, rejSchool, rejCadence, rejChan, rejTarget, rejRescued, scanned = 0, 0, 0, 0, 0, 0, 0
+	-- Entry-level dedup: two sids resolving to one dot entry (a cast sid
+	-- plus the aura-reported rank sid, or rank variants) are ONE dot —
+	-- pooling both manufactures a same-entry near-tie and kills the
+	-- claim. Keep the better score.
+	local entIdx = self._disambigEntIdx
+	if entIdx then wipe(entIdx) else entIdx = {} ; self._disambigEntIdx = entIdx end
+	local debuffPick, debuffCount = nil, 0
+	local function addCand(sid, entry, sc, debOk)
+		local prev = entry and entIdx[entry] or nil
+		if prev then
+			if sc < scores[prev] then
+				pool[prev] = sid
+				scores[prev] = sc
+				if debOk then debuffPick = sid end
+			end
+			return
+		end
+		count = count + 1
+		pool[count] = sid
+		scores[count] = sc
+		if entry then entIdx[entry] = count end
+		if debOk then
+			debuffPick = sid
+			debuffCount = debuffCount + 1
+		end
+	end
+	local rejNoEntry, rejSchool, rejCadence, rejChan, rejTarget, rejRescued, rejIsNot, scanned = 0, 0, 0, 0, 0, 0, 0, 0
 	-- Target-debuff presence is a TIEBREAKER, not a gate: era aura APIs
 	-- may not expose the data at all, and multi-target DoTing means a real
 	-- tick from another mob arrives while this target lacks the debuff.
 	-- School + cadence phase-lock is the proof; the aura check only
 	-- disambiguates when several candidates survive.
-	local debuffPick, debuffCount = nil, 0
 	local prof = ZSBT.db and ZSBT.db.profile
 	local learnedAm = type(prof) == "table" and prof.learnedTickAmounts or nil
-	local learnedPer = type(prof) == "table" and prof.learnedDotPeriods or nil
 	-- Score a gated survivor: predicted-beat proximity + amount fit vs the
 	-- learned EMA → persisted amount → tooltip-derived expected tick.
 	-- Lower is better; ~0.5/leg when that evidence is unavailable.
@@ -1800,8 +2276,7 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 		local ref = self._dotTickAmounts and self._dotTickAmounts[sid]
 		if not ref and learnedAm then ref = learnedAm[sid] end
 		if not ref then
-			local iv = (rec and rec.period) or (learnedPer and learnedPer[sid])
-				or dotTickInterval(sid, entry)
+			local iv = boundedDotPeriod(self, sid, entry)
 			local sb = ZSBT.Spellbook
 			local sbRec = sb and sb.Entry and sb:Entry(sid)
 			if sbRec and type(sbRec.dotTotal) == "number" and type(sbRec.dotDur) == "number"
@@ -1814,6 +2289,17 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 			score = score + math.min(1, math.abs(cmp - ref) / ref)
 		else
 			score = score + 0.5
+		end
+		-- drains evidence, two strengths (FCT's `drains ~= leech` rule):
+		-- amount-matched leech is proof a drain fired — drains entries get
+		-- the bonus AND non-drains take the penalty (a wound carrying its
+		-- own heal is never honestly a non-drain's tick). A bare co-timed
+		-- heal line stays bonus-only: full-overheal suppression means its
+		-- absence must never count against a non-drain.
+		if leech == true then
+			score = score + ((entry and entry.drains == true) and -0.40 or 1.0)
+		elseif entry and entry.drains == true and healLine ~= nil then
+			score = score - 0.40
 		end
 		return score
 	end
@@ -1837,6 +2323,28 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 				-- same-school dot steal it. Falls through to the pet path.
 				rejSchool = rejSchool + 1
 			else
+				-- IS NOT vetoes: positive contradiction excludes the
+				-- candidate outright — a spell is only what it is, it does
+				-- not out-score what it is not. Leech proves a drain fired
+				-- (a wound carrying its own exact-amount self-heal cannot
+				-- be a non-drain's tick). Session-learned tick amounts
+				-- prove a different dot (a 60-hit wound is never a 28-tick
+				-- spell); persisted amounts only score, never veto — they
+				-- predate the learner-trust gate. Bands stay wide: partial
+				-- resists (25/50/75%) must not veto a real tick.
+				local notCand = nil
+				if leech == true and entry.drains ~= true then
+					notCand = true
+				else
+					local refAm = self._dotTickAmounts and self._dotTickAmounts[sid]
+					if type(refAm) == "number" and refAm > 0
+						and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(amount) then
+						local cmp = (isCrit == true) and (amount * 0.5) or amount
+						if cmp > refAm * 1.6 or cmp < refAm * 0.4 then
+							notCand = true
+						end
+					end
+				end
 				-- Per-target scoping: a wound on the current target may
 				-- only claim a dot applied to that mob. Unknown names are
 				-- permissive (CombatText wounds carry no target).
@@ -1859,7 +2367,9 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 						end
 					end
 				end
-				if not tgtOk then
+				if notCand then
+					rejIsNot = rejIsNot + 1
+				elseif not tgtOk then
 					rejTarget = rejTarget + 1
 				elseif not dotCadencePredict(self, t, sid, appliedOv) then
 					-- A typed "tick" line with no competing direct line is
@@ -1867,21 +2377,38 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 					-- rescue the candidate at a score penalty. Real ticks
 					-- that wandered off-schedule recover their names.
 					if tickLine ~= nil then
-						count = count + 1
-						pool[count] = sid
-						scores[count] = candidateScore(sid, entry) + 0.4
+						addCand(sid, entry, candidateScore(sid, entry) + 0.4, false)
 						rejRescued = (rejRescued or 0) + 1
 					else
 						rejCadence = rejCadence + 1
+						-- Anchor dump: which timing anchor failed — appliedAt
+						-- phase, predicted nextAt, or last confirmed tick.
+						if auditNote then
+							local rc = self._dotTickState and self._dotTickState[sid]
+							auditNote(("AUDCAD sid=%s applied=%s next=%s last=%s per=%s"):format(
+								dbgSafe(sid),
+								dbgSafe(appliedOv or (self._dotAppliedAt and self._dotAppliedAt[sid])),
+								dbgSafe(rc and rc.nextAt), dbgSafe(rc and rc.lastAt),
+								dbgSafe(rc and rc.period)))
+						end
 					end
 				else
-					count = count + 1
-					pool[count] = sid
-					scores[count] = candidateScore(sid, entry)
-					if cachedHasTargetDebuffSpellId(sid) then
-						debuffPick = sid
-						debuffCount = debuffCount + 1
+					-- Name-keyed debuff sightings (era): the aura poll saw
+					-- this entry's declared name on the current target —
+					-- the sid-keyed read can't see name-primary entries.
+					local namePass = false
+					local nd = self._nameDebuffAt
+					if type(nd) == "table" and type(entry.names) == "table" then
+						for _, nm in ipairs(entry.names) do
+							local at = nd[nm]
+							if type(at) == "number" and (t - at) >= 0 and (t - at) <= 2.0 then
+								namePass = true
+								break
+							end
+						end
 					end
+					addCand(sid, entry, candidateScore(sid, entry),
+						namePass or cachedHasTargetDebuffSpellId(sid))
 				end
 			end
 		end
@@ -1922,15 +2449,35 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 					phaseOk = dt >= (iv * 0.7) and dt <= (iv * 1.45)
 				end
 			end
-			if phaseOk or (tickLine ~= nil and chSchoolOk) then
-				count = count + 1
-				pool[count] = ch.spellId
-				scores[count] = candidateScore(ch.spellId, nil)
-					+ (phaseOk and 0 or 0.4)
-				if cachedHasTargetDebuffSpellId(ch.spellId) then
-					debuffPick = ch.spellId
-					debuffCount = debuffCount + 1
+			-- Same IS NOT vetoes as the dot path: a leech-proven wound is
+			-- never a non-drain channel's tick, and a session-learned tick
+			-- amount far off the wound excludes the channel too.
+			local chNot = nil
+			if leech == true and ch.drains ~= true then
+				chNot = true
+			else
+				local refAm = self._dotTickAmounts and self._dotTickAmounts[ch.spellId]
+				if type(refAm) == "number" and refAm > 0
+					and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(amount) then
+					local cmp = (isCrit == true) and (amount * 0.5) or amount
+					if cmp > refAm * 1.6 or cmp < refAm * 0.4 then
+						chNot = true
+					end
 				end
+			end
+			if chNot then
+				rejIsNot = rejIsNot + 1
+			elseif phaseOk or (tickLine ~= nil and chSchoolOk) then
+				-- Pass a drains-bearing pseudo-entry so candidateScore's own
+				-- leech/healLine terms judge the channel correctly (entry=nil
+				-- was scored as non-drains, penalizing the proven drain).
+				local chEnt = self._disambigChEntry
+				if chEnt then chEnt.drains = ch.drains
+				else chEnt = { drains = ch.drains } ; self._disambigChEntry = chEnt end
+				addCand(ch.spellId, chEnt,
+					candidateScore(ch.spellId, chEnt)
+						+ (phaseOk and 0 or 0.4),
+					cachedHasTargetDebuffSpellId(ch.spellId))
 			else
 				rejCadence = rejCadence + 1
 			end
@@ -1973,17 +2520,35 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 	if ret ~= nil and type(ch) == "table" and ret == ch.spellId then
 		ch.lastTickAt = t
 	end
+	-- Learner trust (FCT Trust applied to the learner): a pick backed by
+	-- evidence independent of learned state may teach — an aura/debuff
+	-- tiebreak, a live channel's own ticks, or a sole survivor that was
+	-- rescued by the client's typed tick line. Sole-survivor guesses and
+	-- score-margin wins emit but never teach: their evidence derives from
+	-- learned features, so a wrong pick would poison exactly what the next
+	-- pick scores on — and the poison defends itself (the
+	-- Corruption-learned-1.994 loop).
+	self._dotPickTeach = ret ~= nil and (
+		retWhy == "debuff"
+		or (type(ch) == "table" and ret == ch.spellId)
+		or (count == 1 and (rejRescued or 0) > 0)) or nil
 	if auditNote then
-		auditNote(("AUDD reason=DOTDISAMBIG scan=%s surv=%s ret=%s why=%s debuffpass=%s pet=%s line=%s rescued=%s noentry=%s school=%s chan=%s tgt=%s cadence=%s")
+		auditNote(("AUDD reason=DOTDISAMBIG scan=%s surv=%s ret=%s why=%s debuffpass=%s pet=%s line=%s heal=%s wand=%s rescued=%s noentry=%s school=%s chan=%s tgt=%s cadence=%s isnot=%s teach=%s")
 			:format(dbgSafe(scanned), dbgSafe(count), dbgSafe(ret), dbgSafe(retWhy), dbgSafe(debuffCount),
 				dbgSafe(pendingPet), dbgSafe(tickLine and "tick" or (directLine and "direct" or nil)),
+				dbgSafe(leech and "leech" or healLine), dbgSafe(self._wandSid),
 				dbgSafe(rejRescued), dbgSafe(rejNoEntry), dbgSafe(rejSchool), dbgSafe(rejChan),
-				dbgSafe(rejTarget), dbgSafe(rejCadence)))
+				dbgSafe(rejTarget), dbgSafe(rejCadence), dbgSafe(rejIsNot), dbgSafe(self._dotPickTeach)))
 	end
 	return ret
 end
 
 local function pickDotForWound(self, t, school, amount, isCrit)
+	-- Learner-trust flag for the claim path: only a pick carrying evidence
+	-- independent of learned state may teach. Cleared here so the module
+	-- and recency-fallback paths leave it nil — a guess must never write
+	-- the learned features it will be scored against next wound.
+	self._dotPickTeach = nil
 	-- A module shipping its own physical-wound classifier owns school-1
 	-- dot naming (Warrior: Rend classifier + Ravager window — its docs
 	-- keep every other physical bleed generic by design). The generic
@@ -2031,6 +2596,124 @@ local function pickProcRider(self, t, school)
 	return nil
 end
 
+-- Your wand's element, read off the ranged slot's tooltip damage line
+-- ("33 - 62 Fire Damage", or bare "N - N Damage" for physical) — FCT's
+-- ReadWandSchool, English-client pattern only. Re-read on equipment
+-- change; when unreadable the claimed-shot vote learns it instead.
+local WAND_SCHOOL_WORDS = {
+	holy = 2, fire = 4, nature = 8, frost = 16, shadow = 32, arcane = 64,
+}
+local function readWandSchool()
+	if not (C_TooltipInfo and C_TooltipInfo.GetInventoryItem) then return nil end
+	local ok, data = pcall(C_TooltipInfo.GetInventoryItem, "player", 18)
+	if not ok or type(data) ~= "table" or type(data.lines) ~= "table" then return nil end
+	for i = 1, math.min(#data.lines, 30) do
+		local lt = data.lines[i] and data.lines[i].leftText
+		if type(lt) == "string" and (not ZSBT.IsSafeString or ZSBT.IsSafeString(lt)) then
+			local lower = lt:lower()
+			local _, _, word = lower:match("^(%d+) %- (%d+) (%a+) damage$")
+			if word and WAND_SCHOOL_WORDS[word] then return WAND_SCHOOL_WORDS[word] end
+			if lower:match("^%d+ %- %d+ damage$") then return 1 end
+		end
+	end
+	return nil
+end
+
+-- Sustained wand family (mod.ranged/mod.rangedIds): era wand Shoot is
+-- auto-shoot — the activation writes one cast record, then wounds keep
+-- arriving for the whole session with nothing left to claim. A recent
+-- claimed/recorded shot PLUS the client's own ranged line near the
+-- wound is the sustained-family proof (melee-swing parity for wands).
+-- NOT-gates: non-physical only; a known wand element rejects every
+-- other school; and no claim without the ranged line the shot itself
+-- produced (consumed included — a same-instant wound may have eaten it).
+local function pickWandShot(self, t, school)
+	if not (ZSBT.ClassDB and ZSBT.ClassDB.PreferRangedLine) then return nil end
+	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school)) then return nil end
+	if school == 1 then return nil end
+	local ws = self._wandSchool
+	if type(ws) == "number" and ws ~= school then return nil end
+	local sid, lastAt = self._wandSid, self._wandAt
+	if type(sid) ~= "number" then return nil end
+	-- A real ranged swing is the tighter anchor (FCT records shot→hit
+	-- flight at 0.05-2.0s); fall back to the last claimed shot's family
+	-- window when no swing reported this shot.
+	local dt
+	local swAt = self._swingAt and self._swingAt.ranged
+	if type(swAt) == "number" then
+		local dsw = t - swAt
+		if dsw >= 0.05 and dsw <= 2.00 then dt = dsw end
+	end
+	if dt == nil then
+		if type(lastAt) ~= "number" then return nil end
+		dt = t - lastAt
+		if dt < 0 or dt > 3.00 then return nil end
+	end
+	if not ZSBT.ClassDB.PreferRangedLine(sid) then return nil end
+	local zbt = ZSBT.ZBattleText
+	if not (zbt and zbt.PeekDamageLine) then return nil end
+	if zbt:PeekDamageLine(t, 0.35, { ranged = true }, true) == nil then return nil end
+	return sid
+end
+-- handleUnitCombat is at the 60-upvalue ceiling — reach it through
+-- self instead of capturing the local.
+Collector._pickWandShot = pickWandShot
+
+-- Flight window for ranged-family record claims. Some feeds carry no
+-- tick/ranged line kinds at all (retail hunter feed observed:
+-- direct+melee claims only — zero tick, zero ranged), so the line-kind
+-- proof the rival veto was built on never fires there. The surviving
+-- discriminator is record-age: a shot's hit lands at a consistent
+-- flight delay after its cast (~0.6-0.7s observed for auto-shot), while
+-- a dot tick's offset from the shot's record is uniform noise.
+-- _wandFlight learns the cast->hit delay from claimed shots (EMA);
+-- unlearned defaults cover observed flight with margin.
+local function wandFlightWindow(self)
+	local f = self._wandFlight
+	if type(f) == "number" and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(f) then
+		return math.max(0.05, f - 0.35), f + 0.45
+	end
+	-- Unlearned: observed auto-shot flight spans 0.07s (point-blank) to
+	-- ~0.94s (missile travel at range) — keep the lo bound low and let
+	-- the hi bound carry the discrimination once the EMA converges.
+	return 0.05, 1.20
+end
+
+-- Is a pending record claim for this sid inside the flight window?
+-- PreferRangedLine records are shots — their hits always land at
+-- flight time, so anything outside the window cannot be their wound
+-- (a Black Arrow tick at +1.4s is not the Bleak shot's hit).
+-- Other sids learn the same physics per-spell (_flightBySid EMA from
+-- confirmed consumes; measured: Cobra 0.80s, Wailing Arrow 0.91s,
+-- Black Arrow 0.43s): a wound outside its own record's flight span is
+-- never that cast's hit — interleaved same-school casts otherwise let
+-- wounds steal the freshest record (a Barbed hit at +0.24s wearing the
+-- Cobra record). Gate only arms after 3 learns — a poisoned first
+-- window would lock real hits out permanently. Unlearned: permissive.
+local function familyRecordInFlight(self, spellId, dt)
+	if ZSBT.ClassDB and ZSBT.ClassDB.PreferRangedLine
+		and ZSBT.ClassDB.PreferRangedLine(spellId) then
+		local lo, hi = wandFlightWindow(self)
+		return dt >= lo and dt <= hi
+	end
+	local fb = self._flightBySid
+	local rec = fb and fb[spellId]
+	if type(rec) ~= "table" or (rec.n or 0) < 3 then
+		-- Unlearned: still floor the claim on retail — a wound at
+		-- cast-time is a coincident steal, not this spell's hit (a KC
+		-- record eaten at dt=0 leaves its real +0.4s pet strike with
+		-- an empty pool). Era instants genuinely hit same-frame, so
+		-- the floor is era-exempt.
+		if ZSBT.ClassDB and ZSBT.ClassDB.IsForever
+			and ZSBT.ClassDB.IsForever() then return true end
+		return dt >= 0.15
+	end
+	local f = rec.ema
+	if type(f) ~= "number" or not (ZSBT.IsSafeNumber
+		and ZSBT.IsSafeNumber(f)) then return true end
+	return dt >= math.max(0.05, f - 0.35) and dt <= f + 0.45
+end
+
 -- The picked sid is the live channel itself: its ticks must bypass the
 -- DoT-only gates downstream (target-debuff presence, dedup window, the
 -- recent-cast veto — the "recent cast" IS this channel).
@@ -2046,7 +2729,12 @@ end
 -- is a strong discriminator when phase-locking leaves collisions. Only
 -- feeds the tiebreak where the module opted in — amounts stay unread
 -- (possibly secret) on clients that don't.
-local function noteDotTickAmount(self, spellId, amount, isCrit, t, tgtName)
+-- canLearn: the claim must carry evidence independent of learned state
+-- (debuff pass, live channel, typed tick line, cast-seeded pick). A guess
+-- still emits — it just can't write period/amount/beat anchors, because a
+-- wrong name's learning defends itself.
+local function noteDotTickAmount(self, spellId, amount, isCrit, t, tgtName, canLearn)
+	if canLearn ~= true then return end
 	if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(amount) then
 		if isCrit == true then amount = amount * 0.5 end
 		if amount > 0 then
@@ -2083,15 +2771,24 @@ local function noteDotTickAmount(self, spellId, amount, isCrit, t, tgtName)
 	end
 	if type(rec.confirmedAt) == "number" and sameTgt then
 		local gap = t - rec.confirmedAt
-		local iv = rec.period or dotTickInterval(spellId)
+		local iv = boundedDotPeriod(self, spellId)
 		-- A gap near 1x period refines the learned interval; a gap at 2x+
-		-- is skipped ticks — keep the learned value, don't grow it.
+		-- is skipped ticks — keep the learned value, don't grow it. A
+		-- poisoned rec.period can't blend its way home (0.6x weight would
+		-- drag convergence through several more out-of-band values), so an
+		-- out-of-band record resets to the observed gap outright.
 		if gap >= iv * 0.7 and gap <= iv * 1.45 then
-			rec.period = rec.period and (rec.period * 0.6 + gap * 0.4) or gap
+			local cur = rec.period
+			if type(cur) == "number" and cur > 0
+				and cur >= iv * 0.7 and cur <= iv * 1.45 then
+				rec.period = cur * 0.6 + gap * 0.4
+			else
+				rec.period = gap
+			end
 		end
 	end
 	rec.confirmedAt = t
-	rec.nextAt = t + (rec.period or dotTickInterval(spellId))
+	rec.nextAt = t + boundedDotPeriod(self, spellId)
 	local prof = ZSBT.db and ZSBT.db.profile
 	if type(prof) == "table" then
 		local avg = self._dotTickAmounts and self._dotTickAmounts[spellId]
@@ -2269,6 +2966,10 @@ local function enqueuePendingCast(self, spellId, spellName, tNow)
 	-- Option A: never enqueue explicitly helpful casts (buffs/utility) so they
 	-- cannot hijack outgoing spell icons.
 	if helpful == true then
+		local zR = ZSBT.ZBattleText
+		if zR and zR.FileLog and ZSBT._ucDropTrace == true then
+			zR:FileLog(("PEND_REF sid=%s why=helpful"):format(tostring(spellId)))
+		end
 		return
 	end
 	-- Enqueue even when classification is unknown so outgoing doesn't go silent
@@ -2281,6 +2982,10 @@ local function enqueuePendingCast(self, spellId, spellName, tNow)
 	-- so their spellId can't stamp foreign damage.
 	local castFacts = SpellFacts(spellId)
 	if castFacts and castFacts.damages == false then
+		local zR = ZSBT.ZBattleText
+		if zR and zR.FileLog and ZSBT._ucDropTrace == true then
+			zR:FileLog(("PEND_REF sid=%s why=nodmg"):format(tostring(spellId)))
+		end
 		return
 	end
 	table.insert(self._pendingCasts, {
@@ -2296,6 +3001,12 @@ local function enqueuePendingCast(self, spellId, spellName, tNow)
 	if #self._pendingCasts > PENDING_CAST_MAX then
 		table.remove(self._pendingCasts, 1)
 	end
+	-- Damage-cast pin: only casts that passed the enqueue gates count.
+	-- Non-damage casts (DRW, Gorefiend's) are refused above but still
+	-- move _lastPlayerSpellId — pinning wound claims to THAT sid strands
+	-- the real damage cast's record (its wounds can never == the pin).
+	self._lastPlayerDamageCastId = spellId
+	self._lastPlayerDamageCastAt = tNow
 	-- Signature window: separate from the pending record — a cast's own
 	-- direct hit consumes the record while its linked procs still fly.
 	sigSeed(self, spellId, tNow)
@@ -2665,6 +3376,22 @@ function Collector:ProcBindings()
 	return sigBindings(self)
 end
 
+-- Channel first-tick floor (shared by pending-queue and recency claims):
+-- a channeled spell has no direct hit — every wound it produces is a tick
+-- landing ~one interval after cast start. A wound arriving earlier than
+-- that wearing the channel's name is a same-school DoT tick stolen (a
+-- Drain Life pending record claimed Corruption's on-schedule tick at
+-- dt=0.70 while the real first tick landed at 1.07). Skipping keeps the
+-- record alive for the true tick.
+local function channelTickFloorOk(spellId, dt)
+	if not (ZSBT.ClassDB and ZSBT.ClassDB.ChannelMatch) then return true end
+	local ch = ZSBT.ClassDB.ChannelMatch(spellId)
+	if ch and type(ch.interval) == "number" and ch.interval > 0 then
+		return dt >= ch.interval * 0.8
+	end
+	return true
+end
+
 consumeBestPendingCast = function(self, tNow, wantSpellId, maxWindowSec, doConsume, hitSchool)
 	expirePendingCasts(self, tNow)
 	-- String sids miss every == below; coerce (see enqueuePendingCast).
@@ -2682,7 +3409,32 @@ consumeBestPendingCast = function(self, tNow, wantSpellId, maxWindowSec, doConsu
 			if (not wantSpellId) or c.spellId == wantSpellId then
 				if castSchoolOk(self, c.spellId, hitSchool) then
 					local dt = tNow - c.at
-					if dt >= 0 and dt <= window then
+					-- Flight gate: a ranged-family record only claims
+					-- wounds at shot-flight age — a same-school tick or
+					-- stray wound outside the window cannot steal it
+					-- (post-veto fall-through was handing the Bleak
+					-- record to Black Arrow ticks it had just vetoed).
+					-- Its cap is the flight hi, not the generic window:
+					-- shot flight (~0.6-1.2s) outruns castWindow 0.85.
+					local cap = window
+					if ZSBT.ClassDB and ZSBT.ClassDB.PreferRangedLine
+						and ZSBT.ClassDB.PreferRangedLine(c.spellId) then
+						local _, fhi = wandFlightWindow(self)
+						cap = fhi
+					else
+						-- Learned flight may outrun the generic window:
+						-- real Cobra hits land ~0.8s; the cap grows to
+						-- the learned hi so its own hits still claim.
+						local frec = self._flightBySid
+							and self._flightBySid[c.spellId]
+						if type(frec) == "table" and (frec.n or 0) >= 3
+							and type(frec.ema) == "number" then
+							cap = math.max(window, frec.ema + 0.45)
+						end
+					end
+					if dt >= 0 and dt <= cap
+						and familyRecordInFlight(self, c.spellId, dt)
+						and channelTickFloorOk(c.spellId, dt) then
 						if not bestDt or dt < bestDt then
 							bestDt = dt
 							bestI = i
@@ -2702,6 +3454,31 @@ consumeBestPendingCast = function(self, tNow, wantSpellId, maxWindowSec, doConsu
 			self._castClaims = self._castClaims or {}
 			local ck = tostring(best.spellId) .. "@" .. tostring(best.at)
 			self._castClaims[ck] = (self._castClaims[ck] or 0) + 1
+			-- Flight learning: claimed hits teach their sid's cast->hit
+			-- delay (per-sid EMA + count) so the flight gate tightens
+			-- around the real span instead of staying permissive.
+			local fl = tNow - best.at
+			if fl >= 0.05 and fl <= 2.0 then
+				local fb = self._flightBySid
+				if not fb then fb = {} ; self._flightBySid = fb end
+				local rec = fb[best.spellId]
+				if type(rec) ~= "table" then
+					rec = { ema = fl, n = 0 }
+					fb[best.spellId] = rec
+				end
+				if type(rec.ema) == "number" then
+					rec.ema = rec.ema * 0.7 + fl * 0.3
+				else
+					rec.ema = fl
+				end
+				rec.n = (rec.n or 0) + 1
+				if ZSBT.ClassDB and ZSBT.ClassDB.PreferRangedLine
+					and ZSBT.ClassDB.PreferRangedLine(best.spellId) then
+					local cur = self._wandFlight
+					self._wandFlight = (type(cur) == "number")
+						and (cur * 0.7 + fl * 0.3) or fl
+				end
+			end
 		end
 		return best
 	end
@@ -2713,7 +3490,8 @@ end
 -- the budget for known AoE/burst spells; default 1 for single-hit).
 -- Also removes the still-queued record for that cast so it cannot be
 -- consumed a second time by a later hit.
-local function miwClaim(self, lastId, lastAt, t, school)
+miwClaim = function(self, lastId, lastAt, t, school)
+	if not channelTickFloorOk(lastId, t - lastAt) then return nil end
 	local key = tostring(lastId) .. "@" .. tostring(lastAt)
 	self._castClaims = self._castClaims or {}
 	local n = self._castClaims[key] or 0
@@ -2725,21 +3503,35 @@ local function miwClaim(self, lastId, lastAt, t, school)
 	if n >= budget then return nil end
 	consumeBestPendingCast(self, t, lastId, nil, true, school)
 	self._castClaims[key] = n + 1
+	-- Claim ordinal for the noline-theft gate: slot 1 of a recency record
+	-- is most plausibly our own hit wave; foreign wounds drain late slots.
+	-- emit() stamps it on the payload, then clears.
+	self._miwOrd = n + 1
 	return true
 end
 
 -- Capture successful casts for downstream correlation.
 -- Player casts: used for outgoing spell icons.
 -- Target/enemy casts: used for incoming spell icons.
--- PLAYER_SWING (swingType, swingDuration): each player weapon swing is a
+-- PLAYER_SWING (swingDuration, swingType): each player weapon swing is a
 -- public report — melee and ranged. Pet/follower/teammate melee never
 -- produces one, so auto-attack claims can require a matching swing.
-function Collector:handlePlayerSwing(swingType)
+-- swingType is numeric Enum.PlayerSwingType on Forever; duration is the
+-- weapon's swing speed — a >0.3s change drops that hand's learned lag
+-- (weapon swap / big haste shift, FCT 0.6.2).
+function Collector:handlePlayerSwing(swingDuration, swingType)
 	local t = now()
 	self._swingAt = self._swingAt or {}
-	local hand = "main"
-	if type(swingType) == "string" and swingType ~= "" then hand = swingType end
+	local hand = swingHandName(swingType) or "main"
 	self._swingAt[hand] = t
+	if hand ~= "ranged" and type(swingDuration) == "number" then
+		self._swingSpeed = self._swingSpeed or {}
+		local speed = self._swingSpeed[hand]
+		if type(speed) == "number" and math.abs(swingDuration - speed) > 0.3 then
+			if self._swingLags then self._swingLags[hand] = nil end
+		end
+		self._swingSpeed[hand] = swingDuration
+	end
 	auditNote(("AUDSWING hand=%s"):format(dbgSafe(hand)))
 end
 
@@ -2758,6 +3550,24 @@ function Collector:ClassModuleState()
 		allowAuto = type(prof) == "table" and type(prof.classModule) == "table"
 			and prof.classModule.allowAutoAttack or nil,
 	}
+end
+
+-- UNIT_SPELLCAST_SENT (unit, target, castGUID, spellId): the intended
+-- recipient at press time, player-only. SUCCEEDED joins on castGUID —
+-- the real application mob for per-mob dot anchors instead of
+-- "whoever is targeted now" (FCT's castTargets model).
+function Collector:handleSpellcastSent(unit, target, castGUID, spellId)
+	if unit ~= "player" then return end
+	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(spellId)) then return end
+	local list = self._sentCasts
+	if not list then list = {} ; self._sentCasts = list end
+	list[#list + 1] = { guid = castGUID, target = target,
+		spellId = spellId, at = now() }
+	while #list > 8 do table.remove(list, 1) end
+	local tgtSafe = ZSBT.IsSafeString and ZSBT.IsSafeString(target)
+	auditNote(("AUDSENT sid=%s tgt=%s safe=%s"):format(dbgSafe(spellId),
+		(tgtSafe and tostring(target):sub(1, 24)) or tostring(type(target)),
+		tostring(tgtSafe == true)))
 end
 
 function Collector:handleSpellcastSucceeded(unit, guid, spellId)
@@ -2846,13 +3656,72 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 
 	if unit == "player" then
 		self._castToken = (self._castToken or 0) + 1
+		-- Excluded casts (hidden applicators, zero-damage abilities) never
+		-- name wounds, so they must not become the last-cast anchor either
+		-- — every recency/pin path reads this stamp and a ~1s applicator
+		-- would hold it permanently (retail DH: Frailty's hidden cast
+		-- kept winning miw/offt/whirlwind claims over the real spells).
+		local exclCast = ZSBT.ClassDB and ZSBT.ClassDB.ExcludedSpellId
+			and ZSBT.ClassDB.ExcludedSpellId(spellId) == true
+		if not exclCast then
 		self._lastPlayerSpellId = spellId
 		self._lastPlayerSpellName = ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellId) or nil
 		self._lastPlayerSpellAt = now()
+		-- Cast→target binding (UNIT_SPELLCAST_SENT): the press-time
+		-- recipient pairs via castGUID — the real application mob for
+		-- per-mob dot anchors, even if the player re-targeted mid-cast.
+		-- The SENT target arg may be a unit token or a bare name.
+		self._lastCastTargetName, self._lastCastTargetGuid = nil, nil
+		local sent = self._sentCasts
+		if type(sent) == "table" then
+			for i = #sent, 1, -1 do
+				local e = sent[i]
+				if e.spellId == spellId and (e.guid == nil or e.guid == guid) then
+					local tgt = e.target
+					if ZSBT.IsSafeString and ZSBT.IsSafeString(tgt) then
+						local okE, exists = pcall(function()
+							return UnitExists and UnitExists(tgt) end)
+						if okE and exists == true then
+							local nm = safeUnitName(tgt)
+							if nm then self._lastCastTargetName = nm end
+							if UnitGUID then
+								local okG, g = pcall(UnitGUID, tgt)
+								if okG and ZSBT.IsSafeString and ZSBT.IsSafeString(g) then
+									self._lastCastTargetGuid = g
+								end
+							end
+						else
+							self._lastCastTargetName = tgt
+						end
+					end
+					table.remove(sent, i)
+					break
+				end
+			end
+		end
+		self._lastCastTargetAt = self._lastPlayerSpellAt
+		end
+		-- Wand family anchor at activation: a ranged-declared cast seeds
+		-- the sustained family even if the pending-cast queue drops it.
+		if ZSBT.ClassDB and ZSBT.ClassDB.PreferRangedLine
+			and ZSBT.ClassDB.PreferRangedLine(spellId) then
+			self._wandSid = spellId
+			self._wandAt = self._lastPlayerSpellAt
+		end
 		-- Class-module cast hooks: DK ghoul summons, Warlock channels
 		-- (Drain Life/Soul), Warrior Rend tick seeding.
 		if ZSBT.ClassDB and ZSBT.ClassDB.OnPlayerCast then
-			ZSBT.ClassDB.OnPlayerCast(self, spellId, self._lastPlayerSpellName, self._lastPlayerSpellAt)
+			local okC, hookErrC = pcall(ZSBT.ClassDB.OnPlayerCast, self, spellId, self._lastPlayerSpellName, self._lastPlayerSpellAt)
+			if okC ~= true and hookErrC ~= nil then
+				local tE = now()
+				if tE - (self._hookErrAt or -9) >= 5 then
+					self._hookErrAt = tE
+					local zbt = ZSBT.ZBattleText
+					if zbt and zbt.FileLog then
+						zbt:FileLog(("HOOKERR fn=onCast err=%s"):format(dbgSafe(hookErrC)))
+					end
+				end
+			end
 		end
 		local dl = OutDbgLevel()
 		if dl >= 5 and isWhirlwindSpellId(spellId) then
@@ -2979,6 +3848,21 @@ end
 
 local function isWhirlwindSpellId(spellId)
 	return spellId == 1680 or spellId == 190411 or spellId == 199658
+end
+
+-- "NOT cleave" eligibility for off-target wounds: a single-target cast
+-- can never own a nameplate wound — its one hit arrives on the target
+-- token. castBudget==1 casts are excluded so e.g. Death Coil can't wear
+-- a cleave wound. (The "match me to ONLY this" rule for OFFT claims.)
+-- Lives on Collector: handleUnitCombat is at the 60-upvalue Lua limit —
+-- a file-local here would overflow it; Collector is already captured.
+function Collector.CastCleavesOffTarget(spellId)
+	local b = 1
+	if ZSBT.ClassDB and ZSBT.ClassDB.CastBudget then
+		local bv = ZSBT.ClassDB.CastBudget(spellId)
+		if type(bv) == "number" and bv > 0 then b = bv end
+	end
+	return b > 1
 end
 
 local function wwSimilarHitsEnabled(spellId)
@@ -3868,6 +4752,26 @@ function Collector:handleCombatTextUpdate(arg1)
 
 	-- Incoming Heals
 	if isHeal then
+		-- rawArg1 is the SOURCE NAME for HEAL/PERIODIC_HEAL kinds
+		-- (GetCurrentEventInfo contract) — on Forever a self-sourced heal
+		-- near a target wound is provenanced drain-tick evidence
+		-- (Siphon Life, drain channels), independent of the heal LINE
+		-- buffer.
+		local srcSafe = ZSBT.IsSafeString and ZSBT.IsSafeString(rawArg1)
+		local src2Safe = ZSBT.IsSafeString and ZSBT.IsSafeString(rawArg2)
+		local pname = safeUnitName("player")
+		if pname and ((srcSafe and rawArg1 == pname) or (src2Safe and rawArg2 == pname)) then
+			self._drainHealAt = now()
+		end
+		local tP = now()
+		if tP - (self._ctInfoProbeAt or -9) >= 8 then
+			self._ctInfoProbeAt = tP
+			auditNote(("AUDCTI type=%s r1=%s(%s) r2=%s(%s) r3=%s"):format(
+				dbgSafe(arg1),
+				(srcSafe and tostring(rawArg1):sub(1, 20)) or "?", tostring(type(rawArg1)),
+				(src2Safe and tostring(rawArg2):sub(1, 20)) or "?", tostring(type(rawArg2)),
+				tostring(rawArg3)))
+		end
 		local isCrit = CRIT_TYPES[arg1] or false
 		local isPeriodic = PERIODIC_TYPES[arg1] or false
 
@@ -3919,10 +4823,12 @@ function Collector:handleCombatTextUpdate(arg1)
 			end
 		end
 
-		-- For heals: use player.s own spell (self-heals)
+		-- For heals: use player.s own spell (self-heals) — but only a cast that
+		-- can actually heal; a heal may never wear a damage-only cast's name.
 		local healSpellId = nil
 		if self._lastPlayerSpellAt and (now() - self._lastPlayerSpellAt) < 0.5 then
-			healSpellId = self._lastPlayerSpellId
+			local f = SpellFacts(self._lastPlayerSpellId)
+			if (not f) or f.heals then healSpellId = self._lastPlayerSpellId end
 		end
 
 		-- Calculate overheal using post-heal health state.
@@ -4167,7 +5073,67 @@ function Collector:_dbgDropUnit(unit)
 		tostring(unit), hostile, istarget, tostring(uname)))
 end
 
+
+-- handleUnitCombat sits at the 60-upvalue ceiling: every file-local it
+-- captures costs one slot. Two escape routes keep headroom — self-fields
+-- (Collector._x) for helpers already invoked on self (the method arg is
+-- not an upvalue), and H: one captured table holding the plain helpers
+-- and constants this body reaches for.
+local H = {
+	emit = emit, auditNote = auditNote, dbgDrop = dbgDrop, dbgSafe = dbgSafe,
+	ECPrint = ECPrint, OutDbgLevel = OutDbgLevel, safeUnitName = safeUnitName,
+	now = now, launderAmount = launderAmount, wipeStalePipeEntries = wipeStalePipeEntries,
+	zbtVetoActive = zbtVetoActive,
+	isStrictOutgoingCombatLogOnly = isStrictOutgoingCombatLogOnly,
+	isPvPStrictActive = isPvPStrictActive, getPvPStrictFlag = getPvPStrictFlag,
+	isQuietOutgoingWhenIdle = isQuietOutgoingWhenIdle,
+	isQuietOutgoingAutoAttacks = isQuietOutgoingAutoAttacks,
+	isPlayerAutoAttackActive = isPlayerAutoAttackActive,
+	isPlayerMeleeEngaged = isPlayerMeleeEngaged,
+	offTargetDotsEnabled = offTargetDotsEnabled,
+	arePetsEnabled = arePetsEnabled, getPetFamilyLower = getPetFamilyLower,
+	getUnitNpcId = getUnitNpcId,
+	isLikelyPetSchoolHit = isLikelyPetSchoolHit,
+	isLikelyPetPhysicalHit = isLikelyPetPhysicalHit,
+	isWhirlwindSpellId = isWhirlwindSpellId, wwAggEnabled = wwAggEnabled,
+	dotEntryForSpellId = dotEntryForSpellId,
+	dotEntrySchoolEq = dotEntrySchoolEq,
+	cachedHasTargetDebuffSpellId = cachedHasTargetDebuffSpellId,
+	BIG_HIT_THRESHOLD = BIG_HIT_THRESHOLD,
+	PERIODIC_OUTGOING_WINDOW_SEC = PERIODIC_OUTGOING_WINDOW_SEC,
+	DEDUP_WINDOW = DEDUP_WINDOW,
+	AUTO_OUTGOING_DEDUP_WINDOW = AUTO_OUTGOING_DEDUP_WINDOW,
+	PET_OUTGOING_DEDUP_WINDOW = PET_OUTGOING_DEDUP_WINDOW,
+}
+Collector._pickDotForWound = pickDotForWound
+Collector._pickProcRider = pickProcRider
+Collector._isLiveChannelPick = isLiveChannelPick
+Collector._consumeBestPendingCast = consumeBestPendingCast
+Collector._consumePetCast = consumePetCast
+Collector._miwClaim = miwClaim
+Collector._matchOutgoingHotTick = matchOutgoingHotTick
+Collector._queuePendingHotHeal = queuePendingHotHeal
+Collector._resolveOffTargetDot = resolveOffTargetDot
+Collector._flushBestOutgoing = flushBestOutgoing
+Collector._castSchoolOk = castSchoolOk
+Collector._swingExplainsHit = swingExplainsHit
+Collector._autoContested = autoContested
+Collector._dotCadenceOk = dotCadenceOk
+Collector._isDuplicateDotEmit = isDuplicateDotEmit
+Collector._noteDotTickAmount = noteDotTickAmount
+Collector._isLikelyPetSchoolHitGivenRecentPlayerSpell = isLikelyPetSchoolHitGivenRecentPlayerSpell
+Collector._isHealAliasDup = isHealAliasDup
+Collector._noteHealClaim = noteHealClaim
+Collector._getMostRecentPeriodicSpellId = getMostRecentPeriodicSpellId
+Collector._wwAggPush = wwAggPush
+Collector._anySwingRecent = anySwingRecent
+Collector._swingPredictedNear = swingPredictedNear
+
 function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
+	-- Token as delivered, before the nameplate/softenemy -> "target" remap
+	-- below: the wound dedup uses it to tell a real cross-token re-report
+	-- from two distinct hits on the same target.
+	local rawUnit = unit
 	-- ucdrop raw trace: log every UNIT_COMBAT event shape so we can see
 	-- what Retail actually delivers for target/minion damage (secret
 	-- actions, nil amounts, non-WOUND verbs). Throttled per unit.
@@ -4175,7 +5141,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		local z = ZSBT.ZBattleText
 		if z and z.FileLog and ZSBT._ucDropTrace == true then
 			local key = "ucraw_" .. tostring(unit)
-			local tt = now()
+			local tt = H.now()
 			if tt - (Collector[key] or -9) >= 0.4 then
 				Collector[key] = tt
 				local aType = type(action)
@@ -4209,17 +5175,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- combat-text line, and emitted a WOUND amount as a heal —
 			-- the phantom "second tick".
 			if aH == "HEAL" and amount ~= nil then
-				local tH = now()
-				local hsid, hPeriodic, why = matchOutgoingHotTick(self, unit, tH)
+				local tH = H.now()
+				local hsid, hPeriodic, why = self:_matchOutgoingHotTick(unit, tH)
 				if hsid == nil then
 					if why == "noline" then
 						local isCritQ = false
 						if type(descriptor) == "string" and descriptor:upper():find("CRIT", 1, true) then
 							isCritQ = true
 						end
-						queuePendingHotHeal(self, unit, tH, amount, school, isCritQ)
+						self:_queuePendingHotHeal(unit, tH, amount, school, isCritQ)
 					else
-						auditNote(("AUDHX unit=%s why=%s"):format(dbgSafe(unit), tostring(why)))
+						H.auditNote(("AUDHX unit=%s why=%s"):format(H.dbgSafe(unit), tostring(why)))
 					end
 				end
 				if hsid ~= nil then
@@ -4230,13 +5196,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					local pipeId = self._rawPipeCount + 1
 					self._rawPipeCount = pipeId
 					self._rawPipe[pipeId] = amount
-					auditNote(("AUDH unit=%s sid=%s"):format(dbgSafe(unit), tostring(hsid)))
-					emit("OUTGOING_HEAL_COMBAT", {
+					H.auditNote(("AUDH unit=%s sid=%s"):format(H.dbgSafe(unit), tostring(hsid)))
+					H.emit("OUTGOING_HEAL_COMBAT", {
 						timestamp = tH,
 						rawPipeId = pipeId,
 						amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
 						spellId = hsid ~= 0 and hsid or nil,
-						targetName = safeUnitName(unit),
+						targetName = H.safeUnitName(unit),
 						isCrit = isCritH,
 						isPeriodic = hPeriodic == true or nil,
 						schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
@@ -4260,13 +5226,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				end
 			end
 			if isTarget then
-				local dl = OutDbgLevel()
+				local dl = H.OutDbgLevel()
 				if dl >= 4 then
-					local tNow = now()
+					local tNow = H.now()
 					if (tNow - (Collector._dbgLastNameplateRemapAt or 0)) > 0.25 then
 						Collector._dbgLastNameplateRemapAt = tNow
-						ECPrint(("NAMEPLATE_REMAP unit=%s action=%s amt=%s school=%s -> target")
-							:format(dbgSafe(unit), dbgSafe(action), dbgSafe(amount), dbgSafe(school)))
+						H.ECPrint(("NAMEPLATE_REMAP unit=%s action=%s amt=%s school=%s -> target")
+							:format(H.dbgSafe(unit), H.dbgSafe(action), H.dbgSafe(amount), H.dbgSafe(school)))
 					end
 				end
 				unit = "target"
@@ -4289,8 +5255,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- A wound with a DoT application record on this nameplate is
 				-- different: the mob's own cast evidence names it, so it emits
 				-- attributed regardless of the starve window.
-				local tgtStarved = (now() - (self._lastTargetWoundAt or 0)) > 1.5
-				if zbtVetoActive() and amount ~= nil then
+				local tgtStarved = (H.now() - (self._lastTargetWoundAt or 0)) > 1.5
+				if H.zbtVetoActive() and amount ~= nil then
 					local aStr = (ZSBT.IsSafeString and ZSBT.IsSafeString(action)) and action or nil
 					if aStr == "WOUND" then
 						local hostile = false
@@ -4304,9 +5270,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						if hostile then
 							local offSid = nil
 							local offSidIsDot = false
-							local offTgtName = safeUnitName(unit)
-							if offTargetDotsEnabled() then
-								offSid = resolveOffTargetDot(self, unit, now(), school)
+							local offTgtName = H.safeUnitName(unit)
+							if H.offTargetDotsEnabled() then
+								offSid = self:_resolveOffTargetDot(unit, H.now(), school)
 								offSidIsDot = offSid ~= nil
 							end
 							-- Cleave fan-out: one cast wounds every mob in
@@ -4320,25 +5286,55 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							-- over-naming; consumed casts fall back to the
 							-- recency stamp (same key).
 							if offSid == nil then
-								local tOff = now()
+								local tOff = H.now()
 								local cand, candAt = nil, nil
 								local bestDt = nil
 								for _, c in ipairs(self._pendingCasts or {}) do
 									if c and c.at and c.spellId then
 										local dt = tOff - c.at
 										if dt >= 0 and dt <= 0.5
-											and castSchoolOk(self, c.spellId, school)
+											and Collector.CastCleavesOffTarget(c.spellId)
+											and self:_castSchoolOk(c.spellId, school)
 											and (not bestDt or dt < bestDt) then
 											bestDt = dt
 											cand, candAt = c.spellId, c.at
 										end
 									end
 								end
+								-- Proven-cast fan-out: the pending record is
+								-- single-consume — the target wound eats it, so
+								-- cleave hits #2..N find pool=EMPTY. But the
+								-- claim survives in _castClaims (sid@castAt)
+								-- where n>=1 means the cast already PROVED it
+								-- produces hits; its remaining budget can name
+								-- this follow-up. Same gate as target-path
+								-- recency, via the same shared key.
 								if cand == nil then
-									local lastId, lastAt = self._lastPlayerSpellId, self._lastPlayerSpellAt
+									local claims = self._castClaims or {}
+									for ck, n in pairs(claims) do
+										if type(n) == "number" and n >= 1 then
+											local sidS, atS = ck:match("^(%d+)@(.+)$")
+											local sid, at = tonumber(sidS), tonumber(atS)
+											if sid and at then
+												local dt = tOff - at
+												if dt >= 0 and dt <= 0.75
+													and Collector.CastCleavesOffTarget(sid)
+													and self:_castSchoolOk(sid, school)
+													and (not bestDt or dt < bestDt) then
+													bestDt = dt
+													cand, candAt = sid, at
+												end
+											end
+										end
+									end
+								end
+								if cand == nil then
+									local lastId = self._lastPlayerDamageCastId or self._lastPlayerSpellId
+									local lastAt = self._lastPlayerDamageCastAt or self._lastPlayerSpellAt
 									if type(lastId) == "number" and type(lastAt) == "number"
 										and (tOff - lastAt) >= 0 and (tOff - lastAt) <= 0.5
-										and castSchoolOk(self, lastId, school) then
+										and Collector.CastCleavesOffTarget(lastId)
+										and self:_castSchoolOk(lastId, school) then
 										cand, candAt = lastId, lastAt
 									end
 								end
@@ -4375,7 +5371,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 										if okI and resI == true then instOff = true end
 									end
 									if instOff then
-										dbgDrop("BYPASS_OFFT_INST", self._castToken, school)
+										H.dbgDrop("BYPASS_OFFT_INST", self._castToken, school)
 									end
 									-- An unattributed off-target hit can only be
 									-- ours if we are actually fighting. With no
@@ -4395,27 +5391,27 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 									do
 										local lastCast = self._lastPlayerSpellAt
 										if type(lastCast) == "number"
-											and (now() - lastCast) >= 0
-											and (now() - lastCast) <= 2.0 then
+											and (H.now() - lastCast) >= 0
+											and (H.now() - lastCast) <= 2.0 then
 											ownActive = true
 										end
 									end
 									if not ownActive and UnitAffectingCombat then
 										local okC, res = pcall(UnitAffectingCombat, "player")
 										if okC and res == true
-											and (now() - (self._lastTargetWoundAt or 0)) <= 2.0 then
+											and (H.now() - (self._lastTargetWoundAt or 0)) <= 2.0 then
 											ownActive = true
 										end
 									end
 									if not ownActive then
-										dbgDrop("OFFT_NOCOMBAT", self._castToken, school)
+										H.dbgDrop("OFFT_NOCOMBAT", self._castToken, school)
 										return
 									end
 									-- Unattributed off-target hits are contested too:
 									-- a burst of foreign cleave/AoE on shared mobs is
 									-- exactly the traffic that steals filtered lines.
-									if autoContested(self, now(), false) then
-										dbgDrop("CONTESTED_OFFT", self._castToken, school)
+									if self:_autoContested(H.now(), false) then
+										H.dbgDrop("CONTESTED_OFFT", self._castToken, school)
 										return
 									end
 								end
@@ -4424,8 +5420,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 									isCritOff = descriptor:upper():find("CRIT", 1, true) ~= nil
 								end
 								if offSidIsDot then
-									self._recentPeriodicSpellAt[offSid] = now()
-									noteDotTickAmount(self, offSid, amount, isCritOff, now(), offTgtName)
+									self._recentPeriodicSpellAt[offSid] = H.now()
+									-- Cast-seeded off-target pick: the sid came
+									-- from a pending cast record — proven.
+									self:_noteDotTickAmount(offSid, amount, isCritOff, H.now(), offTgtName, true)
 								end
 								local pipeId = self._rawPipeCount + 1
 								self._rawPipeCount = pipeId
@@ -4435,8 +5433,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 									zbtOff:FileLog(("OFFT unit=%s sid=%s school=%s"):format(
 										tostring(unit), tostring(offSid), tostring(school)))
 								end
-								emit("OUTGOING_DAMAGE_COMBAT", {
-									timestamp = now(),
+								H.emit("OUTGOING_DAMAGE_COMBAT", {
+									timestamp = H.now(),
 									rawPipeId = pipeId,
 									spellId = offSid,
 									amountSource = "COMBAT_LOG",
@@ -4467,7 +5465,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 	if unit == "target" then
 		local aW = (ZSBT.IsSafeString and ZSBT.IsSafeString(action)) and action or nil
 		if aW == "WOUND" then
-			self._lastTargetWoundAt = now()
+			self._lastTargetWoundAt = H.now()
 		end
 	end
 	if amount == nil then return end
@@ -4494,7 +5492,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		end
 		return
 	end
-	wipeStalePipeEntries()
+	H.wipeStalePipeEntries()
 
 	-- Detect crit from the descriptor arg.
 	local isCrit = false
@@ -4508,7 +5506,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 
 	-- PET: pet incoming damage / healing (UNIT_COMBAT("pet") reports events happening to the pet)
 	if unit == "pet" then
-		if arePetsEnabled() ~= true then
+		if H.arePetsEnabled() ~= true then
 			return
 		end
 		local actionStr = ZSBT.IsSafeString(action) and action or nil
@@ -4524,8 +5522,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					amtText = s
 				end
 			end
-			emit("PET_HEAL_LOG", {
-				timestamp = now(),
+			H.emit("PET_HEAL_LOG", {
+				timestamp = H.now(),
 				amount = numAmount,
 				amountText = amtText,
 				spellId = nil,
@@ -4533,14 +5531,14 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				isCrit = isCrit,
 				isPeriodic = true,
 				overheal = nil,
-				targetName = safeUnitName("pet"),
+				targetName = H.safeUnitName("pet"),
 			})
 		elseif actionStr == "WOUND" or actionStr == nil then
 			local pipeId = self._rawPipeCount + 1
 			self._rawPipeCount = pipeId
 			self._rawPipe[pipeId] = amount
-			emit("PET_INCOMING_DAMAGE_COMBAT", {
-				timestamp = now(),
+			H.emit("PET_INCOMING_DAMAGE_COMBAT", {
+				timestamp = H.now(),
 				rawPipeId = pipeId,
 				isCrit = isCrit,
 				schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
@@ -4565,20 +5563,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			and ZSBT.Core:IsAutoRestrictActive())
 			or (ZSBT.Core and ZSBT.Core.ShouldRestrictOutgoingFallback
 				and ZSBT.Core:ShouldRestrictOutgoingFallback()) or false
-		local quietMode = isQuietOutgoingWhenIdle()
-		-- Legacy explicit-strict keys (pre-migration compat) plus the new
-		-- "Require combat-log proof" toggle: an enabled strict toggle still
-		-- forces restrict even while the veto is live.
-		local legacyStrict = isPvPStrictActive()
-			or isStrictOutgoingCombatLogOnly()
+		local quietMode = H.isQuietOutgoingWhenIdle()
+		-- Legacy explicit-strict keys (pre-migration compat): an enabled
+		-- strict toggle still forces restrict even while the veto is live.
+		local legacyStrict = H.isPvPStrictActive()
+			or H.isStrictOutgoingCombatLogOnly()
 			or quietMode == true
-			or (ZSBT.Core and ZSBT.Core.IsRequireProofEnabled
-				and ZSBT.Core:IsRequireProofEnabled())
 		local restrict = autoRestrict or legacyStrict
 		local instanceAware = restrict
 			or (ZSBT.Core and ZSBT.Core.IsInstanceAwareOutgoingEnabled
 				and ZSBT.Core:IsInstanceAwareOutgoingEnabled()) or false
-		auditNote(("AUDT tier=%s restrict=%s"):format(
+		H.auditNote(("AUDT tier=%s restrict=%s"):format(
 			tostring(tier), tostring(restrict == true)))
 		-- If combat text / chat already produced an outgoing number for the current cast
 		-- token, suppress UNIT_COMBAT(target) for that token to avoid double numbers.
@@ -4588,12 +5583,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- are enabled and the pet is currently fighting and the player isn't actively
 			-- casting (i.e., this cannot be a duplicate of the player's cast).
 			local allowPetFallback = false
-			if arePetsEnabled() == true and UnitAffectingCombat and UnitExists then
+			if H.arePetsEnabled() == true and UnitAffectingCombat and UnitExists then
 				local okEx, hasPet = pcall(UnitExists, "pet")
 				if okEx and hasPet == true then
 					local okPet, inPetCombat = pcall(UnitAffectingCombat, "pet")
 					if okPet and inPetCombat == true then
-						local tNow = now()
+						local tNow = H.now()
 						local lastAt = self._lastPlayerSpellAt
 						local recentPlayerCast = false
 						if type(lastAt) == "number" then
@@ -4633,18 +5628,18 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						-- Hard gate: if the player is not actively casting/attacking, do NOT emit
 						-- outgoing from UNIT_COMBAT(target). This prevents follower/party damage on
 						-- your target from being misattributed as your outgoing when you're idle.
-						local tNow = now()
+						local tNow = H.now()
 						local lastAt = self._lastPlayerSpellAt
 						local recentlyCast = (type(lastAt) == "number" and (tNow - lastAt) >= 0 and (tNow - lastAt) <= 0.90)
 						if not recentlyCast then
 							-- Exception: periodic damage can tick well after the cast and we'd still like
 							-- to show *player* DoTs without opening the door to follower/party damage.
 							-- Allow the pipeline only when we can correlate to a very recent periodic spell.
-							local dotSpellId = getMostRecentPeriodicSpellId and getMostRecentPeriodicSpellId(self, tNow) or nil
+							local dotSpellId = self._getMostRecentPeriodicSpellId and self:_getMostRecentPeriodicSpellId(tNow) or nil
 							local okDot = false
 							if dotSpellId and self._recentPeriodicSpellAt and type(self._recentPeriodicSpellAt[dotSpellId]) == "number" then
 								local age = tNow - (self._recentPeriodicSpellAt[dotSpellId] or 0)
-								if age >= 0 and age <= (PERIODIC_OUTGOING_WINDOW_SEC or 8.0) then
+								if age >= 0 and age <= (H.PERIODIC_OUTGOING_WINDOW_SEC or 8.0) then
 									okDot = true
 								end
 							end
@@ -4653,8 +5648,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								-- live, OfferOutgoing still requires a nearby combat-log line,
 								-- so unattributed hits can flow as candidates instead of dying
 								-- here during the idle window after the opener's cast ages out.
-								if not zbtVetoActive() then
-									dbgDrop("INST_GATE", self._castToken, school)
+								if not H.zbtVetoActive() then
+									H.dbgDrop("INST_GATE", self._castToken, school)
 									return
 								end
 							end
@@ -4663,9 +5658,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				end
 			end
 		end
-		local dl = OutDbgLevel()
+		local dl = H.OutDbgLevel()
 		local function getAdaptiveBigHitThreshold(tNow)
-			local base = BIG_HIT_THRESHOLD
+			local base = H.BIG_HIT_THRESHOLD
 			local maxRecent = self._recentOutgoingMax or 0
 			local maxAt = self._recentOutgoingMaxAt or 0
 			if type(tNow) == "number" and type(maxAt) == "number" and maxAt > 0 then
@@ -4725,7 +5720,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			return true
 		end
 		if dl >= 4 then
-			local tName = safeUnitName("target")
+			local tName = H.safeUnitName("target")
 			local tGuid = nil
 			if UnitGUID then
 				local okG, g = pcall(UnitGUID, "target")
@@ -4736,39 +5731,65 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				local okH, h = pcall(UnitCanAttack, "player", "target")
 				if okH then hostile = h end
 			end
-			local tDbg = now()
+			local tDbg = H.now()
 			if dl >= 4 and dl < 5 and (tDbg - (Collector._dbgLastUnitCombatTargetAt or 0)) > 0.25 then
 				Collector._dbgLastUnitCombatTargetAt = tDbg
-				ECPrint(("UNIT_COMBAT_TARGET name=%s guid=%s hostile=%s action=%s desc=%s amt=%s school=%s")
-					:format(dbgSafe(tName), dbgSafe(tGuid), dbgSafe(hostile), dbgSafe(action), dbgSafe(descriptor), dbgSafe(amount), dbgSafe(school)))
+				H.ECPrint(("UNIT_COMBAT_TARGET name=%s guid=%s hostile=%s action=%s desc=%s amt=%s school=%s")
+					:format(H.dbgSafe(tName), H.dbgSafe(tGuid), H.dbgSafe(hostile), H.dbgSafe(action), H.dbgSafe(descriptor), H.dbgSafe(amount), H.dbgSafe(school)))
 			end
 		end
 
-		local t = now()
+		local t = H.now()
 		local actionStr = ZSBT.IsSafeString(action) and action or nil
 		local isPhysicalEarly = ZSBT.IsSafeNumber(school) and school == 1
 		if actionStr == "WOUND" then
-			-- Same hit reported through a second unit token (target /
+			-- Same hit reported through a SECOND unit token (target /
 			-- softenemy / nameplate remap) arrives within a frame or two.
 			-- Collapse exact school+crit twins inside 50ms so duplicates
-			-- cannot steal palette lines from distinct hits. Only dedups
-			-- safe-number schools; secret schools always pass through.
-			-- Amount joins the signature whenever it is safe (Forever's
-			-- amounts are readable; Retail's are secret) — a re-report is
-			-- identical in every field, while two genuinely distinct hits
-			-- sharing school+crit (Judgement + Holy Strike) almost always
-			-- differ in amount and must not collapse.
+			-- cannot steal palette lines from distinct hits. Two fields
+			-- pin the signature to a real re-report: the EFFECTIVE unit
+			-- must match (post-remap — "nameplate3"->"target" and
+			-- "softenemy"->"target" are the same victim), while the
+			-- REPORTING token must differ. Distinct hits on the same unit
+			-- share the token (imp swarm via one nameplate) and cleave
+			-- hits on different units share neither — with amounts secret
+			-- on Retail the old school+crit-only signature was eating
+			-- ~half of all rapid wounds. Only dedups safe-number schools;
+			-- secret schools always pass through. Amount joins the
+			-- signature whenever it is safe (Forever's amounts are
+			-- readable; Retail's are secret).
 			if ZSBT.IsSafeNumber(school) then
 				local amtSig = (ZSBT.IsSafeNumber(amount) and amount) or nil
-				local sig = self._lastTargetWoundSig
-				if sig and (t - sig.t) >= 0 and (t - sig.t) < 0.05
+				-- Per effective-unit last-signature: cleave streams
+				-- interleave wounds across dummies, and a single shared
+				-- slot would compare a wound against an unrelated unit's.
+				local sigs = self._lastWoundSigByUnit
+				if type(sigs) ~= "table" then
+					sigs = {}
+					self._lastWoundSigByUnit = sigs
+				end
+				local ukey = type(unit) == "string" and unit or "?"
+				local sig = sigs[ukey]
+				-- 20ms window: genuine re-reports dispatch same-frame
+				-- (measured ~0ms apart), while a co-attacker's same-school
+				-- same-crit wound can land anywhere — a wider window ate
+				-- real hits under contention (~1k kills/60s on a shared
+				-- dummy). Secret amounts already collapse the signature to
+				-- (school,crit) on Retail, so width is the only knob left.
+				if sig and (t - sig.t) >= 0 and (t - sig.t) < 0.02
+					and sig.token ~= rawUnit
 					and sig.school == school and sig.crit == isCrit
 					and sig.amount == amtSig then
-					auditNote(("AUDTWIN school=%s crit=%s amt=%s"):format(
-						dbgSafe(school), tostring(isCrit == true), dbgSafe(amount)))
+					H.auditNote(("AUDTWIN school=%s crit=%s amt=%s tok=%s"):format(
+						H.dbgSafe(school), tostring(isCrit == true), H.dbgSafe(amount), H.dbgSafe(rawUnit)))
 					return
 				end
-				self._lastTargetWoundSig = { t = t, school = school, crit = isCrit, amount = amtSig }
+				sigs[ukey] = { t = t, school = school, crit = isCrit, amount = amtSig, token = rawUnit }
+				-- Bound the map: nameplates churn, so expire entries
+				-- older than the dedup window in the same pass.
+				for k, v in pairs(sigs) do
+					if (t - v.t) >= 0.05 then sigs[k] = nil end
+				end
 			end
 			local zbtc = ZSBT.ZBattleText
 			if zbtc and zbtc.FileLog then
@@ -4776,9 +5797,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 			if not self._auditCapNoted then
 				self._auditCapNoted = true
-				auditNote(("AUDCAP swing=%s"):format(tostring(self._swingSupported == true)))
+				H.auditNote(("AUDCAP swing=%s"):format(tostring(self._swingSupported == true)))
 			end
-			auditNote(("AUDCAND school=%s crit=%s"):format(
+			H.auditNote(("AUDCAND school=%s crit=%s"):format(
 				(ZSBT.IsSafeNumber(school) and tostring(school)) or "sec", tostring(isCrit == true)))
 		elseif actionStr then
 			-- Same non-damage event (HEAL, MISS/DODGE/PARRY/...) reported through
@@ -4798,8 +5819,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				local okM, m = pcall(GetNumGroupMembers)
 				if okM and type(m) == "number" then members = m end
 			end
-			ECPrint(("BIG_HIT UNIT_COMBAT_TARGET token=%s lastSpell=%s restrict=%s members=%s amt=%s school=%s desc=%s")
-				:format(dbgSafe(self._castToken), dbgSafe(self._lastPlayerSpellId), dbgSafe(restrict), dbgSafe(members), dbgSafe(amount), dbgSafe(school), dbgSafe(descriptor)))
+			H.ECPrint(("BIG_HIT UNIT_COMBAT_TARGET token=%s lastSpell=%s restrict=%s members=%s amt=%s school=%s desc=%s")
+				:format(H.dbgSafe(self._castToken), H.dbgSafe(self._lastPlayerSpellId), H.dbgSafe(restrict), H.dbgSafe(members), H.dbgSafe(amount), H.dbgSafe(school), H.dbgSafe(descriptor)))
 		end
 
 		-- Pet combat fallback:
@@ -4808,12 +5829,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		-- Heuristic: if pet is in combat and we have no recent player cast to attribute,
 		-- treat WOUND events on target as pet damage.
 		if actionStr == "WOUND" and UnitAffectingCombat and UnitExists then
-			local petsEnabled = (arePetsEnabled() == true)
+			local petsEnabled = (H.arePetsEnabled() == true)
 			local okEx, hasPet = pcall(UnitExists, "pet")
 			if petsEnabled ~= true then
 				if dl >= 4 and ZSBT.IsSafeNumber(amount) and amount > 0 and (not isPhysicalEarly) and (ZSBT.IsSafeNumber(school) and school == 4) then
-					ECPrint(("PET_FALLBACK_SKIP petsEnabled=0 token=%s amt=%s school=%s")
-						:format(dbgSafe(self._castToken), dbgSafe(amount), dbgSafe(school)))
+					H.ECPrint(("PET_FALLBACK_SKIP petsEnabled=0 token=%s amt=%s school=%s")
+						:format(H.dbgSafe(self._castToken), H.dbgSafe(amount), H.dbgSafe(school)))
 				end
 			elseif okEx and hasPet == true then
 				local okPet, inPetCombat = pcall(UnitAffectingCombat, "pet")
@@ -4833,7 +5854,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					end
 					-- General safety: if the hit's school strongly suggests it's pet damage for this
 					-- class, don't let the player's recent-cast window hijack it.
-					if isLikelyPetSchoolHitGivenRecentPlayerSpell(self, school, self._lastPlayerSpellId) then
+					if self:_isLikelyPetSchoolHitGivenRecentPlayerSpell(school, self._lastPlayerSpellId) then
 						recentPlayerCast = false
 					end
 					-- DoT ticks can arrive long after the cast and look like small magic WOUND
@@ -4841,65 +5862,67 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- this as player periodic damage instead of pet damage.
 					local dotSpellId = nil
 					if not isPhysicalEarly then
-						dotSpellId = pickDotForWound(self, t, school, amount, isCrit)
+						dotSpellId = self:_pickDotForWound(t, school, amount, isCrit)
 					end
 					-- Class-module dot guard: e.g. Warlock Imp fire hits are pet damage,
 					-- never player DoT ticks.
 					if ZSBT.ClassDB and ZSBT.ClassDB.DotGuard then
-						if ZSBT.ClassDB.DotGuard(dotSpellId and dotEntryForSpellId(dotSpellId) or nil, school) == false then
+						if ZSBT.ClassDB.DotGuard(dotSpellId and H.dotEntryForSpellId(dotSpellId) or nil, school) == false then
 							recentPlayerCast = false
 							dotSpellId = nil
 						end
 					end
 					-- School safety: a DoT entry may declare its school; never attribute
 					-- hits of a different school to it (spellId variants included).
-					local dotEntry = dotSpellId and dotEntryForSpellId(dotSpellId) or nil
-					if dotEntry and dotEntry.school and ZSBT.IsSafeNumber(school) and dotEntrySchoolEq(dotEntry.school, school) == false then
+					local dotEntry = dotSpellId and H.dotEntryForSpellId(dotSpellId) or nil
+					if dotEntry and dotEntry.school and ZSBT.IsSafeNumber(school) and H.dotEntrySchoolEq(dotEntry.school, school) == false then
 						dotSpellId = nil
 					end
 					if dl >= 4 and ZSBT.IsSafeNumber(amount) and amount > 0 and (not isPhysicalEarly) and (ZSBT.IsSafeNumber(school) and school == 4) then
-						local petFam = getPetFamilyLower()
-						local petNpcId = getUnitNpcId("pet")
-						ECPrint(("PET_FALLBACK_EVAL token=%s restrict=%s recentPlayerCast=%s dotSpellId=%s amt=%s school=%s")
-							:format(dbgSafe(self._castToken), dbgSafe(restrict), dbgSafe(recentPlayerCast), dbgSafe(dotSpellId), dbgSafe(amount), dbgSafe(school))
+						local petFam = H.getPetFamilyLower()
+						local petNpcId = H.getUnitNpcId("pet")
+						H.ECPrint(("PET_FALLBACK_EVAL token=%s restrict=%s recentPlayerCast=%s dotSpellId=%s amt=%s school=%s")
+							:format(H.dbgSafe(self._castToken), H.dbgSafe(restrict), H.dbgSafe(recentPlayerCast), H.dbgSafe(dotSpellId), H.dbgSafe(amount), H.dbgSafe(school))
 							.. (petNpcId and (" petNpcId=" .. tostring(petNpcId)) or "")
 							.. (petFam and (" petFam=" .. tostring(petFam)) or ""))
 					end
 					-- Safety: only treat it as a DoT tick if the target actually has the debuff.
 					-- Without this, any recent non-periodic cast (e.g. Shadow Bolt) can "stick"
 					-- as the spellId for unrelated magic WOUND ticks.
-					local chanPick = isLiveChannelPick(self, t, dotSpellId)
-					if dotSpellId and not chanPick and (not cachedHasTargetDebuffSpellId(dotSpellId)) then
+					local chanPick = self:_isLiveChannelPick(t, dotSpellId)
+					if dotSpellId and not chanPick and (not H.cachedHasTargetDebuffSpellId(dotSpellId)) then
 						local allowDot = false
-						local de2 = dotEntryForSpellId(dotSpellId)
+						local de2 = H.dotEntryForSpellId(dotSpellId)
 						if de2 and de2.school and ZSBT.IsSafeNumber(school)
-							and dotEntrySchoolEq(de2.school, school) == true then
+							and H.dotEntrySchoolEq(de2.school, school) == true then
 							allowDot = true
 						end
 						if not allowDot then
 							dotSpellId = nil
 						end
 					end
-					if dotSpellId and dotCadenceOk(self, t, dotSpellId) then
+					if dotSpellId and self:_dotCadenceOk(t, dotSpellId) then
 						if not isCorroboratedHugeHit(t, amount, dotSpellId) then
 							if dl >= 4 then
-								ECPrint(("BIG_HIT_SUPPRESS src=UNIT_COMBAT_DOT token=%s spellId=%s amt=%s")
-									:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(amount)))
+								H.ECPrint(("BIG_HIT_SUPPRESS src=UNIT_COMBAT_DOT token=%s spellId=%s amt=%s")
+									:format(H.dbgSafe(self._castToken), H.dbgSafe(dotSpellId), H.dbgSafe(amount)))
 							end
-							auditNote(("AUDD reason=DOT_HUGE_SUPPRESS spellId=%s school=%s"):format(dbgSafe(dotSpellId), dbgSafe(school)))
+							H.auditNote(("AUDD reason=DOT_HUGE_SUPPRESS spellId=%s school=%s"):format(H.dbgSafe(dotSpellId), H.dbgSafe(school)))
 							return
 						end
-						if not chanPick and isDuplicateDotEmit(self, t, dotSpellId) then
-							auditNote(("AUDD reason=DOT_DUP spellId=%s"):format(dbgSafe(dotSpellId)))
+						if not chanPick and self:_isDuplicateDotEmit(t, dotSpellId) then
+							H.auditNote(("AUDD reason=DOT_DUP spellId=%s"):format(H.dbgSafe(dotSpellId)))
 							return
 						end
 						self._recentPeriodicSpellAt[dotSpellId] = t
-						local tName = safeUnitName("target")
-						noteDotTickAmount(self, dotSpellId, amount, isCrit, t, tName)
+						local tName = H.safeUnitName("target")
+						self:_noteDotTickAmount(dotSpellId, amount, isCrit, t, tName,
+							chanPick == true or self._dotPickTeach == true
+								or H.cachedHasTargetDebuffSpellId(dotSpellId) == true)
 						local pipeId = self._rawPipeCount + 1
 						self._rawPipeCount = pipeId
 						self._rawPipe[pipeId] = amount
-						emit("OUTGOING_DAMAGE_COMBAT", {
+						H.emit("OUTGOING_DAMAGE_COMBAT", {
 							timestamp = t,
 							rawPipeId = pipeId,
 							amount = amount,
@@ -4922,7 +5945,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- procs and the player's own non-physical abilities out of the
 					-- pet scroll. Unknown/nil schools stay permissive.
 					local petEligibleHit = true
-					if ZSBT.IsSafeNumber(school) and not isLikelyPetSchoolHit(school) then
+					if ZSBT.IsSafeNumber(school) and not H.isLikelyPetSchoolHit(school) then
 						petEligibleHit = false
 						-- Class hook: physical pets (warlock Dreadstalker/
 						-- Gloomhound melee). A school-1 hit the player's own
@@ -4930,19 +5953,19 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						-- trusted, group content is safe — a MY_PET melee
 						-- line must confirm the hit downstream; untrusted
 						-- stays solo-only (foreign swings are unverifiable).
-						if school == 1 and isLikelyPetPhysicalHit(school)
-							and not (self._swingSupported == true and anySwingRecent(self, t))
-							and (zbtVetoActive() or not members or members <= 1) then
+						if school == 1 and H.isLikelyPetPhysicalHit(school)
+							and not (self._swingSupported == true and self:_anySwingRecent(t))
+							and (H.zbtVetoActive() or not members or members <= 1) then
 							petEligibleHit = true
 						end
 					end
 					if not recentPlayerCast and petEligibleHit then
 						if not isCorroboratedHugePetHit(t, amount) then
 							if dl >= 4 then
-								ECPrint(("BIG_HIT_SUPPRESS src=PET_FALLBACK token=%s amt=%s")
-									:format(dbgSafe(self._castToken), dbgSafe(amount)))
+								H.ECPrint(("BIG_HIT_SUPPRESS src=PET_FALLBACK token=%s amt=%s")
+									:format(H.dbgSafe(self._castToken), H.dbgSafe(amount)))
 							end
-							auditNote(("AUDD reason=PET_HUGE_SUPPRESS school=%s"):format(dbgSafe(school)))
+							H.auditNote(("AUDD reason=PET_HUGE_SUPPRESS school=%s"):format(H.dbgSafe(school)))
 							return
 						end
 						-- Group-aware pet gate: when restrict is active (Quiet/Strict/PvP/Instance-Aware)
@@ -4950,18 +5973,18 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						-- signature. This prevents other players' damage on shared targets from
 						-- being misattributed as pet damage.
 						if restrict == true and members and members > 1 then
-							if not isLikelyPetSchoolHit(school) then
+							if not H.isLikelyPetSchoolHit(school) then
 								-- v2: a MY_PET line can still prove this hit
 								-- (guardian/pet damage the school table misses);
 								-- foreign lines veto co-attacker wounds at flush.
-								if zbtVetoActive() then
-									auditNote(("AUDD reason=BYPASS_PET_GROUP_SUPPRESS school=%s"):format(dbgSafe(school)))
+								if H.zbtVetoActive() then
+									H.auditNote(("AUDD reason=BYPASS_PET_GROUP_SUPPRESS school=%s"):format(H.dbgSafe(school)))
 								else
 									if dl >= 4 then
-										ECPrint(("PET_FALLBACK_GROUP_SUPPRESS restrict=%s members=%s school=%s amt=%s")
-											:format(dbgSafe(restrict), dbgSafe(members), dbgSafe(school), dbgSafe(amount)))
+										H.ECPrint(("PET_FALLBACK_GROUP_SUPPRESS restrict=%s members=%s school=%s amt=%s")
+											:format(H.dbgSafe(restrict), H.dbgSafe(members), H.dbgSafe(school), H.dbgSafe(amount)))
 									end
-									auditNote(("AUDD reason=PET_GROUP_SUPPRESS school=%s"):format(dbgSafe(school)))
+									H.auditNote(("AUDD reason=PET_GROUP_SUPPRESS school=%s"):format(H.dbgSafe(school)))
 									return
 								end
 							end
@@ -4972,20 +5995,18 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						-- contested detector — our own pet hits carry MINE
 						-- pet lines and never feed — and while it's armed the
 						-- claim dies here instead of wearing our pet's name.
-						if autoContested(self, t) then
-							dbgDrop("CONTESTED", self._castToken, school)
+						if self:_autoContested(t) then
+							H.dbgDrop("CONTESTED", self._castToken, school)
 							return
 						end
-						-- Dedup: the same pet swing can arrive twice via UNIT_COMBAT
-						-- or once here and once via the "Your pet hits" chat line.
-						local lastPetFb = self._lastPetFallbackAt or 0
+						-- Wound-vs-wound re-reports are already collapsed
+						-- upstream by the token-aware target-wound dedup
+						-- (AUDTWIN). This path still dedups against a "Your
+						-- pet hits" chat line — the chat emit covers the
+						-- same hit's display.
 						local lastPetChat = self._lastPetChatAt or 0
-						if (t - lastPetFb) >= 0 and (t - lastPetFb) < PET_OUTGOING_DEDUP_WINDOW then
-							auditNote("AUDD reason=PET_FB_DEDUP")
-							return
-						end
-						if (t - lastPetChat) >= 0 and (t - lastPetChat) < PET_OUTGOING_DEDUP_WINDOW then
-							auditNote("AUDD reason=PET_CHAT_DEDUP")
+						if (t - lastPetChat) >= 0 and (t - lastPetChat) < H.PET_OUTGOING_DEDUP_WINDOW then
+							H.auditNote("AUDD reason=PET_CHAT_DEDUP")
 							return
 						end
 						self._lastPetFallbackAt = t
@@ -5003,14 +6024,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						self._rawPipeCount = pipeId
 						self._rawPipe[pipeId] = amount
 						if dl >= 4 then
-							ECPrint(("PET_FALLBACK_EMIT token=%s rawPipeId=%s amt=%s school=%s")
-								:format(dbgSafe(self._castToken), dbgSafe(pipeId), dbgSafe(amount), dbgSafe(school)))
+							H.ECPrint(("PET_FALLBACK_EMIT token=%s rawPipeId=%s amt=%s school=%s")
+								:format(H.dbgSafe(self._castToken), H.dbgSafe(pipeId), H.dbgSafe(amount), H.dbgSafe(school)))
 						end
-						local zbt2 = ZSBT.ZBattleText
-						if zbt2 and zbt2.FileLog then
-							zbt2:FileLog(("PET_EMIT school=%s"):format(tostring(school)))
-						end
-						local petSid, petUnit = consumePetCast(self, t, 1.5, school)
+						local petSid, petUnit = self:_consumePetCast(t, 1.5, school)
 						local petSidTrusted = petSid ~= nil
 						local petEvidence = petSid and "cast" or nil
 						if petSid == nil and ZSBT.ClassDB and ZSBT.ClassDB.ResolvePetSpellId then
@@ -5024,12 +6041,18 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							petSid = ZSBT.ClassDB.ResolvePetMelee(self)
 							petEvidence = petSid and "melee" or nil
 						end
-						if zbtVetoActive() then
+						local zbt2 = ZSBT.ZBattleText
+						if zbt2 and zbt2.FileLog then
+							zbt2:FileLog(("PET_EMIT ht=%.3f school=%s psid=%s pev=%s tok=%s"):format(
+								tonumber(t) or 0, tostring(school), tostring(petSid),
+								tostring(petEvidence or "guess"), tostring(self._castToken)))
+						end
+						if H.zbtVetoActive() then
 							-- Pet hits go through the ownership veto: a MY_PET
 							-- line must confirm them (the sinkType swap delivers
 							-- PET_DAMAGE_COMBAT after pairing). Foreign damage
 							-- produces no such line and FLIN vetoes it.
-							emit("OUTGOING_DAMAGE_COMBAT", {
+							H.emit("OUTGOING_DAMAGE_COMBAT", {
 								timestamp = t,
 								rawPipeId = pipeId,
 								spellId = nil,
@@ -5043,10 +6066,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								isCrit = isCrit,
 								petBucket = (ZSBT.IsSafeNumber(school) and school ~= 1) and "summons" or nil,
 								schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
-								targetName = safeUnitName("target"),
+								targetName = H.safeUnitName("target"),
 							})
 						else
-						emit("PET_DAMAGE_COMBAT", {
+						H.emit("PET_DAMAGE_COMBAT", {
 							timestamp = t,
 							rawPipeId = pipeId,
 							petSpellId = petSid,
@@ -5058,7 +6081,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							isCrit = isCrit,
 							petBucket = (ZSBT.IsSafeNumber(school) and school ~= 1) and "summons" or nil,
 							schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
-							targetName = safeUnitName("target"),
+							targetName = H.safeUnitName("target"),
 						})
 						end
 						return
@@ -5067,7 +6090,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			elseif okEx and hasPet ~= true then
 				-- Guardian-style pets (e.g. DK ghoul): class module decides.
 				if ZSBT.ClassDB and ZSBT.ClassDB.OnGuardianWound then
-					if ZSBT.ClassDB.OnGuardianWound(self, {
+					local okG, handledOrErr = pcall(ZSBT.ClassDB.OnGuardianWound, self, {
 						t = t,
 						amount = amount,
 						isCrit = isCrit,
@@ -5075,13 +6098,23 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						restrict = restrict,
 						members = members,
 						dl = dl,
-						emit = emit,
-						safeUnitName = safeUnitName,
-						petSchoolHit = isLikelyPetSchoolHit,
-						dedupWindow = PET_OUTGOING_DEDUP_WINDOW,
-						ecPrint = ECPrint,
-						dbgSafe = dbgSafe,
-					}) then
+						emit = H.emit,
+						safeUnitName = H.safeUnitName,
+						petSchoolHit = H.isLikelyPetSchoolHit,
+						dedupWindow = H.PET_OUTGOING_DEDUP_WINDOW,
+						ecPrint = H.ECPrint,
+						dbgSafe = H.dbgSafe,
+					})
+					if okG ~= true then
+						local tE = H.now()
+						if tE - (self._hookErrAt or -9) >= 5 then
+							self._hookErrAt = tE
+							local zbt = ZSBT.ZBattleText
+							if zbt and zbt.FileLog then
+								zbt:FileLog(("HOOKERR fn=guardianWound err=%s"):format(H.dbgSafe(handledOrErr)))
+							end
+						end
+					elseif handledOrErr then
 						return
 					end
 				end
@@ -5100,7 +6133,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- nil-action candidacy queued these as pending heals,
 				-- let them steal the next real heal's line, and emitted
 				-- a WOUND amount as a heal tick.
-				auditNote("AUDD reason=NOT_ATTACKABLE")
+				H.auditNote("AUDD reason=NOT_ATTACKABLE")
 				return
 			end
 		end
@@ -5109,7 +6142,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- PvP Strict Mode: UNIT_COMBAT(target) healing has no ownership attribution and
 			-- can frequently represent other players' healing on your target.
 			-- Suppress to prevent green outgoing noise (especially for non-healer classes).
-			if isPvPStrictActive() then
+			if H.isPvPStrictActive() then
 				return
 			end
 			-- Mob self-heals: the player cannot heal an attackable (hostile)
@@ -5135,7 +6168,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			if self._lastPlayerSpellAt and self._lastPlayerSpellId then
 				local age = t - (self._lastPlayerSpellAt or 0)
 				if age >= 0 and age <= 1.5
-					and miwClaim(self, self._lastPlayerSpellId, self._lastPlayerSpellAt, t, school) then
+					and self:_miwClaim(self._lastPlayerSpellId, self._lastPlayerSpellAt, t, school) then
 					spellId = self._lastPlayerSpellId
 					castNamed = true
 				end
@@ -5146,13 +6179,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- filtered heal-line ownership + cast-seeded cadence on
 				-- the target. sid == 0 means the line proved ours but no
 				-- armed hot named it — a bare proven heal still emits.
-				local hsid, hPeriodic, why = matchOutgoingHotTick(self, "target", t)
+				local hsid, hPeriodic, why = self:_matchOutgoingHotTick("target", t)
 				if hsid == nil then
 					if why == "noline" then
-						queuePendingHotHeal(self, "target", t, amount, school, isCrit)
+						self:_queuePendingHotHeal("target", t, amount, school, isCrit)
 						return
 					end
-					auditNote(("AUDHX unit=target why=%s"):format(tostring(why)))
+					H.auditNote(("AUDHX unit=target why=%s"):format(tostring(why)))
 				end
 				if hsid ~= nil and hsid ~= 0 then
 					spellId = hsid
@@ -5174,22 +6207,22 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- already checked and recorded this UC's own claim (checking
 			-- again would self-dup and suppress this emit).
 			if castNamed then
-				if isHealAliasDup(self, "target", t) then
+				if self:_isHealAliasDup("target", t) then
 					return
 				end
-				noteHealClaim(self, "target", t)
+				self:_noteHealClaim("target", t)
 			end
 
 			local zH = ZSBT.ZBattleText
 			if zH and zH.FileLog then
 				zH:FileLog(("HEAL_TGT sid=%s restrict=%s"):format(tostring(spellId), tostring(restrict == true)))
 			end
-			emit("OUTGOING_HEAL_COMBAT", {
+			H.emit("OUTGOING_HEAL_COMBAT", {
 				timestamp = t,
 				rawPipeId = pipeId,
 				amountText = (ZSBT.IsSafeNumber(amount) and tostring(amount)) or nil,
 				spellId = spellId,
-				targetName = safeUnitName("target"),
+				targetName = H.safeUnitName("target"),
 				isCrit = isCrit,
 				isPeriodic = hotTick or nil,
 				schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
@@ -5203,22 +6236,32 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				or actionStr == "BLOCK" or actionStr == "ABSORB" or actionStr == "IMMUNE"
 				or actionStr == "DEFLECT" or actionStr == "REFLECT" or actionStr == "EVADE" then
 				local spellId = nil
-				if self._lastPlayerSpellAt and self._lastPlayerSpellId then
+				-- PARRY/DODGE/BLOCK misses come only from melee attacks —
+				-- a no-auto class produces none (observed: Tangkresh's
+				-- parried swing wore Bane of Agony's pending record).
+				local meleeAvoid = actionStr == "PARRY" or actionStr == "DODGE"
+					or actionStr == "BLOCK"
+				local vetoesAuto = ZSBT.ClassDB and ZSBT.ClassDB.VetoAuto
+					and ZSBT.ClassDB.VetoAuto() or false
+				if self._lastPlayerSpellAt and self._lastPlayerSpellId
+					and not (meleeAvoid and vetoesAuto)
+					and not (ZSBT.ClassDB and ZSBT.ClassDB.ExcludedSpellId
+						and ZSBT.ClassDB.ExcludedSpellId(self._lastPlayerSpellId)) then
 					local age = t - self._lastPlayerSpellAt
 					if age >= 0 and age <= 1.5
-						and miwClaim(self, self._lastPlayerSpellId, self._lastPlayerSpellAt, t, school) then
+						and self:_miwClaim(self._lastPlayerSpellId, self._lastPlayerSpellAt, t, school) then
 						spellId = self._lastPlayerSpellId
 					end
 				end
 				if restrict and not spellId then
 					return
 				end
-				emit("OUTGOING_MISS_COMBAT", {
+				H.emit("OUTGOING_MISS_COMBAT", {
 					timestamp = t,
 					amountText = actionStr,
 					spellId = spellId,
 					amountSource = "UNIT_COMBAT_MISS",
-					targetName = safeUnitName("target"),
+					targetName = H.safeUnitName("target"),
 					isCrit = false,
 				})
 			end
@@ -5244,13 +6287,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		local petMayOwnHit = false
 		if hasPet and UnitAffectingCombat then
 			local okPC, inPetCombat = pcall(UnitAffectingCombat, "pet")
-			if okPC and inPetCombat == true and isLikelyPetSchoolHit(school) then
+			if okPC and inPetCombat == true and H.isLikelyPetSchoolHit(school) then
 				petMayOwnHit = true
 			end
 		end
 		local allowAutoFallback = false
 		if restrict == true and (not petMayOwnHit) then
-			if isPvPStrictActive() and getPvPStrictFlag("pvpStrictDisableAutoAttackFallback") ~= false then
+			if H.isPvPStrictActive() and H.getPvPStrictFlag("pvpStrictDisableAutoAttackFallback") ~= false then
 				allowAutoFallback = false
 			else
 			-- Normal behavior: instance-only opt-in auto-attack fallback.
@@ -5259,7 +6302,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					allowAutoFallback = true
 				end
 			-- Quiet mode behavior: separate opt-in for showing auto-attacks while quiet.
-			elseif isQuietOutgoingAutoAttacks() == true then
+			elseif H.isQuietOutgoingAutoAttacks() == true then
 				if members and members > 1 then
 					allowAutoFallback = false
 				else
@@ -5270,11 +6313,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					end
 					if inPlayerCombat then
 						-- Midnight: IsCurrentSpell(6603)/IsSpellInRange are unreliable or return
-						-- secret values, so isPlayerAutoAttackActive()/isPlayerMeleeEngaged()
+						-- secret values, so H.isPlayerAutoAttackActive()/H.isPlayerMeleeEngaged()
 						-- frequently return false even while actively swinging. When solo (the
 						-- members>1 case is already handled above), treat "in combat with a
 						-- hostile target" as sufficient evidence of an auto-attack.
-						local autoOk = isPlayerAutoAttackActive() or isPlayerMeleeEngaged()
+						local autoOk = H.isPlayerAutoAttackActive() or H.isPlayerMeleeEngaged()
 						if (not autoOk) then
 							autoOk = true
 						end
@@ -5305,43 +6348,72 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- Rend (772) periodic ticks are physical WOUND events in 12.x and contain no spellId.
 			-- Warrior-only heuristic: after a recent Rend cast, emit tick-like wounds as periodic.
 			-- Warrior Rend tick classifier lives in Classes/Warrior.lua now.
+			-- pcall: a module bug must not abort the core wound path —
+			-- an error here previously killed the wound outright.
 			if ZSBT.ClassDB and ZSBT.ClassDB.OnPhysicalWound then
-				ZSBT.ClassDB.OnPhysicalWound(self, {
+				local okHook, hookErr = pcall(ZSBT.ClassDB.OnPhysicalWound, self, {
 					t = t,
 					amount = amount,
 					isCrit = isCrit,
 					actionStr = actionStr,
-					hasTargetDebuff = cachedHasTargetDebuffSpellId,
-					autoAttackActive = isPlayerAutoAttackActive,
-					outDbgLevel = OutDbgLevel,
-					ecPrint = ECPrint,
-					dbgSafe = dbgSafe,
-					safeUnitName = safeUnitName,
-					emit = emit,
+					hasTargetDebuff = H.cachedHasTargetDebuffSpellId,
+					autoAttackActive = H.isPlayerAutoAttackActive,
+					outDbgLevel = H.OutDbgLevel,
+					ecPrint = H.ECPrint,
+					dbgSafe = H.dbgSafe,
+					safeUnitName = H.safeUnitName,
+					emit = H.emit,
+					-- Module-side swing veto: the collector's learned cadence
+					-- marks wounds that sit on a predicted own-swing beat.
+					-- Classifiers must not name those (Deep Wounds would
+					-- otherwise eat the melee stream at ~3s gaps).
+					swingPredicted = function(tt)
+						return self:_swingPredictedNear(tt) == true
+					end,
 				})
+				if okHook ~= true and hookErr ~= nil then
+					-- Throttled: one audit line per 5s so a bad module
+					-- can't flood the ring while errors persist.
+					local tE = H.now()
+					if tE - (self._hookErrAt or -9) >= 5 then
+						self._hookErrAt = tE
+						local zbt = ZSBT.ZBattleText
+						if zbt and zbt.FileLog then
+							zbt:FileLog(("HOOKERR err=%s"):format(H.dbgSafe(hookErr)))
+						end
+					end
+				end
 			end
 			-- Attempt to attribute physical hits to a recent cast (abilities like Shield Slam).
 			-- If no match exists, treat as auto-attack (no icon). If a pet exists, we require
 			-- a match to avoid mis-attributing pet melee.
-			local castWindow = (restrict == true) and 0.35 or 0.85
+			-- 0.55 matches the non-physical restrict window below: UC wounds
+			-- lag the cast 0.3-0.9s on this client, so 0.35 starved named
+			-- claims while still being wide enough to admit foreign hits.
+			-- The palette line is the ownership proof downstream either way.
+			local castWindow = (restrict == true) and 0.55 or 0.85
+			-- Pin to the last ENQUEUED cast (damage casts only): refused casts
+			-- like DRW/Gorefiend's still move _lastPlayerSpellId, which would
+			-- pin wound claims to a sid that can never match the pool.
+			local dmgId, dmgAt = self._lastPlayerDamageCastId, self._lastPlayerDamageCastAt
 			local wantSpellId = nil
 			if restrict == true then
-				wantSpellId = self._lastPlayerSpellId
+				wantSpellId = dmgId or self._lastPlayerSpellId
 			end
 			local wwRecent = false
-			if isWhirlwindSpellId(self._lastPlayerSpellId) and self._lastPlayerSpellAt then
-				local age = t - (self._lastPlayerSpellAt or 0)
+			if H.isWhirlwindSpellId(dmgId or self._lastPlayerSpellId) and (dmgAt or self._lastPlayerSpellAt) then
+				local age = t - (dmgAt or self._lastPlayerSpellAt or 0)
 				if age >= 0 and age <= 0.85 then
 					wwRecent = true
 				end
 			end
 			if wwRecent and not wantSpellId then
-				wantSpellId = self._lastPlayerSpellId
+				wantSpellId = dmgId or self._lastPlayerSpellId
 			end
 			local doConsume = true
 			if restrict ~= true then
 				doConsume = true
-			elseif isWhirlwindSpellId(wantSpellId) then
+			elseif H.isWhirlwindSpellId(wantSpellId) then
 				local tok = self._castToken
 				local st = self._restrictPhysMulti
 				if type(st) ~= "table" or st.token ~= tok or st.spellId ~= wantSpellId or (t - (st.at or 0)) > 0.60 then
@@ -5353,21 +6425,25 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- keep the pending cast available so multiple hits can still be attributed.
 				doConsume = false
 			end
-			local matchedCast = consumeBestPendingCast(self, t, wantSpellId, castWindow, doConsume, school)
-			-- Strict/restricted mode normally requires a pending-cast match. For Whirlwind,
-			-- the UNIT_COMBAT(target) stream can contain more hits than we can reliably
-			-- match; allow a short post-cast window to still attribute as Whirlwind.
-			if (not matchedCast) and isWhirlwindSpellId(wantSpellId) and wwRecent then
-				matchedCast = { spellId = wantSpellId, eligibleIcon = true }
-			end
-			-- Physical DoT ticks (feral/warrior bleeds) never reach the
-			-- non-physical dot path — they surface here. A school-1 wound
-			-- earns a bleed name only when a MINE-filtered "tick" line
-			-- corroborates that a periodic hit of ours just fired, and the
-			-- wound lands on the picked dot's own tick grid; everything
-			-- else falls through to the white-hit machinery unchanged.
-			if not matchedCast then
-				local dotSpellId = pickDotForWound(self, t, school, amount, isCrit)
+			-- Swing-beat wounds are auto attacks: they carry no identity and
+			-- can only ever steal a cast's name/budget. Excluding them from
+			-- cast claims is unconditional — the autoAttackMode toggle then
+			-- governs display only (Hide = silent, Show All = anonymous).
+			-- OFFT is NOT gated: swings only hit the current target, so a
+			-- nameplate wound on a beat is a real cleave hit. Bleed-tick
+			-- naming (physDotCand) also stays open — a DoT tick may
+			-- legitimately coincide with a swing beat.
+			local onSwingBeat = self:_swingPredictedNear(t, 0.35)
+			-- Physical DoT eval runs BEFORE cast claims: tick-grid
+			-- membership + a MINE "tick" line is stronger identity evidence
+			-- than cast-window proximity — otherwise every bleed tick that
+			-- lands inside a cast window steals the cast's icon (the "I'm
+			-- HS, not VS" defect). A real direct hit produces a "direct"
+			-- line, fails tickOk below, and falls through to cast claims.
+			local physDotCand = nil
+			do
+				local dotSpellId = self:_pickDotForWound(t, school, amount, isCrit)
+				physDotCand = dotSpellId
 				-- Aura reads are unreliable on secret-value clients — the
 				-- corroborating evidence is the MINE-filtered "tick" line:
 				-- our bleed ticks always produce one, a foreign white hit
@@ -5379,22 +6455,24 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					tickOk = (zbt and zbt.PeekDamageLine)
 						and (zbt:PeekDamageLine(t, 0.30, { tick = true }) ~= nil) or nil
 				end
-				local cadOk = (dotSpellId and tickOk) and dotCadenceOk(self, t, dotSpellId) or nil
-				auditNote(("AUDD reason=PDOT_EVAL ret=%s tk=%s cad=%s dis=%s")
-					:format(dbgSafe(dotSpellId), dbgSafe(tickOk), dbgSafe(cadOk),
-						dbgSafe(ZSBT.ClassDB and ZSBT.ClassDB.DotCadenceDisambig and ZSBT.ClassDB.DotCadenceDisambig() or nil)))
+				local cadOk = (dotSpellId and tickOk) and self:_dotCadenceOk(t, dotSpellId) or nil
+				H.auditNote(("AUDD reason=PDOT_EVAL ret=%s tk=%s cad=%s dis=%s")
+					:format(H.dbgSafe(dotSpellId), H.dbgSafe(tickOk), H.dbgSafe(cadOk),
+						H.dbgSafe(ZSBT.ClassDB and ZSBT.ClassDB.DotCadenceDisambig and ZSBT.ClassDB.DotCadenceDisambig() or nil)))
 				if not tickOk then
 					dotSpellId = nil
 				end
 				if dotSpellId and cadOk then
-					if not isDuplicateDotEmit(self, t, dotSpellId) then
+					if not self:_isDuplicateDotEmit(t, dotSpellId) then
 						self._recentPeriodicSpellAt[dotSpellId] = t
-						local tName = safeUnitName("target")
-						noteDotTickAmount(self, dotSpellId, amount, isCrit, t, tName)
+						local tName = H.safeUnitName("target")
+						-- Proven: a client-typed tick line was required to
+						-- reach this claim.
+						self:_noteDotTickAmount(dotSpellId, amount, isCrit, t, tName, true)
 						local pipeId = self._rawPipeCount + 1
 						self._rawPipeCount = pipeId
 						self._rawPipe[pipeId] = amount
-						emit("OUTGOING_DAMAGE_COMBAT", {
+						H.emit("OUTGOING_DAMAGE_COMBAT", {
 							timestamp = t,
 							rawPipeId = pipeId,
 							amount = amount,
@@ -5408,6 +6486,110 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						})
 					end
 					return
+				end
+			end
+			-- Pet-evidence veto (IS NOT): a cls=pet line at this instant
+			-- tags this wound a pet hit. With a pending pet cast record
+			-- naming a DIFFERENT spell, it is that pet spell's hit —
+			-- never the player record it would steal (tape: Bite/autos
+			-- claiming Cobra/KC records, real hits then finding
+			-- pool=EMPTY). Same-name pet strikes (KC strike 83381 vs
+			-- player record 34026) stay claimable — the record IS their
+			-- name. Line-only proof (autos) vetoes on retail only.
+			-- PetExecuted sids are exempt both ways: their legitimate
+			-- hits are pet-lined by design (KC strike, Bloodshed bleed),
+			-- so pet evidence can never distinguish steal from strike —
+			-- the flight gate owns that question for them.
+			local petVeto = nil
+			local zbtV = ZSBT.ZBattleText
+			if zbtV and zbtV.PeekDamageLine
+				and zbtV:PeekDamageLine(t, 0.12, { melee = true }) then
+				local peek = self:_consumeBestPendingCast(t, wantSpellId, castWindow, false, school)
+				if not peek and wantSpellId then
+					peek = self:_consumeBestPendingCast(t, nil, castWindow, false, school)
+				end
+				if peek
+					and not (ZSBT.ClassDB and ZSBT.ClassDB.PetExecuted
+						and ZSBT.ClassDB.PetExecuted(peek.spellId)) then
+					local pSid = pendingPetCast(self, t, 1.5, school)
+					if pSid and pSid ~= peek.spellId then
+						local pN, rN = auraSpellName(pSid), auraSpellName(peek.spellId)
+						if pN and rN and pN ~= rN then petVeto = true end
+					elseif pSid == nil
+						and not (ZSBT.ClassDB and ZSBT.ClassDB.IsForever
+							and ZSBT.ClassDB.IsForever()) then
+						petVeto = true
+					end
+				end
+			end
+			local matchedCast = nil
+			if onSwingBeat ~= true and not petVeto then
+				matchedCast = self:_consumeBestPendingCast(t, wantSpellId, castWindow, doConsume, school)
+				-- Pin miss -> pool fallback: the newest cast can be a
+				-- different school than this wound (DK: phys wound pinned
+				-- to a shadow cast can never match, stranding its OWN
+				-- phys record in the pool). self._castSchoolOk still filters,
+				-- and foreign ownership is proven downstream by palette
+				-- lines — the pin was only ever a preference, not a gate.
+				if not matchedCast and wantSpellId then
+					matchedCast = self:_consumeBestPendingCast(t, nil, castWindow, doConsume, school)
+				end
+			end
+			if not matchedCast then
+				-- PHYS_MISS: record exactly why the pending pool couldn't name
+				-- this wound — want sid, and every queued cast as sid@dt —
+				-- so logs answer "no record / wrong pin / aged out" directly.
+				-- swing=1 marks intentional exclusion (predicted white hit).
+				local zbtM = ZSBT.ZBattleText
+				if zbtM and zbtM.FileLog and ZSBT._ucDropTrace == true then
+					local parts = nil
+					for _, c in ipairs(self._pendingCasts or {}) do
+						if c and c.at and c.spellId then
+							parts = (parts and (parts .. ",") or "") .. tostring(c.spellId) .. "@" .. string.format("%.2f", t - c.at)
+						end
+					end
+					zbtM:FileLog(("PHYS_MISS want=%s school=%s pool=%s%s%s"):format(
+						tostring(wantSpellId), tostring(school), parts or "EMPTY",
+						onSwingBeat == true and " swing=1" or "",
+						petVeto == true and " pv=1" or ""))
+				end
+			end
+			-- Strict/restricted mode normally requires a pending-cast match. For Whirlwind,
+			-- the UNIT_COMBAT(target) stream can contain more hits than we can reliably
+			-- match; allow a short post-cast window to still attribute as Whirlwind.
+			if (not matchedCast) and onSwingBeat ~= true and not petVeto
+				and H.isWhirlwindSpellId(wantSpellId) and wwRecent then
+				matchedCast = { spellId = wantSpellId, eligibleIcon = true }
+			end
+			-- Recency claim (parity with the non-physical miw path): a cast's
+			-- pending record is single-consume, so hits #2..N of a cleave —
+			-- and phys wounds landing past the pending window — can still
+			-- name off the last cast. self._miwClaim enforces the sid@castAt
+			-- budget; self._castSchoolOk keeps a shadow cast from naming a phys
+			-- wound. Skipped when a phys DoT already claimed this wound's
+			-- slot (bleed ticks must not wear the applicator's name) and
+			-- when the wound sits on a predicted swing beat (white swings
+			-- stay anonymous rather than wearing the last cast).
+			if restrict and not matchedCast and physDotCand == nil
+				and onSwingBeat ~= true and not petVeto then
+				local lastAt = dmgAt or self._lastPlayerSpellAt
+				local lastId = dmgId or self._lastPlayerSpellId
+				if type(lastAt) == "number" and type(lastId) == "number" then
+					local age = t - lastAt
+					-- The cast must have already produced a claimed hit
+					-- (pending or OFFT) — that makes this a cleave follow-
+					-- up, not a stray wound borrowing the name. And 0.75s,
+					-- not the non-physical 1.25: measured claims past ~0.7s
+					-- were the NEXT ability's wounds wearing this name.
+					local claims = self._castClaims or {}
+					local prior = claims[tostring(lastId) .. "@" .. tostring(lastAt)] or 0
+					if age >= 0 and age <= 0.75 and prior >= 1
+						and self:_castSchoolOk(lastId, school)
+						and not (ZSBT.ClassDB and ZSBT.ClassDB.ExcludedSpellId
+							and ZSBT.ClassDB.ExcludedSpellId(lastId))
+						and self:_miwClaim(lastId, lastAt, t, school) then
+						matchedCast = { spellId = lastId, eligibleIcon = true }
+					end
 				end
 			end
 			-- Contested: another attacker on this target makes every
@@ -5425,16 +6607,16 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- v2: MY_PET/MINE lines can still prove unattributed
 					-- wounds in instances (pet melee, autos); FLIN vetoes
 					-- the guaranteed co-attacker's hits at flush instead.
-					if zbtVetoActive() then
-						dbgDrop("BYPASS_INST_UNATTR", self._castToken, school)
+					if H.zbtVetoActive() then
+						H.dbgDrop("BYPASS_INST_UNATTR", self._castToken, school)
 						matchedCast = { spellId = nil, eligibleIcon = false }
 					else
-						dbgDrop("INST_UNATTR", self._castToken, school)
+						H.dbgDrop("INST_UNATTR", self._castToken, school)
 						return
 					end
 				end
-				if not matchedCast and autoContested(self, t) then
-					dbgDrop("CONTESTED", self._castToken, school)
+				if not matchedCast and self:_autoContested(t) then
+					H.dbgDrop("CONTESTED", self._castToken, school)
 					return
 				end
 			end
@@ -5468,7 +6650,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				end
 				-- PLAYER_SWING: a real swing must back an auto claim, or pet/
 				-- follower melee gets shown as your auto-attack.
-				if canShow and not swingExplainsHit(self, t) then
+				if canShow and not self:_swingExplainsHit(t) then
 					canShow = false
 				end
 				if canShow then
@@ -5477,14 +6659,14 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					self._rawPipeCount = pipeId
 					self._rawPipe[pipeId] = amount
 					self._lastOutgoingCombatAt = t
-					self._lastOutgoingCombatTargetName = safeUnitName("target")
-					emit("OUTGOING_DAMAGE_COMBAT", {
+					self._lastOutgoingCombatTargetName = H.safeUnitName("target")
+					H.emit("OUTGOING_DAMAGE_COMBAT", {
 						timestamp = t,
 						rawPipeId = pipeId,
 						spellId = nil,
 						isAuto = true,
 						amountSource = "UNIT_COMBAT_AUTO_FALLBACK",
-						targetName = safeUnitName("target"),
+						targetName = H.safeUnitName("target"),
 						isCrit = isCrit,
 						schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
 					})
@@ -5492,11 +6674,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				end
 			end
 			if restrict and not matchedCast then
-				if zbtVetoActive() then
-					dbgDrop("BYPASS_RESTRICT_PHYS", self._castToken, school)
+				if H.zbtVetoActive() then
+					H.dbgDrop("BYPASS_RESTRICT_PHYS", self._castToken, school)
 					matchedCast = { spellId = nil, eligibleIcon = false }
 				else
-					dbgDrop("RESTRICT_PHYS", self._castToken, school)
+					H.dbgDrop("RESTRICT_PHYS", self._castToken, school)
 					return
 				end
 			end
@@ -5505,12 +6687,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- pet's. Only drop them here when the pet fallback could actually
 				-- claim this hit (school signature match); otherwise it's the
 				-- player's own swing and should continue to the white-hit path.
-				if isLikelyPetSchoolHit(school) then
-					if zbtVetoActive() then
-						dbgDrop("BYPASS_PET_SCHOOL_PHYS", self._castToken, school)
+				if H.isLikelyPetSchoolHit(school) then
+					if H.zbtVetoActive() then
+						H.dbgDrop("BYPASS_PET_SCHOOL_PHYS", self._castToken, school)
 						matchedCast = { spellId = nil, eligibleIcon = false }
 					else
-						dbgDrop("PET_SCHOOL_PHYS", self._castToken, school)
+						H.dbgDrop("PET_SCHOOL_PHYS", self._castToken, school)
 						return
 					end
 				end
@@ -5525,14 +6707,14 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- swinging. This reduces leakage when other players are also attacking your target.
 			if (restrict ~= true) and (quietMode ~= true) and (spellId == nil) then
 				if inInst == true then
-					if zbtVetoActive() then
-						dbgDrop("BYPASS_INST_UNATTR", self._castToken, school)
+					if H.zbtVetoActive() then
+						H.dbgDrop("BYPASS_INST_UNATTR", self._castToken, school)
 					else
-						dbgDrop("INST_UNATTR", self._castToken, school)
+						H.dbgDrop("INST_UNATTR", self._castToken, school)
 						return
 					end
-				elseif autoContested(self, t) then
-					dbgDrop("CONTESTED", self._castToken, school)
+				elseif self:_autoContested(t) then
+					H.dbgDrop("CONTESTED", self._castToken, school)
 					return
 				end
 				local okSwing = true
@@ -5555,28 +6737,28 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				local autoOk = nil
 				if okSwing then
 					-- Midnight: IsCurrentSpell(6603)/IsSpellInRange/CheckInteractDistance are
-					-- unreliable or return secret values, so isPlayerAutoAttackActive() and
-					-- isPlayerMeleeEngaged() frequently return false even while actively
+					-- unreliable or return secret values, so H.isPlayerAutoAttackActive() and
+					-- H.isPlayerMeleeEngaged() frequently return false even while actively
 					-- swinging. In solo open-world (restrict off, quiet off) there is no one
 					-- else to attribute the hit to, so treat "player in combat with a hostile
 					-- target" as sufficient evidence of a white swing. Group/instance leakage
 					-- is still handled by the restrict/instance-aware gates above.
-					autoOk = (isPlayerAutoAttackActive() or isPlayerMeleeEngaged()) and true or false
+					autoOk = (H.isPlayerAutoAttackActive() or H.isPlayerMeleeEngaged()) and true or false
 					if (not autoOk) and (not inPlayerCombat) then
 						okSwing = false
 					end
 				end
 				if not okSwing then
-					auditNote(("AUDD reason=WHT_EV inCbt=%s canAtk=%s auto=%s school=%s")
-						:format(tostring(inPlayerCombat), tostring(canAtk), tostring(autoOk), dbgSafe(school)))
+					H.auditNote(("AUDD reason=WHT_EV inCbt=%s canAtk=%s auto=%s school=%s")
+						:format(tostring(inPlayerCombat), tostring(canAtk), tostring(autoOk), H.dbgSafe(school)))
 					return
 				end
 			end
 			-- Prevent Whirlwind multi-hit attribution from absorbing unrelated huge physical
 			-- spikes in restricted instances (follower/party melee has no source attribution).
-			if restrict == true and isWhirlwindSpellId(spellId) and ZSBT.IsSafeNumber(amount) then
+			if restrict == true and H.isWhirlwindSpellId(spellId) and ZSBT.IsSafeNumber(amount) then
 				local st = self._restrictPhysMulti
-				if type(st) == "table" and st.token == self._castToken and isWhirlwindSpellId(st.spellId) then
+				if type(st) == "table" and st.token == self._castToken and H.isWhirlwindSpellId(st.spellId) then
 					if not (ZSBT.IsSafeNumber(st.firstAmt) and st.firstAmt > 0) then
 						st.firstAmt = amount
 					else
@@ -5589,13 +6771,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 			if not isCorroboratedHugeHit(t, amount, spellId or self._lastPlayerSpellId) then
 				if dl >= 4 then
-					ECPrint(("BIG_HIT_SUPPRESS src=UNIT_COMBAT_PHYSICAL token=%s spellId=%s amt=%s")
-						:format(dbgSafe(self._castToken), dbgSafe(spellId), dbgSafe(amount)))
+					H.ECPrint(("BIG_HIT_SUPPRESS src=UNIT_COMBAT_PHYSICAL token=%s spellId=%s amt=%s")
+						:format(H.dbgSafe(self._castToken), H.dbgSafe(spellId), H.dbgSafe(amount)))
 				end
-				dbgDrop("WHT_HUGE", self._castToken, school)
+				H.dbgDrop("WHT_HUGE", self._castToken, school)
 				return
 			end
-			if isWhirlwindSpellId(spellId) and wwAggEnabled(spellId)
+			if H.isWhirlwindSpellId(spellId) and H.wwAggEnabled(spellId)
 				and ZSBT.IsSafeNumber(amount) and amount > 0 then
 				-- If we are receiving addon-readable Whirlwind chat hits for this same cast,
 				-- do not double-count the UNIT_COMBAT stream.
@@ -5604,7 +6786,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				if chatTok == self._castToken and (t - chatAt) >= 0 and (t - chatAt) <= 1.25 then
 					return
 				end
-				wwAggPush(self, t, spellId, amount, isCrit, true)
+				self:_wwAggPush(t, spellId, amount, isCrit, true)
 				return
 			end
 			if ZSBT.ClassDB and ZSBT.ClassDB.OnMatchedPhysical then
@@ -5616,8 +6798,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- Cleave/Whirlwind multi-hits are never collapsed.
 			if spellId == nil then
 				local lastAuto = self._lastAutoOutgoingAt or 0
-				if (t - lastAuto) >= 0 and (t - lastAuto) < AUTO_OUTGOING_DEDUP_WINDOW then
-					dbgDrop("WHT_DEDUP", self._castToken, school)
+				if (t - lastAuto) >= 0 and (t - lastAuto) < H.AUTO_OUTGOING_DEDUP_WINDOW then
+					H.dbgDrop("WHT_DEDUP", self._castToken, school)
 					return
 				end
 				self._lastAutoOutgoingAt = t
@@ -5626,19 +6808,19 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			self._rawPipeCount = pipeId
 			self._rawPipe[pipeId] = amount
 			self._lastOutgoingCombatAt = t
-			self._lastOutgoingCombatTargetName = safeUnitName("target")
+			self._lastOutgoingCombatTargetName = H.safeUnitName("target")
 			-- A physical hit with no cast and no player swing is not your
 			-- auto — pet melee claims it when the class hook allows (the
 			-- veto then verifies a MY_PET line when trusted).
-			local swingOk = swingExplainsHit(self, t)
+			local swingOk = self:_swingExplainsHit(t)
 			local petRoutePhys = nil
 			local petSidPhys = nil
 			local petEvidence = nil
 			if spellId == nil and not swingOk
-				and isLikelyPetPhysicalHit(school)
-				and (zbtVetoActive() or not members or members <= 1) then
+				and H.isLikelyPetPhysicalHit(school)
+				and (H.zbtVetoActive() or not members or members <= 1) then
 				petRoutePhys = true
-				petSidPhys = consumePetCast(self, t, 1.5, school)
+				petSidPhys = self:_consumePetCast(t, 1.5, school)
 				local petSidPhysTrusted = petSidPhys ~= nil
 				petEvidence = petSidPhys and "cast" or nil
 				if petSidPhys == nil and ZSBT.ClassDB and ZSBT.ClassDB.ResolvePetSpellId then
@@ -5652,7 +6834,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					petEvidence = petSidPhys and "melee" or nil
 				end
 			end
-			emit("OUTGOING_DAMAGE_COMBAT", {
+			H.emit("OUTGOING_DAMAGE_COMBAT", {
 				timestamp = t,
 				rawPipeId = pipeId,
 				spellId = spellId,
@@ -5663,7 +6845,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				_petSidLearn = petSidPhysTrusted or nil,
 				petEvidence = petRoutePhys and (petEvidence or "guess") or nil,
 				amountSource = "UNIT_COMBAT_PHYSICAL",
-				targetName = safeUnitName("target"),
+				targetName = H.safeUnitName("target"),
 				isCrit = isCrit,
 				schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
 			})
@@ -5696,11 +6878,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- attribution or generic instead of stealing the name.
 					local schoolOk = true
 					if ch.school ~= nil and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(school) then
-						schoolOk = dotEntrySchoolEq(ch.school, school) == true
+						schoolOk = H.dotEntrySchoolEq(ch.school, school) == true
 					end
 					if not schoolOk then
-						auditNote(("AUDD reason=CHANNEL_SCHOOL school=%s want=%s"):format(
-							dbgSafe(school), dbgSafe(ch.school)))
+						H.auditNote(("AUDD reason=CHANNEL_SCHOOL school=%s want=%s"):format(
+							H.dbgSafe(school), H.dbgSafe(ch.school)))
 					end
 					local dtTick = t - (ch.lastTickAt or 0)
 					if schoolOk and dtTick >= (ch.tickMin or 0.12) then
@@ -5709,13 +6891,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						self._rawPipeCount = pipeId
 						self._rawPipe[pipeId] = amount
 						self._lastOutgoingCombatAt = t
-						self._lastOutgoingCombatTargetName = safeUnitName("target")
-						emit("OUTGOING_DAMAGE_COMBAT", {
+						self._lastOutgoingCombatTargetName = H.safeUnitName("target")
+						H.emit("OUTGOING_DAMAGE_COMBAT", {
 							timestamp = t,
 							rawPipeId = pipeId,
 							spellId = ch.spellId,
 							amountSource = "UNIT_COMBAT_DOT",
-							targetName = safeUnitName("target"),
+							targetName = H.safeUnitName("target"),
 							isCrit = isCrit,
 							isPeriodic = true,
 							channelClaim = true,
@@ -5757,43 +6939,44 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- DoT ticks often show up as small UNIT_COMBAT(target) magic WOUND events.
 				-- If we recently cast a periodic-capable spell, treat this as outgoing
 				-- periodic damage.
-				local dotSpellId = pickDotForWound(self, t, school, amount, isCrit)
+				local dotSpellId = self:_pickDotForWound(t, school, amount, isCrit)
 				-- Safety: only treat it as a DoT tick if the target actually has the debuff.
 				local debuffOk = nil
-				local chanPick = isLiveChannelPick(self, t, dotSpellId)
+				local chanPick = self:_isLiveChannelPick(t, dotSpellId)
 				if dotSpellId and not chanPick then
-					debuffOk = cachedHasTargetDebuffSpellId(dotSpellId)
+					debuffOk = H.cachedHasTargetDebuffSpellId(dotSpellId)
 					if debuffOk ~= true then
 						local allowDot = false
-						local de3 = dotEntryForSpellId(dotSpellId)
+						local de3 = H.dotEntryForSpellId(dotSpellId)
 						if de3 and de3.school and ZSBT.IsSafeNumber(school)
-							and dotEntrySchoolEq(de3.school, school) == true then
+							and H.dotEntrySchoolEq(de3.school, school) == true then
 							allowDot = true
 						end
 						if not allowDot then
 							if dl >= 4 then
-								ECPrint(("DOT_ATTRIB_FAIL src=UNIT_COMBAT_SMALL token=%s dotSpellId=%s debuffOk=%s amt=%s school=%s")
-									:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(debuffOk), dbgSafe(amount), dbgSafe(school)))
+								H.ECPrint(("DOT_ATTRIB_FAIL src=UNIT_COMBAT_SMALL token=%s dotSpellId=%s debuffOk=%s amt=%s school=%s")
+									:format(H.dbgSafe(self._castToken), H.dbgSafe(dotSpellId), H.dbgSafe(debuffOk), H.dbgSafe(amount), H.dbgSafe(school)))
 							end
 							dotSpellId = nil
 						end
 					end
 				end
-				if dotSpellId and dotCadenceOk(self, t, dotSpellId) then
-					if dl >= 4 and ZSBT.IsSafeNumber(amount) and amount >= BIG_HIT_THRESHOLD then
-						ECPrint(("BIG_HIT DOT token=%s spellId=%s amt=%s")
-							:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(amount)))
+				if dotSpellId and self:_dotCadenceOk(t, dotSpellId) then
+					if dl >= 4 and ZSBT.IsSafeNumber(amount) and amount >= H.BIG_HIT_THRESHOLD then
+						H.ECPrint(("BIG_HIT DOT token=%s spellId=%s amt=%s")
+							:format(H.dbgSafe(self._castToken), H.dbgSafe(dotSpellId), H.dbgSafe(amount)))
 					end
-					if not chanPick and isDuplicateDotEmit(self, t, dotSpellId) then
+					if not chanPick and self:_isDuplicateDotEmit(t, dotSpellId) then
 						return
 					end
 					self._recentPeriodicSpellAt[dotSpellId] = t
-					local tName = safeUnitName("target")
-					noteDotTickAmount(self, dotSpellId, amount, isCrit, t, tName)
+					local tName = H.safeUnitName("target")
+					self:_noteDotTickAmount(dotSpellId, amount, isCrit, t, tName,
+						chanPick == true or debuffOk == true or self._dotPickTeach == true)
 					local pipeId = self._rawPipeCount + 1
 					self._rawPipeCount = pipeId
 					self._rawPipe[pipeId] = amount
-					emit("OUTGOING_DAMAGE_COMBAT", {
+					H.emit("OUTGOING_DAMAGE_COMBAT", {
 						timestamp = t,
 						rawPipeId = pipeId,
 						amount = amount,
@@ -5814,42 +6997,56 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 			-- Physical with a pet is too ambiguous.
 			if isPhysical and hasPet then
-				if zbtVetoActive() then
-					dbgDrop("BYPASS_PHYS_PET", self._castToken, school)
+				if H.zbtVetoActive() then
+					H.dbgDrop("BYPASS_PHYS_PET", self._castToken, school)
 					matchedCast = { spellId = nil, eligibleIcon = false }
 				else
-					dbgDrop("PHYS_PET", self._castToken, school)
+					H.dbgDrop("PHYS_PET", self._castToken, school)
 					return
 				end
 			end
 			local castWindow = (restrict == true) and 0.55 or 0.85
 			local wantSpellId = nil
 			if restrict == true then
-				wantSpellId = self._lastPlayerSpellId
+				wantSpellId = self._lastPlayerDamageCastId or self._lastPlayerSpellId
 			end
-			matchedCast = matchedCast or consumeBestPendingCast(self, t, wantSpellId, castWindow, nil, school)
+			-- Non-phys DoT eval BEFORE cast claims (phys-path parity): a
+			-- grid-corroborated tick is stronger identity evidence than
+			-- cast-window proximity — a Blood Plague tick inside a Death
+			-- Coil window must not steal the Coil icon. The nuke guard is
+			-- now evidence-based: only a direct-kind palette line near the
+			-- wound blocks the dot pick — cast recency alone is always
+			-- true in combat and was what let ticks wear nukes.
+			local blockedDotCastId = nil
 			if not matchedCast then
 				-- Class-module DoT attribution (secret-safe): an unattributed
 				-- non-physical WOUND can be a periodic tick. No amount comparisons
 				-- are needed — the amount goes straight into the raw pipe, which is
 				-- the only display-safe path for secret values on Retail 12.x.
-				local dotSpellId = pickDotForWound(self, t, school, amount, isCrit)
+				local dotSpellId = self:_pickDotForWound(t, school, amount, isCrit)
 				-- Don't let a DoT steal a hit that probably belongs to a nuke cast
-				-- moments ago: if the last cast was a non-dot spell within ~1.5s,
-				-- leave attribution to the make-it-work window below.
+				-- moments ago — but only when the nuke's own evidence is
+				-- present: a direct/melee/ranged/shield palette line near
+				-- the wound (the hit's own claim to being non-periodic).
 				local dotBlockedByRecentCast = false
 				local eraClient = ZSBT.ClassDB and ZSBT.ClassDB.IsForever
 					and ZSBT.ClassDB.IsForever() == true or nil
-				local blockedDotCastId = nil
 				local lastCastAt = self._lastPlayerSpellAt
 				local lastCastId = self._lastPlayerSpellId
+				local directEvidence = false
+				local zbtDL = ZSBT.ZBattleText
+				if zbtDL and zbtDL.PeekDamageLine then
+					directEvidence = zbtDL:PeekDamageLine(t, 0.30,
+						{ direct = true, melee = true, ranged = true, shield = true }) ~= nil
+				end
 				if type(lastCastAt) == "number" and type(lastCastId) == "number"
 					and (t - lastCastAt) >= 0 and (t - lastCastAt) <= 1.50
-					and not dotEntryForSpellId(lastCastId)
+					and directEvidence == true
+					and not H.dotEntryForSpellId(lastCastId)
 					and not (ZSBT.ClassDB and ZSBT.ClassDB.ExcludedSpellId
 						and ZSBT.ClassDB.ExcludedSpellId(lastCastId)) then
 					dotBlockedByRecentCast = true
-					-- Era: the cast veto is mutual. castSchoolOk exempts player
+					-- Era: the cast veto is mutual. self._castSchoolOk exempts player
 					-- casts on Forever (wound schools lie there), so a frequent
 					-- recast like wand Shoot can block a surviving dot pick and
 					-- then take the same wound no-line. When a pick was actually
@@ -5859,22 +7056,102 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						blockedDotCastId = lastCastId
 					end
 				end
-				local chanPick = isLiveChannelPick(self, t, dotSpellId)
+				-- Rival-cast veto (IS NOT, retail only): a fresh pending cast
+				-- record for a DIFFERENT same-school sid outranks a DoT anchor
+				-- unless the wound carries periodic proof — a tick-kind feed
+				-- line. The Black Arrow anchor claimed every Bleak Arrows auto
+				-- wound: same s32, the BA debuff is always up when Bleak fires,
+				-- and the ~2.4s shot cadence sits inside the tick gate's
+				-- window. A real tick keeps its tick line; the shot's hit holds
+				-- a ranged/direct line instead and belongs to its own record.
+				-- Era excluded: Forever's feed produces no tick-kind lines at
+				-- all (proof can never fire) and its disambig picker already
+				-- runs typed-line evidence — the veto would hand cast records
+				-- real DoT ticks there.
+				if not eraClient and dotSpellId and not dotBlockedByRecentCast then
+					local shotProof = nil
+					local famRec = nil
+					-- Flight-window family proof first: a wound landing at
+					-- shot-flight age of an unconsumed ranged-family record
+					-- IS that shot. On feeds without tick/ranged line kinds
+					-- this record-age check is the only discriminator, and
+					-- consuming the record here also stops the vetoed wound's
+					-- pending-cast fall-through from stealing it (observed:
+					-- vetoed Black Arrow ticks claiming the Bleak record).
+					local prl = ZSBT.ClassDB and ZSBT.ClassDB.PreferRangedLine
+					if prl then
+						local lo, hi = wandFlightWindow(self)
+						for _, c in ipairs(self._pendingCasts or {}) do
+							if c and type(c.at) == "number" and c.spellId
+								and prl(c.spellId) and c.spellId ~= dotSpellId then
+								local rdt = t - c.at
+								if rdt >= lo and rdt <= hi then famRec = c end
+							end
+						end
+					end
+					if famRec then
+						shotProof = famRec.spellId
+					else
+						local rival = self:_consumeBestPendingCast(t, nil, castWindow, false, school)
+						if rival and rival.spellId ~= dotSpellId then
+							shotProof = rival.spellId
+						end
+						if not shotProof and self._wandSid ~= nil
+							and type(self._wandAt) == "number"
+							and (t - self._wandAt) >= 0 and (t - self._wandAt) <= 3.5 then
+							-- Sustained ranged family live (Bleak Arrows/Shoot): a
+							-- RANGED line near the wound is the client's proof a shot
+							-- fired even after the shot's cast record expired —
+							-- flight-time wounds otherwise feed the DoT anchor.
+							-- (disambig picker's wand veto, applied to the anchor path;
+							-- includeConsumed — the shot's own claim may have eaten it.)
+							local zbtW = ZSBT.ZBattleText
+							if zbtW and zbtW.PeekDamageLine and zbtW:PeekDamageLine(t, 0.35, { ranged = true }, true) ~= nil then
+								shotProof = self._wandSid
+							end
+						end
+					end
+					if shotProof then
+						local zbtT = ZSBT.ZBattleText
+						local tickLine = zbtT and zbtT.PeekDamageLine
+							and zbtT:PeekDamageLine(t, 0.30, { tick = true })
+						if not tickLine then
+							local claimed = nil
+							if famRec then
+								local mc = self:_consumeBestPendingCast(t, famRec.spellId, nil, true, school)
+								if mc then
+									claimed = { spellId = mc.spellId, eligibleIcon = mc.eligibleIcon, wandProven = true }
+								end
+							end
+							if famRec and not claimed then
+								-- The family record was school-rejected on
+								-- consume — the wound is not its shot after
+								-- all; leave the anchor intact.
+							else
+								H.auditNote(("AUDD reason=DOT_RIVAL_VETO dot=%s rival=%s school=%s")
+									:format(H.dbgSafe(dotSpellId), H.dbgSafe(shotProof), H.dbgSafe(school)))
+								if claimed then matchedCast = claimed end
+								dotSpellId = nil
+							end
+						end
+					end
+				end
+				local chanPick = self:_isLiveChannelPick(t, dotSpellId)
 				if dotSpellId and (not dotBlockedByRecentCast or chanPick) then
 					if ZSBT.ClassDB and ZSBT.ClassDB.DotGuard then
-						if ZSBT.ClassDB.DotGuard(dotEntryForSpellId(dotSpellId), school) == false then
+						if ZSBT.ClassDB.DotGuard(H.dotEntryForSpellId(dotSpellId), school) == false then
 							dotSpellId = nil
 						end
 					end
-					local dotEntry = dotSpellId and dotEntryForSpellId(dotSpellId) or nil
-					if dotEntry and dotEntry.school and ZSBT.IsSafeNumber(school) and dotEntrySchoolEq(dotEntry.school, school) == false then
+					local dotEntry = dotSpellId and H.dotEntryForSpellId(dotSpellId) or nil
+					if dotEntry and dotEntry.school and ZSBT.IsSafeNumber(school) and H.dotEntrySchoolEq(dotEntry.school, school) == false then
 						dotSpellId = nil
 					end
 					if dotSpellId and not chanPick then
-						local debuffOk = cachedHasTargetDebuffSpellId(dotSpellId)
+						local debuffOk = H.cachedHasTargetDebuffSpellId(dotSpellId)
 						if debuffOk ~= true then
 							local allowDot = false
-							if dotEntry and dotEntry.school and ZSBT.IsSafeNumber(school) and dotEntrySchoolEq(dotEntry.school, school) == true then
+							if dotEntry and dotEntry.school and ZSBT.IsSafeNumber(school) and H.dotEntrySchoolEq(dotEntry.school, school) == true then
 								allowDot = true
 							end
 							if not allowDot then
@@ -5885,25 +7162,26 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					if dotSpellId and isCorroboratedHugeHit(t, amount, dotSpellId) then
 						-- Cadence gate: reject hits that don't land in a plausible
 						-- tick slot (shared-target bleed-through protection).
-						if not dotCadenceOk(self, t, dotSpellId) then
+						if not self:_dotCadenceOk(t, dotSpellId) then
 							dotSpellId = nil
 						else
-						if not chanPick and isDuplicateDotEmit(self, t, dotSpellId) then
+						if not chanPick and self:_isDuplicateDotEmit(t, dotSpellId) then
 							return
 						end
-						if OutDbgLevel() >= 4 then
-							ECPrint(("DOT_ATTRIB src=UNIT_COMBAT_MERGE token=%s spellId=%s amt=%s school=%s")
-								:format(dbgSafe(self._castToken), dbgSafe(dotSpellId), dbgSafe(amount), dbgSafe(school)))
+						if H.OutDbgLevel() >= 4 then
+							H.ECPrint(("DOT_ATTRIB src=UNIT_COMBAT_MERGE token=%s spellId=%s amt=%s school=%s")
+								:format(H.dbgSafe(self._castToken), H.dbgSafe(dotSpellId), H.dbgSafe(amount), H.dbgSafe(school)))
 						end
 						self._recentPeriodicSpellAt[dotSpellId] = t
-						local tName = safeUnitName("target")
-						noteDotTickAmount(self, dotSpellId, amount, isCrit, t, tName)
+						local tName = H.safeUnitName("target")
+						self:_noteDotTickAmount(dotSpellId, amount, isCrit, t, tName,
+							chanPick == true or self._dotPickTeach == true)
 						local pipeId = self._rawPipeCount + 1
 						self._rawPipeCount = pipeId
 						self._rawPipe[pipeId] = amount
 						self._lastOutgoingCombatAt = t
 						self._lastOutgoingCombatTargetName = tName
-						emit("OUTGOING_DAMAGE_COMBAT", {
+						H.emit("OUTGOING_DAMAGE_COMBAT", {
 							timestamp = t,
 							rawPipeId = pipeId,
 							spellId = dotSpellId,
@@ -5918,6 +7196,29 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						end
 					end
 				end
+			end
+			matchedCast = matchedCast or self:_consumeBestPendingCast(t, wantSpellId, castWindow, nil, school)
+			-- Same pin-fallback as the phys path: a non-phys wound pinned
+			-- to a phys cast is equally unclaimable; school-fit keeps the
+			-- pool search honest and ownership still needs a palette line.
+			if not matchedCast and wantSpellId then
+				matchedCast = self:_consumeBestPendingCast(t, nil, castWindow, nil, school)
+			end
+			-- Sustained wand family: Shoot's activation record is spent
+			-- after the first hits; the last claimed shot + the client's
+			-- own ranged line is the proof for the rest of the session.
+			if not matchedCast then
+				local wandSid = self._pickWandShot and self._pickWandShot(self, t, school)
+				if wandSid ~= nil then
+					-- wandProven: the ranged line proved a shot — this claim
+					-- may vote the wand's element. Pending-cast claims stay
+					-- unproven (a consumed wrong-school wound would teach
+					-- the wrong element during bootstrap).
+					matchedCast = { spellId = wandSid, eligibleIcon = true, wandProven = true }
+					H.dbgDrop("WAND_FAM", self._castToken, school)
+				end
+			end
+			if not matchedCast then
 				if suppressIfUnattributed == true then
 					-- Midnight: the school field is unreliable (physical abilities like
 					-- Sinister Strike report school=32), so auto-attacks land in this
@@ -5932,7 +7233,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- In both cases require solo (no group) to avoid leaking other players'
 					-- damage on shared targets, since UNIT_COMBAT(target) has no source on Midnight.
 					local allowAutoHere = (restrict ~= true and quietMode ~= true)
-						or (quietMode == true and isQuietOutgoingAutoAttacks() == true)
+						or (quietMode == true and H.isQuietOutgoingAutoAttacks() == true)
 					if allowAutoHere then
 						local inPlayerCombat = false
 						if UnitAffectingCombat then
@@ -5946,11 +7247,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						end
 						if inPlayerCombat and canAtk and (not (members and members > 1))
 							and (not inInst)
-							and (not autoContested(self, t)) and swingExplainsHit(self, t) then
+							and (not self:_autoContested(t)) and self:_swingExplainsHit(t) then
 							-- Same dedup as the physical branch: the fallback and
 							-- physical paths can both fire for one white swing.
 							local lastAuto = self._lastAutoOutgoingAt or 0
-							if (t - lastAuto) >= 0 and (t - lastAuto) < AUTO_OUTGOING_DEDUP_WINDOW then
+							if (t - lastAuto) >= 0 and (t - lastAuto) < H.AUTO_OUTGOING_DEDUP_WINDOW then
 								return
 							end
 							self._lastAutoOutgoingAt = t
@@ -5958,28 +7259,28 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							self._rawPipeCount = pipeId
 							self._rawPipe[pipeId] = amount
 							self._lastOutgoingCombatAt = t
-							self._lastOutgoingCombatTargetName = safeUnitName("target")
-								emit("OUTGOING_DAMAGE_COMBAT", {
+							self._lastOutgoingCombatTargetName = H.safeUnitName("target")
+								H.emit("OUTGOING_DAMAGE_COMBAT", {
 								timestamp = t,
 								rawPipeId = pipeId,
 								spellId = nil,
 								isAuto = true,
 								amountSource = "UNIT_COMBAT_AUTO_FALLBACK",
-								targetName = safeUnitName("target"),
+								targetName = H.safeUnitName("target"),
 								isCrit = isCrit,
 								schoolMask = ZSBT.IsSafeNumber(school) and school or nil,
 							})
 							return
 						else
-							auditNote(("AUDD reason=AUTO_FB inCbt=%s canAtk=%s members=%s swing=%s school=%s")
-								:format(tostring(inPlayerCombat), tostring(canAtk), dbgSafe(members),
-									tostring(swingExplainsHit(self, t)), dbgSafe(school)))
+							H.auditNote(("AUDD reason=AUTO_FB inCbt=%s canAtk=%s members=%s swing=%s school=%s")
+								:format(tostring(inPlayerCombat), tostring(canAtk), H.dbgSafe(members),
+									tostring(self:_swingExplainsHit(t)), H.dbgSafe(school)))
 						end
 					else
-						auditNote(("AUDD reason=AUTO_FB_OFF restrict=%s quiet=%s school=%s")
-							:format(tostring(restrict == true), tostring(quietMode == true), dbgSafe(school)))
+						H.auditNote(("AUDD reason=AUTO_FB_OFF restrict=%s quiet=%s school=%s")
+							:format(tostring(restrict == true), tostring(quietMode == true), H.dbgSafe(school)))
 					end
-					dbgDrop("SUPPRESS_UNATTR", self._castToken, school)
+					H.dbgDrop("SUPPRESS_UNATTR", self._castToken, school)
 					return
 				end
 				-- "Make it work" mode: if we cannot confidently attribute to a specific spell,
@@ -5995,11 +7296,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- attribution because UNIT_COMBAT(target) has no ownership and will leak
 					-- other players' damage on shared targets.
 					if members and members > 1 then
-						if zbtVetoActive() then
-							dbgDrop("BYPASS_GROUP_GATE", self._castToken, school)
+						if H.zbtVetoActive() then
+							H.dbgDrop("BYPASS_GROUP_GATE", self._castToken, school)
 							matchedCast = { spellId = nil, eligibleIcon = false }
 						else
-							dbgDrop("GROUP_GATE", self._castToken, school)
+							H.dbgDrop("GROUP_GATE", self._castToken, school)
 							return
 						end
 					end
@@ -6013,27 +7314,27 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						elseif not isPhysical then
 							maxAge = math.max(maxAge, 1.25)
 						end
-						if age >= 0 and age <= maxAge and castSchoolOk(self, lastId, school)
+						if age >= 0 and age <= maxAge and self:_castSchoolOk(lastId, school)
 							and not (ZSBT.ClassDB and ZSBT.ClassDB.ExcludedSpellId
 								and ZSBT.ClassDB.ExcludedSpellId(lastId))
 							and blockedDotCastId ~= lastId
-							and miwClaim(self, lastId, lastAt, t, school) then
+							and self:_miwClaim(lastId, lastAt, t, school) then
 							matchedCast = { spellId = lastId, eligibleIcon = true }
 						else
-							if zbtVetoActive() then
-								dbgDrop("BYPASS_RESTRICT_AGE", self._castToken, school)
+							if H.zbtVetoActive() then
+								H.dbgDrop("BYPASS_RESTRICT_AGE", self._castToken, school)
 								matchedCast = { spellId = nil, eligibleIcon = false }
 							else
-								dbgDrop("RESTRICT_AGE", self._castToken, school)
+								H.dbgDrop("RESTRICT_AGE", self._castToken, school)
 								return
 							end
 						end
 					else
-						if zbtVetoActive() then
-							dbgDrop("BYPASS_RESTRICT_NOCAST", self._castToken, school)
+						if H.zbtVetoActive() then
+							H.dbgDrop("BYPASS_RESTRICT_NOCAST", self._castToken, school)
 							matchedCast = { spellId = nil, eligibleIcon = false }
 						else
-							dbgDrop("RESTRICT_NOCAST", self._castToken, school)
+							H.dbgDrop("RESTRICT_NOCAST", self._castToken, school)
 							return
 						end
 					end
@@ -6054,16 +7355,18 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							if lastId == 686 then
 								maxAge = 2.50
 							end
-							if age >= 0 and age <= maxAge and castSchoolOk(self, lastId, school)
+							if age >= 0 and age <= maxAge and self:_castSchoolOk(lastId, school)
 								and blockedDotCastId ~= lastId
-								and miwClaim(self, lastId, lastAt, t, school) then
+								and not (ZSBT.ClassDB and ZSBT.ClassDB.ExcludedSpellId
+									and ZSBT.ClassDB.ExcludedSpellId(lastId))
+								and self:_miwClaim(lastId, lastAt, t, school) then
 								matchedCast = { spellId = lastId, eligibleIcon = true }
 							else
 								-- Quiet/strict: suppress unattributed numbers when we cannot even loosely
 								-- correlate to a recent player cast.
 								if quietMode == true or restrict == true then
-									if not zbtVetoActive() then
-										dbgDrop("MIW_QUIET", self._castToken, school)
+									if not H.zbtVetoActive() then
+										H.dbgDrop("MIW_QUIET", self._castToken, school)
 										return
 									end
 								end
@@ -6071,28 +7374,28 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							end
 						else
 							if quietMode == true or restrict == true then
-								if not zbtVetoActive() then
-									dbgDrop("MIW_QUIET", self._castToken, school)
+								if not H.zbtVetoActive() then
+									H.dbgDrop("MIW_QUIET", self._castToken, school)
 									return
 								end
 							end
 							matchedCast = { spellId = nil, eligibleIcon = false }
 						end
 					else
-						if zbtVetoActive() then
-							dbgDrop("BYPASS_MIW_AGE", self._castToken, school)
+						if H.zbtVetoActive() then
+							H.dbgDrop("BYPASS_MIW_AGE", self._castToken, school)
 							matchedCast = { spellId = nil, eligibleIcon = false }
 						else
-							dbgDrop("MIW_AGE", self._castToken, school)
+							H.dbgDrop("MIW_AGE", self._castToken, school)
 							return
 						end
 					end
 				else
-					if zbtVetoActive() then
-						dbgDrop("BYPASS_MIW_NO_CAST", self._castToken, school)
+					if H.zbtVetoActive() then
+						H.dbgDrop("BYPASS_MIW_NO_CAST", self._castToken, school)
 						matchedCast = { spellId = nil, eligibleIcon = false }
 					else
-						dbgDrop("MIW_NO_CAST", self._castToken, school)
+						H.dbgDrop("MIW_NO_CAST", self._castToken, school)
 						return
 					end
 				end
@@ -6102,12 +7405,15 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 
 		local spellId = nil
 		local sidLearn = nil
+		local wandProven = nil
 		if existing and existing.spellId then
 			spellId = existing.spellId
 			sidLearn = existing._sidLearn
+			wandProven = existing.wandProven
 		elseif matchedCast then
 			spellId = (matchedCast.eligibleIcon == true) and matchedCast.spellId or nil
 			sidLearn = (matchedCast.spellId ~= nil) or nil
+			wandProven = matchedCast.wandProven
 		end
 
 		-- Shared-target guard for the generic emit: a wound that earned no
@@ -6117,31 +7423,31 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		-- damage carries a MINE line and never feeds) and dies while armed.
 		if spellId == nil then
 			if inInst == true then
-				if zbtVetoActive() then
-					dbgDrop("BYPASS_INST_UNATTR", self._castToken, school)
+				if H.zbtVetoActive() then
+					H.dbgDrop("BYPASS_INST_UNATTR", self._castToken, school)
 				else
-					dbgDrop("INST_UNATTR", self._castToken, school)
+					H.dbgDrop("INST_UNATTR", self._castToken, school)
 					return
 				end
-			elseif autoContested(self, t) then
-				dbgDrop("CONTESTED", self._castToken, school)
+			elseif self:_autoContested(t) then
+				H.dbgDrop("CONTESTED", self._castToken, school)
 				return
 			end
 			-- Proc riders (mod.procRiders): guaranteed on-attack procs with
 			-- no cast record. All sid claims failed — a school-matching
 			-- wound riding a fresh melee anchor names itself. Emitted
 			-- directly: it is a separate proc hit, not a duplicate report.
-			local riderSid = pickProcRider(self, t, school)
+			local riderSid = self:_pickProcRider(t, school)
 			if riderSid then
 				local pipeIdR = self._rawPipeCount + 1
 				self._rawPipeCount = pipeIdR
 				self._rawPipe[pipeIdR] = amount
-				emit("OUTGOING_DAMAGE_COMBAT", {
+				H.emit("OUTGOING_DAMAGE_COMBAT", {
 					timestamp = t,
 					rawPipeId = pipeIdR,
 					spellId = riderSid,
 					amountSource = "UNIT_COMBAT_PROC",
-					targetName = safeUnitName("target"),
+					targetName = H.safeUnitName("target"),
 					isCrit = isCrit,
 					procClaim = true,
 					schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil,
@@ -6151,22 +7457,22 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		end
 
 		local schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil
-		auditNote(("AUDMB school=%s crit=%s spellId=%s"):format(dbgSafe(school), tostring(isCrit == true), dbgSafe(spellId)))
+		H.auditNote(("AUDMB school=%s crit=%s spellId=%s"):format(H.dbgSafe(school), tostring(isCrit == true), H.dbgSafe(spellId)))
 
 
 		-- Merge window: multiple UNIT_COMBAT(target) hits can arrive per cast.
 		-- Keep only the largest amount in a short window to avoid showing tiny
 		-- proc/secondary values (the root cause of the "300-900 Shadow Bolt" bug).
 		local token = tokenKey
-		local targetName = safeUnitName("target")
+		local targetName = H.safeUnitName("target")
 		local bucket = self._bestOutgoingByToken[token]
 		if not bucket then
 			if not isCorroboratedHugeHit(t, amount, spellId or self._lastPlayerSpellId) then
 				if dl >= 4 then
-					ECPrint(("BIG_HIT_SUPPRESS src=UNIT_COMBAT_BEST_START token=%s spellId=%s amt=%s")
-						:format(dbgSafe(self._castToken), dbgSafe(spellId), dbgSafe(amount)))
+					H.ECPrint(("BIG_HIT_SUPPRESS src=UNIT_COMBAT_BEST_START token=%s spellId=%s amt=%s")
+						:format(H.dbgSafe(self._castToken), H.dbgSafe(spellId), H.dbgSafe(amount)))
 				end
-				auditNote(("AUDD reason=BUCKET_HUGE_SUPPRESS spellId=%s school=%s"):format(dbgSafe(spellId), dbgSafe(schoolMask)))
+				H.auditNote(("AUDD reason=BUCKET_HUGE_SUPPRESS spellId=%s school=%s"):format(H.dbgSafe(spellId), H.dbgSafe(schoolMask)))
 				return
 			end
 			bucket = {
@@ -6174,6 +7480,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				token = token,
 				spellId = spellId,
 				_sidLearn = sidLearn,
+				wandProven = wandProven,
 
 				targetName = targetName,
 				amount = amount,
@@ -6185,10 +7492,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			}
 			self._bestOutgoingByToken[token] = bucket
 			if C_Timer and C_Timer.After then
-				C_Timer.After(0.08, function() flushBestOutgoing(self, token) end)
+				C_Timer.After(0.08, function() self:_flushBestOutgoing(token) end)
 			else
 				-- Fallback: emit immediately if timers are unavailable.
-				flushBestOutgoing(self, token)
+				self:_flushBestOutgoing(token)
 			end
 		else
 			-- The bucket exists to merge the extra wound reports a SINGLE
@@ -6201,13 +7508,14 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				local pipeIdM = self._rawPipeCount + 1
 				self._rawPipeCount = pipeIdM
 				self._rawPipe[pipeIdM] = amount
-				auditNote(("AUDMSPLIT sid=%s bsid=%s"):format(
-					dbgSafe(spellId), dbgSafe(bucket.spellId)))
-				emit("OUTGOING_DAMAGE_COMBAT", {
+				H.auditNote(("AUDMSPLIT sid=%s bsid=%s"):format(
+					H.dbgSafe(spellId), H.dbgSafe(bucket.spellId)))
+				H.emit("OUTGOING_DAMAGE_COMBAT", {
 					timestamp = t,
 					rawPipeId = pipeIdM,
 					spellId = spellId,
 					_sidLearn = sidLearn,
+					wandProven = wandProven,
 					amountSource = "UNIT_COMBAT_SPLIT",
 					targetName = targetName,
 					isCrit = isCrit,
@@ -6218,11 +7526,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			-- A foreign hit must not ride a real spell's merge bucket: when the
 			-- bucket's spell has a learned school and this hit contradicts it,
 			-- emit generic instead of wearing the wrong name and amount.
-			if bucket.spellId and not castSchoolOk(self, bucket.spellId, schoolMask) then
+			if bucket.spellId and not self:_castSchoolOk(bucket.spellId, schoolMask) then
 				local pipeIdM = self._rawPipeCount + 1
 				self._rawPipeCount = pipeIdM
 				self._rawPipe[pipeIdM] = amount
-				emit("OUTGOING_DAMAGE_COMBAT", {
+				H.emit("OUTGOING_DAMAGE_COMBAT", {
 					timestamp = t,
 					rawPipeId = pipeIdM,
 					spellId = nil,
@@ -6243,9 +7551,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				local pipeIdM = self._rawPipeCount + 1
 				self._rawPipeCount = pipeIdM
 				self._rawPipe[pipeIdM] = amount
-				auditNote(("AUDMSPLIT sid=%s school=%s bschool=%s"):format(
-					dbgSafe(spellId), dbgSafe(schoolMask), dbgSafe(bucket.schoolMask)))
-				emit("OUTGOING_DAMAGE_COMBAT", {
+				H.auditNote(("AUDMSPLIT sid=%s school=%s bschool=%s"):format(
+					H.dbgSafe(spellId), H.dbgSafe(schoolMask), H.dbgSafe(bucket.schoolMask)))
+				H.emit("OUTGOING_DAMAGE_COMBAT", {
 					timestamp = t,
 					rawPipeId = pipeIdM,
 					spellId = spellId,
@@ -6288,8 +7596,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 	-- INCOMING: player taking damage/heals (unit == "player")
 	-- Dedup: if COMBAT_TEXT_UPDATE already provided clean data for this
 	-- hit within the last 100ms, skip to avoid duplicate text.
-	local t = now()
-	if (t - self._lastCombatTextDamageAt) < DEDUP_WINDOW then
+	local t = H.now()
+	if (t - self._lastCombatTextDamageAt) < H.DEDUP_WINDOW then
 		local zI = ZSBT.ZBattleText
 		if zI and zI.FileLog and ZSBT._ucDropTrace == true then
 			zI:FileLog("INC_DROP reason=CT_DEDUP")
@@ -6297,15 +7605,15 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		return
 	end
 	if unit == "player" and action == "WOUND" then
-		if OutDbgLevel() >= 3 then
+		if H.OutDbgLevel() >= 3 then
 			if ZSBT.Addon and ZSBT.Addon.Print and (t - (Collector._dbgLastUnitCombatPlayerAt or 0)) > 0.25 then
 				Collector._dbgLastUnitCombatPlayerAt = t
-				ECPrint(("UNIT_COMBAT_PLAYER action=%s desc=%s amt=%s")
-					:format(dbgSafe(action), dbgSafe(descriptor), dbgSafe(amount)))
+				H.ECPrint(("UNIT_COMBAT_PLAYER action=%s desc=%s amt=%s")
+					:format(H.dbgSafe(action), H.dbgSafe(descriptor), H.dbgSafe(amount)))
 			end
 		end
 	end
-	if (t - self._lastCombatTextHealAt) < DEDUP_WINDOW then
+	if (t - self._lastCombatTextHealAt) < H.DEDUP_WINDOW then
 		local zI2 = ZSBT.ZBattleText
 		if zI2 and zI2.FileLog and ZSBT._ucDropTrace == true then
 			zI2:FileLog("INC_DROP reason=HEAL_DEDUP")
@@ -6313,7 +7621,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		return
 	end
 
-	local numAmount, amountText, secret = launderAmount(amount)
+	local numAmount, amountText, secret = H.launderAmount(amount)
 
 	-- Classify by amount sign and school when action is tainted.
 	-- For "player" UNIT_COMBAT: positive amounts = damage taken, 
@@ -6353,10 +7661,22 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		-- if we also observed a real UNIT_HEALTH(player) increase recently.
 		local cur = UnitHealth and UnitHealth("player") or nil
 		if ZSBT.IsSafeNumber(cur) then
-			local tNow = now()
+			local tNow = H.now()
 			if not (self._lastPlayerHealthHealAt and (tNow - self._lastPlayerHealthHealAt) <= 0.30) then
 				return
 			end
+		end
+		-- Leech evidence (FCT playerHeals): a readable self-heal is recorded
+		-- so a wound of the SAME amount in the same moment proves a drain
+		-- tick (Siphon Life / drain channels). The health-rise check above
+		-- drops full-overheal drains, so a miss here is suppression, not
+		-- absence — the picker's penalty must only ever fire on a HIT.
+		if ZSBT.IsSafeNumber(numAmount) then
+			local ph = self._playerHeals
+			if not ph then ph = {} ; self._playerHeals = ph end
+			local tH = H.now()
+			while ph[1] and (tH - ph[1].at > 1 or #ph > 16) do table.remove(ph, 1) end
+			ph[#ph + 1] = { at = tH, amount = numAmount }
 		end
 		-- Forever/secret-value clients: UNIT_COMBAT amounts arrive as secret
 		-- values. Route the raw amount through the pipe so the display layer
@@ -6364,8 +7684,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		local healPipeId = self._rawPipeCount + 1
 		self._rawPipeCount = healPipeId
 		self._rawPipe[healPipeId] = amount
-		emit("INCOMING_HEAL_COMBAT", {
-			timestamp = now(),
+		H.emit("INCOMING_HEAL_COMBAT", {
+			timestamp = H.now(),
 			rawPipeId = healPipeId,
 			amount = numAmount,
 			amountText = amountText,
@@ -6379,8 +7699,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			local fallPipeId = self._rawPipeCount + 1
 			self._rawPipeCount = fallPipeId
 			self._rawPipe[fallPipeId] = amount
-			emit("FALL_DAMAGE", {
-				timestamp = now(),
+			H.emit("FALL_DAMAGE", {
+				timestamp = H.now(),
 				unit = unit,
 				rawPipeId = fallPipeId,
 				amount = numAmount,
@@ -6401,12 +7721,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			if zI4 and zI4.FileLog and ZSBT._ucDropTrace == true then
 				zI4:FileLog("INC_EMIT WOUND")
 			end
-			self._lastUnitCombatPlayerDamageAt = now()
+			self._lastUnitCombatPlayerDamageAt = H.now()
 			local dmgPipeId = self._rawPipeCount + 1
 			self._rawPipeCount = dmgPipeId
 			self._rawPipe[dmgPipeId] = amount
-			emit("INCOMING_DAMAGE", {
-				timestamp = now(),
+			H.emit("INCOMING_DAMAGE", {
+				timestamp = H.now(),
 				unit = unit,
 				rawPipeId = dmgPipeId,
 				amount = numAmount,
@@ -6572,6 +7892,199 @@ end
 -- Enable / Disable Lifecycle
 --==================================--
 
+-- UNIT_AURA: our own periodic debuffs on an enemy are application
+-- anchors for dots no cast can seed (trinket/enchant/set procs).
+-- updateInfo is fully secret in combat on 12.x — never touch it.
+-- Instead presence-POLL the known dot sid set with engine-side
+-- APIs: FindAuraBySpellId does the sid compare + the HARMFUL|PLAYER
+-- filter does the own-source proof, so nothing secret reaches Lua.
+-- An absence->presence edge is the application instant.
+auraSpellName = function(sid)
+	if C_Spell and C_Spell.GetSpellName then
+		local ok, n = pcall(C_Spell.GetSpellName, sid)
+		if ok and ZSBT.IsSafeString and ZSBT.IsSafeString(n) and n ~= "" then return n end
+	end
+	return nil
+end
+
+local function auraPollCandidates(self)
+	-- Rebuilt lazily: module dot ids + learned proc dots + gear sids
+	-- whose Spellbook record parsed periodic.
+	local now2 = now()
+	if self._auraPollSids and self._auraPollBuiltAt
+		and (now2 - self._auraPollBuiltAt) < 2.0 then
+		return self._auraPollSids
+	end
+	local set = {}
+	local ClassDB = ZSBT.ClassDB
+	local mod = ClassDB and ClassDB.ActiveModule and ClassDB.ActiveModule() or nil
+	if mod and type(mod.dots) == "table" then
+		for _, e in ipairs(mod.dots) do
+			if type(e) == "table" and type(e.ids) == "table" then
+				for _, sid in ipairs(e.ids) do
+					if type(sid) == "number" then
+						set[sid] = (type(e.names) == "table" and e.names[1]) or true
+					end
+				end
+			end
+			-- Era modules are name-primary (ids omitted — ranked spell ids
+			-- differ per rank): the declared name itself is the poll key.
+			if type(e) == "table" and type(e.names) == "table"
+				and type(e.names[1]) == "string"
+				and (type(e.ids) ~= "table" or #e.ids == 0) then
+				set[e.names[1]] = e.names[1]
+			end
+		end
+	end
+	local prof = ZSBT.db and ZSBT.db.profile
+	if prof and type(prof.learnedProcDots) == "table" then
+		for sid in pairs(prof.learnedProcDots) do
+			if type(sid) == "number" then set[sid] = auraSpellName(sid) or true end
+		end
+	end
+	local sb = ZSBT.Spellbook
+	if sb and type(sb._gear) == "table" then
+		for _, g in pairs(sb._gear) do
+			local sid = type(g) == "table" and g.sid or nil
+			if type(sid) == "number" then
+				local rec = sb.Entry and sb:Entry(sid) or nil
+				if rec and rec.role == "dot" then set[sid] = auraSpellName(sid) or true end
+			end
+		end
+	end
+	self._auraPollSids = set
+	self._auraPollBuiltAt = now2
+	return set
+end
+
+function Collector:handleUnitAura(unit, _updateInfo)
+	-- _updateInfo is fully secret (isFullUpdate/addedAuras are secret
+	-- booleans/tables in combat — reading either errors). Ignored.
+	if type(unit) ~= "string" then return end
+	if unit ~= "target" and unit:sub(1, 9) ~= "nameplate" then return end
+	-- AuraUtil may be absent on 12.x builds — GetAuraDataBySpellName is the
+	-- fallback; both compare engine-side so no secret field is ever read.
+	local findById = AuraUtil and AuraUtil.FindAuraBySpellId or nil
+	local findByName = C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName or nil
+	local sids = auraPollCandidates(self)
+	if not sids then return end
+	-- One-shot probe: proves the handler ran, how many sids are polled, and
+	-- which aura APIs exist (a silent AuraUtil==nil was the failure suspect).
+	if not self._auraPollLogged then
+		self._auraPollLogged = true
+		local n = 0
+		for _ in pairs(sids) do n = n + 1 end
+		local zbtA = ZSBT.ZBattleText
+		if zbtA and zbtA.FileLog then
+			zbtA:FileLog(("AURA_POLL cands=%d unit=%s byId=%s byName=%s")
+				:format(n, tostring(unit), tostring(findById ~= nil), tostring(findByName ~= nil)))
+		end
+		if zbtA and zbtA.Audit then
+			zbtA:Audit(("AURA_POLL cands=%d unit=%s byId=%s byName=%s")
+				:format(n, tostring(unit), tostring(findById ~= nil), tostring(findByName ~= nil)))
+		end
+	end
+	if not findById and not findByName then return end
+	-- Seen-state keyed by unit GUID (mob identity survives token reuse);
+	-- token itself is the fallback when GUID is unreadable.
+	local key = nil
+	if UnitGUID then
+		local okG, g = pcall(UnitGUID, unit)
+		if okG and ZSBT.IsSafeString and ZSBT.IsSafeString(g) then key = g end
+	end
+	if key == nil then key = unit end
+	local seen = self._auraDotSeen
+	if not seen then seen = {} ; self._auraDotSeen = seen end
+	local us = seen[key]
+	if not us then us = {} ; seen[key] = us end
+	local t = now()
+	local presentCount = 0
+	for sid, name in pairs(sids) do
+		local present, auraSid = false, nil
+		if findById and type(sid) == "number" then
+			local okP, a = pcall(findById, sid, unit, "HARMFUL|PLAYER")
+			present = okP and a ~= nil or false
+			if present then auraSid = sid end
+		end
+		if not present and findByName and type(name) == "string" then
+			local okN, a2 = pcall(findByName, unit, name, "HARMFUL|PLAYER")
+			present = okN and a2 ~= nil or false
+			-- The returned AuraData carries the REAL rank sid for this
+			-- client — era entries are name-primary precisely because the
+			-- id isn't known at author time; the aura tells us. Fields are
+			-- secret in combat (Camelot runs Midnight's restrictions): only
+			-- a readable `false` from ShouldAurasBeSecret unlocks the read —
+			-- presence itself needs no fields (the compare already ran
+			-- engine-side).
+			if present and type(a2) == "table" then
+				local secret = true
+				if C_Secrets and C_Secrets.ShouldAurasBeSecret then
+					local okS, open = pcall(function()
+						return C_Secrets.ShouldAurasBeSecret() == false end)
+					secret = not (okS and open == true)
+				else
+					secret = false
+				end
+				if not secret and type(a2.spellId) == "number"
+					and ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(a2.spellId) then
+					auraSid = a2.spellId
+				end
+			end
+		end
+		if present then presentCount = presentCount + 1 end
+		-- Target-unit presence records name-keyed debuff sightings for
+		-- the picker's era tiebreaker (sid-keyed reads cover ids only).
+		if present and unit == "target" and type(name) == "string" then
+			local nd = self._nameDebuffAt
+			if not nd then nd = {} ; self._nameDebuffAt = nd end
+			nd[name] = t
+		end
+		-- Presence edges seed anchors: sid-keyed candidates under their
+		-- own id; name-keyed (era) candidates under the sid the aura
+		-- itself reported, when readable — the client's true rank id.
+		local anchorSid = (type(sid) == "number" and sid) or auraSid
+		local seenKey = (type(sid) == "number" and sid) or ("n:" .. tostring(name))
+		if present and not us[seenKey] then
+			us[seenKey] = true
+			if type(anchorSid) == "number" then
+				seedDotApplicationOnUnit(self, anchorSid, unit, t)
+			end
+			local zbtS = ZSBT.ZBattleText
+			if zbtS and zbtS.FileLog then
+				zbtS:FileLog(("AURA_SEED unit=%s key=%s sid=%s")
+					:format(tostring(unit), tostring(seenKey), tostring(anchorSid)))
+			end
+			if zbtS and zbtS.Audit then
+				zbtS:Audit(("AURA_SEED unit=%s key=%s sid=%s")
+					:format(tostring(unit), tostring(seenKey), tostring(anchorSid)))
+			end
+		elseif not present and us[seenKey] then
+			us[seenKey] = nil
+		end
+	end
+	-- Per-unit first-poll probe: present>0 on a unit carrying a known debuff
+	-- proves the compare returns data; nameplate rows prove UNIT_AURA fires
+	-- on nameplate tokens at all.
+	if not us._probed then
+		us._probed = true
+		local zbtP = ZSBT.ZBattleText
+		if zbtP and zbtP.FileLog then
+			zbtP:FileLog(("AURA_PROBE unit=%s present=%d"):format(tostring(unit), presentCount))
+		end
+		if zbtP and zbtP.Audit then
+			zbtP:Audit(("AURA_PROBE unit=%s present=%d"):format(tostring(unit), presentCount))
+		end
+	end
+	-- Bound the map: dead mobs leave stale keys.
+	local n = self._auraSeenCount or 0
+	self._auraSeenCount = n + 1
+	if self._auraSeenCount >= 200 then
+		self._auraSeenCount = 0
+		local k = 0
+		for _ in pairs(seen) do k = k + 1 if k > 64 then wipe(seen) break end end
+	end
+end
+
 -- Register events and initialize runtime frames used by the collector.
 function Collector:Enable()
 	if self._enabled then return end
@@ -6588,12 +8101,23 @@ function Collector:Enable()
 		self._frame:SetScript("OnEvent", function(_, event, ...)
 			if event == "UNIT_SPELLCAST_SUCCEEDED" then
 				Collector:handleSpellcastSucceeded(...)
+			elseif event == "UNIT_SPELLCAST_SENT" then
+				Collector:handleSpellcastSent(...)
 			elseif event == "UNIT_HEALTH" or event == "UNIT_HEALTH_FREQUENT" then
 				Collector:handleUnitHealth(...)
 			elseif event == "COMBAT_TEXT_UPDATE" then
 				Collector:handleCombatTextUpdate(...)
 			elseif event == "UNIT_COMBAT" then
 				Collector:handleUnitCombat(...)
+			elseif event == "UNIT_AURA" then
+				Collector:handleUnitAura(...)
+			elseif event == "PLAYER_EQUIPMENT_CHANGED" then
+				-- Gear swap changes the effect-sid set — rescan lazily.
+				if ZSBT.Spellbook then ZSBT.Spellbook._scanned = nil end
+				-- A new wand can mean a new element: re-read the ranged
+				-- slot's tooltip and clear the learned vote.
+				self._wandSchool = readWandSchool()
+				self._wandVotes = nil
 			elseif event == "PLAYER_SWING" then
 				Collector:handlePlayerSwing(...)
 			elseif CHAT_OUTGOING_EVENTS[event] then
@@ -6795,10 +8319,22 @@ function Collector:Enable()
 
 	-- Subscribe to WoW events used by this collector.
 	self._frame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+	-- UNIT_SPELLCAST_SENT (player only): cast→target binding — the
+	-- press-time recipient joins SUCCEEDED via castGUID. pcall-guarded:
+	-- not every client family exposes it.
+	pcall(function() self._frame:RegisterEvent("UNIT_SPELLCAST_SENT") end)
 	self._frame:RegisterEvent("UNIT_HEALTH")
+	-- Wand element from the ranged-slot tooltip (FCT ReadWandSchool);
+	-- nil when unreadable — the claimed-shot vote learns it instead.
+	self._wandSchool = readWandSchool()
 	pcall(function() self._frame:RegisterEvent("UNIT_HEALTH_FREQUENT") end)
 	self._frame:RegisterEvent("COMBAT_TEXT_UPDATE")
 	self._frame:RegisterEvent("UNIT_COMBAT")
+	-- UNIT_AURA seeds dot-application anchors on target/nameplate debuffs
+	-- (proc dots have no cast); PLAYER_EQUIPMENT_CHANGED invalidates the
+	-- spellbook gear pass.
+	self._frame:RegisterEvent("UNIT_AURA")
+	self._frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 	-- PLAYER_SWING: public per-swing report on 12.x. Registered in a pcall —
 	-- an unsupported client marks _swingSupported false and auto claims
 	-- keep the legacy permissive path.
@@ -6831,6 +8367,16 @@ function Collector:Enable()
 				end
 			end
 		end
+		-- v2 of dot learning: periods and tick amounts persisted before the
+		-- learner-trust gate may encode misattributed rhythm (Corruption
+		-- learned 1.994s/Immolate 1.694s off another dot's ticks, and
+		-- learnedTickAmounts still bias scoring with no bound to catch
+		-- them). Wipe both once — only teaching-grade claims rebuild them.
+		if type(prof) == "table" and prof.learnedDotDataVer ~= 2 then
+			prof.learnedDotPeriods = nil
+			prof.learnedTickAmounts = nil
+			prof.learnedDotDataVer = 2
+		end
 	end
 	for evtName in pairs(CHAT_OUTGOING_EVENTS) do
 		pcall(function() self._frame:RegisterEvent(evtName) end)
@@ -6849,6 +8395,8 @@ function Collector:Disable()
 		pcall(function() self._frame:UnregisterEvent("UNIT_HEALTH_FREQUENT") end)
 		self._frame:UnregisterEvent("COMBAT_TEXT_UPDATE")
 		self._frame:UnregisterEvent("UNIT_COMBAT")
+		self._frame:UnregisterEvent("UNIT_AURA")
+		self._frame:UnregisterEvent("PLAYER_EQUIPMENT_CHANGED")
 		pcall(function() self._frame:UnregisterEvent("PLAYER_SWING") end)
 		for evtName in pairs(CHAT_OUTGOING_EVENTS) do
 			pcall(function() self._frame:UnregisterEvent(evtName) end)
@@ -6865,6 +8413,10 @@ function Collector:Disable()
 	self._healClaimByName = nil
 	self._lastAutoCandAt = nil
 	self._autoContestUntil = nil
+	self._auraDotSeen = nil
+	self._auraPollSids = nil
+	self._auraPollBuiltAt = nil
+	self._auraSeenCount = nil
 	local zb = ZSBT.ZBattleText
 	if zb and zb._healLineHook then
 		zb._healLineHook = nil

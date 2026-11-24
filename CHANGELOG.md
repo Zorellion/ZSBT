@@ -1,5 +1,32 @@
 # Changelog
 
+## 4.0-Release
+
+### Added
+- **Hunter class module:** full spec coverage including Dark Ranger hero talents — Bleak Arrows, Black Arrow, Wailing Arrow — plus Beast Mastery pet mechanics (Kill Command strikes, Bloodshed bleeds, Wild Thrash, Stomp).
+- **Demon Hunter class module:** Vengeance and Devourer coverage — Sigils, Fel Devastation channels, Voidfall meteor kit, Catastrophe, Spirit Bomb → Dark Matter procs, and per-cast claim budgets for the multi-hit AoE abilities.
+- **Per-spell flight learning:** each damage cast learns its own cast-to-hit delay (a bounded EMA that arms after three proven claims) and only claims wounds inside that span — a wound can no longer steal a fresher record belonging to a different spell. This retires the "freshest record wins" theft class entirely.
+- **Sustained ranged-family treatment:** auto-attack replacement shots (Bleak Arrows, Wailing Arrow) claim through a live family anchor plus a learned shot-flight window instead of colliding with same-school DoTs.
+- **Pet-evidence veto:** a wound proven to be a pet hit — a pet-class combat line plus a pending pet cast record for a *different* spell — can never claim a player cast record. Player-cast/pet-execute abilities (Kill Command, Bloodshed) stay claimable via a new `petExecuted` declaration.
+- **`mod.spellFacts`:** per-module fact table that pins school and role for spells the spellbook can't see — replaced, hidden, or triggered-only ids (Wailing Arrow, Catastrophe damage ticks, Meteor Shower).
+- **Correlation audit tool** (`Tools/correlate.py`): pairs emits to combat-log wounds, reports right-name/misnamed/recall coverage per spell, and prints per-wound decision traces for debugging claim paths.
+
+### Changed
+- **Excluded casts no longer become "the last cast":** hidden applicator spells (e.g. Vengeance's Frailty — a ~1s invisible self-cast that never deals damage) can't hold the recency anchor, so recency, pin, and fallback claims can't borrow their name.
+- **Pet-routed wounds claim pet lines only:** a pet route backed by a real pending pet record can no longer eat player-colored lines or lose its name to a coincident own hit.
+- **Veto fall-through is consume-consistent:** a wound vetoed off a DoT anchor consumes the rival record it was vetoed for instead of wandering into a different claim path.
+- **`/zsbt clearlearned` completeness:** now also wipes the proc-dot library, per-spell flight learns, and wand element votes — every learned store resets.
+- **Learning-safety standard documented:** ten anti-poison invariants plus a new-module validation checklist (spellbook output must be diffed against live references; "log-verified" means checking event type *and* aura target).
+
+### Fixed
+- **Dark Ranger name swap:** Bleak Arrows' shadow wounds were feeding the Black Arrow DoT anchor (same school, debuff always up, matching cadence) and vice-versa — roughly forty misnames per fight down to single digits via a rival-cast veto and the shot/tick flight discriminator.
+- **Physical wounds stealing ranged records:** the school check short-circuited for ranged-family ids, so Cobra Shot and melee hits emitted "Bleak Arrows" — physical is now unconditionally rejected for ranged families.
+- **Instant record theft:** wounds landing the same frame as a cast could claim its record before the spell's real hit arrived (Kill Command records eaten at +0.0s) — a minimum claim-age floor now applies.
+- **"Frailty" on every fire spell (Demon Hunter):** the id was registered as a DoT, but the spell only ever heals — its invisible applicator cast also flooded the claim pool once per second. Removed as a DoT and excluded as a cast; ~25 misnames per session eliminated.
+- **"Set Fire to the Pain" mis-registered:** it is a self-stagger defensive (a fire DoT on the player), not an enemy DoT — removed from the dot table.
+- **Spellbook school contamination:** tooltip verbs like "Fire a shot" (Barbed Shot) and possessives ("Nature's Ally") no longer pollute derived damage schools — a real bug that was rejecting legitimate physical wounds.
+- **Correlate alignment:** pairing now prefers tight matches (fixes wrong clock offsets), and name-level matching separates "right spell, different id" from true misnames.
+
 ## 3.3.9.7-beta
 
 ### Added

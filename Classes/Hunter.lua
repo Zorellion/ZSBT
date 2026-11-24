@@ -23,6 +23,37 @@ mod.dots = {
 	{ names = { "Latent Poison" },  ids = { 378016 },       school = 8 }, -- SV wildfire injector
 }
 
+-- Bleak Arrows (Dark Ranger talent): replaces Auto Shot with a shadow
+-- ranged attack — every swing fires its own cast record + a RANGE_DAMAGE
+-- hit at auto-shot cadence (~2.4s). Same sustained-family model as era
+-- wand Shoot: wounds past the ~0.85s cast window (flight time) still
+-- claim via ranged line + swing/family anchor instead of falling into
+-- the Black Arrow dot anchor (same school 32 — the anchor otherwise
+-- named every auto shot "Black Arrow").
+mod.ranged = { "Bleak Arrows" }
+mod.rangedIds = { 467718, 392060 }
+
+-- Facts for sids the spellbook can't see: replaced/hidden spells never
+-- appear in the book (Wailing Arrow replaces Bestial Wrath under the
+-- Wailing Dead talent — "Not In Spellbook Until Learned"), so their
+-- damage school is unreadable to SpellFacts in combat. Schools verified
+-- against Wowhead: both ids are Shadow.
+mod.spellFacts = {
+	[392060] = { damages = true, school = 32 }, -- Wailing Arrow (cast)
+	[392058] = { damages = true, school = 32 }, -- Wailing Arrow (damage)
+	[467718] = { damages = true, school = 32 }, -- Bleak Arrows (firing sid)
+}
+
+-- Player casts whose damage the PET executes — their real hits arrive
+-- on cls=pet lines, identical at wound level to pet wounds stealing
+-- the record. Exempt from the pet-evidence veto: pet proof can never
+-- separate a Kill Command strike from an auto stealing its record, so
+-- the flight gate owns that question instead.
+mod.petExecuted = {
+	[34026]  = true, -- Kill Command (pet strike)
+	[321538] = true, -- Bloodshed (pet bleed)
+}
+
 -- Channeled volleys: each shot is a separate UNIT_COMBAT hit; channel
 -- tracking lets the whole volley name itself off one cast.
 mod.channels = {

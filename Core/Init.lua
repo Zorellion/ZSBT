@@ -377,9 +377,6 @@ function Addon:OnInitialize()
 				if type(prof) == "table" then
 					local g = prof.general
 					if type(g) == "table" then
-						if g.strictOutgoingCombatLogOnly == true then
-							g.requireProof = true
-						end
 						if g.autoAttackRestrictFallback == true then
 							g.showUnprovenInGroups = true
 						end
@@ -389,11 +386,6 @@ function Addon:OnInitialize()
 						-- distinguished from never-touched, so
 						-- pvpRelaxed is left to them to opt into.
 					end
-					local cm = prof.classModule
-					if type(cm) == "table" and cm.hideUnattributed == true then
-						prof.general = prof.general or {}
-						prof.general.requireProof = true
-					end
 				end
 			end
 		end
@@ -401,9 +393,45 @@ function Addon:OnInitialize()
 		self.db.global.migrations.outgoingTiers_v1 = true
 	end
 
+	-- Dead-feed mode migration: the four per-context fallback toggles
+	-- collapsed into one exclusive choice. Any relaxed opt-in wins over
+	-- meter (meter never fires while relaxed anyway); meter opt-ins map
+	-- to "meter"; untouched profiles keep the shipped default.
+	local function migrateDeadFeedMode_v1()
+		if not self.db then return end
+		self.db.global = self.db.global or {}
+		self.db.global.migrations = self.db.global.migrations or {}
+		if self.db.global.migrations.deadFeedMode_v1 == true then return end
+
+		local profiles = self.db.profiles
+		if type(profiles) == "table" then
+			for _, prof in pairs(profiles) do
+				if type(prof) == "table" then
+					local g = prof.general
+					if type(g) == "table" then
+						-- AceDB has already merged the new "meter"
+						-- default, so derive unconditionally from the
+						-- retired keys — true only where the user chose.
+						if g.showUnprovenInGroups == true or g.pvpRelaxed == true then
+							g.deadFeedMode = "relaxed"
+						elseif g.damageMeterOutgoingFallback == true
+							or g.damageMeterIncomingFallback == true then
+							g.deadFeedMode = "meter"
+						else
+							g.deadFeedMode = "strict"
+						end
+					end
+				end
+			end
+		end
+
+		self.db.global.migrations.deadFeedMode_v1 = true
+	end
+
 	migrateGeneralDefaultsOnce()
 	migrateGeneralDefaults_v2()
 	migrateOutgoingTiers_v1()
+	migrateDeadFeedMode_v1()
 
 	-- Legacy combat-log filters: ZSBT 3.4-3.6 and 4.x installed a "ZSBT"
 	-- filter (and the embedded ZCT a "ZCT" filter) into
@@ -1298,22 +1326,41 @@ function Addon:OnInitialize()
 		local oldPrefix = "interface\\addons\\zsbt\\media\\"
 		local newPrefix = "Interface\\CustomMedia\\"
 		local migratedPaths = false
+		local movedFiles = {}    -- entries whose stored path was rewritten to CustomMedia
+		local missingFiles = {}  -- entries whose file could not be loaded/registered
+		-- LSM:Register reports missing files through the error handler even
+		-- inside pcall (BugSack sees it), so check existence silently first —
+		-- same API LSM itself uses, and never hand Register a dead path.
+		local IsKnownFile = C_UIFileAsset and C_UIFileAsset.IsKnownFile
 		local function migrateCustomPath(path)
 			if type(path) ~= "string" then return path end
 			local lower = path:lower()
 			if lower:sub(1, #oldPrefix) == oldPrefix then
 				migratedPaths = true
-				return newPrefix .. path:sub(#oldPrefix + 1)
+				return newPrefix .. path:sub(#oldPrefix + 1), true
 			end
 			return path
+		end
+		local function tryRegister(kind, name, path)
+			if IsKnownFile and not IsKnownFile(path) then
+				missingFiles[#missingFiles + 1] = { kind = kind, name = name, path = path }
+				return
+			end
+			local ok = pcall(LSM.Register, LSM, kind, name, path)
+			if not ok then
+				missingFiles[#missingFiles + 1] = { kind = kind, name = name, path = path }
+			end
 		end
 		local fonts = custom and custom.fonts
 		if type(fonts) == "table" then
 			for name, path in pairs(fonts) do
 				if type(name) == "string" and name ~= "" and type(path) == "string" and path ~= "" then
-					path = migrateCustomPath(path)
-					fonts[name] = path
-					pcall(function() LSM:Register("font", name, path) end)
+					local newPath, moved = migrateCustomPath(path)
+					fonts[name] = newPath
+					if moved then
+						movedFiles[#movedFiles + 1] = { kind = "font", name = name, path = newPath }
+					end
+					tryRegister("font", name, newPath)
 				end
 			end
 		end
@@ -1321,14 +1368,79 @@ function Addon:OnInitialize()
 		if type(sounds) == "table" then
 			for name, path in pairs(sounds) do
 				if type(name) == "string" and name ~= "" and type(path) == "string" and path ~= "" then
-					path = migrateCustomPath(path)
-					sounds[name] = path
-					pcall(function() LSM:Register("sound", name, path) end)
+					local newPath, moved = migrateCustomPath(path)
+					sounds[name] = newPath
+					if moved then
+						movedFiles[#movedFiles + 1] = { kind = "sound", name = name, path = newPath }
+					end
+					tryRegister("sound", name, newPath)
 				end
 			end
 		end
 		if migratedPaths then
 			print("|cff33ff99ZSBT:|r Custom media paths moved to |cffffff00Interface\\CustomMedia\\|r — move your files there once and addon updates will never delete them.")
+		end
+		-- These entries would have produced the LibSharedMedia "invalid
+		-- font" error — own the explanation in a ZSBT popup instead.
+		-- Show once per unique missing set; it resurfaces if the set
+		-- changes (partial fix, newly added entries, etc.).
+		local showMediaNotice = #missingFiles > 0
+		if showMediaNotice and type(self.db.global) == "table" then
+			local g = self.db.global
+			local sig = {}
+			for _, m in ipairs(missingFiles) do sig[#sig + 1] = m.path end
+			table.sort(sig)
+			sig = table.concat(sig, "|")
+			if g.customMediaNoticeSig == sig then
+				showMediaNotice = false
+			else
+				g.customMediaNoticeSig = sig
+			end
+		end
+		if showMediaNotice then
+			local out = {
+				"Your saved custom media points at files that no longer exist where",
+				"ZSBT expects them. Custom media now lives under",
+				"",
+				"    Interface\\CustomMedia\\",
+				"",
+				"so addon updates can never delete it again.",
+				"",
+				"Move or copy each file below to the path listed under it",
+				"(keep the same subfolders — Fonts\\, Sounds\\), then /reload:",
+				"",
+				"MISSING FILES:",
+			}
+			for _, m in ipairs(missingFiles) do
+				out[#out + 1] = ("  %s: %s\n      %s"):format(m.kind, m.name, m.path)
+			end
+			-- Sounds land in missingFiles when IsKnownFile exists; only on
+			-- clients without it do moved sounds stay unverifiable.
+			if not IsKnownFile then
+				local missingByPath = {}
+				for _, m in ipairs(missingFiles) do missingByPath[m.path] = true end
+				local unverified = {}
+				for _, m in ipairs(movedFiles) do
+					if m.kind == "sound" and not missingByPath[m.path] then
+						unverified[#unverified + 1] = m
+					end
+				end
+				if #unverified > 0 then
+					out[#out + 1] = ""
+					out[#out + 1] = "SOUNDS (existence can't be verified — check these too):"
+					for _, m in ipairs(unverified) do
+						out[#out + 1] = ("  %s\n      %s"):format(m.name, m.path)
+					end
+				end
+			end
+			if type(ZSBT.OpenTextPopup) == "function" then
+				ZSBT.OpenTextPopup(L["ZSBT — Custom Media Moved"], table.concat(out, "\n"))
+			else
+				print("|cff33ff99ZSBT:|r Missing custom media files — move them into |cffffff00Interface\\CustomMedia\\|r:")
+				for _, m in ipairs(missingFiles) do
+					print("   " .. m.kind .. ": " .. m.name .. " -> " .. m.path)
+				end
+			end
 		end
 	end
 
@@ -2362,6 +2474,7 @@ function Addon:HandleSlashCommand(input)
             prof.learnedTickAmounts = nil
             prof.learnedDotPeriods = nil
             prof.learnerEvidence = nil
+            prof.learnedProcDots = nil
         end
         local col = ZSBT.Parser and ZSBT.Parser.EventCollector
         if type(col) == "table" then
@@ -2369,10 +2482,18 @@ function Addon:HandleSlashCommand(input)
             col._schoolVotes = {}
             col._dotTickState = {}
             col._dotTickAmounts = {}
+            col._flightBySid = {}
+            col._wandFlight = nil
+            col._wandSchool = nil
+            col._wandVotes = nil
         end
         self:Print("Learned attribution cleared (schools, tick amounts, dot periods).")
         return
     elseif cmd == "audit" then
+        -- "/zsbt audit max <n>" is the natural spelling of auditmax —
+        -- honor it instead of silently toggling the trace.
+        local mn = rest and rest:match("^%s*max%s+(%d+)%s*$")
+        if mn then cmd = "auditmax"; rest = mn else
         ZSBT._auditTrace = not (ZSBT._auditTrace == true)
         local diag = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
         if ZSBT._auditTrace == true then
@@ -2380,7 +2501,9 @@ function Addon:HandleSlashCommand(input)
         end
         self:Print("AUDIT trace " .. (ZSBT._auditTrace and "ON" or "OFF"))
         return
-    elseif cmd == "auditmax" then
+        end
+    end
+    if cmd == "auditmax" then
         local diag = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
         if type(diag) ~= "table" then
             self:Print("No diagnostics profile available.")

@@ -85,7 +85,7 @@ local function isDamageMeterOutgoingEnabled()
 		and ZSBT.db
 		and ZSBT.db.profile
 		and ZSBT.db.profile.general
-		and ZSBT.db.profile.general.damageMeterOutgoingFallback == true
+		and ZSBT.db.profile.general.deadFeedMode == "meter"
 end
 
 local function isDamageMeterIncomingEnabled()
@@ -93,7 +93,7 @@ local function isDamageMeterIncomingEnabled()
 		and ZSBT.db
 		and ZSBT.db.profile
 		and ZSBT.db.profile.general
-		and ZSBT.db.profile.general.damageMeterIncomingFallback == true
+		and ZSBT.db.profile.general.deadFeedMode == "meter"
 end
 
 local function canUseDamageMeter()
