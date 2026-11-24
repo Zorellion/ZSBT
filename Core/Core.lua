@@ -355,7 +355,7 @@ function Core:OutgoingStrictnessTier()
 		if not self:IsPvPRelaxedEnabled() then
 			return "dead_pvp"
 		end
-		-- pvpRelaxed falls through to the normal group/solo check.
+		-- relaxed mode falls through to the normal group/solo check.
 	end
 	local members = 0
 	if type(GetNumGroupMembers) == "function" then
@@ -368,25 +368,19 @@ function Core:OutgoingStrictnessTier()
 	return "dead_solo"
 end
 
--- "Require combat-log proof for outgoing": suppress unattributed
--- candidates even while the veto is live (paranoid mode).
-function Core:IsRequireProofEnabled()
-	local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
-	return g ~= nil and g.requireProof == true
-end
-
--- "Show unproven outgoing in groups": relaxes the automatic
--- veto-dead group/instance/PvP restrict (never relaxes an explicitly
--- enabled strict toggle — those are the user's own choice).
+-- Dead-feed mode "relaxed": unproven hits flow when the feed is dead,
+-- releasing the automatic veto-dead group/instance/PvP restrict (never
+-- relaxes an explicitly enabled strict toggle — those are the user's
+-- own choice).
 function Core:IsShowUnprovenInGroupsEnabled()
 	local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
-	return g ~= nil and g.showUnprovenInGroups == true
+	return g ~= nil and g.deadFeedMode == "relaxed"
 end
 
--- "Relaxed outgoing in PvP": opt out of auto-strict in pvp/arena.
+-- Dead-feed mode "relaxed" also opts out of auto-strict in pvp/arena.
 function Core:IsPvPRelaxedEnabled()
 	local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
-	return g ~= nil and g.pvpRelaxed == true
+	return g ~= nil and g.deadFeedMode == "relaxed"
 end
 
 -- True when the context tier alone forces restrict — i.e., veto-dead

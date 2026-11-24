@@ -50,13 +50,6 @@ local function savePosition(frame)
 	g.quickControlBarPos.y = y
 end
 
-local function toggleBool(key)
-	local g = getGeneral()
-	if not g then return end
-	g[key] = not (g[key] == true)
-	notifyConfig()
-end
-
 local function refreshActiveDropDown()
 	if not QuickBar or not QuickBar._dropDown then return end
 	if UIDropDownMenu_Refresh then
@@ -67,57 +60,113 @@ local function refreshActiveDropDown()
 	end
 end
 
--- Context-tiered ownership model: the three surviving outgoing
--- toggles plus the damage-meter fallbacks. Context (solo/group/PvP)
--- is auto-detected — no per-context menus needed.
+local function getDeadFeedMode()
+	local g = getGeneral()
+	return (g and g.deadFeedMode) or "strict"
+end
+
+local function setDeadFeedMode(mode)
+	local g = getGeneral()
+	if not g then return end
+	g.deadFeedMode = mode
+	notifyConfig()
+	refreshActiveDropDown()
+end
+
+-- Outgoing accuracy menu: one exclusive dead-feed mode plus the
+-- surviving display toggles, sectioned by what each layer controls.
 local function buildOutgoingMenu()
-	local g = getGeneral() or {}
-	return {
+	local items = {
+		{ text = L["Outgoing Accuracy"], isTitle = true },
+		{ text = L["FALLBACK — ONLY IF FEED STOPS"], isTitle = true, notCheckable = true },
 		{
-			text = L["Require Combat-Log Proof"],
-			isNotRadio = true,
-			checked = function() return g.requireProof == true end,
-			func = function()
-				toggleBool("requireProof")
-				refreshActiveDropDown()
-			end,
+			text = L["Strict — proven hits only"],
+			checked = function() return getDeadFeedMode() == "strict" end,
+			func = function() setDeadFeedMode("strict") end,
+			tooltipTitle = L["Strict"],
+			tooltipText = L["If the combat-log feed stops or starves, only hits that can still be proven yours display. Safest, but your numbers may go quiet."],
+			tooltipOnButton = true,
 			keepShownOnClick = true,
 		},
 		{
-			text = L["Show Unproven Hits in Groups"],
-			isNotRadio = true,
-			checked = function() return g.showUnprovenInGroups == true end,
-			func = function()
-				toggleBool("showUnprovenInGroups")
-				refreshActiveDropDown()
-			end,
+			text = L["Relaxed — unproven hits too"],
+			checked = function() return getDeadFeedMode() == "relaxed" end,
+			func = function() setDeadFeedMode("relaxed") end,
+			tooltipTitle = L["Relaxed"],
+			tooltipText = L["Unproven hits keep flowing when the feed is dead. A group member's damage on your target may rarely appear as yours."],
+			tooltipOnButton = true,
 			keepShownOnClick = true,
 		},
 		{
-			text = L["Relaxed Outgoing in PvP"],
-			isNotRadio = true,
-			checked = function() return g.pvpRelaxed == true end,
-			func = function()
-				toggleBool("pvpRelaxed")
-				refreshActiveDropDown()
-			end,
-			keepShownOnClick = true,
-		},
-		{
-			text = L["Use Damage Meter Outgoing Fallback"],
-			isNotRadio = true,
-			checked = function() return g.damageMeterOutgoingFallback == true end,
-			func = function() toggleBool("damageMeterOutgoingFallback") end,
-			keepShownOnClick = true,
-		},
-		{
-			text = L["Use Damage Meter Incoming Damage Fallback"],
-			isNotRadio = true,
-			checked = function() return g.damageMeterIncomingFallback == true end,
-			func = function() toggleBool("damageMeterIncomingFallback") end,
+			text = L["Damage Meter — aggregate totals (default)"],
+			checked = function() return getDeadFeedMode() == "meter" end,
+			func = function() setDeadFeedMode("meter") end,
+			tooltipTitle = L["Damage Meter"],
+			tooltipText = L["Substitutes Blizzard's running damage totals while the feed is dead. Fewer per-hit details, no crit flags, but your numbers never go silent."],
+			tooltipOnButton = true,
 			keepShownOnClick = true,
 		},
 	}
+	-- Way back: shown only while the fallback is off its default.
+	if getDeadFeedMode() ~= ZSBT._defaultDeadFeedMode() then
+		items[#items + 1] = {
+			text = L["Reset to Default"],
+			notCheckable = true,
+			func = function() setDeadFeedMode(ZSBT._defaultDeadFeedMode()) end,
+			tooltipTitle = L["Reset to Default"],
+			tooltipText = L["Restore the Damage Meter fallback. Normal proven mode is automatic either way — this only matters while the feed is dead."],
+			tooltipOnButton = true,
+			keepShownOnClick = true,
+		}
+	end
+	items[#items + 1] = { text = L["VISIBILITY"], isTitle = true, notCheckable = true }
+	items[#items + 1] = {
+			text = L["Proven hits without proof line"],
+			isNotRadio = true,
+			checked = function()
+				local d = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.outgoing and ZSBT.db.profile.outgoing.damage
+				return d ~= nil and d.provenNoLine == true
+			end,
+			func = function()
+				local dmg = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.outgoing and ZSBT.db.profile.outgoing.damage
+				if dmg then
+					dmg.provenNoLine = not (dmg.provenNoLine == true)
+					notifyConfig()
+					refreshActiveDropDown()
+				end
+			end,
+			tooltipTitle = L["Show Proven Hits Without Lines (Experimental)"],
+			tooltipText = L["Hits proven by your own casts or swings display even when their proof line never arrives. Restores outgoing visibility in raids where the feed starves; a co-attacker's hit that steals a cast record can also display."],
+			tooltipOnButton = true,
+			keepShownOnClick = true,
+	}
+	-- Class-module pet naming: only for pet classes whose module
+	-- declares the toggle.
+	if ZSBT.ClassDB and ZSBT.ClassDB.SupportsToggle
+		and ZSBT.ClassDB.SupportsToggle("namePetMelee") then
+		items[#items + 1] = {
+			text = L["Pet melee shows as \"Auto Attack\""],
+			isNotRadio = true,
+			checked = function()
+				local cm = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.classModule
+				return cm ~= nil and cm.namePetMelee == true
+			end,
+			func = function()
+				local prof = ZSBT.db and ZSBT.db.profile
+				if prof then
+					prof.classModule = prof.classModule or {}
+					prof.classModule.namePetMelee = not (prof.classModule.namePetMelee == true)
+					notifyConfig()
+					refreshActiveDropDown()
+				end
+			end,
+			tooltipTitle = L["Show Pet Melee Hits as \"Auto Attack\""],
+			tooltipText = L["Your pet's physical hits display as \"Auto Attack\" instead of a generic number. Only applies when the combat log already proved the hit came from your pet."],
+			tooltipOnButton = true,
+			keepShownOnClick = true,
+		}
+	end
+	return items
 end
 
 -- Module-declared toggles only (mod.toggles): a class never sees an
@@ -126,9 +175,6 @@ local CLASS_MENU_TOGGLES = {
 	{ key = "resolveGuardians", text = L["Name Guardian Spells"],
 		get = function(cm) return cm.resolveGuardians ~= false end,
 		flip = function(cm) return not (cm.resolveGuardians ~= false) end },
-	{ key = "namePetMelee", text = L["Show Pet Melee Hits"],
-		get = function(cm) return cm.namePetMelee == true end,
-		flip = function(cm) return not (cm.namePetMelee == true) end },
 }
 
 local function buildClassMenu()

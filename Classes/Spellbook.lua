@@ -271,12 +271,21 @@ function Spellbook.ParseDesc(desc, spellId)
 		-- defensive text, not a wound claim ("reduces arcane damage
 		-- taken"). Reject that occurrence; every other context keeps
 		-- its vote, so no legitimate mask is ever lost.
+		-- Verb/possessive vetoes: "Fire a shot" (Barbed Shot) uses the
+		-- school word as the sentence's verb — an article follows, which
+		-- a school claim never does ("Fire damage", "fire and shadow"
+		-- survive). "Nature's Ally" embeds the word in a possessive.
 		local pos, accepted = 1, false
 		while not accepted do
 			local s, e = remaining:find(pat, pos)
 			if not s then break end
 			local after = remaining:sub(e + 1, e + 24):match("^%s*(%a+ %a+)")
-			if after ~= "damage taken" then accepted = true end
+			local art = after and after:match("^(%a+)") or nil
+			local isVerb = art == "a" or art == "an" or art == "the"
+			local isPoss = remaining:sub(e + 1, e + 2) == "'s"
+			if after ~= "damage taken" and not isVerb and not isPoss then
+				accepted = true
+			end
 			pos = e + 1
 		end
 		if accepted then
@@ -674,6 +683,75 @@ function Spellbook:Scan()
 						break
 					end
 					pos = desc:find(n.name, pos + 1, true)
+				end
+			end
+		end
+	end
+
+	-- Gear pass: equipped item effects (trinket use/proc spells, weapon
+	-- and enchant effects) parse through the same description machinery
+	-- as class spells — DotEntry's spellbook fallback then claims their
+	-- periodic wounds with no module table. The item->spell map persists
+	-- to profile.gearLibrary so the library survives relog/unequip.
+	local gearLib = {}
+	if C_Item and C_Item.GetItemSpell and GetInventoryItemID then
+		for slot = 1, 17 do
+			local okI, itemID = pcall(GetInventoryItemID, "player", slot)
+			if okI and type(itemID) == "number" then
+				local okS, effSid, effName = pcall(C_Item.GetItemSpell, itemID)
+				if okS and type(effSid) == "number" and entries[effSid] == nil then
+					local rec = { sid = effSid, gear = true, itemID = itemID,
+						slot = slot, role = "cast" }
+					if type(effName) == "string" and effName ~= "" then
+						rec.name = effName
+					elseif C_Spell and C_Spell.GetSpellInfo then
+						local okN, info = pcall(C_Spell.GetSpellInfo, effSid)
+						if okN and type(info) == "table" and type(info.name) == "string" then
+							rec.name = info.name
+						end
+					end
+					local desc
+					if C_Spell and C_Spell.GetSpellDescription then
+						local okD, d2 = pcall(C_Spell.GetSpellDescription, effSid)
+						if okD and type(d2) == "string" and d2 ~= "" then desc = d2 end
+					end
+					if type(desc) == "string"
+						and (ZSBT.IsSafeString == nil or ZSBT.IsSafeString(desc)) then
+						local parsed = Spellbook.ParseDesc(desc, effSid)
+						if parsed then
+							rec.role = parsed.role
+							rec.duration = parsed.duration
+							rec.tickMin = parsed.tickMin
+							rec.interval = parsed.interval
+							rec.dotTotal = parsed.dotTotal
+							rec.dotDur = parsed.dotDur
+							rec.masks = parsed.masks
+						end
+					end
+					entries[effSid] = rec
+					if rec.name and byName[rec.name] == nil then
+						byName[rec.name] = effSid
+					end
+					for _, m in ipairs(rec.masks or {}) do masks[m] = true end
+					gearLib[itemID] = { sid = effSid, spellName = rec.name }
+				end
+			end
+		end
+	end
+	self._gear = gearLib
+	do
+		local prof = ZSBT.db and ZSBT.db.profile
+		if type(prof) == "table" then
+			prof.gearLibrary = prof.gearLibrary or {}
+			for itemID, g in pairs(gearLib) do
+				local e = prof.gearLibrary[itemID]
+				if not e then
+					prof.gearLibrary[itemID] = { sid = g.sid,
+						spellName = g.spellName, firstSeen = time() }
+				else
+					e.sid = g.sid
+					e.spellName = g.spellName
+					e.lastSeen = time()
 				end
 			end
 		end

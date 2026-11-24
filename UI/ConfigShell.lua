@@ -318,14 +318,9 @@ local function buildClassPage(pf)
 			get = function(prof) return not (prof and prof.classModule and prof.classModule.resolveGuardians == false) end,
 			set = function(prof, v) prof.classModule.resolveGuardians = v end,
 		},
-		{ key = "namePetMelee",
-			label = L["Show pet melee hits"],
-			tip = function()
-				return L["Pet melee verified by a combat-log line displays as 'Auto Attack'. A stolen MY_PET line could still name a foreign swing."]
-			end,
-			get = function(prof) return prof and prof.classModule and prof.classModule.namePetMelee == true end,
-			set = function(prof, v) prof.classModule.namePetMelee = v end,
-		},
+		-- namePetMelee lives in General > Outgoing Accuracy (and the
+		-- quick-bar Outgoing menu) — module still declares support via
+		-- mod.toggles so those surfaces can gate it.
 	}
 	local toggles = {}
 	for _, def in ipairs(toggleDefs) do

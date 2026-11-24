@@ -528,6 +528,29 @@ function ClassDB.DotEntry(spellId)
 		}
 		return rec._dotEntry
 	end
+	-- Learned-proc fallback: UNIT_AURA observed our own periodic debuff
+	-- land on an enemy (trinket/enchant/set procs — no class cast to
+	-- declare them), and the binding was persisted to the profile.
+	-- Same entry shape; survives sessions like learnedSpellSchools.
+	local prof = ZSBT.db and ZSBT.db.profile
+	local ld = prof and prof.learnedProcDots and prof.learnedProcDots[spellId]
+	if type(ld) == "table" then
+		ClassDB._learnedDotEntry = ClassDB._learnedDotEntry or {}
+		local e = ClassDB._learnedDotEntry[spellId]
+		if not e or e._ld ~= ld then
+			e = {
+				names = { ld.name or tostring(spellId) },
+				_canon = ld.name,
+				ids = { spellId },
+				school = ld.school,
+				interval = ld.interval,
+				_learned = true,
+				_ld = ld,
+			}
+			ClassDB._learnedDotEntry[spellId] = e
+		end
+		return e
+	end
 	return nil
 end
 
@@ -576,6 +599,10 @@ function ClassDB.DeclaredSchoolFits(spellId, school)
 		decl = c and c.school or nil
 	end
 	if decl == nil then
+		local f = ClassDB.SpellFactOverride(spellId)
+		decl = f and f.school or nil
+	end
+	if decl == nil then
 		local sb = ZSBT.Spellbook
 		local rec = sb and sb.Entry and sb:Entry(spellId)
 		decl = rec and rec.masks or nil
@@ -596,6 +623,18 @@ function ClassDB.DeclaredSchoolFits(spellId, school)
 	return nil
 end
 
+-- mod.spellFacts[spellId] = { damages = bool, school = N }: explicit
+-- spell facts for tooltips the SpellFacts parser can't read (proc
+-- damage with non-standard description text). SpellFacts consults this
+-- after its own parse so overrides also repair damages=false verdicts.
+function ClassDB.SpellFactOverride(spellId)
+	local mod = ClassDB.ActiveModule()
+	if mod and type(mod.spellFacts) == "table" and type(spellId) == "number" then
+		return mod.spellFacts[spellId]
+	end
+	return nil
+end
+
 -- Guaranteed on-attack procs lacking a cast record (mod.procRiders list
 -- of { sid, school, minGap }): the collector may name a same-school wound
 -- when a melee weapon attack is anchored and uncontested. nil = none.
@@ -612,6 +651,16 @@ function ClassDB.PetCastBudget(spellId)
 	local mod = ClassDB.ActiveModule()
 	if not mod or type(mod.petCastBudget) ~= "table" then return nil end
 	return mod.petCastBudget[spellId]
+end
+
+-- Player-cast records whose legitimate hits are pet-sourced (cls=pet
+-- lines): Kill Command's strike, Bloodshed's bleed. Pet-evidence
+-- vetoes must never touch them — their real hits look identical to
+-- pet steals at wound level; the flight gate owns theft for these.
+function ClassDB.PetExecuted(spellId)
+	local mod = ClassDB.ActiveModule()
+	if not mod or type(mod.petExecuted) ~= "table" then return nil end
+	return mod.petExecuted[spellId] == true or nil
 end
 
 function ClassDB.ChannelMatch(spellId)
@@ -672,10 +721,27 @@ end
 ---------------------------------------------------------------------------
 -- Hook dispatch (all nil-safe)
 ---------------------------------------------------------------------------
+-- Module functions must never kill a wound/cast path: a throwing hook is
+-- logged (throttled) and treated as absent. Callers keep their nil-checks.
+local _hookErrAt = 0
+local function safeHook(fnName, fn, ...)
+	local ok, r = pcall(fn, ...)
+	if ok == true then return r end
+	local t = GetTime and GetTime() or 0
+	if t - _hookErrAt >= 5 then
+		_hookErrAt = t
+		local zbt = ZSBT.ZBattleText
+		if zbt and zbt.FileLog then
+			zbt:FileLog(("HOOKERR fn=%s err=%s"):format(fnName, tostring(r)))
+		end
+	end
+	return nil
+end
+
 function ClassDB.OnPlayerCast(self, spellId, spellName, t)
 	local mod = ClassDB.ActiveModule()
 	if mod and mod.onCast then
-		mod.onCast(self, spellId, spellName, t)
+		safeHook("onCast", mod.onCast, self, spellId, spellName, t)
 	end
 	-- Generic channel seed: any module-declared or taught channel opens
 	-- its tick window on cast. The registry owns this seed — module-side
@@ -698,21 +764,21 @@ end
 function ClassDB.OnMatchedPhysical(self, spellId, t, amount)
 	local mod = ClassDB.ActiveModule()
 	if mod and mod.onMatchedPhysical then
-		mod.onMatchedPhysical(self, spellId, t, amount)
+		safeHook("onMatchedPhysical", mod.onMatchedPhysical, self, spellId, t, amount)
 	end
 end
 
 function ClassDB.OnPhysicalWound(self, ctx)
 	local mod = ClassDB.ActiveModule()
 	if mod and mod.onPhysicalWound then
-		mod.onPhysicalWound(self, ctx)
+		safeHook("onPhysicalWound", mod.onPhysicalWound, self, ctx)
 	end
 end
 
 function ClassDB.OnGuardianWound(self, ctx)
 	local mod = ClassDB.ActiveModule()
 	if mod and mod.onGuardianWound then
-		return mod.onGuardianWound(self, ctx) == true
+		return safeHook("onGuardianWound", mod.onGuardianWound, self, ctx) == true
 	end
 	return false
 end
@@ -720,7 +786,7 @@ end
 function ClassDB.PetSchoolHit(school)
 	local mod = ClassDB.ActiveModule()
 	if mod and mod.petSchoolHit then
-		return mod.petSchoolHit(school, ClassDB.Helpers()) == true
+		return safeHook("petSchoolHit", mod.petSchoolHit, school, ClassDB.Helpers()) == true
 	end
 	return false
 end
@@ -733,7 +799,7 @@ end
 function ClassDB.PetSchoolAllowed(school)
 	local mod = ClassDB.ActiveModule()
 	if mod and mod.petSchoolAllowed then
-		return mod.petSchoolAllowed(school, ClassDB.Helpers())
+		return safeHook("petSchoolAllowed", mod.petSchoolAllowed, school, ClassDB.Helpers())
 	end
 	return nil
 end
@@ -741,7 +807,7 @@ end
 function ClassDB.PetSchoolHitRecent(self, school, lastPlayerSpellId)
 	local mod = ClassDB.ActiveModule()
 	if mod and mod.petSchoolHitRecent then
-		return mod.petSchoolHitRecent(self, school, lastPlayerSpellId, ClassDB.Helpers()) == true
+		return safeHook("petSchoolHitRecent", mod.petSchoolHitRecent, self, school, lastPlayerSpellId, ClassDB.Helpers()) == true
 	end
 	return false
 end
@@ -752,7 +818,7 @@ end
 function ClassDB.PetPhysicalHit(school)
 	local mod = ClassDB.ActiveModule()
 	if mod and mod.petPhysicalHit then
-		return mod.petPhysicalHit(school, ClassDB.Helpers()) == true
+		return safeHook("petPhysicalHit", mod.petPhysicalHit, school, ClassDB.Helpers()) == true
 	end
 	return false
 end
@@ -768,7 +834,7 @@ end
 function ClassDB.AutoLineKinds()
 	local mod = ClassDB.ActiveModule()
 	if mod and mod.autoLineKinds then
-		return mod.autoLineKinds(ClassDB.Helpers())
+		return safeHook("autoLineKinds", mod.autoLineKinds, ClassDB.Helpers())
 	end
 	return nil
 end
@@ -779,7 +845,7 @@ end
 function ClassDB.SwingEvidence(self, t)
 	local mod = ClassDB.ActiveModule()
 	if mod and mod.swingEvidence then
-		return mod.swingEvidence(self, t, ClassDB.Helpers())
+		return safeHook("swingEvidence", mod.swingEvidence, self, t, ClassDB.Helpers())
 	end
 	return nil
 end
@@ -787,7 +853,7 @@ end
 function ClassDB.VetoAuto()
 	local mod = ClassDB.ActiveModule()
 	if mod and mod.vetoAuto then
-		return mod.vetoAuto(ClassDB.Helpers()) == true
+		return safeHook("vetoAuto", mod.vetoAuto, ClassDB.Helpers()) == true
 	end
 	return false
 end
@@ -800,7 +866,7 @@ end
 function ClassDB.ResolvePetSpellId(self, school, t)
 	local mod = ClassDB.ActiveModule()
 	if mod and mod.resolvePetSpellId then
-		return mod.resolvePetSpellId(self, school, t, ClassDB.Helpers())
+		return safeHook("resolvePetSpellId", mod.resolvePetSpellId, self, school, t, ClassDB.Helpers())
 	end
 	return nil
 end
@@ -812,7 +878,7 @@ end
 function ClassDB.ResolvePetMelee(self)
 	local mod = ClassDB.ActiveModule()
 	if mod and mod.resolvePetMelee then
-		return mod.resolvePetMelee(self, ClassDB.Helpers())
+		return safeHook("resolvePetMelee", mod.resolvePetMelee, self, ClassDB.Helpers())
 	end
 	return nil
 end
@@ -839,7 +905,7 @@ end
 function ClassDB.DotGuard(entry, school)
 	local mod = ClassDB.ActiveModule()
 	if mod and mod.dotGuard then
-		return mod.dotGuard(entry, school, ClassDB.Helpers())
+		return safeHook("dotGuard", mod.dotGuard, entry, school, ClassDB.Helpers())
 	end
 	return nil
 end

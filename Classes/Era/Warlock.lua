@@ -37,7 +37,10 @@ mod.dots = {
 	-- names this client actually uses; classic names stay as match aliases.
 	{ names = { "Bane of Agony", "Curse of Agony" }, school = 32, interval = 2 },
 	{ names = { "Bane of Doom", "Curse of Doom" },   school = 32, interval = 60 },
-	{ names = { "Siphon Life" },         school = 32, interval = 3 },
+	-- drains: the tick damages the target AND heals the caster — a heal
+	-- line co-timed with the wound is the client's own proof this entry
+	-- fired (splits it from Corruption, which shares school+interval).
+	{ names = { "Siphon Life" },         school = 32, interval = 3, drains = true },
 	{ names = { "Immolate" },            school = 4,  interval = 3 },
 	-- Later-era additions: harmless if Forever lacks them (name match
 	-- only fires on a real cast), correct if a custom build has them.
@@ -50,8 +53,10 @@ mod.channels = {
 	-- interval is the era tick period: the disambiguation picker phase-
 	-- locks channel ticks to it, so DoT ticks landing mid-channel keep
 	-- their own names instead of being eaten by the channel.
-	{ names = { "Drain Life" },   duration = 6.0,  tickMin = 0.5, school = 32, interval = 1 },
-	{ names = { "Drain Soul" },   duration = 16.0, tickMin = 0.5, school = 32, interval = 1 },
+	-- drains on the health drains only: Drain Mana's return is power,
+	-- not a heal line, so a missing heal must never count against it.
+	{ names = { "Drain Life" },   duration = 6.0,  tickMin = 0.5, school = 32, interval = 1, drains = true },
+	{ names = { "Drain Soul" },   duration = 16.0, tickMin = 0.5, school = 32, interval = 1, drains = true },
 	{ names = { "Drain Mana" },   duration = 6.0,  tickMin = 0.5, school = 32, interval = 1 },
 	-- Era Rain of Fire is channeled: 4 waves over ~8s. tickMin is kept
 	-- proportional so foreign fire ticks can't ride a wide window.
@@ -177,6 +182,7 @@ function mod.onCast(self, spellId, spellName, t)
 			tickMin = ch.tickMin or 0.12,
 			school = ch.school,
 			interval = ch.interval,
+			drains = ch.drains,
 		}
 	end
 end

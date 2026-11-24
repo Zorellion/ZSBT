@@ -21,9 +21,30 @@ mod.dots = {
 	{ names = { "Virulent Plague" },       ids = { 191587 },  school = 32 }, -- log-verified periodic id
 	{ names = { "Dread Plague" },          ids = { 1240996 }, school = 32 }, -- log-verified periodic id
 	{ names = { "Trollbane's Icy Fury" },  ids = { 444834 },  school = 48 }, -- Rider proc, player-sourced debuff (log-verified school 0x30)
-	{ names = { "Ceaseless Swarm" },       ids = { 450969 },  school = 8 },  -- proc dot, log-verified (117 ticks)
-	{ names = { "Spidersting" },           ids = { 452229 },  school = 8 },  -- proc dot, log-verified
+	{ names = { "Ceaseless Swarm" },       ids = { 450969 },  school = 8, interval = 1 }, -- trinket proc dot, log-verified
+	{ names = { "Spidersting" },           ids = { 452229 },  school = 8, interval = 1 }, -- trinket proc dot, log-verified
 	{ names = { "Undeath" },               ids = { 444633 },  school = 48 }, -- proc dot, log-verified school 0x30
+}
+
+-- Casts that apply dots to targets other than the cast's. aoe=true means
+-- the cast puts the dot on EVERY enemy in range — it writes the multi-mob
+-- anchor (_dotAppliedAoe) so off-target nameplate ticks can phase-lock
+-- and name the dot (Druid's Primal Wrath -> Rip pattern, same machinery).
+mod.dotApplicators = {
+	[50842]  = { { sid = 55078, aoe = true } }, -- Blood Boil -> Blood Plague (Pestilence spread)
+	[195292] = { { sid = 55078 } },             -- Death's Caress -> Blood Plague (target only)
+}
+
+-- Damage school whitelist (union with spellbook-derived masks): physical,
+-- nature (Ceaseless Swarm/Spidersting procs), frost, shadow, shadowfrost.
+mod.schools = { [1] = true, [8] = true, [16] = true, [32] = true, [48] = true }
+
+-- Tooltip-parse repairs: proc damage the SpellFacts text scan can't see.
+mod.spellFacts = {
+	[434144] = { damages = true, school = 32 }, -- Infliction of Sorrow (San'layn; tooltip says "remaining damage", never a school word)
+	[49998]  = { heals = true },               -- Death Strike: the cast produces the self-heal
+	[274156] = { heals = true },               -- Consumption: heals for damage dealt
+	[47541]  = { heals = false },              -- Death Coil heals UNDEAD allies only, never the player
 }
 
 -- Channeled: Breath of Sindragosa ticks for the channel's duration.
@@ -44,6 +65,7 @@ mod.castBudget = {
 	[207230] = 8,  -- Frostscythe
 	[279302] = 6,  -- Frostwyrm's Fury
 	[50842]  = 8,  -- Blood Boil
+	[49998]  = 3,  -- Death Strike (Deadly Reach: +2 targets, log-verified 2-3 dmg events)
 	[206930] = 5,  -- Heart Strike (cleaves up to 5)
 	[460501] = 5,  -- Heart Strike, second id (log-verified)
 	[433895] = 5,  -- Vampiric Strike (San'layn, log-verified)
@@ -244,7 +266,11 @@ function mod.onGuardianWound(self, ctx)
 	if type(summonedAt) ~= "number" then return false end
 	local ageSummon = t - summonedAt
 	if not (ageSummon >= 0 and ageSummon <= 45.0) then return false end
-	if not (IsSafeNumber(amount) and amount > 0 and amount <= 3000) then return false end
+	-- Amount is a secret on this client: the <=3000 range check keeps big
+	-- player swings out of the ghoul bucket, but an unreadable amount
+	-- can't disprove anything — the school, summon-window and dedup
+	-- gates still stand either way.
+	if IsSafeNumber(amount) and not (amount > 0 and amount <= 3000) then return false end
 	local ageCast = nil
 	if type(self._lastPlayerSpellAt) == "number" then
 		ageCast = t - self._lastPlayerSpellAt

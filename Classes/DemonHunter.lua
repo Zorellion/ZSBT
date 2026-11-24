@@ -28,15 +28,31 @@ mod.dots = {
 	{ names = { "Immolation Aura" }, ids = { 258920, 427343 },  school = 4, aoe = true },
 	-- The Hunt leaves a mark that ticks before the detonation.
 	{ names = { "The Hunt" },        ids = { 258860, 323996 },  school = 127 },
-	-- Vengeance's stacking debuff ticks fire damage ~1s (log-verified
-	-- sid=227255). Aura-applied by Soul Cleave/Spirit Bomb/Fracture —
-	-- never cast, so it can't seed a window; the entry gives the
-	-- matcher a real candidate record for its ticks.
-	{ names = { "Frailty" },         ids = { 227255 },          school = 4 },
+	-- NOT a dot: sid 227255 "Frailty" appears in combat logs only as
+	-- SPELL_HEAL (a ~1s self-heal — the debuff's leech component); it
+	-- never deals damage. An entry here seeded a permanent school-4
+	-- anchor (Frailty's debuff is always up on the target) that claimed
+	-- every fire wound as "Frailty" — 24 steals/session across Fiery
+	-- Brand, Immolation Aura, Sigil, Fel Devastation, Meteor Shower.
 
 	-- Devourer (void spec) ------------------------------------------------
-	-- Fire dot inside the void kit — book-derived role, log-pending.
-	{ names = { "Set Fire to the Pain" }, ids = { 452406 },     school = 4 },
+	-- NOT a dot: "Set Fire to the Pain" is a SELF-stagger defensive —
+	-- 5% of damage taken becomes a fire DoT on the PLAYER (debuff sid
+	-- 453286, self-only), never an enemy dot. Same false-premise class
+	-- as Frailty: the name sounds offensive, the mechanic is defensive.
+}
+
+-- Facts for sids the spellbook can't see (all "Not In Spellbook" flags —
+-- triggered damage lands under sids the book never lists, so their
+-- schools go blind in combat without a pin). Wowhead-verified:
+-- Catastrophe's debuff is Shadowflame on Vengeance / Cosmic on Havoc &
+-- Devourer; Meteor Shower carries the same per-spec split.
+mod.spellFacts = {
+	[1256667] = { damages = true, school = 36 },  -- Catastrophe debuff (Vengeance, Shadowflame)
+	[1256676] = { damages = true, school = 106 }, -- Catastrophe debuff (Havoc/Devourer, Cosmic)
+	[1264128] = { damages = true, school = 36 },  -- Meteor Shower (Fire/Shadow)
+	[1264129] = { damages = true, school = 106 }, -- Meteor Shower (Cosmic)
+	[1264130] = { damages = true, school = 36 },  -- Meteor Shower (Fire/Shadow)
 }
 
 -- Channeled/ground volleys: individual hits carry no cast record, so the
@@ -71,6 +87,12 @@ mod.exclude = {
 	"Sigil of Silence",
 	"Sigil of Chains",
 	"Fodder to the Flame",
+	-- Hidden debuff applicator: the engine fires SPELLCAST_SUCCEEDED for
+	-- sid 227255 ~1s (Frailty application) but it never produces a logged
+	-- cast or damage row (SPELL_HEAL only). Its constant record stream
+	-- was being claimed by every school-4 wound — "Frailty" on Fiery
+	-- Brand/Sigil/Fel Dev/Immolation hits, ~20 steals/session.
+	"Frailty",
 	-- Devourer (void spec) ------------------------------------------------
 	"Shift",             -- void mobility; emitted school=nil
 	"Void Metamorphosis",-- transform only; log-verified zero wounds
