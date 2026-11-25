@@ -3431,6 +3431,15 @@ consumeBestPendingCast = function(self, tNow, wantSpellId, maxWindowSec, doConsu
 							and type(frec.ema) == "number" then
 							cap = math.max(window, frec.ema + 0.45)
 						end
+						-- A next-swing record must outlive the press
+						-- frame: its real hit lands on the swing, up
+						-- to a weapon period out (tape: +2.84s). The
+						-- pool expiry (3.25s) still bounds it — 3.2
+						-- keeps claims inside that life.
+						if ZSBT.ClassDB and ZSBT.ClassDB.NextSwing
+							and ZSBT.ClassDB.NextSwing(c.spellId) then
+							cap = math.max(cap, 3.2)
+						end
 					end
 					if dt >= 0 and dt <= cap
 						and familyRecordInFlight(self, c.spellId, dt)
@@ -5146,9 +5155,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				Collector[key] = tt
 				local aType = type(action)
 				local aPrev = (aType == "string" and ZSBT.IsSafeString and ZSBT.IsSafeString(action)) and action or aType
-				z:FileLog(("UC_RAW unit=%s action=%s amtNil=%s amtT=%s descT=%s school=%s"):format(
+				local aVal = (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(amount))
+					and tostring(amount) or "sec"
+				local dVal = (ZSBT.IsSafeString and ZSBT.IsSafeString(descriptor))
+					and descriptor or "sec"
+				z:FileLog(("UC_RAW unit=%s action=%s amtNil=%s amtT=%s amtV=%s descT=%s descV=%s school=%s"):format(
 					tostring(unit), tostring(aPrev), tostring(amount == nil),
-					tostring(type(amount)), tostring(type(descriptor)), tostring(school)))
+					tostring(type(amount)), aVal, tostring(type(descriptor)), dVal, tostring(school)))
 			end
 		end
 	end
@@ -6520,6 +6533,53 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							and ZSBT.ClassDB.IsForever()) then
 						petVeto = true
 					end
+				end
+			end
+			-- Empty-report drop (FCT PreferQueuedStrikeHit: the queued
+			-- next-swing frame carries an Empty Report before the real
+			-- Hit, and the empty one rides the cast's own instant —
+			-- cast.at == first.at). A phys wound claiming a pending
+			-- nextSwing record at dt≈0 is that phantom — the empowered
+			-- swing cannot land at press time. Amounts are secret on
+			-- this client (type() lies: "number", IsSafeNumber fails)
+			-- so the report's 0 amount is unreadable — the cast-time
+			-- coincidence is the only legible marker. The record stays
+			-- unconsumed so the SAME-frame real hit (the second wound,
+			-- e.g. the sid=nil crit in the tape) claims it — a
+			-- record-bound wound is proven, which on Forever emits
+			-- noline and skips the foreign vetoes that killed it.
+			-- Swing-beat wounds stay exempt: a press landing on the
+			-- beat is a real swing, not the phantom.
+			if onSwingBeat ~= true and ZSBT.ClassDB and ZSBT.ClassDB.NextSwing then
+				local peekNS = self:_consumeBestPendingCast(t, wantSpellId, castWindow, false, school)
+				if not peekNS and wantSpellId then
+					peekNS = self:_consumeBestPendingCast(t, nil, castWindow, false, school)
+				end
+				-- Pool-miss fallback: the last-damage-cast stamp proves
+				-- the press even when the record pool is starved
+				-- (tape: level-up transiently broke claimability —
+				-- phantom emitted "0" until /reload rebuilt state).
+				if not peekNS then
+					local lsid = self._lastPlayerDamageCastId or self._lastPlayerSpellId
+					local lat = self._lastPlayerDamageCastAt or self._lastPlayerSpellAt
+					if lsid and lat and ZSBT.ClassDB.NextSwing(lsid) then
+						peekNS = { spellId = lsid, at = lat }
+					end
+				end
+				-- One drop per cast: the frame's SECOND report is the
+				-- real hit (FCT) — dropping every same-instant wound
+				-- kills the damage entirely (tape: both nameplate and
+				-- target reports dropped, nothing showed).
+				if peekNS and peekNS.at and (t - peekNS.at) < 0.30
+					and ZSBT.ClassDB.NextSwing(peekNS.spellId)
+					and self._emptyReportCastAt ~= peekNS.at then
+					self._emptyReportCastAt = peekNS.at
+					local zbtN = ZSBT.ZBattleText
+					if zbtN and zbtN.FileLog and ZSBT._ucDropTrace == true then
+						zbtN:FileLog(("EMPTY_REPORT sid=%s dt=%.2f")
+							:format(tostring(peekNS.spellId), t - peekNS.at))
+					end
+					return
 				end
 			end
 			local matchedCast = nil
