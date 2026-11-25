@@ -62,19 +62,26 @@ local function FindActionSlotForSpell(spellId)
 	end
 
 	-- Scan typical action slot range. Use a wider range to cover extra/override bars.
+	local _perf = ZSBT.Perf
+	local _pt0 = _perf and _perf.on and _perf.t()
+	local _pfound
 	for slot = 1, 240 do
 		local ok, atype, actionID = pcall(GetActionInfo, slot)
 		if ok and atype == "spell" and actionID == spellId then
 			Cooldowns._spellToActionSlot[spellId] = slot
-			return slot
+			_pfound = slot
+			break
 		elseif ok and atype == "macro" and hasGetMacroSpell and type(actionID) == "number" and actionID > 0 then
 			local ok2, macroSpellId = pcall(GetMacroSpell, actionID)
 			if ok2 and type(macroSpellId) == "number" and macroSpellId == spellId then
 				Cooldowns._spellToActionSlot[spellId] = slot
-				return slot
+				_pfound = slot
+				break
 			end
 		end
 	end
+	if _pt0 then _perf:done("cd.slotscan", _pt0) end
+	if _pfound then return _pfound end
 	Cooldowns._spellToActionSlot[spellId] = false
 	return nil
 end
@@ -243,6 +250,8 @@ local function StartUsablePoll(spellId, source)
 	st._pollSawUnreadable = false
 	st._pollStartedAt = (GetTime and GetTime()) or 0
 	st._usablePollTicker = C_Timer.NewTicker(0.25, function()
+		local _perf = ZSBT.Perf
+		local _pt0 = _perf and _perf.on and _perf.t()
 		if not Cooldowns._enabled then
 			SafeCancelTicker(st._usablePollTicker)
 			st._usablePollTicker = nil
@@ -406,6 +415,7 @@ local function StartUsablePoll(spellId, source)
 				end
 			end)
 		end
+		if _pt0 then _perf:done("cd.usablepoll", _pt0) end
 	end)
 end
 
@@ -1351,6 +1361,8 @@ function Cooldowns:Enable()
     if not self._frame then
         self._frame = CreateFrame("Frame")
         		self._frame:SetScript("OnEvent", function(_, event, ...)
+			local _perf = ZSBT.Perf
+			local _pt0 = _perf and _perf.on and _perf.t()
             if event == "UNIT_SPELLCAST_SUCCEEDED" then
                 OnSpellcastSucceeded(nil, event, ...)
             elseif event == "SPELL_UPDATE_CHARGES" then
@@ -1373,6 +1385,7 @@ function Cooldowns:Enable()
 				Cooldowns._combatFlipAt = (GetTime and GetTime()) or 0
 				ResyncCooldowns("REGEN_DISABLED")
             end
+			if _pt0 then _perf:done("CD." .. tostring(event), _pt0) end
         end)
     end
 

@@ -7552,7 +7552,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			}
 			self._bestOutgoingByToken[token] = bucket
 			if C_Timer and C_Timer.After then
-				C_Timer.After(0.08, function() self:_flushBestOutgoing(token) end)
+				C_Timer.After(0.08, function()
+					local _perf = ZSBT.Perf
+					local _pt0 = _perf and _perf.on and _perf.t()
+					self:_flushBestOutgoing(token)
+					if _pt0 then _perf:done("ec.woundflush", _pt0) end
+				end)
 			else
 				-- Fallback: emit immediately if timers are unavailable.
 				self:_flushBestOutgoing(token)
@@ -8159,6 +8164,8 @@ function Collector:Enable()
 	if not self._frame then
 		self._frame = CreateFrame("Frame")
 		self._frame:SetScript("OnEvent", function(_, event, ...)
+			local _perf = ZSBT.Perf
+			local _pt0 = _perf and _perf.on and _perf.t()
 			if event == "UNIT_SPELLCAST_SUCCEEDED" then
 				Collector:handleSpellcastSucceeded(...)
 			elseif event == "UNIT_SPELLCAST_SENT" then
@@ -8207,6 +8214,7 @@ function Collector:Enable()
 				end
 				Collector:handleChatSelfDamage(event, ...)
 			end
+			if _pt0 then _perf:done("EC." .. tostring(event), _pt0) end
 		end)
 	end
 
@@ -8356,7 +8364,7 @@ function Collector:Enable()
 
 	-- Create a lightweight OnUpdate watcher once for fall state transitions.
 	if not Collector._fallingFrame then
-		Collector._fallingFrame = CreateFrame("Frame")
+		Collector._fallingFrame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("ECFALL")
 		local acc = 0
 		Collector._fallingFrame:SetScript("OnUpdate", function(_, elapsed)
 			acc = acc + (elapsed or 0)

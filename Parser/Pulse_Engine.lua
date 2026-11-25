@@ -1666,7 +1666,7 @@ function Engine:Enable()
 	if self.ApplyConfig then self:ApplyConfig() end
 
 	if not self._frame then
-		self._frame = CreateFrame("Frame")
+		self._frame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("PE")
 	end
 
 	self._frame:SetScript("OnUpdate", function(_, elapsed)

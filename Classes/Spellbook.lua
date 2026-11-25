@@ -317,6 +317,26 @@ end
 ---------------------------------------------------------------------------
 -- Enumeration
 ---------------------------------------------------------------------------
+-- Chunked-scan plumbing: Scan() runs unchanged synchronously for callers
+-- that need it now; ScanAsync runs the same body in a coroutine and the
+-- scanYield() checkpoints inside the hot loops slice it across frames.
+local scanFrame = nil
+local queueScanAttempt = nil
+local scanSliceT0 = nil
+local SCAN_SLICE_MS = 4
+local function scanNowMs()
+	if debugprofilestop then return debugprofilestop() end
+	return (GetTime and GetTime() or 0) * 1000
+end
+local function scanYield()
+	if not Spellbook._scanAsync then return end
+	if not (coroutine and coroutine.yield) then return end
+	if (scanNowMs() - (scanSliceT0 or 0)) >= SCAN_SLICE_MS then
+		coroutine.yield()
+		scanSliceT0 = scanNowMs()
+	end
+end
+
 local function enumPlayerBank(bank, sink)
 	if not (C_SpellBook.GetNumSpellBookSkillLines
 		and C_SpellBook.GetSpellBookSkillLineInfo) then
@@ -347,6 +367,7 @@ local function enumPlayerBank(bank, sink)
 						added = added + 1
 					end
 				end
+				scanYield()
 			end
 		end
 	end
@@ -569,6 +590,7 @@ local function enumTalentSpells(sink, have)
 						sink[#sink + 1] = { sid = sid, name = name, talent = true, desc = desc }
 					end
 				end
+				scanYield()
 			end
 		end
 	end
@@ -623,6 +645,7 @@ function Spellbook:Scan()
 		for _, m in ipairs(rec.masks or {}) do
 			masks[m] = true
 		end
+		scanYield()
 	end
 	for _, e in ipairs(petRaw) do
 		if e.name then
@@ -686,6 +709,7 @@ function Spellbook:Scan()
 				end
 			end
 		end
+		scanYield()
 	end
 
 	-- Gear pass: equipped item effects (trinket use/proc spells, weapon
@@ -736,6 +760,7 @@ function Spellbook:Scan()
 					gearLib[itemID] = { sid = effSid, spellName = rec.name }
 				end
 			end
+			scanYield()
 		end
 	end
 	self._gear = gearLib
@@ -765,6 +790,47 @@ function Spellbook:Scan()
 	self._links = links
 	self._scanned = true
 	self._scanMs = (debugprofilestop and t0 > 0) and (debugprofilestop() - t0) or 0
+end
+
+-- Async scan: identical body inside a coroutine; the scanYield()
+-- checkpoints slice it across frames (~4ms each). Events arriving
+-- mid-scan leave _dirty set — completion re-queues via the frame.
+function Spellbook:ScanAsync()
+	if not (coroutine and coroutine.create and C_Timer and C_Timer.After) then
+		self:Scan()
+		return
+	end
+	if self._scanCo then return end
+	local _perf = ZSBT.Perf
+	self._scanT0p = _perf and _perf.on and _perf.t() or nil
+	self._scanCo = coroutine.create(function()
+		scanSliceT0 = scanNowMs()
+		self:Scan()
+	end)
+	self:_pumpScan()
+end
+
+function Spellbook:_pumpScan()
+	local co = self._scanCo
+	if not co then return end
+	local _perf = ZSBT.Perf
+	local _pt0 = _perf and _perf.on and _perf.t()
+	self._scanAsync = true
+	local ok, err = coroutine.resume(co)
+	self._scanAsync = nil
+	if _pt0 then _perf:done("sb.slice", _pt0) end
+	if coroutine.status(co) == "dead" or not ok then
+		self._scanCo = nil
+		if _perf and self._scanT0p then _perf:done("sb.scanwall", self._scanT0p) end
+		self._scanT0p = nil
+		self._scanErr = (not ok) and err or nil
+		if scanFrame and scanFrame._dirty and queueScanAttempt then
+			queueScanAttempt()
+		end
+		return
+	end
+	local sb = self
+	C_Timer.After(0, function() sb:_pumpScan() end)
 end
 
 local function ensureScanned(self)
@@ -826,7 +892,7 @@ end
 -- pet-summon transitions. Debounced so a talent swap's event burst costs
 -- one scan, not five.
 ---------------------------------------------------------------------------
-local frame = CreateFrame and CreateFrame("Frame") or nil
+local frame = ((ZSBT.Perf and ZSBT.Perf.frame) or CreateFrame)("SB")
 if frame then
 	frame._dirty = true
 	frame:RegisterEvent("PLAYER_LOGIN")
@@ -849,19 +915,32 @@ if frame then
 		"ACTIVE_PLAYER_SPECIALIZATION_CHANGED",
 		"PLAYER_SPECIALIZATION_CHANGED",
 		"PET_BAR_UPDATE",
+		"PLAYER_REGEN_ENABLED",
 	}) do
 		pcall(frame.RegisterEvent, frame, ev)
 	end
+	-- The book is a knowledge source, not a fight-critical structure:
+	-- a mid-combat book change (shapeshift SPELLS_CHANGED) must not run
+	-- a ~40ms scan inside the fight. Defer to out-of-combat; regen
+	-- re-fires the attempt, and the chunked scan keeps even that cheap.
+	local function scanAttempt()
+		if not frame._dirty then return end
+		if InCombatLockdown and InCombatLockdown() then return end
+		-- A mid-flight job re-queues itself when it finishes; clearing
+		-- dirty here would drop the event it hasn't seen yet.
+		if Spellbook._scanCo then return end
+		frame._dirty = false
+		if Spellbook.ScanAsync then Spellbook:ScanAsync() else Spellbook:Scan() end
+	end
+	queueScanAttempt = function()
+		if C_Timer and C_Timer.After then
+			C_Timer.After(0.5, scanAttempt)
+		end
+	end
+	scanFrame = frame
 	frame:SetScript("OnEvent", function(self)
 		self._dirty = true
-		if C_Timer and C_Timer.After then
-			C_Timer.After(0.5, function()
-				if frame._dirty then
-					frame._dirty = false
-					Spellbook:Scan()
-				end
-			end)
-		end
+		if queueScanAttempt then queueScanAttempt() end
 	end)
 end
 

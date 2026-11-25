@@ -22,7 +22,7 @@ end
 local SPELL_EXPIRE = 2.0
 local MAX_PENDING_SPELLS = 5
 local pendingSpells = {}
-local incomingFrame = CreateFrame("Frame")
+local incomingFrame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("INC")
 
 local function safeBool(v)
     if type(v) ~= "boolean" then return false end

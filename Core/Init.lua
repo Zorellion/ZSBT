@@ -86,7 +86,7 @@ end
 ------------------------------------------------------------------------
 -- Combat lockdown watcher frame
 ------------------------------------------------------------------------
-local combatFrame = CreateFrame("Frame")
+local combatFrame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("INIT.combat")
 combatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 combatFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_REGEN_ENABLED" then
@@ -467,7 +467,7 @@ function Addon:OnInitialize()
 
 	pcall(ZSBT.RemoveLegacyCombatLogFilters, false)
 	do
-		local cleanupFrame = CreateFrame("Frame")
+		local cleanupFrame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("INIT.clean")
 		cleanupFrame:RegisterEvent("PLAYER_LOGIN")
 		cleanupFrame:SetScript("OnEvent", function(frame)
 			frame:UnregisterEvent("PLAYER_LOGIN")
@@ -2034,7 +2034,7 @@ function Addon:OnEnable()
 
     -- CRITICAL: Use PLAYER_ENTERING_WORLD to defer parser enable
     -- This event ALWAYS fires outside combat and after all protected loading is complete
-    local enableFrame = CreateFrame("Frame")
+    local enableFrame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("INIT.en")
     enableFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     enableFrame:SetScript("OnEvent", function(self, event)
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
@@ -2060,7 +2060,7 @@ function Addon:OnEnable()
     end)
 
 	-- Apply merge-only class/spec templates on spec change (optional)
-	local specFrame = CreateFrame("Frame")
+	local specFrame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("INIT.spec")
 	specFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 	specFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
 	specFrame:SetScript("OnEvent", function(_, evt, unit)
@@ -2441,6 +2441,28 @@ function Addon:HandleSlashCommand(input)
         return
     elseif cmd == "ctprobe" then
         self:HandleCTProbeCommand(rest)
+        return
+    elseif cmd == "perf" then
+        local perf = ZSBT.Perf
+        if not perf then self:Print("perf: harness not loaded") return end
+        local arg = (type(rest) == "string" and rest:lower():match("^%s*(.-)%s*$")) or ""
+        if arg == "on" or arg == "1" or arg == "start" then
+            perf.on = true
+            -- Also enable the diagnostics "perf" channel so the existing
+            -- UI.*/PE.* PerfBegin/End spans light up — one flag, all surfaces.
+            if self.HandleDebugCommand then self:HandleDebugCommand("perf 3") end
+            self:Print("perf tracing ON — reproduce the issue, then /zsbt perf report")
+        elseif arg == "off" or arg == "0" or arg == "stop" then
+            perf.on = false
+            if self.HandleDebugCommand then self:HandleDebugCommand("perf 0") end
+            self:Print("perf tracing OFF")
+        elseif arg == "reset" then
+            perf:reset()
+            self:Print("perf stats cleared")
+        else
+            perf:report(function(s) self:Print(s) end)
+            self:Print("perf tracing is " .. (perf.on and "ON" or "OFF") .. " — /zsbt perf on|off|reset|report")
+        end
         return
     elseif cmd == "filter" then
         self:HandleFilterCommand(rest)

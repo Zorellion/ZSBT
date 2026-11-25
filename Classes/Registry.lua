@@ -1008,7 +1008,7 @@ end
 
 -- One-time load confirmation: prints the resolved class tag and whether a
 -- module was found, so "did my class module load?" is answerable in chat.
-local _classCheckFrame = CreateFrame and CreateFrame("Frame") or nil
+local _classCheckFrame = ((ZSBT.Perf and ZSBT.Perf.frame) or CreateFrame)("CLASS")
 if _classCheckFrame then
 	_classCheckFrame:RegisterEvent("PLAYER_LOGIN")
 	_classCheckFrame:SetScript("OnEvent", function()

@@ -1019,7 +1019,7 @@ function Triggers:Enable()
 	local function RegisterEvents() end
 
 	if not self._frame then
-		self._frame = CreateFrame("Frame")
+		self._frame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("TRIG")
 		self._frame:SetScript("OnEvent", function(_, event, ...)
 			if not Triggers:IsEnabled() then return end
 			GetTrackedTriggerList(Triggers)
@@ -1084,6 +1084,8 @@ function Triggers:Enable()
 
 	if not self._spellUsableTicker and C_Timer and C_Timer.NewTicker then
 		self._spellUsableTicker = C_Timer.NewTicker(0.25, function()
+			local _perf = ZSBT.Perf
+			local _pt0 = _perf and _perf.on and _perf.t()
 			if not Triggers:IsEnabled() then return end
 			GetTrackedTriggerList(Triggers)
 			if Triggers.SyncWatchedAurasFromCore then
@@ -1097,6 +1099,7 @@ function Triggers:Enable()
 				end
 			end
 			Triggers:_CheckSpellUsable()
+			if _pt0 then _perf:done("trig.usable", _pt0) end
 		end)
 	end
 end

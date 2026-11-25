@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.0.3
+
+### Fixed
+- **Shapeshift freeze:** `SPELLS_CHANGED` (fired by form swaps, stealth, possess) triggered a full ~40ms spellbook rescan inside the same frame. Rescans now defer while in combat (regen re-triggers) and run chunked across frames at ~4ms per slice. The book is a knowledge layer, not fight-critical state — a transient swap no longer costs a visible hitch.
+
+### Added
+- **`/zsbt perf`:** opt-in performance tracing — times every event dispatcher, ticker, OnUpdate, and named hot span; `/zsbt perf report` dumps top consumers plus a >=8ms spike log. Also enables the existing perf debug channel so the `UI.*`/`PE.*` render spans light up under one flag.
+
 ## 4.0.2
 
 ### Fixed

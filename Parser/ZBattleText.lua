@@ -783,6 +783,8 @@ end
 
 function ZB:Verify()
     ZB._verified = true
+    local _perf = ZSBT.Perf
+    local _pt0 = _perf and _perf.on and _perf.t()
     local ok, why = ZB:IsReady()
     local was = ZB._trusted
     ZB._trusted = ok
@@ -816,6 +818,7 @@ function ZB:Verify()
             showMissingPopup()
         end
     end
+    if _pt0 then _perf:done("zb.verify", _pt0) end
     return ZB._trusted
 end
 
@@ -1652,7 +1655,12 @@ local function flushPending()
         if C_Timer and C_Timer.After then
             local tNow = GetTime and GetTime() or 0
             ZB._flushAt = tNow + deferSec()
-            C_Timer.After(deferSec(), flushPending)
+            C_Timer.After(deferSec(), function()
+            local _perf = ZSBT.Perf
+            local _pt0 = _perf and _perf.on and _perf.t()
+            flushPending()
+            if _pt0 then _perf:done("zb.flush", _pt0) end
+        end)
         end
     end
 end
@@ -1918,7 +1926,12 @@ function ZB:OfferOutgoing(payload)
     local tNow = GetTime and GetTime() or 0
     if ZB._flushAt <= tNow and C_Timer and C_Timer.After then
         ZB._flushAt = tNow + deferSec()
-        C_Timer.After(deferSec(), flushPending)
+        C_Timer.After(deferSec(), function()
+            local _perf = ZSBT.Perf
+            local _pt0 = _perf and _perf.on and _perf.t()
+            flushPending()
+            if _pt0 then _perf:done("zb.flush", _pt0) end
+        end)
     end
     return false
 end
@@ -1939,7 +1952,7 @@ end
 -- Frame wiring
 ------------------------------------------------------------------------
 if not ZB._frame then
-    ZB._frame = CreateFrame("Frame")
+    ZB._frame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("ZB")
     ZB._frame:RegisterEvent("PLAYER_LOGOUT")
     ZB._frame:RegisterEvent("PLAYER_ENTERING_WORLD")
     pcall(ZB._frame.RegisterEvent, ZB._frame, "COMBAT_LOG_APPLY_FILTER_SETTINGS")
@@ -2000,7 +2013,12 @@ if not ZB._frame then
 end
 
 if C_Timer and C_Timer.NewTicker then
-    C_Timer.NewTicker(1, function() ZB:Tick() end)
+    C_Timer.NewTicker(1, function()
+        local _perf = ZSBT.Perf
+        local _pt0 = _perf and _perf.on and _perf.t()
+        ZB:Tick()
+        if _pt0 then _perf:done("zb.tick", _pt0) end
+    end)
 end
 
 -- Login status line so the signal state is visible without /zsbt filter.

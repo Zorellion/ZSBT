@@ -1136,7 +1136,7 @@ end
 -- Blizzard may reset text rendering CVars during zone transitions or
 -- combat log filter changes. Re-apply our settings on key lifecycle
 -- events to ensure text stays visible.
-local cvarWatchFrame = CreateFrame("Frame")
+local cvarWatchFrame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("CVAR")
 cvarWatchFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 cvarWatchFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 cvarWatchFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -1340,7 +1340,7 @@ function Core:InitLibSinkOutput()
 	if self._libSinkWatchFrame then
 		return
 	end
-	self._libSinkWatchFrame = CreateFrame("Frame")
+	self._libSinkWatchFrame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("SINK")
 	self._libSinkWatchFrame:RegisterEvent("ADDON_LOADED")
 	self._libSinkWatchFrame:SetScript("OnEvent", function()
 		if registerIfAvailable() then
@@ -1427,7 +1427,7 @@ end
 ------------------------------------------------------------------------
 function Core:InitNotifications()
     if self._notifFrame then return end
-    self._notifFrame = CreateFrame("Frame")
+    self._notifFrame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("NOTIF")
     self._notifFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
     self._notifFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     self._notifFrame:SetScript("OnEvent", function(_, event)
@@ -1500,7 +1500,7 @@ function Core:InitTradeSkillTracking()
 	local learnRecipePat = convertGlobalStringToPattern(_G.ERR_LEARN_RECIPE_S)
 	local learnSpellPat = convertGlobalStringToPattern(_G.ERR_LEARN_SPELL_S)
 
-	self._tradeSkillFrame = CreateFrame("Frame")
+	self._tradeSkillFrame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("TRADE")
 	self._tradeSkillFrame:RegisterEvent("CHAT_MSG_SKILL")
 	self._tradeSkillFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 	self._tradeSkillFrame:SetScript("OnEvent", function(_, event, msg)
@@ -1859,7 +1859,7 @@ function Core:InitInterruptTracking()
 		interruptPat = convertGlobalStringToPattern(_G.ERR_SPELL_INTERRUPTED_S)
 	end
 
-	self._interruptFrame = CreateFrame("Frame")
+	self._interruptFrame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("INT")
 	pcall(function() self._interruptFrame:RegisterEvent("COMBAT_TEXT_UPDATE") end)
 	pcall(function() self._interruptFrame:RegisterEvent("CHAT_MSG_COMBAT_LOG") end)
 	pcall(function() self._interruptFrame:RegisterEvent("CHAT_MSG_COMBAT_MISC_INFO") end)
@@ -2472,7 +2472,7 @@ end
 
 function Core:InitKillAnnouncer()
 	if self._killAnnouncerFrame then return end
-	self._killAnnouncerFrame = CreateFrame("Frame")
+	self._killAnnouncerFrame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("KILL")
 	pcall(function() self._killAnnouncerFrame:RegisterEvent("CHAT_MSG_COMBAT_HOSTILE_DEATH") end)
 	pcall(function() self._killAnnouncerFrame:RegisterEvent("CHAT_MSG_COMBAT_LOG") end)
 	pcall(function() self._killAnnouncerFrame:RegisterEvent("CHAT_MSG_COMBAT_MISC_INFO") end)
@@ -3043,6 +3043,8 @@ function Core:InitBuffTracking()
         self._buffFrame:RegisterEvent("COMBAT_TEXT_UPDATE")
     end)
     self._buffFrame:SetScript("OnEvent", function(_, event, unit, ...)
+		local _perf = ZSBT.Perf
+		local _pt0 = _perf and _perf.on and _perf.t()
         local info = ...
 		if event == "PLAYER_ENTERING_WORLD" then
 			-- On login/reload: populate tracking tables without clearing
@@ -3283,6 +3285,7 @@ function Core:InitBuffTracking()
             pcall(function() trg:SyncWatchedAurasFromCore() end)
         end
         Core:ScanPlayerAuras(info)
+		if _pt0 then _perf:done("BUFF." .. tostring(event), _pt0) end
     end)
 end
 
@@ -4247,6 +4250,17 @@ function Core:ScanPlayerAuras(updateInfo, silent)
     end
 end
 
+-- Perf span: covers every call site (UNIT_AURA dispatch, 0.20s combat
+-- ticker, internal rescans) — self-calls through the method resolve the
+-- wrapper too, so recursive rescans count as their own span.
+local _rawScanPlayerAuras = Core.ScanPlayerAuras
+function Core:ScanPlayerAuras(updateInfo, silent)
+    local _perf = ZSBT.Perf
+    local _pt0 = _perf and _perf.on and _perf.t()
+    _rawScanPlayerAuras(self, updateInfo, silent)
+    if _pt0 then _perf:done("aura.scan", _pt0) end
+end
+
 ------------------------------------------------------------------------
 -- Combat-text aura fallback
 -- SPELL_AURA_* combat-text notices still fire when UNIT_AURA payloads go
@@ -4510,7 +4524,7 @@ function Core:InitLootTracking()
 		return show
 	end
 
-	self._lootFrame = CreateFrame("Frame")
+	self._lootFrame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("LOOT")
 	self._lootFrame:RegisterEvent("CHAT_MSG_LOOT")
 	self._lootFrame:RegisterEvent("CHAT_MSG_MONEY")
     self._lootFrame:RegisterEvent("CHAT_MSG_CURRENCY")
@@ -4755,7 +4769,7 @@ end
 
 function Core:InitProgressTracking()
     if self._progressFrame then return end
-    self._progressFrame = CreateFrame("Frame")
+    self._progressFrame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("PROG")
     self._progressFrame:RegisterEvent("CHAT_MSG_COMBAT_XP_GAIN")
 	self._progressFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 	self._progressFrame:RegisterEvent("CHAT_MSG_COMBAT_MISC_INFO")
@@ -4906,7 +4920,7 @@ Core._lastPowerPct = {}
 
 function Core:InitPowerTracking()
     if self._powerFrame then return end
-    self._powerFrame = CreateFrame("Frame")
+    self._powerFrame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("POWER")
     self._powerFrame:RegisterUnitEvent("UNIT_POWER_UPDATE", "player")
     self._powerFrame:SetScript("OnEvent", function(_, event, unit, powerType)
         if unit ~= "player" then return end
@@ -5407,7 +5421,10 @@ local function FireComboPointsEffect(frame, cfg, cur, mx)
     end
     frame._cpFx = st
     frame._cpFxTicker = C_Timer.NewTicker(0.033, function()
+        local _perf = ZSBT.Perf
+        local _pt0 = _perf and _perf.on and _perf.t()
         CpFxUpdate(frame, cfg)
+        if _pt0 then _perf:done("fx.cp", _pt0) end
     end)
 end
 
@@ -5787,7 +5804,10 @@ local function EnsureCpFrame(powerType)
             if self._cpRuneTick < 0.1 then return end
             self._cpRuneTick = 0
             if self:IsShown() and self._cpRuneBars then
+                local _perf = ZSBT.Perf
+                local _pt0 = _perf and _perf.on and _perf.t()
                 RefreshCpFrame(self)
+                if _pt0 then _perf:done("fx.cpframe", _pt0) end
             end
         end)
     end
@@ -5858,6 +5878,8 @@ local function EnsureCpFrame(powerType)
     -- Watcher: unlock mode can toggle without a power update, so poll lightly
     -- to enable mouse (drag) and force the counter visible while editing.
     C_Timer.NewTicker(0.5, function()
+        local _perf = ZSBT.Perf
+        local _pt0 = _perf and _perf.on and _perf.t()
         local unl = CpEditUnlocked()
         if unl ~= frame._cpMouseOn then
             frame._cpMouseOn = unl
@@ -5868,6 +5890,7 @@ local function EnsureCpFrame(powerType)
             end
             if unl then RefreshComboPoints() end
         end
+        if _pt0 then _perf:done("core.0.5t", _pt0) end
     end)
 
     local fs = frame:CreateFontString(nil, "OVERLAY")
@@ -5912,7 +5935,7 @@ function Core:InitComboPoints()
     if self._cpEventFrame then return end
     Core._cpWidgets = Core._cpWidgets or {}
 
-    local evFrame = CreateFrame("Frame")
+    local evFrame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("EV")
     evFrame:RegisterUnitEvent("UNIT_POWER_UPDATE", "player")
     evFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     evFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
@@ -5949,7 +5972,7 @@ Core._manaWarnState   = false
 
 function Core:InitHealthWarnings()
     if self._healthWarnFrame then return end
-    self._healthWarnFrame = CreateFrame("Frame")
+    self._healthWarnFrame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("HWARN")
     self._healthWarnFrame:RegisterEvent("UNIT_HEALTH")
     self._healthWarnFrame:SetScript("OnEvent", function(_, event, unit, ...)
         if unit ~= "player" then return end
