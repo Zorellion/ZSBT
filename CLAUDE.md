@@ -553,6 +553,20 @@ except pet melee (0/10 — pet swings never reach the pet stream).
   arm here — BoA-vs-Corruption same-school same-grid collisions are
   irreducible, honest generics. Amount-mismatch veto and leech
   amount-match are no-ops on this client, not bugs.
+- **Next-swing EMPTY REPORT (Camelot mechanic, FCT-verified):** the
+  queued next-swing frame carries an Empty Report before the real Hit
+  (FCT `PreferQueuedStrikeHit`; `mod.nextSwing` sid table,
+  `ClassDB.NextSwing`). The phantom rides the cast's own instant
+  (`cast.at == first.at` — tape: wound ht == cast ht), which is the only
+  legible marker: wound amounts are SECRET values (type() reports
+  "number" but IsSafeNumber fails — `amount == 0` can never be
+  evaluated). A phys wound claiming a pending nextSwing record at
+  dt<0.30 = the phantom → dropped, record left unconsumed so the
+  same-frame real hit (the sid=nil second wound) claims it — a
+  record-bound wound is proven → emits `noline` on Forever, skipping
+  the fline/fnear foreign vetoes that otherwise kill it. `onSwingBeat`
+  wounds exempt. `consumeBestPendingCast` also stretches a nextSwing
+  record's cap to 3.2s (pool expiry 3.25 bounds it) for late swings.
 - **`castSchoolOk` phys boundary (post-rescue misattribution):** the
   Forever exemption still crosses phys/magic — a school-1 wound claimed
   Corruption's pending record (s1 wound named sid=6222). Exemption now

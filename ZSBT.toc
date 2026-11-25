@@ -3,7 +3,7 @@
 ## Title: Zore's Scrolling Battle Text
 ## Notes: Zore's Scrolling Battle Text (ZSBT) for WoW Retail 12.x
 ## Author: Zorellion
-## Version: 4.0-Release
+## Version: 4.0.1
 ## SavedVariables: ZSBTDB
 ## OptionalDeps: Ace3, LibSharedMedia-3.0
 
@@ -81,6 +81,8 @@ Classes\Monk.lua
 Classes\DemonHunter.lua
 Classes\Evoker.lua
 Classes\Era\Warlock.lua
+Classes\Era\Warrior.lua
+Classes\Era\Hunter.lua
 Parser\ZBattleText.lua
 Parser\Event_Collector.lua
 Parser\Pulse_Engine.lua

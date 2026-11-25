@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.0.1
+
+### Added
+- **Warrior class module (Forever/Camelot):** the era kit — Rend and Deep Wound bleeds, Thunder Clap (physical on this client), Cleave budgets, ranged Shoot/Throw, and exclusions for shouts, stances, and utility casts.
+- **Hunter class module (Forever/Camelot):** Serpent Sting, Black Arrow, Lacerate, Immolation Trap, and Volley dots; Multi-Shot budget; aspect/track/pet-utility exclusions.
+- **Next-swing strike handling:** Heroic Strike and Raptor Strike (all ranks) no longer scroll a phantom "0" at the press — the client's empty report is dropped once per cast and the real hit claims the record on the swing.
+- **Class page knowledge rows:** next-swing strikes, ranged kit, excluded casts, and pinned spell facts now render, book-scoped to what you've learned.
+
+### Fixed
+- **Heroic Strike showing "0" (Forever):** queuing a next-swing strike emits an empty damage report at the press instant; it claimed the cast record and scrolled as zero. Now dropped, and the real hit displays.
+- **"0" returning after level-up (Forever):** the drop depended on finding a pending cast record — a level-up rescan could starve the pool. The last-cast stamp now proves the press independently.
+
 ## 4.0-Release
 
 ### Added

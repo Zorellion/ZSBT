@@ -394,6 +394,55 @@ function ClassDB.KnowledgeList()
 			}
 		end
 	end
+	-- Next-swing strikes: one row per canonical name listing every
+	-- declared rank; any rank in the book scopes the whole name in.
+	if type(mod.nextSwing) == "table" then
+		local byName, inBook = {}, {}
+		for sid in pairs(mod.nextSwing) do
+			local nm = nameOf(sid)
+			byName[nm] = byName[nm] or {}
+			byName[nm][#byName[nm] + 1] = sid
+			if bookHasSid(sid) then inBook[nm] = true end
+		end
+		for nm, ids in pairs(byName) do
+			if inBook[nm] then
+				table.sort(ids)
+				out[#out + 1] = { kind = "NextSwing", name = nm, ids = ids }
+			end
+		end
+	end
+	-- Ranged kit: name-primary rows (era modules carry name lists).
+	if type(mod.ranged) == "table" then
+		for _, n in ipairs(mod.ranged) do
+			if bookHasNames({ n }) then
+				out[#out + 1] = { kind = "Ranged", name = n }
+			end
+		end
+	end
+	-- Denied casts (no enemy damage — log-verified or mechanical).
+	if type(mod.exclude) == "table" then
+		for _, n in ipairs(mod.exclude) do
+			if bookHasNames({ n }) then
+				out[#out + 1] = { kind = "Exclude", name = n }
+			end
+		end
+	end
+	-- Pinned per-sid facts that correct client/tooltip data (school
+	-- re-mapping like Camelot's physical Thunder Clap).
+	if type(mod.spellFacts) == "table" then
+		for sid, facts in pairs(mod.spellFacts) do
+			if bookHasSid(sid) and type(facts) == "table" then
+				local bits = {}
+				if type(facts.school) == "number" then bits[#bits + 1] = "sch" .. facts.school end
+				if facts.nextSwing == true then bits[#bits + 1] = "nextSwing" end
+				out[#out + 1] = {
+					kind = "Fact", name = nameOf(sid), ids = { sid },
+					school = facts.school,
+					extra = table.concat(bits, " "),
+				}
+			end
+		end
+	end
 	table.sort(out, function(a, b)
 		if a.kind ~= b.kind then return a.kind < b.kind end
 		return tostring(a.name) < tostring(b.name)
@@ -661,6 +710,16 @@ function ClassDB.PetExecuted(spellId)
 	local mod = ClassDB.ActiveModule()
 	if not mod or type(mod.petExecuted) ~= "table" then return nil end
 	return mod.petExecuted[spellId] == true or nil
+end
+
+-- Next-swing strikes (Heroic Strike, Cleave on Camelot): the queued
+-- cast emits an EMPTY damage report at press time — the empowered
+-- swing cannot land at press time by definition, so a wound carrying
+-- a nextSwing sid at the cast instant is a phantom, never the hit.
+function ClassDB.NextSwing(spellId)
+	local mod = ClassDB.ActiveModule()
+	if not mod or type(mod.nextSwing) ~= "table" then return nil end
+	return mod.nextSwing[spellId] == true or nil
 end
 
 function ClassDB.ChannelMatch(spellId)
