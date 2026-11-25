@@ -8214,7 +8214,11 @@ function Collector:Enable()
 	-- tokens in some environments, even though Blizzard is rendering damage.
 	-- Probe the known entry points: record full arg signatures (count, type,
 	-- secret status, safe previews) into a ring buffer for "/zsbt ctprobe".
-	if not self._combatTextAddHooked and type(hooksecurefunc) == "function" then
+	-- LAZY-INSTALLED on first "/zsbt ctprobe" — hooksecurefunc is permanent
+	-- for the session, and ~140 always-on hooks on per-frame combat-text
+	-- functions is debug overhead normal users must never pay.
+	Collector._installCTProbe = function()
+		if self._combatTextAddHooked or type(hooksecurefunc) ~= "function" then return end
 		local probe = Collector._ctAddProbe or {}
 		Collector._ctAddProbe = probe
 		local PROBE_CAP = 300

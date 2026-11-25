@@ -2663,6 +2663,16 @@ function Addon:HandleCTProbeCommand(argStr)
 	local input = (type(argStr) == "string") and argStr or ""
 	input = input:gsub("^%s+", ""):gsub("%s+$", "")
 	local col = ZSBT.Parser and ZSBT.Parser.EventCollector
+	-- Lazy install: the probe's ~140 hooksecurefunc hooks are permanent
+	-- once set — install on first use, not at addon load, so normal
+	-- users never pay the per-frame hook overhead.
+	if col and col._combatTextAddHooked ~= true and type(col._installCTProbe) == "function" then
+		col._installCTProbe()
+		if col._combatTextAddHooked == true then
+			self:Print("CT probe installed — gather data, then run /zsbt ctprobe again. /reload removes the hooks.")
+			return
+		end
+	end
 	local probe = col and col._ctAddProbe
 	local discovered = col and col._ctAddDiscovered
 	if input == "counts" or input == "count" then
