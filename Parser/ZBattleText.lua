@@ -735,25 +735,36 @@ local function say(msg)
 end
 
 local function showLostPopup(why)
+    -- Once per session, ever (MSBT's model): whether it's dismissed,
+    -- displaced, or ignored, it never comes back — the periodic chat
+    -- reminder keeps the door open.
+    if ZB._popupShown == true then return end
     if type(StaticPopupDialogs) ~= "table" or type(StaticPopup_Show) ~= "function" then return end
+    ZB._popupShown = true
     StaticPopupDialogs["ZSBT_ZBT_FILTER_LOST"] = {
         text = ("|cffdd5555ZSBT|r outgoing combat text is off.\n\n"
-            .. "The '%s' combat log filter is no longer selected (%s).\n\n"
-            .. "Click the %s button at the top of the combat log to turn it back on.")
+            .. "The '%s' combat log filter isn't active (%s) and couldn't "
+            .. "be restored this session.\n\n"
+            .. "A UI reload usually fixes it — or click the %s button at "
+            .. "the top of the combat log.")
             :format(FILTER_NAME, tostring(why), FILTER_NAME),
-        button1 = "Open Combat Log",
+        button1 = "Reload UI",
         button2 = "Later",
+        button3 = "Open Log",
         timeout = 0,
         whileDead = true,
         hideOnEscape = true,
         OnAccept = function()
+            if ReloadUI then ReloadUI() end
+        end,
+        OnCancel = function() ZB._popupDismissed = true end,
+        OnAlt = function()
             local cl = _G.COMBATLOG
             if type(cl) == "table" or type(cl) == "userdata" then
                 if cl.Show then cl:Show() end
                 if cl.SetAlpha then cl:SetAlpha(1) end
             end
         end,
-        OnCancel = function() end,
     }
     StaticPopup_Show("ZSBT_ZBT_FILTER_LOST")
 end
@@ -781,7 +792,81 @@ local function showMissingPopup()
     StaticPopup_Show("ZSBT_ZBT_FILTER_MISSING")
 end
 
+-- Re-select + re-apply our filter the same way a quick-button click
+-- does — WITHOUT calling the click handler (its hook would read the
+-- re-select as a manual user choice).
+local function applyOurFilter(index)
+    local saved = _G.Blizzard_CombatLog_Filters
+    if type(saved) ~= "table" then return end
+    saved.currentFilter = index
+    local f = saved.filters[index]
+    if type(f) == "table" then
+        _G.Blizzard_CombatLog_CurrentSettings = f
+    end
+    for _, fnName in ipairs({
+        "Blizzard_CombatLog_RefreshGlobalLinks",
+        "Blizzard_CombatLog_ApplyFilters",
+        "CombatLogQuickButton_Update",
+        "Blizzard_CombatLog_Update_QuickButtons",
+    }) do
+        local fn = _G[fnName]
+        if type(fn) == "function" then pcall(fn) end
+    end
+end
+
+-- Silent self-repair for Verify failures. Returns true when it took an
+-- action worth re-checking; false when nothing it can do would help.
+function ZB:TryHealFilter()
+    local index = findOurIndex()
+    if not index then return false end
+    local saved = _G.Blizzard_CombatLog_Filters
+    local f = saved.filters[index]
+    if type(f) ~= "table" then return false end
+
+    -- Content corruption (palette/source toggles, coloring off): no
+    -- amount of re-selecting fixes it — rebuild the entry, re-apply.
+    local contentBad = false
+    local settings = f.settings
+    if type(settings) ~= "table" or settings.lineColoring ~= true then
+        contentBad = true
+    elseif f.zbtver == 2 then
+        if settings.lineColorPriority ~= 1
+            or settings.lineHighlighting ~= true
+            or not v2PaletteMatches(f.colors)
+            or not v2SourcesOK(f) then
+            contentBad = true
+        end
+    else
+        local colors = f.colors
+        if type(colors) ~= "table" or not paletteMatches(colors.eventColoring) then
+            contentBad = true
+        elseif not sourcesRestricted(f) then
+            contentBad = true
+        end
+    end
+    if contentBad then
+        ZB:RebuildNow()
+        index = findOurIndex() or index
+        applyOurFilter(index)
+        ZB._healRebuilds = (ZB._healRebuilds or 0) + 1
+        return true
+    end
+
+    -- Selection drift / applied-vs-saved desync: just re-select.
+    local cur = tonumber(saved.currentFilter)
+    local applied = _G.Blizzard_CombatLog_CurrentSettings
+    local appliedName = type(applied) == "table" and applied.name or nil
+    if cur ~= index or (appliedName ~= nil and appliedName ~= FILTER_NAME) then
+        applyOurFilter(index)
+        return true
+    end
+    return false
+end
+
 function ZB:Verify()
+    -- Saved filters may not be restored yet during load (MSBT gates
+    -- MaintainLog on the same signal): verify nothing before login.
+    if IsLoggedIn and not IsLoggedIn() then return ZB._trusted end
     ZB._verified = true
     local _perf = ZSBT.Perf
     local _pt0 = _perf and _perf.on and _perf.t()
@@ -792,9 +877,15 @@ function ZB:Verify()
     local nowT = GetTime and GetTime() or 0
     if ok then
         ZB._lastWarnAt = nil
+        ZB._healAttempts = 0
         if was == false then
             say(("|cff66aaff[ZSBT]|r The '%s' combat log filter is active again — outgoing text restored.")
                 :format(FILTER_NAME))
+            -- A late heal while the dialog is up leaves it stale — close
+            -- it the way MSBT's onReady hides their prompt.
+            if type(StaticPopup_Hide) == "function" then
+                StaticPopup_Hide("ZSBT_ZBT_FILTER_LOST")
+            end
         end
     elseif was ~= false or (nowT - (ZB._lastWarnAt or 0)) >= 30 then
         local saved = _G.Blizzard_CombatLog_Filters
@@ -807,10 +898,28 @@ function ZB:Verify()
         ZB._lastWarnAt = nowT
         if exists then
             local whyText = tostring(why)
-            say(("|cffdd5555[ZSBT]|r Outgoing text needs the '%s' combat log filter (%s). "
-                .. "Click the %s button at the top of the combat log.")
-                :format(FILTER_NAME, whyText, FILTER_NAME))
-            showLostPopup(whyText)
+            if ZB._userChoseAway == true then
+                -- The user deliberately switched the combat log to a
+                -- different filter this session. Respect it: quiet
+                -- reminder only — no dialog, no re-select.
+                say(("|cffdd5555[ZSBT]|r Outgoing text is off — '%s' isn't the selected combat log filter.")
+                    :format(FILTER_NAME))
+            else
+                local healed = ZB:TryHealFilter()
+                ZB._healAttempts = (ZB._healAttempts or 0) + 1
+                if healed and ZB._healAttempts < 3 then
+                    say(("|cffdd5555[ZSBT]|r The '%s' combat log filter was deselected — restoring it.")
+                        :format(FILTER_NAME))
+                else
+                    -- Nothing healable (or healing keeps failing —
+                    -- e.g. a client that only applies filters at
+                    -- process start). Now the dialog earns its keep.
+                    say(("|cffdd5555[ZSBT]|r Outgoing text needs the '%s' combat log filter (%s). "
+                        .. "Click the %s button at the top of the combat log.")
+                        :format(FILTER_NAME, whyText, FILTER_NAME))
+                    showLostPopup(whyText)
+                end
+            end
         else
             say(("|cffdd5555[ZSBT]|r The '%s' combat log filter is installed when you log "
                 .. "out. Log out and back in to enable outgoing text.")
@@ -972,6 +1081,15 @@ function ZB:HookCombatLogWindow()
     cl:HookScript("OnHide", keepFeedOn)
     if type(_G.Blizzard_CombatLog_QuickButton_OnClick) == "function" then
         hooksecurefunc("Blizzard_CombatLog_QuickButton_OnClick", function()
+            -- Intent signal: the click already changed currentFilter.
+            -- Away from ours = deliberate opt-out (suppress heal+nag);
+            -- back to ours = consent restored. Cleared by /reload.
+            local idx = findOurIndex()
+            local cur = tonumber(_G.Blizzard_CombatLog_Filters
+                and _G.Blizzard_CombatLog_Filters.currentFilter)
+            if idx and cur then
+                ZB._userChoseAway = (cur ~= idx)
+            end
             ZB:Verify()
         end)
     end

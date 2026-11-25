@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.0.4
+
+### Fixed
+- **Combat-log filter nag loop:** when the `ZBattleText` filter check failed, the warning dialog re-showed every 30s and its "Later" button did nothing — on clients where the applied filter only refreshes at process start, the popup could never be satisfied without a full restart. The verifier now tries to heal the filter silently first (re-select, or rebuild-and-reapply on corruption); only repeated failures earn a single once-per-session dialog offering "Reload UI", which also self-closes if a heal later succeeds.
+- **Respect manual filter choice:** switching the combat log to a different filter via the quick buttons is read as deliberate intent — no re-select, no dialog, one quiet chat reminder. Clicking back to `ZBattleText` (or `/reload`) restores normal protection.
+- **`Verify` no longer fires during addon load** before saved filters are restored, and its v2 corruption check now covers source-part changes so those rebuild instead of escalating.
+
+### Added
+- **`/zsbt filter` test surface:** status now reports the session flags (`away`, heal attempts/rebuilds, popup state); `clear`, `away`, and `attempts <n>` subcommands exercise the heal paths without needing `/run` access to addon internals.
+
 ## 4.0.3
 
 ### Fixed
