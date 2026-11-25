@@ -293,8 +293,7 @@ local function FlushMergeByKey(key)
             end
             local m = entry.meta
             local txt = (ZSBT.IsSafeString and ZSBT.IsSafeString(text)) and text or "<secret>"
-            zbt:Audit(("AUDMRG tids=%s sid=%s cnt=%d text=%s")
-                :format(idStr, tostring(m and m.spellId), entry.count, tostring(txt)))
+            zbt:Audit("AUDMRG tids=%s sid=%s cnt=%d text=%s", idStr, tostring(m and m.spellId), entry.count, tostring(txt))
         end
     end
     ZSBT.FireTestText(text, entry.area, entry.fontFace, entry.fontSize,

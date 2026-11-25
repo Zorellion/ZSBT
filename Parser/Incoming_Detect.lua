@@ -24,11 +24,11 @@ local MAX_PENDING_SPELLS = 5
 local pendingSpells = {}
 local incomingFrame = (ZSBT.Perf and ZSBT.Perf.frame or CreateFrame)("INC")
 
+local function _secTrue(v) return v == true end
+
 local function safeBool(v)
     if type(v) ~= "boolean" then return false end
-    local ok, val = pcall(function()
-        return v == true
-    end)
+    local ok, val = pcall(_secTrue, v)
     if ok then return val end
     return false
 end

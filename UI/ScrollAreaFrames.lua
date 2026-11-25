@@ -867,6 +867,16 @@ local function AE_ApplyCritFx(ev, fx, t)
 	return dx, dy
 end
 
+local function AE_AnchorOriginX(ev)
+	local ap = ev.anchorPoint
+	if ap == "BOTTOM" or ap == "TOP" then
+		return (ev.scrollWidth or ev.areaW or 0) / 2
+	elseif ap == "BOTTOMRIGHT" or ap == "TOPRIGHT" then
+		return (ev.scrollWidth or ev.areaW or 0)
+	end
+	return 0
+end
+
 local function AE_UpdateEvent(ev, dt)
 	if not ev then return true end
 	local tNow = AE_Now()
@@ -917,22 +927,13 @@ local function AE_UpdateEvent(ev, dt)
 	local alpha = ev.fontAlpha or 1.0
 	local styleId = ev.styleId
 	local laneOff = ev.slotOffset or 0
-	local function AnchorOriginX()
-		local ap = ev.anchorPoint
-		if ap == "BOTTOM" or ap == "TOP" then
-			return (ev.scrollWidth or ev.areaW or 0) / 2
-		elseif ap == "BOTTOMRIGHT" or ap == "TOPRIGHT" then
-			return (ev.scrollWidth or ev.areaW or 0)
-		end
-		return 0
-	end
 
 	if styleId == "Pow" then
 		-- reference Pow: uses SetTextHeight during fade-in and restores font once.
 		if ev.animationHandler then
 			ev.animationHandler(ev, progress)
 		end
-		xOff2 = (ev.positionX or 0) - AnchorOriginX()
+		xOff2 = (ev.positionX or 0) - AE_AnchorOriginX(ev)
 		yOff2 = ev.positionY or 0
 		local maxX = ev.scrollWidth or ev.areaW or 0
 		local maxY = ev.scrollHeight or ev.areaH or 0
@@ -978,7 +979,7 @@ local function AE_UpdateEvent(ev, dt)
 			scale = 1.05 - (p * 0.35)
 		end
 		local tWave = (ev.elapsedTime ~= nil) and ev.elapsedTime or (ev.elapsed or 0)
-		xOff2 = ((ev.positionX or 0) - AnchorOriginX()) + (math.sin(tWave * 55) * shake)
+		xOff2 = ((ev.positionX or 0) - AE_AnchorOriginX(ev)) + (math.sin(tWave * 55) * shake)
 		yOff2 = (ev.positionY or 0) + (math.cos(tWave * 48) * (shake * 0.65))
 		local scaledSize = math.max(8, math.floor((ev.effectiveFontSize or ev.fontSize or 18) * scale))
 		if scaledSize ~= ev._lastFontSize then
@@ -1015,7 +1016,7 @@ local function AE_UpdateEvent(ev, dt)
 		end
 		local tWave = (ev.elapsedTime ~= nil) and ev.elapsedTime or (ev.elapsed or 0)
 		local theta = ev._zsbtPunchTheta or 0
-		xOff2 = ((ev.positionX or 0) - AnchorOriginX()) + (math.cos(theta) * jolt) + (math.sin(tWave * 65) * (jolt * 0.35))
+		xOff2 = ((ev.positionX or 0) - AE_AnchorOriginX(ev)) + (math.cos(theta) * jolt) + (math.sin(tWave * 65) * (jolt * 0.35))
 		yOff2 = (ev.positionY or 0) + (math.sin(theta) * jolt) + (math.cos(tWave * 58) * (jolt * 0.25))
 		local scaledSize = math.max(8, math.floor((ev.effectiveFontSize or ev.fontSize or 18) * scale))
 		if scaledSize ~= ev._lastFontSize then
@@ -1033,7 +1034,7 @@ local function AE_UpdateEvent(ev, dt)
 		local inten = (ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0
 		if inten < 0 then inten = 0 end
 		if inten > 3.0 then inten = 3.0 end
-		xOff2 = (ev.positionX or 0) - AnchorOriginX()
+		xOff2 = (ev.positionX or 0) - AE_AnchorOriginX(ev)
 		yOff2 = ev.positionY or 0
 		local wave = math.sin(((ev.elapsedTime ~= nil) and ev.elapsedTime or (ev.elapsed or 0)) * 8.0) * (0.02 + (0.02 * inten))
 		local scale = 1.0 + wave
@@ -1083,7 +1084,7 @@ local function AE_UpdateEvent(ev, dt)
 		local inten = (ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0
 		if inten < 0 then inten = 0 end
 		if inten > 3.0 then inten = 3.0 end
-		xOff2 = (ev.positionX or 0) - AnchorOriginX()
+		xOff2 = (ev.positionX or 0) - AE_AnchorOriginX(ev)
 		yOff2 = ev.positionY or 0
 		local scale = 1.0
 		if t < 0.10 then
@@ -1177,7 +1178,7 @@ local function AE_UpdateEvent(ev, dt)
 		end
 		local tWave = (ev.elapsedTime ~= nil) and ev.elapsedTime or (ev.elapsed or 0)
 		local theta = ev._zsbtRumbleTheta or 0
-		xOff2 = ((ev.positionX or 0) - AnchorOriginX()) + (math.sin(tWave * 48) * shake) + (math.cos(theta) * (shake * 0.25))
+		xOff2 = ((ev.positionX or 0) - AE_AnchorOriginX(ev)) + (math.sin(tWave * 48) * shake) + (math.cos(theta) * (shake * 0.25))
 		yOff2 = (ev.positionY or 0) + (math.cos(tWave * 44) * (shake * 0.55)) + (math.sin(theta) * (shake * 0.20))
 		local scaledSize = math.max(8, math.floor((ev.effectiveFontSize or ev.fontSize or 18) * scale))
 		if scaledSize ~= ev._lastFontSize then
@@ -1205,7 +1206,7 @@ local function AE_UpdateEvent(ev, dt)
 			pop = 0
 		end
 		local dist = (6 + (16 * inten)) * math.max(0, math.min(1, t / 0.55))
-		xOff2 = ((ev.positionX or 0) - AnchorOriginX()) + (math.cos(theta) * dist)
+		xOff2 = ((ev.positionX or 0) - AE_AnchorOriginX(ev)) + (math.cos(theta) * dist)
 		yOff2 = (ev.positionY or 0) + (math.sin(theta) * dist)
 		local scale = 1.0 + (pop * (0.55 + (0.30 * inten)))
 		local scaledSize = math.max(8, math.floor((ev.effectiveFontSize or ev.fontSize or 18) * scale))
@@ -1224,7 +1225,7 @@ local function AE_UpdateEvent(ev, dt)
 		local inten = (ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0
 		if inten < 0 then inten = 0 end
 		if inten > 3.0 then inten = 3.0 end
-		xOff2 = (ev.positionX or 0) - AnchorOriginX()
+		xOff2 = (ev.positionX or 0) - AE_AnchorOriginX(ev)
 		yOff2 = (ev.positionY or 0) + ((10 + (26 * inten)) * (t ^ 0.75))
 		local wave = math.sin((t * 10.0 + (ev.driftPhase or 0)) * math.pi) * (0.03 + (0.02 * inten))
 		local scale = 1.0 + wave
@@ -1244,7 +1245,7 @@ local function AE_UpdateEvent(ev, dt)
 		local inten = (ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0
 		if inten < 0 then inten = 0 end
 		if inten > 3.0 then inten = 3.0 end
-		xOff2 = (ev.positionX or 0) - AnchorOriginX()
+		xOff2 = (ev.positionX or 0) - AE_AnchorOriginX(ev)
 		yOff2 = ev.positionY or 0
 		local tWave = (ev.elapsedTime ~= nil) and ev.elapsedTime or (ev.elapsed or 0)
 		if not ev._zsbtChromOrigTextColor and ev.fs and ev.fs.GetTextColor then
@@ -1299,7 +1300,7 @@ local function AE_UpdateEvent(ev, dt)
 			local p = (t - 0.60) / 0.40
 			scale = 1.02 - (p * 0.22)
 		end
-		xOff2 = (ev.positionX or 0) - AnchorOriginX()
+		xOff2 = (ev.positionX or 0) - AE_AnchorOriginX(ev)
 		yOff2 = (ev.positionY or 0) + slamY
 		local scaledSize = math.max(8, math.floor((ev.effectiveFontSize or ev.fontSize or 18) * scale))
 		if scaledSize ~= ev._lastFontSize then
@@ -1325,7 +1326,7 @@ local function AE_UpdateEvent(ev, dt)
 		-- reference exact parabola uses animationHandler set during init.
 		if ev.animationHandler then
 			ev.animationHandler(ev, progress)
-			xOff2 = (ev.positionX or 0) - AnchorOriginX()
+			xOff2 = (ev.positionX or 0) - AE_AnchorOriginX(ev)
 			yOff2 = ev.positionY or 0
 		end
 		local fadeInTime = 0.80
@@ -1433,7 +1434,7 @@ local function AE_UpdateEvent(ev, dt)
 		-- Straight (reference exact)
 		if ev.animationHandler then
 			ev.animationHandler(ev, progress)
-			xOff2 = (ev.positionX or 0) - AnchorOriginX()
+			xOff2 = (ev.positionX or 0) - AE_AnchorOriginX(ev)
 			yOff2 = ev.positionY or 0
 		end
 		local fadePercent = ev.fadePercent or AE_DEFAULT_FADE_PERCENT
@@ -2808,11 +2809,10 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
 		local zbt = ZSBT.ZBattleText
 		if zbt and zbt.Audit then
 			local txt = (ZSBT.IsSafeString and ZSBT.IsSafeString(text)) and text or "<secret>"
-			zbt:Audit(("AUDRNDR tid=%s sid=%s icon=%s icon2=%s stream=%s crit=%s text=%s")
-				:format(tostring(meta and meta.traceId), tostring(meta and meta.spellId),
+			zbt:Audit("AUDRNDR tid=%s sid=%s icon=%s icon2=%s stream=%s crit=%s text=%s", tostring(meta and meta.traceId), tostring(meta and meta.spellId),
 					tostring(meta and meta.spellIcon), tostring(meta and meta.spellIcon2),
 					tostring(meta and meta.stream),
-					tostring(meta and meta.isCrit == true), tostring(txt)))
+					tostring(meta and meta.isCrit == true), tostring(txt))
 		end
 	end
 	local tok = ZSBT.Addon and ZSBT.Addon.PerfBegin and ZSBT.Addon:PerfBegin("UI.FireText")

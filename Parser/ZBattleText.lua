@@ -64,7 +64,11 @@ local KIND_COLORS = {
     extra      = { 0.15, 0.85, 0.85 }, -- aqua
 }
 
+local function _secTrue(v) return v == true end
+
 local EVENT_KINDS = {
+
+
     SPELL_DAMAGE           = "direct",
     SPELL_LEECH            = "direct",
     SPELL_DRAIN            = "direct",
@@ -272,10 +276,10 @@ local function recordForeignLine(t, cls, heal, r, g, b)
     end
     fl[#fl + 1] = { at = t, cls = cls, heal = heal, consumed = false }
     ZB._lastForeignLineAt = t
-    ZB:FileLog(("FLIN cls=%s heal=%s rgb=%.2f,%.2f,%.2f"):format(
-        tostring(cls), tostring(heal), r, g, b))
+    ZB:FileLog("FLIN cls=%s heal=%s rgb=%.2f,%.2f,%.2f", 
+        tostring(cls), tostring(heal), r, g, b)
     if ZSBT._auditTrace == true then
-        ZB:Audit(("FLIN cls=%s heal=%s"):format(tostring(cls), tostring(heal)))
+        ZB:Audit("FLIN cls=%s heal=%s", tostring(cls), tostring(heal))
     end
 end
 
@@ -327,8 +331,8 @@ local function recordLine(r, g, b)
         end
         ZB._srcLinesSeen = (ZB._srcLinesSeen or 0) + 1
         ZB._srcMode = true
-        ZB:FileLog(("LINv2 cls=%s heal=%s rgb=%.2f,%.2f,%.2f"):format(
-            tostring(cls), tostring(heal), r, g, b))
+        ZB:FileLog("LINv2 cls=%s heal=%s rgb=%.2f,%.2f,%.2f", 
+            tostring(cls), tostring(heal), r, g, b)
         local kind = ownClassToKind(cls, heal)
         if HEAL_LINE_KINDS[kind] then
             local hl = ZB._healLines
@@ -362,14 +366,14 @@ local function recordLine(r, g, b)
         local t0 = GetTime and GetTime() or 0
         if t0 - (ZB._lastOddLineAt or 0) >= 0.10 then
             ZB._lastOddLineAt = t0
-            ZB:FileLog(("ODD rgb=%.2f,%.2f,%.2f"):format(r, g, b))
+            ZB:FileLog("ODD rgb=%.2f,%.2f,%.2f", r, g, b)
         end
         return
     end
 
     local t = GetTime and GetTime() or 0
     ZB._lastLineAt = t
-    ZB:FileLog(("LIN kind=%s rgb=%.2f,%.2f,%.2f"):format(tostring(kind), r, g, b))
+    ZB:FileLog("LIN kind=%s rgb=%.2f,%.2f,%.2f", tostring(kind), r, g, b)
     if HEAL_LINE_KINDS[kind] then
         -- Heal lines get their own small ring: follower/NPC heals can be
         -- spammy and must not evict damage lines the veto still needs.
@@ -1323,7 +1327,7 @@ local function petNolineProven(payload, ecF, tHit)
 	if UnitIsUnit then
 		local okT, same = pcall(UnitIsUnit, "pettarget", "target")
 		if okT then
-			local okB, isSame = pcall(function() return same == true end)
+			local okB, isSame = pcall(_secTrue, same)
 			if okB and isSame == false then return false end
 		end
 	end
@@ -1429,8 +1433,8 @@ local function deliverOutgoing(payload)
                 and ZSBT.ClassDB.PetSchoolAllowed(payload.schoolMask) == false
             if payload.spellId ~= nil or petSchoolForeign then
                 payload._petRoute = nil
-                ZB:FileLog(("PET_ROUTE_STRIP sid=%s school=%s"):format(
-                    tostring(payload.spellId), tostring(payload.schoolMask)))
+                ZB:FileLog("PET_ROUTE_STRIP sid=%s school=%s", 
+                    tostring(payload.spellId), tostring(payload.schoolMask))
             else
                 ev = "PET_DAMAGE_COMBAT"
             end
@@ -1449,10 +1453,10 @@ local function deliverOutgoing(payload)
             ec:NoteSwingAnchor(ts)
         end
         if ts then
-            ZB:FileLog(("SHOW %s sid=%s psid=%s pev=%s ht=%.3f dly=%.2f via=def"):format(
+            ZB:FileLog("SHOW %s sid=%s psid=%s pev=%s ht=%.3f dly=%.2f via=def", 
                 ev, tostring(payload.spellId), tostring(payload.petSpellId),
                 tostring(payload.petEvidence), ts,
-                (GetTime and GetTime() or ts) - ts))
+                (GetTime and GetTime() or ts) - ts)
         end
     end
 end
@@ -1470,9 +1474,9 @@ end
 
 local function auditQueued(payload)
     if ZSBT._auditTrace ~= true then return end
-    ZB:Audit(("AUDQ sid=%s school=%s crit=%s"):format(
+    ZB:Audit("AUDQ sid=%s school=%s crit=%s", 
         audSafe(payload and payload.spellId), audSafe(payload and payload.schoolMask),
-        tostring(payload and payload.isCrit == true)))
+        tostring(payload and payload.isCrit == true))
 end
 
 local function flushPending()
@@ -1480,7 +1484,7 @@ local function flushPending()
     local pend = ZB._pending
     ZB._pending = {}
     if ZSBT._auditTrace == true then
-        ZB:Audit(("AUDFLP n=%d"):format(#pend))
+        ZB:Audit("AUDFLP n=%d", #pend)
     end
     -- Swing-proven candidates get one retry at a wider window: on slow
     -- chat feeds their melee line can lag past the first flush.
@@ -1506,12 +1510,12 @@ local function flushPending()
                 if ZB._vetoDisabled or not ZB._trusted or (cold and coldOK) then
                     deliverOutgoing(p.payload)
                 elseif cold then
-                    ZB:Audit(("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=%s why=cold"):format(
+                    ZB:Audit("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=%s why=cold", 
                         tonumber(p.t) or 0, pass,
                         audSafe(p.payload and (p.payload.spellId or p.payload.petSpellId)),
                         audSafe(p.payload and p.payload.schoolMask),
                         tostring(p.payload and p.payload.isCrit == true),
-                        tostring(p.payload and p.payload._petRoute == true and "pet" or (p.payload and p.payload.isAuto == true and "auto" or (p.payload and p.payload.spellId ~= nil and "spell" or "generic")))))
+                        tostring(p.payload and p.payload._petRoute == true and "pet" or (p.payload and p.payload.isAuto == true and "auto" or (p.payload and p.payload.spellId ~= nil and "spell" or "generic"))))
                 else
                     local kind
                     -- Retried generics keep the tight window — a lingering
@@ -1606,12 +1610,12 @@ local function flushPending()
                         kind = nil
                         takeForeignLine(tonumber(p.t) or 0, FOREIGN_WINDOW)
                         ZB._drops = ZB._drops + 1
-                        ZB:FileLog(("DROP fnear sid=%s school=%s ht=%.3f"):format(tostring(p.payload and p.payload.spellId), tostring(p.payload and p.payload.schoolMask), tonumber(p.t) or 0))
-                        ZB:Audit(("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=fnear"):format(
+                        ZB:FileLog("DROP fnear sid=%s school=%s ht=%.3f", tostring(p.payload and p.payload.spellId), tostring(p.payload and p.payload.schoolMask), tonumber(p.t) or 0)
+                        ZB:Audit("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=fnear", 
                             tonumber(p.t) or 0, pass,
                             audSafe(p.payload and (p.payload.spellId or p.payload.petSpellId)),
                             audSafe(p.payload and p.payload.schoolMask),
-                            tostring(p.payload and p.payload.isCrit == true)))
+                            tostring(p.payload and p.payload.isCrit == true))
                     elseif kind then
                         if ZB._srcMode == true and kind == "direct"
                             and p.payload and p.payload._petRoute == true then
@@ -1624,15 +1628,15 @@ local function flushPending()
                             p.payload.petSpellId = nil
                             p.payload.petEvidence = nil
                             p.payload._petSidLearn = nil
-                            ZB:FileLog(("PET_ROUTE_DIRECT ht=%.3f"):format(
-                                tonumber(p.t) or 0))
+                            ZB:FileLog("PET_ROUTE_DIRECT ht=%.3f", 
+                                tonumber(p.t) or 0)
                         end
                         ZB._allows = ZB._allows + 1
-                        ZB:Audit(("AUDCLAIM tier=%d sid=%s kind=%s"):format(
+                        ZB:Audit("AUDCLAIM tier=%d sid=%s kind=%s", 
                             pass,
                             audSafe(p.payload and (p.payload.spellId or p.payload.petSpellId)),
-                            tostring(kind)))
-                        ZB:FileLog(("ALLOW kind=%s sid=%s"):format(tostring(kind), tostring(p.payload and p.payload.spellId)))
+                            tostring(kind))
+                        ZB:FileLog("ALLOW kind=%s sid=%s", tostring(kind), tostring(p.payload and p.payload.spellId))
                         deliverOutgoing(p.payload)
                     elseif (not nolineProven or nolineGuessed)
                         and (claimOrder(p.payload) > 1 or p._retried == true)
@@ -1644,12 +1648,12 @@ local function flushPending()
                         -- Drop now instead of burning the retry on a
                         -- wound that can never be proven ours.
                         ZB._drops = ZB._drops + 1
-                        ZB:FileLog(("DROP fline sid=%s school=%s ht=%.3f"):format(tostring(p.payload and p.payload.spellId), tostring(p.payload and p.payload.schoolMask), tonumber(p.t) or 0))
-                        ZB:Audit(("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=fline"):format(
+                        ZB:FileLog("DROP fline sid=%s school=%s ht=%.3f", tostring(p.payload and p.payload.spellId), tostring(p.payload and p.payload.schoolMask), tonumber(p.t) or 0)
+                        ZB:Audit("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=fline", 
                             tonumber(p.t) or 0, pass,
                             audSafe(p.payload and (p.payload.spellId or p.payload.petSpellId)),
                             audSafe(p.payload and p.payload.schoolMask),
-                            tostring(p.payload and p.payload.isCrit == true)))
+                            tostring(p.payload and p.payload.isCrit == true))
                     elseif p.payload and p._retried ~= true then
                         -- Every candidate retries while its line could
                         -- still be in transit: feed lines routinely land
@@ -1684,8 +1688,8 @@ local function flushPending()
                                 p.payload.petSpellId = cdb.ResolvePetMelee(ec)
                             end
                             ZB._allows = ZB._allows + 1
-                            ZB:Audit(("AUDCLAIM tier=%d sid=%s kind=%s rescue=pet"):format(
-                                pass, audSafe(p.payload.petSpellId), tostring(mk)))
+                            ZB:Audit("AUDCLAIM tier=%d sid=%s kind=%s rescue=pet", 
+                                pass, audSafe(p.payload.petSpellId), tostring(mk))
                             deliverOutgoing(p.payload)
                         elseif provenNoLineEnabled()
                             or (ZSBT.ClassDB and ZSBT.ClassDB.IsForever
@@ -1696,18 +1700,18 @@ local function flushPending()
                             -- sid-bearing hits below). Retail joins via the
                             -- provenNoLine testing flag.
                             ZB._allows = ZB._allows + 1
-                            ZB:Audit(("AUDCLAIM tier=%d sid=%s kind=noline auto=1"):format(
-                                pass, audSafe(p.payload.spellId)))
+                            ZB:Audit("AUDCLAIM tier=%d sid=%s kind=noline auto=1", 
+                                pass, audSafe(p.payload.spellId))
                             deliverOutgoing(p.payload)
                         else
                             ZB._drops = ZB._drops + 1
-                            ZB:FileLog(("DROP sid=%s school=%s ht=%.3f"):format(tostring(p.payload and p.payload.spellId), tostring(p.payload and p.payload.schoolMask), tonumber(p.t) or 0))
+                            ZB:FileLog("DROP sid=%s school=%s ht=%.3f", tostring(p.payload and p.payload.spellId), tostring(p.payload and p.payload.schoolMask), tonumber(p.t) or 0)
                             local dp = p.payload or {}
-                            ZB:Audit(("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=%s%s"):format(
+                            ZB:Audit("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=%s%s", 
                                 tonumber(p.t) or 0, pass, audSafe(dp.spellId), audSafe(dp.schoolMask),
                                 tostring(dp.isCrit == true),
                                 tostring(dp._foreignSchool == true and "fschool-" or ""),
-                                tostring(dp._petRoute == true and "pet" or (dp.isAuto == true and "auto" or (dp.spellId ~= nil and "spell" or "generic")))))
+                                tostring(dp._petRoute == true and "pet" or (dp.isAuto == true and "auto" or (dp.spellId ~= nil and "spell" or "generic"))))
                             -- Deferred off-whitelist drops are expected
                             -- foreign traffic — counting them toward feed
                             -- distrust would flip the veto permissive in
@@ -1721,11 +1725,11 @@ local function flushPending()
                         -- the narrowed foreign gate found no same-frame
                         -- co-attacker line — emit on route provenance.
                         ZB._allows = ZB._allows + 1
-                        ZB:Audit(("AUDCLAIM tier=%d sid=%s kind=noline pet=1"):format(
-                            pass, audSafe(p.payload and p.payload.petSpellId)))
-                        ZB:FileLog(("ALLOW_NOLINE pet=1 psid=%s pev=%s"):format(
+                        ZB:Audit("AUDCLAIM tier=%d sid=%s kind=noline pet=1", 
+                            pass, audSafe(p.payload and p.payload.petSpellId))
+                        ZB:FileLog("ALLOW_NOLINE pet=1 psid=%s pev=%s", 
                             tostring(p.payload and p.payload.petSpellId),
-                            tostring(p.payload and p.payload.petEvidence)))
+                            tostring(p.payload and p.payload.petEvidence))
                         deliverOutgoing(p.payload)
                     elseif nolineProven then
                         -- Forever's feed is structurally incomplete: some
@@ -1739,22 +1743,22 @@ local function flushPending()
                         -- raid line delivery can starve far below the real
                         -- own-event rate, the same shape as Forever's feed.
                         ZB._allows = ZB._allows + 1
-                        ZB:Audit(("AUDCLAIM tier=1 sid=%s kind=noline"):format(
-                            audSafe(p.payload.spellId)))
-                        ZB:FileLog(("ALLOW_NOLINE sid=%s swg=%s ord=%s"):format(
+                        ZB:Audit("AUDCLAIM tier=1 sid=%s kind=noline", 
+                            audSafe(p.payload.spellId))
+                        ZB:FileLog("ALLOW_NOLINE sid=%s swg=%s ord=%s", 
                             tostring(p.payload.spellId),
                             tostring(p.payload._swingGuessed == true),
-                            tostring(p.payload._claimOrd)))
+                            tostring(p.payload._claimOrd))
                         deliverOutgoing(p.payload)
                     else
                         ZB._drops = ZB._drops + 1
-                        ZB:FileLog(("DROP sid=%s school=%s ht=%.3f"):format(tostring(p.payload and p.payload.spellId), tostring(p.payload and p.payload.schoolMask), tonumber(p.t) or 0))
+                        ZB:FileLog("DROP sid=%s school=%s ht=%.3f", tostring(p.payload and p.payload.spellId), tostring(p.payload and p.payload.schoolMask), tonumber(p.t) or 0)
                         local dp = p.payload or {}
-                        ZB:Audit(("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=%s%s"):format(
+                        ZB:Audit("AUDROP ht=%.3f tier=%d sid=%s school=%s crit=%s src=%s%s", 
                             tonumber(p.t) or 0, pass, audSafe(dp.spellId), audSafe(dp.schoolMask),
                             tostring(dp.isCrit == true),
                             tostring(dp._foreignSchool == true and "fschool-" or ""),
-                            tostring(dp._petRoute == true and "pet" or (dp.isAuto == true and "auto" or (dp.spellId ~= nil and "spell" or "generic")))))
+                            tostring(dp._petRoute == true and "pet" or (dp.isAuto == true and "auto" or (dp.spellId ~= nil and "spell" or "generic"))))
                         -- Deferred off-whitelist drops are expected foreign
                         -- traffic; they must not count toward feed distrust.
                         if not dp._foreignSchool then sustainedRejection() end
@@ -1769,7 +1773,7 @@ local function flushPending()
         for i = 1, #requeue do
             ZB._pending[#ZB._pending + 1] = requeue[i]
         end
-        ZB:FileLog(("REQUEUE n=%d"):format(#requeue))
+        ZB:FileLog("REQUEUE n=%d", #requeue)
         if C_Timer and C_Timer.After then
             local tNow = GetTime and GetTime() or 0
             ZB._flushAt = tNow + deferSec()
@@ -1798,8 +1802,9 @@ local function ringMax()
     return math.floor(n)
 end
 
-function ZB:FileLog(msg)
+function ZB:FileLog(fmt, ...)
     if ZSBT._ucDropTrace ~= true then return end
+    local msg = (select("#", ...) > 0) and fmt:format(...) or fmt
     local prof = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
     if type(prof) ~= "table" then return end
     local log = prof.ucdropLog
@@ -1830,8 +1835,9 @@ end
 -- event ZSBT attributes (and per veto rejection), written to a separate
 -- SavedVariables ring (prof.auditLog) so it can be diffed line-by-line
 -- against the /combatlog filter output after a session.
-function ZB:Audit(msg)
+function ZB:Audit(fmt, ...)
     if ZSBT._auditTrace ~= true then return end
+    local msg = (select("#", ...) > 0) and fmt:format(...) or fmt
     local prof = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics
     if type(prof) ~= "table" then return end
     local log = prof.auditLog
@@ -1917,10 +1923,10 @@ function ZB:AuditDamageEvent(eventType, payload)
             bind = (p.isPeriodic == true) and ("dot:" .. audSafe(sid)) or ("cast:" .. audSafe(sid))
         end
     end
-    ZB:Audit(("AUD ht=%.3f %s sid=%s name=%s school=%s crit=%s amt=%s src=%s bind=%s pe=%s tgt=%s pid=%s tid=%s"):format(
+    ZB:Audit("AUD ht=%.3f %s sid=%s name=%s school=%s crit=%s amt=%s src=%s bind=%s pe=%s tgt=%s pid=%s tid=%s", 
         tonumber(p.timestamp) or 0, eventType, audSafe(sid), audSafe(name),
         audSafe(p.schoolMask), tostring(p.isCrit == true), amtStr, src, bind,
-        audSafe(p.petEvidence), audSafe(p.targetName), audSafe(p.rawPipeId), audSafe(p.traceId)))
+        audSafe(p.petEvidence), audSafe(p.targetName), audSafe(p.rawPipeId), audSafe(p.traceId))
 end
 
 -- TESTING flag (outgoing.damage.arbitrateGenerics): under v2 source mode
@@ -1972,13 +1978,13 @@ function ZB:OfferOutgoing(payload)
                 -- AUDPASS marks suppressions that now reach the queue so
                 -- the audit can measure how many generics arbitration
                 -- recovers versus vetoes.
-                ZB:Audit(("AUDPASS ht=%.3f school=%s crit=%s src=%s why=%s"):format(
+                ZB:Audit("AUDPASS ht=%.3f school=%s crit=%s src=%s why=%s", 
                     tonumber(tHit) or 0, audSafe(payload.schoolMask), tostring(payload.isCrit == true),
-                    tostring(payload._petRoute == true and "pet" or "generic"), why))
+                    tostring(payload._petRoute == true and "pet" or "generic"), why)
             else
-                ZB:Audit(("AUDSUPP ht=%.3f school=%s crit=%s src=%s why=%s"):format(
+                ZB:Audit("AUDSUPP ht=%.3f school=%s crit=%s src=%s why=%s", 
                     tonumber(tHit) or 0, audSafe(payload.schoolMask), tostring(payload.isCrit == true),
-                    tostring(payload._petRoute == true and "pet" or "generic"), why))
+                    tostring(payload._petRoute == true and "pet" or "generic"), why)
                 return false
             end
         end
@@ -2001,8 +2007,8 @@ function ZB:OfferOutgoing(payload)
             -- foreign can sit strictly nearer than that.
             ZB._lines[fastIdx].consumed = false
             fastKind = nil
-            ZB:Audit(("AUDREL ht=%.3f tier=1 sid=%s src=fnear"):format(
-                tonumber(tHit) or 0, audSafe(payload.spellId or payload.petSpellId)))
+            ZB:Audit("AUDREL ht=%.3f tier=1 sid=%s src=fnear", 
+                tonumber(tHit) or 0, audSafe(payload.spellId or payload.petSpellId))
         end
         if fastKind then
             if ZB._srcMode == true and fastKind == "direct"
@@ -2014,14 +2020,14 @@ function ZB:OfferOutgoing(payload)
                 payload.petSpellId = nil
                 payload.petEvidence = nil
                 payload._petSidLearn = nil
-                ZB:FileLog(("PET_ROUTE_DIRECT ht=%.3f fast=1"):format(
-                    tonumber(tHit) or 0))
+                ZB:FileLog("PET_ROUTE_DIRECT ht=%.3f fast=1", 
+                    tonumber(tHit) or 0)
             end
             ZB._allows = ZB._allows + 1
             payload._vetoConfirmed = true
-            ZB:Audit(("AUDCLAIM tier=1 sid=%s kind=%s fast=1"):format(
-                audSafe(payload.spellId or payload.petSpellId), tostring(fastKind)))
-            ZB:FileLog(("ALLOW_FAST kind=%s sid=%s"):format(tostring(fastKind), tostring(payload.spellId)))
+            ZB:Audit("AUDCLAIM tier=1 sid=%s kind=%s fast=1", 
+                audSafe(payload.spellId or payload.petSpellId), tostring(fastKind))
+            ZB:FileLog("ALLOW_FAST kind=%s sid=%s", tostring(fastKind), tostring(payload.spellId))
             return true
         end
     end
@@ -2036,9 +2042,9 @@ function ZB:OfferOutgoing(payload)
         end
         local evicted = ZB._pending[dropIdx]
         table.remove(ZB._pending, dropIdx)
-        ZB:Audit(("AUDPENDOVERFLOW tier=%d sid=%s"):format(
+        ZB:Audit("AUDPENDOVERFLOW tier=%d sid=%s", 
             candidateTier(evicted and evicted.payload),
-            audSafe(evicted and evicted.payload and evicted.payload.spellId)))
+            audSafe(evicted and evicted.payload and evicted.payload.spellId))
     end
     auditQueued(payload)
     local tNow = GetTime and GetTime() or 0
@@ -2104,10 +2110,8 @@ if not ZB._frame then
                 ZB._clmsgProbeT = tN
                 local safe = ZSBT.IsSafeString and ZSBT.IsSafeString(a1) or false
                 local sample = (safe and type(a1) == "string") and a1:sub(1, 60) or "?"
-                ZB:FileLog(("CLMSG_PROBE n=%d type=%s safe=%s txt=%s")
-                    :format(pn, type(a1), tostring(safe), tostring(sample)))
-                ZB:Audit(("CLMSG_PROBE n=%d type=%s safe=%s txt=%s")
-                    :format(pn, type(a1), tostring(safe), tostring(sample)))
+                ZB:FileLog("CLMSG_PROBE n=%d type=%s safe=%s txt=%s", pn, type(a1), tostring(safe), tostring(sample))
+                ZB:Audit("CLMSG_PROBE n=%d type=%s safe=%s txt=%s", pn, type(a1), tostring(safe), tostring(sample))
             end
         elseif event == "PLAYER_REGEN_DISABLED" then
             ZB:HookCombatLogWindow()

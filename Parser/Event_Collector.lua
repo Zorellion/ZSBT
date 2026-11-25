@@ -341,11 +341,53 @@ end
 
 -- Raw audit note for funnel tracing (candidates, gate drops). Self-gates
 -- on _auditTrace via ZB:Audit.
-local function auditNote(msg)
+local function auditNote(fmt, ...)
 	if ZSBT._auditTrace ~= true then return end
+	local msg = (select("#", ...) > 0) and fmt:format(...) or fmt
 	local zbt = ZSBT.ZBattleText
 	if zbt and zbt.Audit then zbt:Audit(msg) end
 end
+-- Secret-value compare/call helpers: hoisted so hot paths can pcall() them
+-- without allocating a fresh closure per event.
+local function _secTrue(v) return v == true end
+local function _secEq(a, b) return a == b end
+local function _secFieldEq(t, k, v) return t[k] == v end
+local function _secDebuffHit(e, g, t) return e.guid == g and t < e.expiry end
+local function _secFindYour(m) return m:find("Your ", 1, true) == 1 end
+local function _secAurasOpen() return C_Secrets.ShouldAurasBeSecret() == false end
+local function _secStripCodes(s)
+	return (s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", "<icon>"))
+end
+
+-- Per-cast-instance claim counts: claims[sid] = array of { at=, n= } records.
+-- The off-target cleave scan walks this on every foreign wound — nested
+-- numeric keys avoid building "sid@at" strings on write and matching them
+-- back apart per entry on read.
+local function castClaimGet(self, sid, at)
+	local list = self._castClaims and self._castClaims[sid]
+	if not list then return 0 end
+	for i = 1, #list do
+		local rec = list[i]
+		if rec.at == at then return rec.n or 0 end
+	end
+	return 0
+end
+
+local function castClaimAdd(self, sid, at)
+	local claims = self._castClaims
+	if not claims then claims = {} ; self._castClaims = claims end
+	local list = claims[sid]
+	if not list then list = {} ; claims[sid] = list end
+	for i = 1, #list do
+		local rec = list[i]
+		if rec.at == at then
+			rec.n = (rec.n or 0) + 1
+			return
+		end
+	end
+	list[#list + 1] = { at = at, n = 1 }
+end
+
 
 local function emit(eventType, payload)
 	-- ZBattleText ownership veto: when the combat-log filter is trusted,
@@ -509,16 +551,16 @@ local function emit(eventType, payload)
 				if (type(contUntil) == "number" and contUntil > tW)
 					or (type(fsPrior) == "number" and fsPrior > tW) then
 					payload._foreignSchool = true
-					auditNote(("AUDSCH defer-contested school=%s crit=%s"):format(
-						tostring(payload.schoolMask), tostring(payload.isCrit == true)))
+					auditNote("AUDSCH defer-contested school=%s crit=%s", 
+						tostring(payload.schoolMask), tostring(payload.isCrit == true))
 				else
-					auditNote(("AUDSCH bypass=line school=%s kind=%s"):format(
-						tostring(payload.schoolMask), tostring(lineProof)))
+					auditNote("AUDSCH bypass=line school=%s kind=%s", 
+						tostring(payload.schoolMask), tostring(lineProof))
 				end
 			else
 				payload._foreignSchool = true
-				auditNote(("AUDSCH defer school=%s crit=%s"):format(
-					tostring(payload.schoolMask), tostring(payload.isCrit == true)))
+				auditNote("AUDSCH defer school=%s crit=%s", 
+					tostring(payload.schoolMask), tostring(payload.isCrit == true))
 			end
 			if Collector then
 				Collector._fschoolUntil = tW + 2.5
@@ -582,14 +624,14 @@ local function emit(eventType, payload)
 			payload._petRoute = nil
 			local zbtX = ZSBT.ZBattleText
 			if zbtX and zbtX.FileLog then
-				zbtX:FileLog(("PET_ROUTE_STRIP sid=%s school=%s"):format(
-					tostring(payload.spellId), tostring(payload.schoolMask)))
+				zbtX:FileLog("PET_ROUTE_STRIP sid=%s school=%s", 
+					tostring(payload.spellId), tostring(payload.schoolMask))
 			end
 		else
 			sinkType = "PET_DAMAGE_COMBAT"
 			local zbt3 = ZSBT.ZBattleText
 			if zbt3 and zbt3.FileLog then
-				zbt3:FileLog(("PET_ROUTE petSid=%s school=%s"):format(tostring(payload.petSpellId), tostring(payload.schoolMask)))
+				zbt3:FileLog("PET_ROUTE petSid=%s school=%s", tostring(payload.petSpellId), tostring(payload.schoolMask))
 			end
 		end
 	end
@@ -627,10 +669,10 @@ local function emit(eventType, payload)
 		-- UNIT_COMBAT hit time, so dly captures veto defer + merge +
 		-- dispatch cost. Anything above ~0.5s is pipeline, not scroll anim.
 		if ZSBT.ZBattleText and ZSBT.ZBattleText.FileLog and payload and payload.timestamp then
-			ZSBT.ZBattleText:FileLog(("SHOW %s sid=%s psid=%s pev=%s ht=%.3f dly=%.2f"):format(
+			ZSBT.ZBattleText:FileLog("SHOW %s sid=%s psid=%s pev=%s ht=%.3f dly=%.2f", 
 				sinkType, tostring(payload.spellId), tostring(payload.petSpellId),
 				tostring(payload.petEvidence), tonumber(payload.timestamp) or 0,
-				now() - payload.timestamp))
+				now() - payload.timestamp)
 		end
 	end
 end
@@ -675,13 +717,13 @@ end
 -- Pipeline drop tracer: every silent return on the unattributed
 -- target-WOUND path prints UC_DROP so we can see exactly where hits die.
 local function dbgDrop(reason, tok, school)
-	auditNote(("AUDD reason=%s token=%s school=%s"):format(
-		tostring(reason), dbgSafe(tok), dbgSafe(school)))
+	auditNote("AUDD reason=%s token=%s school=%s", 
+		tostring(reason), dbgSafe(tok), dbgSafe(school))
 	if OutDbgLevel() >= 4 or ZSBT._ucDropTrace == true then
 		ECPrint(("UC_DROP reason=%s token=%s school=%s"):format(reason, dbgSafe(tok), dbgSafe(school)))
 		local z = ZSBT.ZBattleText
 		if z and z.FileLog then
-			z:FileLog(("UC_DROP reason=%s token=%s school=%s"):format(tostring(reason), dbgSafe(tok), dbgSafe(school)))
+			z:FileLog("UC_DROP reason=%s token=%s school=%s", tostring(reason), dbgSafe(tok), dbgSafe(school))
 		end
 	end
 end
@@ -848,11 +890,11 @@ local function flushBestOutgoing(self, token)
 
 	local zbt = ZSBT.ZBattleText
 	if zbt and zbt.FileLog then
-		zbt:FileLog(("FLUSH sid=%s school=%s cnt=%s crit=%s"):format(tostring(bucket.spellId), tostring(bucket.schoolMask), tostring(bucket._seenCount), tostring(bucket.isCrit)))
+		zbt:FileLog("FLUSH sid=%s school=%s cnt=%s crit=%s", tostring(bucket.spellId), tostring(bucket.schoolMask), tostring(bucket._seenCount), tostring(bucket.isCrit))
 
 	end
-	auditNote(("AUDFLUSH sid=%s school=%s cnt=%s crit=%s"):format(
-		tostring(bucket.spellId), tostring(bucket.schoolMask), tostring(bucket._seenCount), tostring(bucket.isCrit == true)))
+	auditNote("AUDFLUSH sid=%s school=%s cnt=%s crit=%s", 
+		tostring(bucket.spellId), tostring(bucket.schoolMask), tostring(bucket._seenCount), tostring(bucket.isCrit == true))
 	emit("OUTGOING_DAMAGE_COMBAT", {
 		timestamp = bucket.timestamp,
 		rawPipeId = pipeId,
@@ -1359,7 +1401,7 @@ local function matchOutgoingHotTick(self, unit, t)
 	if UnitIsUnit then
 		local okU, res = pcall(UnitIsUnit, unit, "player")
 		if okU then
-			local okC, eq = pcall(function() return res == true end)
+			local okC, eq = pcall(_secTrue, res)
 			if okC and eq == true then return nil, nil, "self" end
 		end
 	end
@@ -1368,7 +1410,7 @@ local function matchOutgoingHotTick(self, unit, t)
 	if UnitCanAttack then
 		local okH, h = pcall(UnitCanAttack, "player", unit)
 		if okH then
-			local okC, eq = pcall(function() return h == true end)
+			local okC, eq = pcall(_secTrue, h)
 			if okC and eq == true then return nil, nil, "attackable" end
 		end
 	end
@@ -1571,8 +1613,8 @@ local function queuePendingHotHeal(self, unit, t, amount, school, isCrit)
 						local pipeId = selfRef._rawPipeCount + 1
 						selfRef._rawPipeCount = pipeId
 						selfRef._rawPipe[pipeId] = e.amount
-						auditNote(("AUDH unit=%s sid=%s defer=1"):format(
-							dbgSafe(e.unit), tostring(hsid)))
+						auditNote("AUDH unit=%s sid=%s defer=1", 
+							dbgSafe(e.unit), tostring(hsid))
 						emit("OUTGOING_HEAL_COMBAT", {
 							timestamp = e.t,
 							rawPipeId = pipeId,
@@ -2136,7 +2178,7 @@ local function cachedHasTargetDebuffSpellId(spellId)
 	if entry then
 		-- pcall guards against stale tainted entries that may have been stored before
 		-- this fix; once entries are refreshed with a safe guid the pcall always succeeds.
-		local ok, matches = pcall(function() return entry.guid == guid and t < entry.expiry end)
+		local ok, matches = pcall(_secDebuffHit, entry, guid, t)
 		if ok and matches then
 			return entry.result
 		end
@@ -2385,11 +2427,11 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 						-- phase, predicted nextAt, or last confirmed tick.
 						if auditNote then
 							local rc = self._dotTickState and self._dotTickState[sid]
-							auditNote(("AUDCAD sid=%s applied=%s next=%s last=%s per=%s"):format(
+							auditNote("AUDCAD sid=%s applied=%s next=%s last=%s per=%s", 
 								dbgSafe(sid),
 								dbgSafe(appliedOv or (self._dotAppliedAt and self._dotAppliedAt[sid])),
 								dbgSafe(rc and rc.nextAt), dbgSafe(rc and rc.lastAt),
-								dbgSafe(rc and rc.period)))
+								dbgSafe(rc and rc.period))
 						end
 					end
 				else
@@ -2533,12 +2575,11 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 		or (type(ch) == "table" and ret == ch.spellId)
 		or (count == 1 and (rejRescued or 0) > 0)) or nil
 	if auditNote then
-		auditNote(("AUDD reason=DOTDISAMBIG scan=%s surv=%s ret=%s why=%s debuffpass=%s pet=%s line=%s heal=%s wand=%s rescued=%s noentry=%s school=%s chan=%s tgt=%s cadence=%s isnot=%s teach=%s")
-			:format(dbgSafe(scanned), dbgSafe(count), dbgSafe(ret), dbgSafe(retWhy), dbgSafe(debuffCount),
+		auditNote("AUDD reason=DOTDISAMBIG scan=%s surv=%s ret=%s why=%s debuffpass=%s pet=%s line=%s heal=%s wand=%s rescued=%s noentry=%s school=%s chan=%s tgt=%s cadence=%s isnot=%s teach=%s", dbgSafe(scanned), dbgSafe(count), dbgSafe(ret), dbgSafe(retWhy), dbgSafe(debuffCount),
 				dbgSafe(pendingPet), dbgSafe(tickLine and "tick" or (directLine and "direct" or nil)),
 				dbgSafe(leech and "leech" or healLine), dbgSafe(self._wandSid),
 				dbgSafe(rejRescued), dbgSafe(rejNoEntry), dbgSafe(rejSchool), dbgSafe(rejChan),
-				dbgSafe(rejTarget), dbgSafe(rejCadence), dbgSafe(rejIsNot), dbgSafe(self._dotPickTeach)))
+				dbgSafe(rejTarget), dbgSafe(rejCadence), dbgSafe(rejIsNot), dbgSafe(self._dotPickTeach))
 	end
 	return ret
 end
@@ -2764,7 +2805,7 @@ local function noteDotTickAmount(self, spellId, amount, isCrit, t, tgtName, canL
 		if type(rec.lastTgt) ~= "string" then
 			sameTgt = true
 		else
-			local okEq, eq = pcall(function() return tgtName == rec.lastTgt end)
+			local okEq, eq = pcall(_secFieldEq, rec, "lastTgt", tgtName)
 			sameTgt = okEq and eq == true
 		end
 		rec.lastTgt = tgtName
@@ -2845,8 +2886,7 @@ hasTargetDebuffSpellId = function(spellId)
 		local scanned = 0
 		local firstSid = nil
 		local firstName = nil
-		pcall(function()
-			AuraUtil.ForEachAura("target", "HARMFUL", 255, function(auraData)
+		pcall(AuraUtil.ForEachAura, "target", "HARMFUL", 255, function(auraData)
 				scanned = scanned + 1
 				local sid = SafeAuraSpellId(auraData)
 				if firstSid == nil and sid ~= nil then
@@ -2854,7 +2894,7 @@ hasTargetDebuffSpellId = function(spellId)
 					local nm = auraData and auraData.name
 					if type(nm) == "string" then firstName = nm end
 				end
-				local okEq, eq = pcall(function() return sid == spellId end)
+				local okEq, eq = pcall(_secEq, sid, spellId)
 				if okEq and eq then
 					found = true
 					return false
@@ -2869,7 +2909,6 @@ hasTargetDebuffSpellId = function(spellId)
 				end
 				return true
 			end, true)
-		end)
 		if found then return true end
 		-- WoW 12.x (and some tutorial/instanced contexts) can return "secret" aura fields.
 		-- When Corruption is active, the aura can be present but its spellId/name may be
@@ -2901,7 +2940,7 @@ hasTargetDebuffSpellId = function(spellId)
 			if not ok or not auraData then break end
 			seen = seen + 1
 			local sid = SafeAuraSpellId(auraData)
-			local okEq, eq = pcall(function() return sid == spellId end)
+			local okEq, eq = pcall(_secEq, sid, spellId)
 			if okEq and eq then
 				return true
 			end
@@ -2968,7 +3007,7 @@ local function enqueuePendingCast(self, spellId, spellName, tNow)
 	if helpful == true then
 		local zR = ZSBT.ZBattleText
 		if zR and zR.FileLog and ZSBT._ucDropTrace == true then
-			zR:FileLog(("PEND_REF sid=%s why=helpful"):format(tostring(spellId)))
+			zR:FileLog("PEND_REF sid=%s why=helpful", tostring(spellId))
 		end
 		return
 	end
@@ -2984,7 +3023,7 @@ local function enqueuePendingCast(self, spellId, spellName, tNow)
 	if castFacts and castFacts.damages == false then
 		local zR = ZSBT.ZBattleText
 		if zR and zR.FileLog and ZSBT._ucDropTrace == true then
-			zR:FileLog(("PEND_REF sid=%s why=nodmg"):format(tostring(spellId)))
+			zR:FileLog("PEND_REF sid=%s why=nodmg", tostring(spellId))
 		end
 		return
 	end
@@ -3272,11 +3311,11 @@ claimSignature = function(self, tNow, hitSchool)
 	-- rej:SIG_NODAMAGE:<sid> (no damage proof) or rej:SIG_TALENT:<sid>
 	-- (talent-node sid — correlation only, never an icon).
 	if best == nil and refusedTalentSid ~= nil then
-		auditNote(("AUDD reason=SIG_TALENT spellId=%s school=%s"):format(
-			dbgSafe(refusedTalentSid), dbgSafe(hitSchool)))
+		auditNote("AUDD reason=SIG_TALENT spellId=%s school=%s", 
+			dbgSafe(refusedTalentSid), dbgSafe(hitSchool))
 	elseif best == nil and refusedSid ~= nil then
-		auditNote(("AUDD reason=SIG_NODAMAGE spellId=%s school=%s"):format(
-			dbgSafe(refusedSid), dbgSafe(hitSchool)))
+		auditNote("AUDD reason=SIG_NODAMAGE spellId=%s school=%s", 
+			dbgSafe(refusedSid), dbgSafe(hitSchool))
 	end
 	if best then
 		local bn = -1
@@ -3305,9 +3344,9 @@ claimSignature = function(self, tNow, hitSchool)
 			sigPersist(self, bestVia, best, e)
 			bn = e.n
 		end
-		auditNote(("AUDSIG sid=%s via=%s score=%d dt=%.2f school=%s bind=%s"):format(
+		auditNote("AUDSIG sid=%s via=%s score=%d dt=%.2f school=%s bind=%s", 
 			tostring(best), tostring(bestVia), bestScore or 0,
-			bestDt or 0, tostring(hitSchool), tostring(bn)))
+			bestDt or 0, tostring(hitSchool), tostring(bn))
 	end
 	return best, bestVia
 end
@@ -3460,9 +3499,7 @@ consumeBestPendingCast = function(self, tNow, wantSpellId, maxWindowSec, doConsu
 			-- Per-cast-instance claim count ("sid@castAt"): the recency
 			-- stamps below draw from the same budget, so a consumed cast
 			-- cannot re-claim hits through the make-it-work path.
-			self._castClaims = self._castClaims or {}
-			local ck = tostring(best.spellId) .. "@" .. tostring(best.at)
-			self._castClaims[ck] = (self._castClaims[ck] or 0) + 1
+			castClaimAdd(self, best.spellId, best.at)
 			-- Flight learning: claimed hits teach their sid's cast->hit
 			-- delay (per-sid EMA + count) so the flight gate tightens
 			-- around the real span instead of staying permissive.
@@ -3501,9 +3538,7 @@ end
 -- consumed a second time by a later hit.
 miwClaim = function(self, lastId, lastAt, t, school)
 	if not channelTickFloorOk(lastId, t - lastAt) then return nil end
-	local key = tostring(lastId) .. "@" .. tostring(lastAt)
-	self._castClaims = self._castClaims or {}
-	local n = self._castClaims[key] or 0
+	local n = castClaimGet(self, lastId, lastAt)
 	local budget = 1
 	if ZSBT.ClassDB and ZSBT.ClassDB.CastBudget then
 		local b = ZSBT.ClassDB.CastBudget(lastId)
@@ -3511,7 +3546,7 @@ miwClaim = function(self, lastId, lastAt, t, school)
 	end
 	if n >= budget then return nil end
 	consumeBestPendingCast(self, t, lastId, nil, true, school)
-	self._castClaims[key] = n + 1
+	castClaimAdd(self, lastId, lastAt)
 	-- Claim ordinal for the noline-theft gate: slot 1 of a recency record
 	-- is most plausibly our own hit wave; foreign wounds drain late slots.
 	-- emit() stamps it on the payload, then clears.
@@ -3541,7 +3576,7 @@ function Collector:handlePlayerSwing(swingDuration, swingType)
 		end
 		self._swingSpeed[hand] = swingDuration
 	end
-	auditNote(("AUDSWING hand=%s"):format(dbgSafe(hand)))
+	auditNote("AUDSWING hand=%s", dbgSafe(hand))
 end
 
 -- Live module/collector state for the config UI's Class page.
@@ -3574,9 +3609,9 @@ function Collector:handleSpellcastSent(unit, target, castGUID, spellId)
 		spellId = spellId, at = now() }
 	while #list > 8 do table.remove(list, 1) end
 	local tgtSafe = ZSBT.IsSafeString and ZSBT.IsSafeString(target)
-	auditNote(("AUDSENT sid=%s tgt=%s safe=%s"):format(dbgSafe(spellId),
+	auditNote("AUDSENT sid=%s tgt=%s safe=%s", dbgSafe(spellId),
 		(tgtSafe and tostring(target):sub(1, 24)) or tostring(type(target)),
-		tostring(tgtSafe == true)))
+		tostring(tgtSafe == true))
 end
 
 function Collector:handleSpellcastSucceeded(unit, guid, spellId)
@@ -3590,7 +3625,7 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 	if unit == "pet" then
 		local trg = ZSBT.Core and ZSBT.Core.Triggers
 		if trg and trg.OnSpellcastSucceeded then
-			pcall(function() trg:OnSpellcastSucceeded(unit, spellId) end)
+			pcall(trg.OnSpellcastSucceeded, trg, unit, spellId)
 		end
 		-- Track friendly non-player casts (pet, imps, guardians) for pet-hit
 		-- attribution. Also records non-pet friendly units so we can learn
@@ -3600,7 +3635,7 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 		local zbtc = ZSBT.ZBattleText
 		if isPlayerSpellId(spellId) then
 			if zbtc and zbtc.FileLog then
-				zbtc:FileLog(("PET_CAST_REJECT unit=%s sid=%s"):format(tostring(unit), tostring(spellId)))
+				zbtc:FileLog("PET_CAST_REJECT unit=%s sid=%s", tostring(unit), tostring(spellId))
 			end
 			return
 		end
@@ -3609,7 +3644,7 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 		self._petCasts[#self._petCasts + 1] = { unit = unit, spellId = spellId, at = tCast }
 		if #self._petCasts > 24 then table.remove(self._petCasts, 1) end
 		if zbtc and zbtc.FileLog then
-			zbtc:FileLog(("PET_CAST unit=%s sid=%s"):format(tostring(unit), tostring(spellId)))
+			zbtc:FileLog("PET_CAST unit=%s sid=%s", tostring(unit), tostring(spellId))
 		end
 		return
 	end
@@ -3623,7 +3658,7 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 		if UnitIsUnit then
 			local okP, pres = pcall(UnitIsUnit, unit, "player")
 			if okP then
-				local okPC, peq = pcall(function() return pres == true end)
+				local okPC, peq = pcall(_secTrue, pres)
 				if okPC and peq == true then isPlayerAlias = true end
 			end
 		end
@@ -3635,7 +3670,7 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 				-- can never name pet damage, so player sids are refused.
 				if isPlayerSpellId(spellId) then
 					if zbtc2 and zbtc2.FileLog then
-						zbtc2:FileLog(("FRIEND_CAST_REJECT unit=%s sid=%s"):format(tostring(unit), tostring(spellId)))
+						zbtc2:FileLog("FRIEND_CAST_REJECT unit=%s sid=%s", tostring(unit), tostring(spellId))
 					end
 				else
 					self._petCasts = self._petCasts or {}
@@ -3643,7 +3678,7 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 					self._petCasts[#self._petCasts + 1] = { unit = unit, spellId = spellId, at = tCast2 }
 					if #self._petCasts > 24 then table.remove(self._petCasts, 1) end
 					if zbtc2 and zbtc2.FileLog then
-						zbtc2:FileLog(("FRIEND_CAST unit=%s sid=%s"):format(tostring(unit), tostring(spellId)))
+						zbtc2:FileLog("FRIEND_CAST unit=%s sid=%s", tostring(unit), tostring(spellId))
 					end
 				end
 			end
@@ -3658,7 +3693,7 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 			local ct = now()
 			if ct - (self[ck] or -9) >= 0.5 then
 				self[ck] = ct
-				zc:FileLog(("UC_CAST unit=%s sid=%s"):format(tostring(unit), tostring(spellId)))
+				zc:FileLog("UC_CAST unit=%s sid=%s", tostring(unit), tostring(spellId))
 			end
 		end
 	end
@@ -3688,8 +3723,7 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 				if e.spellId == spellId and (e.guid == nil or e.guid == guid) then
 					local tgt = e.target
 					if ZSBT.IsSafeString and ZSBT.IsSafeString(tgt) then
-						local okE, exists = pcall(function()
-							return UnitExists and UnitExists(tgt) end)
+						local okE, exists = UnitExists and pcall(UnitExists, tgt)
 						if okE and exists == true then
 							local nm = safeUnitName(tgt)
 							if nm then self._lastCastTargetName = nm end
@@ -3727,7 +3761,7 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 					self._hookErrAt = tE
 					local zbt = ZSBT.ZBattleText
 					if zbt and zbt.FileLog then
-						zbt:FileLog(("HOOKERR fn=onCast err=%s"):format(dbgSafe(hookErrC)))
+						zbt:FileLog("HOOKERR fn=onCast err=%s", dbgSafe(hookErrC))
 					end
 				end
 			end
@@ -3807,8 +3841,8 @@ function Collector:handleSpellcastSucceeded(unit, guid, spellId)
 					interval = iv,
 					expiresAt = self._lastPlayerSpellAt + dur + 1.5,
 				}
-				auditNote(("AUDHSEED sid=%s iv=%s dur=%s"):format(
-					tostring(spellId), tostring(iv), tostring(dur)))
+				auditNote("AUDHSEED sid=%s iv=%s dur=%s", 
+					tostring(spellId), tostring(iv), tostring(dur))
 			end
 		end
 
@@ -3925,7 +3959,7 @@ local function wwAggFlush(self)
 	self._wwAggChatToken = nil
 	self._wwAggChatAt = nil
 	if st.timer and st.timer.Cancel then
-		pcall(function() st.timer:Cancel() end)
+		pcall(st.timer.Cancel, st.timer)
 	end
 	local sid = st.spellId or 190411
 	local tEmit = st.t or now()
@@ -4013,7 +4047,7 @@ local function wwAggPush(self, t, spellId, amount, isCrit, allowInfer)
 	st.token = st.token or self._castToken
 	st.spellId = st.spellId or spellId
 	if st.timer and st.timer.Cancel then
-		pcall(function() st.timer:Cancel() end)
+		pcall(st.timer.Cancel, st.timer)
 	end
 	local win = wwAggWindowSec(spellId)
 	if C_Timer and C_Timer.NewTimer then
@@ -4075,7 +4109,7 @@ function Collector:handleChatSelfDamage(event, msg)
 	if not isSafeMsg then
 		-- Secret payloads: string APIs may reject secret strings on some
 		-- clients/builds. Probe once; bail cleanly rather than error per-event.
-		local okFind, findRes = pcall(function() return msg:find("Your ", 1, true) == 1 end)
+		local okFind, findRes = pcall(_secFindYour, msg)
 		if not okFind or findRes ~= true then
 			return
 		end
@@ -4096,7 +4130,7 @@ function Collector:handleChatSelfDamage(event, msg)
 		if dt < 0 or dt > maxDt then
 			return
 		end
-		local okMatch, amountText = pcall(function() return msg:match("(%d[%d,]*)") end)
+		local okMatch, amountText = pcall(string.match, msg, "(%d[%d,]*)")
 		local amount = nil
 		if okMatch and amountText then
 			local okAmt, resAmt = pcall(parseAmountFromChat, amountText)
@@ -4730,8 +4764,7 @@ function Collector:handleCombatTextUpdate(arg1)
 			if not ctOK then
 				local zCt = ZSBT.ZBattleText
 				if zCt and zCt.FileLog and ZSBT._ucDropTrace == true then
-					zCt:FileLog(("CTDROPPED t=%.3f why=no_victim_evidence")
-						:format(tNow))
+					zCt:FileLog("CTDROPPED t=%.3f why=no_victim_evidence", tNow)
 				end
 				return
 			end
@@ -4775,11 +4808,11 @@ function Collector:handleCombatTextUpdate(arg1)
 		local tP = now()
 		if tP - (self._ctInfoProbeAt or -9) >= 8 then
 			self._ctInfoProbeAt = tP
-			auditNote(("AUDCTI type=%s r1=%s(%s) r2=%s(%s) r3=%s"):format(
+			auditNote("AUDCTI type=%s r1=%s(%s) r2=%s(%s) r3=%s", 
 				dbgSafe(arg1),
 				(srcSafe and tostring(rawArg1):sub(1, 20)) or "?", tostring(type(rawArg1)),
 				(src2Safe and tostring(rawArg2):sub(1, 20)) or "?", tostring(type(rawArg2)),
-				tostring(rawArg3)))
+				tostring(rawArg3))
 		end
 		local isCrit = CRIT_TYPES[arg1] or false
 		local isPeriodic = PERIODIC_TYPES[arg1] or false
@@ -4876,7 +4909,7 @@ function Collector:handleCombatTextUpdate(arg1)
 
 		local zC = ZSBT.ZBattleText
 		if zC and zC.FileLog then
-			zC:FileLog(("CT_HEAL sid=%s per=%s"):format(tostring(healSpellId), tostring(isPeriodic == true)))
+			zC:FileLog("CT_HEAL sid=%s per=%s", tostring(healSpellId), tostring(isPeriodic == true))
 		end
 		emit("COMBAT_TEXT_HEAL", {
 			timestamp = now(),
@@ -4896,7 +4929,7 @@ function Collector:handleCombatTextUpdate(arg1)
 	if INCOMING_MISS_TYPES[arg1] then
 		local zM = ZSBT.ZBattleText
 		if zM and zM.FileLog then
-			zM:FileLog(("MISS_EMIT type=%s"):format(tostring(arg1)))
+			zM:FileLog("MISS_EMIT type=%s", tostring(arg1))
 		end
 		emit("COMBAT_TEXT_MISS", {
 			timestamp = now(),
@@ -5065,7 +5098,7 @@ function Collector:_dbgDropUnit(unit)
 	local function probeBool(fn, ...)
 		local ok, res = pcall(fn, ...)
 		if not ok then return "err" end
-		local ok2, eq = pcall(function() return res == true end)
+		local ok2, eq = pcall(_secTrue, res)
 		if not ok2 then return "secret" end
 		return tostring(res)
 	end
@@ -5078,8 +5111,8 @@ function Collector:_dbgDropUnit(unit)
 		local okN, n = pcall(UnitName, unit)
 		if okN and ZSBT.IsSafeString(n) then uname = n end
 	end
-	z:FileLog(("UC_UNIT unit=%s hostile=%s istarget=%s name=%s"):format(
-		tostring(unit), hostile, istarget, tostring(uname)))
+	z:FileLog("UC_UNIT unit=%s hostile=%s istarget=%s name=%s", 
+		tostring(unit), hostile, istarget, tostring(uname))
 end
 
 
@@ -5138,6 +5171,71 @@ Collector._wwAggPush = wwAggPush
 Collector._anySwingRecent = anySwingRecent
 Collector._swingPredictedNear = swingPredictedNear
 
+-- Huge-hit corroboration helpers: file-locals so handleUnitCombat does not
+-- allocate three closures on every wound call.
+local function getAdaptiveBigHitThreshold(self, tNow)
+	local base = H.BIG_HIT_THRESHOLD
+	local maxRecent = self._recentOutgoingMax or 0
+	local maxAt = self._recentOutgoingMaxAt or 0
+	if type(tNow) == "number" and type(maxAt) == "number" and maxAt > 0 then
+		local age = tNow - maxAt
+		if age > 120 then
+			maxRecent = maxRecent * 0.25
+		elseif age > 60 then
+			maxRecent = maxRecent * 0.50
+		end
+	end
+	local scaled = 0
+	if type(maxRecent) == "number" and maxRecent > 0 then
+		scaled = maxRecent * 3
+	end
+	return math.max(base, scaled)
+end
+
+local function isCorroboratedHugeHit(self, restrict, tNow, amt, spellId)
+	if not (restrict == true) then return true end
+	local thresh = getAdaptiveBigHitThreshold(self, tNow)
+	if not (ZSBT.IsSafeNumber(amt) and amt >= thresh) then return true end
+	local lastAt = self._lastOutgoingChatAt
+	local lastAmt = self._lastOutgoingChatAmount
+	local lastSpell = self._lastOutgoingChatSpellId
+	if not (type(lastAt) == "number" and type(lastAmt) == "number" and type(lastSpell) == "number") then
+		return false
+	end
+	local dt = tNow - lastAt
+	if dt < 0 or dt > 0.40 then
+		return false
+	end
+	if type(spellId) == "number" and type(lastSpell) == "number" and spellId ~= lastSpell then
+		return false
+	end
+	local diff = math.abs(amt - lastAmt)
+	if diff > (math.max(2000, amt * 0.08)) then
+		return false
+	end
+	return true
+end
+
+local function isCorroboratedHugePetHit(self, restrict, tNow, amt)
+	if not (restrict == true) then return true end
+	local thresh = getAdaptiveBigHitThreshold(self, tNow)
+	if not (ZSBT.IsSafeNumber(amt) and amt >= thresh) then return true end
+	local lastAt = self._lastPetChatAt
+	local lastAmt = self._lastPetChatAmount
+	if not (type(lastAt) == "number" and type(lastAmt) == "number") then
+		return false
+	end
+	local dt = tNow - lastAt
+	if dt < 0 or dt > 0.40 then
+		return false
+	end
+	local diff = math.abs(amt - lastAmt)
+	if diff > (math.max(2000, amt * 0.08)) then
+		return false
+	end
+	return true
+end
+
 function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 	-- Token as delivered, before the nameplate/softenemy -> "target" remap
 	-- below: the wound dedup uses it to tell a real cross-token re-report
@@ -5159,9 +5257,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					and tostring(amount) or "sec"
 				local dVal = (ZSBT.IsSafeString and ZSBT.IsSafeString(descriptor))
 					and descriptor or "sec"
-				z:FileLog(("UC_RAW unit=%s action=%s amtNil=%s amtT=%s amtV=%s descT=%s descV=%s school=%s"):format(
+				z:FileLog("UC_RAW unit=%s action=%s amtNil=%s amtT=%s amtV=%s descT=%s descV=%s school=%s", 
 					tostring(unit), tostring(aPrev), tostring(amount == nil),
-					tostring(type(amount)), aVal, tostring(type(descriptor)), dVal, tostring(school)))
+					tostring(type(amount)), aVal, tostring(type(descriptor)), dVal, tostring(school))
 			end
 		end
 	end
@@ -5198,7 +5296,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						end
 						self:_queuePendingHotHeal(unit, tH, amount, school, isCritQ)
 					else
-						H.auditNote(("AUDHX unit=%s why=%s"):format(H.dbgSafe(unit), tostring(why)))
+						H.auditNote("AUDHX unit=%s why=%s", H.dbgSafe(unit), tostring(why))
 					end
 				end
 				if hsid ~= nil then
@@ -5209,7 +5307,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					local pipeId = self._rawPipeCount + 1
 					self._rawPipeCount = pipeId
 					self._rawPipe[pipeId] = amount
-					H.auditNote(("AUDH unit=%s sid=%s"):format(H.dbgSafe(unit), tostring(hsid)))
+					H.auditNote("AUDH unit=%s sid=%s", H.dbgSafe(unit), tostring(hsid))
 					H.emit("OUTGOING_HEAL_COMBAT", {
 						timestamp = tH,
 						rawPipeId = pipeId,
@@ -5234,7 +5332,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				-- res can be a secret boolean on Retail: compare inside pcall
 				-- so a secret result cannot kill the whole UNIT_COMBAT event.
 				if okU then
-					local okC, eq = pcall(function() return res == true end)
+					local okC, eq = pcall(_secTrue, res)
 					if okC and eq == true then isTarget = true end
 				end
 			end
@@ -5276,7 +5374,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						if UnitCanAttack then
 							local okH, h = pcall(UnitCanAttack, "player", unit)
 							if okH then
-								local okC, eq = pcall(function() return h == true end)
+								local okC, eq = pcall(_secTrue, h)
 								if okC and eq == true then hostile = true end
 							end
 						end
@@ -5324,18 +5422,20 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								-- recency, via the same shared key.
 								if cand == nil then
 									local claims = self._castClaims or {}
-									for ck, n in pairs(claims) do
-										if type(n) == "number" and n >= 1 then
-											local sidS, atS = ck:match("^(%d+)@(.+)$")
-											local sid, at = tonumber(sidS), tonumber(atS)
-											if sid and at then
-												local dt = tOff - at
-												if dt >= 0 and dt <= 0.75
-													and Collector.CastCleavesOffTarget(sid)
-													and self:_castSchoolOk(sid, school)
-													and (not bestDt or dt < bestDt) then
-													bestDt = dt
-													cand, candAt = sid, at
+									for sid, list in pairs(claims) do
+										if type(sid) == "number" then
+											for i = 1, #list do
+												local rec = list[i]
+												local at, n = rec.at, rec.n or 0
+												if type(at) == "number" and n >= 1 then
+													local dt = tOff - at
+													if dt >= 0 and dt <= 0.75
+														and Collector.CastCleavesOffTarget(sid)
+														and self:_castSchoolOk(sid, school)
+														and (not bestDt or dt < bestDt) then
+														bestDt = dt
+														cand, candAt = sid, at
+													end
 												end
 											end
 										end
@@ -5355,16 +5455,14 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 									local zbt = ZSBT.ZBattleText
 									if zbt and zbt.PeekDamageLine
 										and zbt:PeekDamageLine(tOff, 0.35, { direct = true }) then
-										local ck = tostring(cand) .. "@" .. tostring(candAt)
-										self._castClaims = self._castClaims or {}
-										local n = self._castClaims[ck] or 0
+										local n = castClaimGet(self, cand, candAt)
 										local budget = 1
 										if ZSBT.ClassDB and ZSBT.ClassDB.CastBudget then
 											local b = ZSBT.ClassDB.CastBudget(cand)
 											if type(b) == "number" and b > 0 then budget = b end
 										end
 										if n < budget then
-											self._castClaims[ck] = n + 1
+											castClaimAdd(self, cand, candAt)
 											offSid = cand
 										end
 									end
@@ -5443,8 +5541,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								self._rawPipe[pipeId] = amount
 								local zbtOff = ZSBT.ZBattleText
 								if zbtOff and zbtOff.FileLog then
-									zbtOff:FileLog(("OFFT unit=%s sid=%s school=%s"):format(
-										tostring(unit), tostring(offSid), tostring(school)))
+									zbtOff:FileLog("OFFT unit=%s sid=%s school=%s", 
+										tostring(unit), tostring(offSid), tostring(school))
 								end
 								H.emit("OUTGOING_DAMAGE_COMBAT", {
 									timestamp = H.now(),
@@ -5501,7 +5599,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 	if isZeroAmt == true then
 		local zbtZ = ZSBT.ZBattleText
 		if zbtZ and zbtZ.FileLog then
-			zbtZ:FileLog(("ZERO_DROP unit=%s school=%s"):format(tostring(unit), tostring(school)))
+			zbtZ:FileLog("ZERO_DROP unit=%s school=%s", tostring(unit), tostring(school))
 		end
 		return
 	end
@@ -5586,8 +5684,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		local instanceAware = restrict
 			or (ZSBT.Core and ZSBT.Core.IsInstanceAwareOutgoingEnabled
 				and ZSBT.Core:IsInstanceAwareOutgoingEnabled()) or false
-		H.auditNote(("AUDT tier=%s restrict=%s"):format(
-			tostring(tier), tostring(restrict == true)))
+		H.auditNote("AUDT tier=%s restrict=%s", 
+			tostring(tier), tostring(restrict == true))
 		-- If combat text / chat already produced an outgoing number for the current cast
 		-- token, suppress UNIT_COMBAT(target) for that token to avoid double numbers.
 		if self._castToken and self._lastCombatTextOutgoingToken == self._castToken then
@@ -5672,66 +5770,6 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 		end
 		local dl = H.OutDbgLevel()
-		local function getAdaptiveBigHitThreshold(tNow)
-			local base = H.BIG_HIT_THRESHOLD
-			local maxRecent = self._recentOutgoingMax or 0
-			local maxAt = self._recentOutgoingMaxAt or 0
-			if type(tNow) == "number" and type(maxAt) == "number" and maxAt > 0 then
-				local age = tNow - maxAt
-				if age > 120 then
-					maxRecent = maxRecent * 0.25
-				elseif age > 60 then
-					maxRecent = maxRecent * 0.50
-				end
-			end
-			local scaled = 0
-			if type(maxRecent) == "number" and maxRecent > 0 then
-				scaled = maxRecent * 3
-			end
-			return math.max(base, scaled)
-		end
-		local function isCorroboratedHugeHit(tNow, amt, spellId)
-			if not (restrict == true) then return true end
-			local thresh = getAdaptiveBigHitThreshold(tNow)
-			if not (ZSBT.IsSafeNumber(amt) and amt >= thresh) then return true end
-			local lastAt = self._lastOutgoingChatAt
-			local lastAmt = self._lastOutgoingChatAmount
-			local lastSpell = self._lastOutgoingChatSpellId
-			if not (type(lastAt) == "number" and type(lastAmt) == "number" and type(lastSpell) == "number") then
-				return false
-			end
-			local dt = tNow - lastAt
-			if dt < 0 or dt > 0.40 then
-				return false
-			end
-			if type(spellId) == "number" and type(lastSpell) == "number" and spellId ~= lastSpell then
-				return false
-			end
-			local diff = math.abs(amt - lastAmt)
-			if diff > (math.max(2000, amt * 0.08)) then
-				return false
-			end
-			return true
-		end
-		local function isCorroboratedHugePetHit(tNow, amt)
-			if not (restrict == true) then return true end
-			local thresh = getAdaptiveBigHitThreshold(tNow)
-			if not (ZSBT.IsSafeNumber(amt) and amt >= thresh) then return true end
-			local lastAt = self._lastPetChatAt
-			local lastAmt = self._lastPetChatAmount
-			if not (type(lastAt) == "number" and type(lastAmt) == "number") then
-				return false
-			end
-			local dt = tNow - lastAt
-			if dt < 0 or dt > 0.40 then
-				return false
-			end
-			local diff = math.abs(amt - lastAmt)
-			if diff > (math.max(2000, amt * 0.08)) then
-				return false
-			end
-			return true
-		end
 		if dl >= 4 then
 			local tName = H.safeUnitName("target")
 			local tGuid = nil
@@ -5793,8 +5831,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					and sig.token ~= rawUnit
 					and sig.school == school and sig.crit == isCrit
 					and sig.amount == amtSig then
-					H.auditNote(("AUDTWIN school=%s crit=%s amt=%s tok=%s"):format(
-						H.dbgSafe(school), tostring(isCrit == true), H.dbgSafe(amount), H.dbgSafe(rawUnit)))
+					H.auditNote("AUDTWIN school=%s crit=%s amt=%s tok=%s", 
+						H.dbgSafe(school), tostring(isCrit == true), H.dbgSafe(amount), H.dbgSafe(rawUnit))
 					return
 				end
 				sigs[ukey] = { t = t, school = school, crit = isCrit, amount = amtSig, token = rawUnit }
@@ -5806,14 +5844,14 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 			local zbtc = ZSBT.ZBattleText
 			if zbtc and zbtc.FileLog then
-				zbtc:FileLog(("CAND school=%s crit=%s"):format((ZSBT.IsSafeNumber(school) and tostring(school)) or "sec", tostring(isCrit == true)))
+				zbtc:FileLog("CAND school=%s crit=%s", (ZSBT.IsSafeNumber(school) and tostring(school)) or "sec", tostring(isCrit == true))
 			end
 			if not self._auditCapNoted then
 				self._auditCapNoted = true
-				H.auditNote(("AUDCAP swing=%s"):format(tostring(self._swingSupported == true)))
+				H.auditNote("AUDCAP swing=%s", tostring(self._swingSupported == true))
 			end
-			H.auditNote(("AUDCAND school=%s crit=%s"):format(
-				(ZSBT.IsSafeNumber(school) and tostring(school)) or "sec", tostring(isCrit == true)))
+			H.auditNote("AUDCAND school=%s crit=%s", 
+				(ZSBT.IsSafeNumber(school) and tostring(school)) or "sec", tostring(isCrit == true))
 		elseif actionStr then
 			-- Same non-damage event (HEAL, MISS/DODGE/PARRY/...) reported through
 			-- a second unit token (target + nameplate remap) in the same frame.
@@ -5826,7 +5864,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			end
 			self._lastTargetActionSig = { t = t, action = actionStr }
 		end
-		if dl >= 4 and ZSBT.IsSafeNumber(amount) and amount >= getAdaptiveBigHitThreshold(t) then
+		if dl >= 4 and ZSBT.IsSafeNumber(amount) and amount >= getAdaptiveBigHitThreshold(self, t) then
 			local members = nil
 			if type(GetNumGroupMembers) == "function" then
 				local okM, m = pcall(GetNumGroupMembers)
@@ -5915,16 +5953,16 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						end
 					end
 					if dotSpellId and self:_dotCadenceOk(t, dotSpellId) then
-						if not isCorroboratedHugeHit(t, amount, dotSpellId) then
+						if not isCorroboratedHugeHit(self, restrict, t, amount, dotSpellId) then
 							if dl >= 4 then
 								H.ECPrint(("BIG_HIT_SUPPRESS src=UNIT_COMBAT_DOT token=%s spellId=%s amt=%s")
 									:format(H.dbgSafe(self._castToken), H.dbgSafe(dotSpellId), H.dbgSafe(amount)))
 							end
-							H.auditNote(("AUDD reason=DOT_HUGE_SUPPRESS spellId=%s school=%s"):format(H.dbgSafe(dotSpellId), H.dbgSafe(school)))
+							H.auditNote("AUDD reason=DOT_HUGE_SUPPRESS spellId=%s school=%s", H.dbgSafe(dotSpellId), H.dbgSafe(school))
 							return
 						end
 						if not chanPick and self:_isDuplicateDotEmit(t, dotSpellId) then
-							H.auditNote(("AUDD reason=DOT_DUP spellId=%s"):format(H.dbgSafe(dotSpellId)))
+							H.auditNote("AUDD reason=DOT_DUP spellId=%s", H.dbgSafe(dotSpellId))
 							return
 						end
 						self._recentPeriodicSpellAt[dotSpellId] = t
@@ -5973,12 +6011,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						end
 					end
 					if not recentPlayerCast and petEligibleHit then
-						if not isCorroboratedHugePetHit(t, amount) then
+						if not isCorroboratedHugePetHit(self, restrict, t, amount) then
 							if dl >= 4 then
 								H.ECPrint(("BIG_HIT_SUPPRESS src=PET_FALLBACK token=%s amt=%s")
 									:format(H.dbgSafe(self._castToken), H.dbgSafe(amount)))
 							end
-							H.auditNote(("AUDD reason=PET_HUGE_SUPPRESS school=%s"):format(H.dbgSafe(school)))
+							H.auditNote("AUDD reason=PET_HUGE_SUPPRESS school=%s", H.dbgSafe(school))
 							return
 						end
 						-- Group-aware pet gate: when restrict is active (Quiet/Strict/PvP/Instance-Aware)
@@ -5991,13 +6029,13 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								-- (guardian/pet damage the school table misses);
 								-- foreign lines veto co-attacker wounds at flush.
 								if H.zbtVetoActive() then
-									H.auditNote(("AUDD reason=BYPASS_PET_GROUP_SUPPRESS school=%s"):format(H.dbgSafe(school)))
+									H.auditNote("AUDD reason=BYPASS_PET_GROUP_SUPPRESS school=%s", H.dbgSafe(school))
 								else
 									if dl >= 4 then
 										H.ECPrint(("PET_FALLBACK_GROUP_SUPPRESS restrict=%s members=%s school=%s amt=%s")
 											:format(H.dbgSafe(restrict), H.dbgSafe(members), H.dbgSafe(school), H.dbgSafe(amount)))
 									end
-									H.auditNote(("AUDD reason=PET_GROUP_SUPPRESS school=%s"):format(H.dbgSafe(school)))
+									H.auditNote("AUDD reason=PET_GROUP_SUPPRESS school=%s", H.dbgSafe(school))
 									return
 								end
 							end
@@ -6056,9 +6094,9 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						end
 						local zbt2 = ZSBT.ZBattleText
 						if zbt2 and zbt2.FileLog then
-							zbt2:FileLog(("PET_EMIT ht=%.3f school=%s psid=%s pev=%s tok=%s"):format(
+							zbt2:FileLog("PET_EMIT ht=%.3f school=%s psid=%s pev=%s tok=%s", 
 								tonumber(t) or 0, tostring(school), tostring(petSid),
-								tostring(petEvidence or "guess"), tostring(self._castToken)))
+								tostring(petEvidence or "guess"), tostring(self._castToken))
 						end
 						if H.zbtVetoActive() then
 							-- Pet hits go through the ownership veto: a MY_PET
@@ -6124,7 +6162,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							self._hookErrAt = tE
 							local zbt = ZSBT.ZBattleText
 							if zbt and zbt.FileLog then
-								zbt:FileLog(("HOOKERR fn=guardianWound err=%s"):format(H.dbgSafe(handledOrErr)))
+								zbt:FileLog("HOOKERR fn=guardianWound err=%s", H.dbgSafe(handledOrErr))
 							end
 						end
 					elseif handledOrErr then
@@ -6165,7 +6203,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			if UnitCanAttack then
 				local okA, canAtk = pcall(UnitCanAttack, "player", "target")
 				if okA then
-					local okC, eq = pcall(function() return canAtk == true end)
+					local okC, eq = pcall(_secTrue, canAtk)
 					if okC and eq == true then
 						return
 					end
@@ -6198,7 +6236,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						self:_queuePendingHotHeal("target", t, amount, school, isCrit)
 						return
 					end
-					H.auditNote(("AUDHX unit=target why=%s"):format(tostring(why)))
+					H.auditNote("AUDHX unit=target why=%s", tostring(why))
 				end
 				if hsid ~= nil and hsid ~= 0 then
 					spellId = hsid
@@ -6228,7 +6266,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 
 			local zH = ZSBT.ZBattleText
 			if zH and zH.FileLog then
-				zH:FileLog(("HEAL_TGT sid=%s restrict=%s"):format(tostring(spellId), tostring(restrict == true)))
+				zH:FileLog("HEAL_TGT sid=%s restrict=%s", tostring(spellId), tostring(restrict == true))
 			end
 			H.emit("OUTGOING_HEAL_COMBAT", {
 				timestamp = t,
@@ -6392,7 +6430,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						self._hookErrAt = tE
 						local zbt = ZSBT.ZBattleText
 						if zbt and zbt.FileLog then
-							zbt:FileLog(("HOOKERR err=%s"):format(H.dbgSafe(hookErr)))
+							zbt:FileLog("HOOKERR err=%s", H.dbgSafe(hookErr))
 						end
 					end
 				end
@@ -6469,9 +6507,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						and (zbt:PeekDamageLine(t, 0.30, { tick = true }) ~= nil) or nil
 				end
 				local cadOk = (dotSpellId and tickOk) and self:_dotCadenceOk(t, dotSpellId) or nil
-				H.auditNote(("AUDD reason=PDOT_EVAL ret=%s tk=%s cad=%s dis=%s")
-					:format(H.dbgSafe(dotSpellId), H.dbgSafe(tickOk), H.dbgSafe(cadOk),
-						H.dbgSafe(ZSBT.ClassDB and ZSBT.ClassDB.DotCadenceDisambig and ZSBT.ClassDB.DotCadenceDisambig() or nil)))
+				H.auditNote("AUDD reason=PDOT_EVAL ret=%s tk=%s cad=%s dis=%s", H.dbgSafe(dotSpellId), H.dbgSafe(tickOk), H.dbgSafe(cadOk),
+						H.dbgSafe(ZSBT.ClassDB and ZSBT.ClassDB.DotCadenceDisambig and ZSBT.ClassDB.DotCadenceDisambig() or nil))
 				if not tickOk then
 					dotSpellId = nil
 				end
@@ -6576,8 +6613,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					self._emptyReportCastAt = peekNS.at
 					local zbtN = ZSBT.ZBattleText
 					if zbtN and zbtN.FileLog and ZSBT._ucDropTrace == true then
-						zbtN:FileLog(("EMPTY_REPORT sid=%s dt=%.2f")
-							:format(tostring(peekNS.spellId), t - peekNS.at))
+						zbtN:FileLog("EMPTY_REPORT sid=%s dt=%.2f", tostring(peekNS.spellId), t - peekNS.at)
 					end
 					return
 				end
@@ -6608,10 +6644,10 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							parts = (parts and (parts .. ",") or "") .. tostring(c.spellId) .. "@" .. string.format("%.2f", t - c.at)
 						end
 					end
-					zbtM:FileLog(("PHYS_MISS want=%s school=%s pool=%s%s%s"):format(
+					zbtM:FileLog("PHYS_MISS want=%s school=%s pool=%s%s%s", 
 						tostring(wantSpellId), tostring(school), parts or "EMPTY",
 						onSwingBeat == true and " swing=1" or "",
-						petVeto == true and " pv=1" or ""))
+						petVeto == true and " pv=1" or "")
 				end
 			end
 			-- Strict/restricted mode normally requires a pending-cast match. For Whirlwind,
@@ -6641,8 +6677,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					-- up, not a stray wound borrowing the name. And 0.75s,
 					-- not the non-physical 1.25: measured claims past ~0.7s
 					-- were the NEXT ability's wounds wearing this name.
-					local claims = self._castClaims or {}
-					local prior = claims[tostring(lastId) .. "@" .. tostring(lastAt)] or 0
+					local prior = castClaimGet(self, lastId, lastAt)
 					if age >= 0 and age <= 0.75 and prior >= 1
 						and self:_castSchoolOk(lastId, school)
 						and not (ZSBT.ClassDB and ZSBT.ClassDB.ExcludedSpellId
@@ -6809,8 +6844,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					end
 				end
 				if not okSwing then
-					H.auditNote(("AUDD reason=WHT_EV inCbt=%s canAtk=%s auto=%s school=%s")
-						:format(tostring(inPlayerCombat), tostring(canAtk), tostring(autoOk), H.dbgSafe(school)))
+					H.auditNote("AUDD reason=WHT_EV inCbt=%s canAtk=%s auto=%s school=%s", tostring(inPlayerCombat), tostring(canAtk), tostring(autoOk), H.dbgSafe(school))
 					return
 				end
 			end
@@ -6829,7 +6863,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					end
 				end
 			end
-			if not isCorroboratedHugeHit(t, amount, spellId or self._lastPlayerSpellId) then
+			if not isCorroboratedHugeHit(self, restrict, t, amount, spellId or self._lastPlayerSpellId) then
 				if dl >= 4 then
 					H.ECPrint(("BIG_HIT_SUPPRESS src=UNIT_COMBAT_PHYSICAL token=%s spellId=%s amt=%s")
 						:format(H.dbgSafe(self._castToken), H.dbgSafe(spellId), H.dbgSafe(amount)))
@@ -6941,8 +6975,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						schoolOk = H.dotEntrySchoolEq(ch.school, school) == true
 					end
 					if not schoolOk then
-						H.auditNote(("AUDD reason=CHANNEL_SCHOOL school=%s want=%s"):format(
-							H.dbgSafe(school), H.dbgSafe(ch.school)))
+						H.auditNote("AUDD reason=CHANNEL_SCHOOL school=%s want=%s", 
+							H.dbgSafe(school), H.dbgSafe(ch.school))
 					end
 					local dtTick = t - (ch.lastTickAt or 0)
 					if schoolOk and dtTick >= (ch.tickMin or 0.12) then
@@ -7188,8 +7222,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 								-- consume — the wound is not its shot after
 								-- all; leave the anchor intact.
 							else
-								H.auditNote(("AUDD reason=DOT_RIVAL_VETO dot=%s rival=%s school=%s")
-									:format(H.dbgSafe(dotSpellId), H.dbgSafe(shotProof), H.dbgSafe(school)))
+								H.auditNote("AUDD reason=DOT_RIVAL_VETO dot=%s rival=%s school=%s", H.dbgSafe(dotSpellId), H.dbgSafe(shotProof), H.dbgSafe(school))
 								if claimed then matchedCast = claimed end
 								dotSpellId = nil
 							end
@@ -7219,7 +7252,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							end
 						end
 					end
-					if dotSpellId and isCorroboratedHugeHit(t, amount, dotSpellId) then
+					if dotSpellId and isCorroboratedHugeHit(self, restrict, t, amount, dotSpellId) then
 						-- Cadence gate: reject hits that don't land in a plausible
 						-- tick slot (shared-target bleed-through protection).
 						if not self:_dotCadenceOk(t, dotSpellId) then
@@ -7332,13 +7365,11 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							})
 							return
 						else
-							H.auditNote(("AUDD reason=AUTO_FB inCbt=%s canAtk=%s members=%s swing=%s school=%s")
-								:format(tostring(inPlayerCombat), tostring(canAtk), H.dbgSafe(members),
-									tostring(self:_swingExplainsHit(t)), H.dbgSafe(school)))
+							H.auditNote("AUDD reason=AUTO_FB inCbt=%s canAtk=%s members=%s swing=%s school=%s", tostring(inPlayerCombat), tostring(canAtk), H.dbgSafe(members),
+									tostring(self:_swingExplainsHit(t)), H.dbgSafe(school))
 						end
 					else
-						H.auditNote(("AUDD reason=AUTO_FB_OFF restrict=%s quiet=%s school=%s")
-							:format(tostring(restrict == true), tostring(quietMode == true), H.dbgSafe(school)))
+						H.auditNote("AUDD reason=AUTO_FB_OFF restrict=%s quiet=%s school=%s", tostring(restrict == true), tostring(quietMode == true), H.dbgSafe(school))
 					end
 					H.dbgDrop("SUPPRESS_UNATTR", self._castToken, school)
 					return
@@ -7517,7 +7548,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		end
 
 		local schoolMask = (ZSBT.IsSafeNumber(school) and school) or nil
-		H.auditNote(("AUDMB school=%s crit=%s spellId=%s"):format(H.dbgSafe(school), tostring(isCrit == true), H.dbgSafe(spellId)))
+		H.auditNote("AUDMB school=%s crit=%s spellId=%s", H.dbgSafe(school), tostring(isCrit == true), H.dbgSafe(spellId))
 
 
 		-- Merge window: multiple UNIT_COMBAT(target) hits can arrive per cast.
@@ -7527,12 +7558,12 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 		local targetName = H.safeUnitName("target")
 		local bucket = self._bestOutgoingByToken[token]
 		if not bucket then
-			if not isCorroboratedHugeHit(t, amount, spellId or self._lastPlayerSpellId) then
+			if not isCorroboratedHugeHit(self, restrict, t, amount, spellId or self._lastPlayerSpellId) then
 				if dl >= 4 then
 					H.ECPrint(("BIG_HIT_SUPPRESS src=UNIT_COMBAT_BEST_START token=%s spellId=%s amt=%s")
 						:format(H.dbgSafe(self._castToken), H.dbgSafe(spellId), H.dbgSafe(amount)))
 				end
-				H.auditNote(("AUDD reason=BUCKET_HUGE_SUPPRESS spellId=%s school=%s"):format(H.dbgSafe(spellId), H.dbgSafe(schoolMask)))
+				H.auditNote("AUDD reason=BUCKET_HUGE_SUPPRESS spellId=%s school=%s", H.dbgSafe(spellId), H.dbgSafe(schoolMask))
 				return
 			end
 			bucket = {
@@ -7573,8 +7604,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				local pipeIdM = self._rawPipeCount + 1
 				self._rawPipeCount = pipeIdM
 				self._rawPipe[pipeIdM] = amount
-				H.auditNote(("AUDMSPLIT sid=%s bsid=%s"):format(
-					H.dbgSafe(spellId), H.dbgSafe(bucket.spellId)))
+				H.auditNote("AUDMSPLIT sid=%s bsid=%s", 
+					H.dbgSafe(spellId), H.dbgSafe(bucket.spellId))
 				H.emit("OUTGOING_DAMAGE_COMBAT", {
 					timestamp = t,
 					rawPipeId = pipeIdM,
@@ -7616,8 +7647,8 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				local pipeIdM = self._rawPipeCount + 1
 				self._rawPipeCount = pipeIdM
 				self._rawPipe[pipeIdM] = amount
-				H.auditNote(("AUDMSPLIT sid=%s school=%s bschool=%s"):format(
-					H.dbgSafe(spellId), H.dbgSafe(schoolMask), H.dbgSafe(bucket.schoolMask)))
+				H.auditNote("AUDMSPLIT sid=%s school=%s bschool=%s", 
+					H.dbgSafe(spellId), H.dbgSafe(schoolMask), H.dbgSafe(bucket.schoolMask))
 				H.emit("OUTGOING_DAMAGE_COMBAT", {
 					timestamp = t,
 					rawPipeId = pipeIdM,
@@ -8027,6 +8058,16 @@ function Collector:handleUnitAura(unit, _updateInfo)
 	-- booleans/tables in combat — reading either errors). Ignored.
 	if type(unit) ~= "string" then return end
 	if unit ~= "target" and unit:sub(1, 9) ~= "nameplate" then return end
+	-- Per-unit poll throttle: UNIT_AURA churns many times/sec per nameplate
+	-- on big pulls, each firing a full candidate-sid scan. Edges are
+	-- state-compared (present vs seen), not event-driven, so coalescing to
+	-- ~50ms per unit delays detection by at most 50ms and misses nothing.
+	local tNow = now()
+	local lastPoll = self._auraPollUnitAt
+	if not lastPoll then lastPoll = {} ; self._auraPollUnitAt = lastPoll end
+	local lp = lastPoll[unit]
+	if lp and (tNow - lp) < 0.05 then return end
+	lastPoll[unit] = tNow
 	-- AuraUtil may be absent on 12.x builds — GetAuraDataBySpellName is the
 	-- fallback; both compare engine-side so no secret field is ever read.
 	local findById = AuraUtil and AuraUtil.FindAuraBySpellId or nil
@@ -8041,12 +8082,10 @@ function Collector:handleUnitAura(unit, _updateInfo)
 		for _ in pairs(sids) do n = n + 1 end
 		local zbtA = ZSBT.ZBattleText
 		if zbtA and zbtA.FileLog then
-			zbtA:FileLog(("AURA_POLL cands=%d unit=%s byId=%s byName=%s")
-				:format(n, tostring(unit), tostring(findById ~= nil), tostring(findByName ~= nil)))
+			zbtA:FileLog("AURA_POLL cands=%d unit=%s byId=%s byName=%s", n, tostring(unit), tostring(findById ~= nil), tostring(findByName ~= nil))
 		end
 		if zbtA and zbtA.Audit then
-			zbtA:Audit(("AURA_POLL cands=%d unit=%s byId=%s byName=%s")
-				:format(n, tostring(unit), tostring(findById ~= nil), tostring(findByName ~= nil)))
+			zbtA:Audit("AURA_POLL cands=%d unit=%s byId=%s byName=%s", n, tostring(unit), tostring(findById ~= nil), tostring(findByName ~= nil))
 		end
 	end
 	if not findById and not findByName then return end
@@ -8084,8 +8123,7 @@ function Collector:handleUnitAura(unit, _updateInfo)
 			if present and type(a2) == "table" then
 				local secret = true
 				if C_Secrets and C_Secrets.ShouldAurasBeSecret then
-					local okS, open = pcall(function()
-						return C_Secrets.ShouldAurasBeSecret() == false end)
+					local okS, open = pcall(_secAurasOpen)
 					secret = not (okS and open == true)
 				else
 					secret = false
@@ -8116,12 +8154,10 @@ function Collector:handleUnitAura(unit, _updateInfo)
 			end
 			local zbtS = ZSBT.ZBattleText
 			if zbtS and zbtS.FileLog then
-				zbtS:FileLog(("AURA_SEED unit=%s key=%s sid=%s")
-					:format(tostring(unit), tostring(seenKey), tostring(anchorSid)))
+				zbtS:FileLog("AURA_SEED unit=%s key=%s sid=%s", tostring(unit), tostring(seenKey), tostring(anchorSid))
 			end
 			if zbtS and zbtS.Audit then
-				zbtS:Audit(("AURA_SEED unit=%s key=%s sid=%s")
-					:format(tostring(unit), tostring(seenKey), tostring(anchorSid)))
+				zbtS:Audit("AURA_SEED unit=%s key=%s sid=%s", tostring(unit), tostring(seenKey), tostring(anchorSid))
 			end
 		elseif not present and us[seenKey] then
 			us[seenKey] = nil
@@ -8134,10 +8170,10 @@ function Collector:handleUnitAura(unit, _updateInfo)
 		us._probed = true
 		local zbtP = ZSBT.ZBattleText
 		if zbtP and zbtP.FileLog then
-			zbtP:FileLog(("AURA_PROBE unit=%s present=%d"):format(tostring(unit), presentCount))
+			zbtP:FileLog("AURA_PROBE unit=%s present=%d", tostring(unit), presentCount)
 		end
 		if zbtP and zbtP.Audit then
-			zbtP:Audit(("AURA_PROBE unit=%s present=%d"):format(tostring(unit), presentCount))
+			zbtP:Audit("AURA_PROBE unit=%s present=%d", tostring(unit), presentCount)
 		end
 	end
 	-- Bound the map: dead mobs leave stale keys.
@@ -8194,9 +8230,9 @@ function Collector:Enable()
 				local zc = ZSBT.ZBattleText
 				if zc and zc.FileLog and ZSBT._ucDropTrace == true then
 					if msgSafe then
-						zc:FileLog(("CHAT_OUT evt=%s msg=%s"):format(tostring(event), tostring(msg:sub(1, 120))))
+						zc:FileLog("CHAT_OUT evt=%s msg=%s", tostring(event), tostring(msg:sub(1, 120)))
 					else
-						zc:FileLog(("CHAT_OUT evt=%s msg=<unsafe>"):format(tostring(event)))
+						zc:FileLog("CHAT_OUT evt=%s msg=<unsafe>", tostring(event))
 					end
 				end
 				if dl >= 5 then
@@ -8242,9 +8278,8 @@ function Collector:Enable()
 			if tv == "string" then
 				if ZSBT.IsSafeString and ZSBT.IsSafeString(v) then
 					local s = v
-					pcall(function()
-						s = (v:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|T.-|t", "<icon>"))
-					end)
+					local okSt, sStripped = pcall(_secStripCodes, v)
+					if okSt and type(sStripped) == "string" then s = sStripped end
 					if type(s) ~= "string" then s = v end
 					if #s > 48 then s = s:sub(1, 48) .. "..." end
 					return "str:" .. s
