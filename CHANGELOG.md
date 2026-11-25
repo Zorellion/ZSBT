@@ -1,5 +1,10 @@
 # Changelog
 
+## 4.0.2
+
+### Fixed
+- **Client stutter from the CT probe:** the combat-text diagnostic probe installed ~140 permanent hooks at addon load for every user, including on per-frame functions. Now lazily installed on first `/zsbt ctprobe` use only; normal users carry zero hook overhead. (Users on 4.0.1 must update — the hooks cannot be removed once installed.)
+
 ## 4.0.1
 
 ### Added

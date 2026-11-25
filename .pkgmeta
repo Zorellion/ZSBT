@@ -9,3 +9,5 @@ ignore:
   - .devin/**
   - .pkgmeta
   - CLAUDE.md
+  - Tools
+  - Tools/**
