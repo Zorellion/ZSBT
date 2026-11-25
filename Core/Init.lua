@@ -2770,9 +2770,33 @@ function Addon:HandleFilterCommand(argStr)
 		self:Print(L["ZBattleText module not loaded."])
 		return
 	end
+	if input == "clear" or input == "reset" then
+		zb._userChoseAway = nil
+		zb._healAttempts = 0
+		zb._healRebuilds = 0
+		zb._popupShown = nil
+		zb._popupDismissed = nil
+		self:Print("ZBattleText session flags cleared (away/heal/popup).")
+		return
+	end
+	if input == "away" then
+		zb._userChoseAway = true
+		self:Print("Simulated manual switch-away — heal and dialog suppressed until flag clears.")
+		return
+	end
+	local n = tonumber(input:match("^attempts%s+(%d+)$"))
+	if n then
+		zb._healAttempts = n
+		self:Print(("Heal attempt counter set to %d (>=3 escalates to the dialog)."):format(n))
+		return
+	end
 	local st = zb:Status()
 	self:Print(("ZBattleText filter: trusted=%s verified=%s vetoDisabled=%s"):format(
 		tostring(st.trusted), tostring(st.verified), tostring(st.vetoDisabled)))
+	self:Print(("  away=%s healAttempts=%s healRebuilds=%s popupShown=%s dismissed=%s"):format(
+		tostring(zb._userChoseAway), tostring(zb._healAttempts or 0),
+		tostring(zb._healRebuilds or 0), tostring(zb._popupShown),
+		tostring(zb._popupDismissed)))
 	if st.reason then
 		self:Print("  reason: " .. tostring(st.reason))
 	end
