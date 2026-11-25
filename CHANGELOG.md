@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.0.5
+
+### Fixed
+- **Allocation churn in group combat:** several hot paths built throwaway objects every event — closures inside the per-frame text updater and the per-wound `UNIT_COMBAT` handler, `pcall(function() ... end)` wrappers around secret-value compares, `("..."):format(...)` strings built before gated loggers that discard them, and `"sid@at"` string keys rebuilt and re-parsed on the off-target cleave scan. All are now hoisted, lazy, or restructured; unit-aura polling also coalesces to 50ms per unit. Large pulls no longer pile up Lua garbage for the garbage collector to sweep mid-fight — the periodic pause that read as a freeze on slower machines.
+
+### Added
+- **ZSBT User Guide** ships with the addon — a plain-language walkthrough of the settings window and how attribution works.
+
 ## 4.0.4
 
 ### Fixed

@@ -8,7 +8,7 @@ local ADDON_NAME, ZSBT = ...
 ------------------------------------------------------------------------
 -- Version & Identity
 ------------------------------------------------------------------------
-ZSBT.VERSION = "4.0.4"
+ZSBT.VERSION = "4.0.5"
 ZSBT.ADDON_TITLE = "Zore's Scrolling Battle Text"
 ZSBT.ADDON_SHORT = "ZSBT"
 ZSBT.ADDON_AUTHOR = "Zorellion"
@@ -178,6 +178,14 @@ ZSBT.PET_AGGREGATION = {
 -- HasSecretValues() additionally detects secrets nested inside tables.
 -- The pcall probes remain as a last resort for clients without these APIs.
 
+-- Secret-value probes: hoisted so hot display paths can pcall() them
+-- without allocating a fresh closure per call.
+local function _secAdd0(v) return v + 0 end
+local function _secEqEmpty(v) return v == "" end
+local function _secRoundV(v) return v:round() end
+local function _secFloorV(v) return v:floor() end
+local function _secEq0(v) return v == 0 end
+
 local function hasSecret(v)
     if v == nil then return false end
     if issecretvalue and issecretvalue(v) then return true end
@@ -185,11 +193,11 @@ local function hasSecret(v)
     if HasSecretValues and HasSecretValues(v) then return true end
     -- Fallback for clients without the secret APIs: pcall probe.
     if type(v) == "number" then
-        local ok = pcall(function() return v + 0 end)
+        local ok = pcall(_secAdd0, v)
         return not ok
     end
     if type(v) == "string" then
-        local ok = pcall(function() return v == "" end)
+        local ok = pcall(_secEqEmpty, v)
         return not ok
     end
     return false
@@ -329,9 +337,9 @@ function ZSBT.RoundDisplayValue(v)
     if type(v) == "string" then
         if not ZSBT.IsSafeString or ZSBT.IsSafeString(v) then return v end
     end
-    local ok, r = pcall(function() return v:round() end)
+    local ok, r = pcall(_secRoundV, v)
     if ok and r ~= nil then _roundDbg("mround") return r end
-    local ok2, r2 = pcall(function() return v:floor() end)
+    local ok2, r2 = pcall(_secFloorV, v)
     if ok2 and r2 ~= nil then _roundDbg("mfloor") return r2 end
     local okN, rN = pcall(math.floor, v)
     if okN and rN ~= nil then _roundDbg("luafloor") return rN end
@@ -414,7 +422,7 @@ function ZSBT.DisplayAmountIsZero(v)
     if ZSBT.IsSafeNumber(v) then return v == 0 end
     -- Direct comparison: secret-number == is forbidden in tainted
     -- contexts but cheap to probe.
-    local okEq, eq = pcall(function() return v == 0 end)
+    local okEq, eq = pcall(_secEq0, v)
     if okEq then return eq == true end
     local txt = ZSBT.EvaluateDisplayAmount(v, "%.0f")
     if ZSBT.IsSafeString(txt) then

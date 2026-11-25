@@ -20,6 +20,9 @@ ZSBT.Core.Triggers = ZSBT.Core.Triggers or {}
 local Triggers = ZSBT.Core.Triggers
 
 local function Now() return (GetTime and GetTime()) or 0 end
+local function _secEq(a, b) return a == b end
+local function _secFieldEq(t, k, v) return t[k] == v end
+
 
 local function SafeToString(v)
 	local ok, s = pcall(tostring, v)
@@ -295,7 +298,7 @@ function Triggers:_IsAuraPresent(spellId)
 			local ok, name, _, count, _, _, _, _, _, sid = pcall(UnitAura, "player", i, "HELPFUL")
 			if not ok then break end
 			if not name then break end
-			local okEq, eq = pcall(function() return sid == spellId end)
+			local okEq, eq = pcall(_secEq, sid, spellId)
 			if okEq and eq then
 				aura = { applications = count }
 				break
@@ -306,7 +309,7 @@ function Triggers:_IsAuraPresent(spellId)
 				local ok, name, _, count, _, _, _, _, _, sid = pcall(UnitAura, "player", i, "HARMFUL")
 				if not ok then break end
 				if not name then break end
-				local okEq, eq = pcall(function() return sid == spellId end)
+				local okEq, eq = pcall(_secEq, sid, spellId)
 				if okEq and eq then
 					aura = { applications = count }
 					break
@@ -438,31 +441,27 @@ function Triggers:IsAuraPresentSpellId(sid)
 	-- Fallback: enumerate auras and compare spellId when provided
 	if AuraUtil and AuraUtil.ForEachAura then
 		local found = false
-		pcall(function()
-			AuraUtil.ForEachAura("player", "HELPFUL", 255, function(auraData)
+		pcall(AuraUtil.ForEachAura, "player", "HELPFUL", 255, function(auraData)
 				local asid = SafeAuraSpellId(auraData)
-				local okEq, eq = pcall(function() return asid == sid end)
+				local okEq, eq = pcall(_secEq, asid, sid)
 				if okEq and eq then found = true; return false end
 				if wantName and type(auraData) == "table" and type(auraData.name) == "string" then
-					local okNameEq, nameEq = pcall(function() return auraData.name == wantName end)
+					local okNameEq, nameEq = pcall(_secFieldEq, auraData, "name", wantName)
 					if okNameEq and nameEq then found = true; return false end
 				end
 				return true
 			end, true)
-		end)
 		if found then return true end
-		pcall(function()
-			AuraUtil.ForEachAura("player", "HARMFUL", 255, function(auraData)
+		pcall(AuraUtil.ForEachAura, "player", "HARMFUL", 255, function(auraData)
 				local asid = SafeAuraSpellId(auraData)
-				local okEq, eq = pcall(function() return asid == sid end)
+				local okEq, eq = pcall(_secEq, asid, sid)
 				if okEq and eq then found = true; return false end
 				if wantName and type(auraData) == "table" and type(auraData.name) == "string" then
-					local okNameEq, nameEq = pcall(function() return auraData.name == wantName end)
+					local okNameEq, nameEq = pcall(_secFieldEq, auraData, "name", wantName)
 					if okNameEq and nameEq then found = true; return false end
 				end
 				return true
 			end, true)
-		end)
 		return found
 	end
 
@@ -471,10 +470,10 @@ function Triggers:IsAuraPresentSpellId(sid)
 			local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
 			if not ok or not auraData then break end
 			local asid = SafeAuraSpellId(auraData)
-			local okEq, eq = pcall(function() return asid == sid end)
+			local okEq, eq = pcall(_secEq, asid, sid)
 			if okEq and eq then return true end
 			if wantName and type(auraData.name) == "string" then
-				local okNameEq, nameEq = pcall(function() return auraData.name == wantName end)
+				local okNameEq, nameEq = pcall(_secFieldEq, auraData, "name", wantName)
 				if okNameEq and nameEq then return true end
 			end
 		end
@@ -482,10 +481,10 @@ function Triggers:IsAuraPresentSpellId(sid)
 			local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HARMFUL")
 			if not ok or not auraData then break end
 			local asid = SafeAuraSpellId(auraData)
-			local okEq, eq = pcall(function() return asid == sid end)
+			local okEq, eq = pcall(_secEq, asid, sid)
 			if okEq and eq then return true end
 			if wantName and type(auraData.name) == "string" then
-				local okNameEq, nameEq = pcall(function() return auraData.name == wantName end)
+				local okNameEq, nameEq = pcall(_secFieldEq, auraData, "name", wantName)
 				if okNameEq and nameEq then return true end
 			end
 		end
@@ -496,20 +495,20 @@ function Triggers:IsAuraPresentSpellId(sid)
 		for i = 1, 40 do
 			local ok, name, _, _, _, _, _, _, _, sid2 = pcall(UnitAura, "player", i, "HELPFUL")
 			if not ok or not name then break end
-			local okEq, eq = pcall(function() return sid2 == sid end)
+			local okEq, eq = pcall(_secEq, sid2, sid)
 			if okEq and eq then return true end
 			if wantName and type(name) == "string" then
-				local okNameEq, nameEq = pcall(function() return name == wantName end)
+				local okNameEq, nameEq = pcall(_secEq, name, wantName)
 				if okNameEq and nameEq then return true end
 			end
 		end
 		for i = 1, 40 do
 			local ok, name, _, _, _, _, _, _, _, sid2 = pcall(UnitAura, "player", i, "HARMFUL")
 			if not ok or not name then break end
-			local okEq, eq = pcall(function() return sid2 == sid end)
+			local okEq, eq = pcall(_secEq, sid2, sid)
 			if okEq and eq then return true end
 			if wantName and type(name) == "string" then
-				local okNameEq, nameEq = pcall(function() return name == wantName end)
+				local okNameEq, nameEq = pcall(_secEq, name, wantName)
 				if okNameEq and nameEq then return true end
 			end
 		end

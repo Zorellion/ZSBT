@@ -791,7 +791,7 @@ local function safeHook(fnName, fn, ...)
 		_hookErrAt = t
 		local zbt = ZSBT.ZBattleText
 		if zbt and zbt.FileLog then
-			zbt:FileLog(("HOOKERR fn=%s err=%s"):format(fnName, tostring(r)))
+			zbt:FileLog("HOOKERR fn=%s err=%s", fnName, tostring(r))
 		end
 	end
 	return nil

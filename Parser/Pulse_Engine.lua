@@ -583,8 +583,7 @@ function Engine:_flushPetMerge(t)
 		local zbt = ZSBT.ZBattleText
 		if zbt and zbt.Audit then
 			local mtxt = (ZSBT.IsSafeString and ZSBT.IsSafeString(text)) and text or "<secret>"
-			zbt:Audit(("AUDMRG tids=%s sid=%s cnt=%d text=%s")
-				:format(table.concat(pm.traceIds, ","), tostring(nil), #pm.traceIds, mtxt))
+			zbt:Audit("AUDMRG tids=%s sid=%s cnt=%d text=%s", table.concat(pm.traceIds, ","), tostring(nil), #pm.traceIds, mtxt)
 		end
 	end
 
@@ -655,7 +654,7 @@ function Engine:_emitOutgoing(ev)
 	end
 	local lcp = getLCP()
 	if lcp then
-		pcall(function() lcp:Emit(ev) end)
+		pcall(lcp.Emit, lcp, ev)
 	end
 	-- During LibCombatPulse cutover, ZSBT consumes via an internal LCP forwarder.
 	-- Keep the legacy direct-call path as a fallback until cutover is enabled.
@@ -673,7 +672,7 @@ function Engine:_emitIncoming(ev)
 	end
 	local lcp = getLCP()
 	if lcp then
-		pcall(function() lcp:Emit(ev) end)
+		pcall(lcp.Emit, lcp, ev)
 	end
 	-- During LibCombatPulse cutover, ZSBT consumes via an internal LCP forwarder.
 	-- Keep the legacy direct-call path as a fallback until cutover is enabled.
@@ -916,7 +915,7 @@ function Engine:flushBucket()
 		local tNow = now()
 		if (tNow - (self._lastCooldownPollAt or 0)) >= 0.10 then
 			self._lastCooldownPollAt = tNow
-			pcall(function() cds:CheckReadyTimers(tNow) end)
+			pcall(cds.CheckReadyTimers, cds, tNow)
 		end
 	end
 	if count <= 0 then
@@ -1216,7 +1215,7 @@ function Engine:flushBucket()
 				if dbg >= 5 then
 					local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
 					if ec and ec._dbgCorrOutgoingNote then
-						pcall(function() ec:_dbgCorrOutgoingNote(sample) end)
+						pcall(ec._dbgCorrOutgoingNote, ec, sample)
 					end
 				end
 			end

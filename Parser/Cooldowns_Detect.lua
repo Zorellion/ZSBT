@@ -297,9 +297,7 @@ local function StartUsablePoll(spellId, source)
 					if ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(start) and ZSBT.IsSafeNumber(dur) and start and dur
 						and start > 0 and dur > 0 then
 						st._pollSawOnCd = true
-						local okCmp, stillOnCd = pcall(function()
-							return tNow < (start + dur - 0.05)
-						end)
+local okCmp, stillOnCd = pcall(_secCdActive, tNow, start, dur)
 						if okCmp and stillOnCd == true then
 							contradicts = true
 						end
@@ -314,9 +312,7 @@ local function StartUsablePoll(spellId, source)
 					sawAnySignal = true
 					if start > 0 and dur > 0 then
 						st._pollSawOnCd = true
-						local okCmp, isReady = pcall(function()
-							return tNow >= (start + dur - 0.05)
-						end)
+local okCmp, isReady = pcall(_secCdReady, tNow, start, dur)
 						if okCmp and isReady == true and st._pollSawOnCd == true then
 							confirmedReady = true
 						end
@@ -334,9 +330,7 @@ local function StartUsablePoll(spellId, source)
 				sawAnySignal = true
 				if start > 0 and dur > 0 then
 					st._pollSawOnCd = true
-					local okCmp, isReady = pcall(function()
-						return tNow >= (start + dur - 0.05)
-					end)
+local okCmp, isReady = pcall(_secCdReady, tNow, start, dur)
 					if okCmp and isReady == true and st._pollSawOnCd == true then
 						confirmedReady = true
 					end
@@ -427,9 +421,13 @@ local function SafeToString(v)
 	return "<secret>"
 end
 
+local function _secGet(t, k) return t[k] end
+local function _secCdActive(t, s, d) return t < (s + d - 0.05) end
+local function _secCdReady(t, s, d) return t >= (s + d - 0.05) end
+
 local function SafeField(tbl, key)
 	if type(tbl) ~= "table" then return nil, "no_table" end
-	local ok, val = pcall(function() return tbl[key] end)
+	local ok, val = pcall(_secGet, tbl, key)
 	if not ok then return nil, "secret" end
 	return val, nil
 end
