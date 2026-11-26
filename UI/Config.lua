@@ -2535,6 +2535,14 @@ UT Announcer is an Unreal Tournament–style multi-kill announcer implemented as
 
 }
 
+-- User guide topics ship in UI/UserGuide.lua; fold them into HELP_MD so the
+-- shared topic renderer finds them by docKey like any other help doc.
+if type(ZSBT.USER_GUIDE_MD) == "table" then
+	for k, v in pairs(ZSBT.USER_GUIDE_MD) do
+		HELP_MD[k] = v
+	end
+end
+
 local HELP_TOPICS = {
 	gettingStarted = { name = L["Getting Started"], docKey = "gettingStarted" },
 	general = { name = L["General"], docKey = "general" },
@@ -2589,6 +2597,41 @@ local HELP_TOPICS = {
 	troubleshooting_blizzardCombatText = { name = L["Blizzard Combat Text"], docKey = "troubleshooting_blizzardCombatText" },
 	troubleshooting_limits = { name = L["Limits"], docKey = "troubleshooting_limits" },
 	troubleshooting_bug = { name = L["Bug Report"], docKey = "troubleshooting_bug" },
+
+	guide_gettingStarted = { name = L["Getting Started"], docKey = "guide_gettingStarted" },
+	guide_quickSetup = { name = L["Quick Setup"], docKey = "guide_quickSetup" },
+	guide_general = { name = L["General"], docKey = "guide_general",
+		children = { "guide_general_system", "guide_general_masterFont", "guide_general_numbers", "guide_general_accuracy", "guide_general_media" } },
+	guide_general_system = { name = L["System"], docKey = "guide_general_system" },
+	guide_general_masterFont = { name = L["Master Font"], docKey = "guide_general_masterFont" },
+	guide_general_numbers = { name = L["Numbers"], docKey = "guide_general_numbers" },
+	guide_general_accuracy = { name = L["Outgoing Accuracy"], docKey = "guide_general_accuracy" },
+	guide_general_media = { name = L["Media"], docKey = "guide_general_media" },
+	guide_scrollAreas = { name = L["Scroll Areas"], docKey = "guide_scrollAreas" },
+	guide_combatText = { name = L["Combat Text"], docKey = "guide_combatText",
+		children = { "guide_combat_inDamage", "guide_combat_inHealing", "guide_combat_misses", "guide_combat_outDamage", "guide_combat_outHealing", "guide_combat_pets" } },
+	guide_combat_inDamage = { name = L["Incoming Damage"], docKey = "guide_combat_inDamage" },
+	guide_combat_inHealing = { name = L["Incoming Healing"], docKey = "guide_combat_inHealing" },
+	guide_combat_misses = { name = L["Incoming / Outgoing Misses"], docKey = "guide_combat_misses" },
+	guide_combat_outDamage = { name = L["Outgoing Damage"], docKey = "guide_combat_outDamage" },
+	guide_combat_outHealing = { name = L["Outgoing Healing"], docKey = "guide_combat_outHealing" },
+	guide_combat_pets = { name = L["Pet Streams"], docKey = "guide_combat_pets" },
+	guide_crits = { name = L["Crits"], docKey = "guide_crits" },
+	guide_spamControl = { name = L["Spam Control"], docKey = "guide_spamControl",
+		children = { "guide_spam_spellRules", "guide_spam_buffRules" } },
+	guide_spam_spellRules = { name = L["Spell Rules"], docKey = "guide_spam_spellRules" },
+	guide_spam_buffRules = { name = L["Buff & Debuff Rules"], docKey = "guide_spam_buffRules" },
+	guide_alerts = { name = L["Alerts"], docKey = "guide_alerts",
+		children = { "guide_alerts_notifs", "guide_alerts_triggers", "guide_alerts_cooldowns" } },
+	guide_alerts_notifs = { name = L["Notifications"], docKey = "guide_alerts_notifs" },
+	guide_alerts_triggers = { name = L["Triggers"], docKey = "guide_alerts_triggers" },
+	guide_alerts_cooldowns = { name = L["Cooldowns"], docKey = "guide_alerts_cooldowns" },
+	guide_resources = { name = L["Resources & Class Page"], docKey = "guide_resources",
+		children = { "guide_resources_counters", "guide_resources_class" } },
+	guide_resources_counters = { name = L["Resource Counters"], docKey = "guide_resources_counters" },
+	guide_resources_class = { name = L["Class Page"], docKey = "guide_resources_class" },
+	guide_profiles = { name = L["Profiles"], docKey = "guide_profiles" },
+	guide_limits = { name = L["Midnight Limits & Troubleshooting"], docKey = "guide_limits" },
 }
 
 local HELP_ORDER = {
@@ -2612,6 +2655,20 @@ local HELP_ORDER = {
 
 local TROUBLESHOOTING_ORDER = {
 	"troubleshooting",
+}
+
+local GUIDE_ORDER = {
+	"guide_gettingStarted",
+	"guide_quickSetup",
+	"guide_general",
+	"guide_scrollAreas",
+	"guide_combatText",
+	"guide_crits",
+	"guide_spamControl",
+	"guide_alerts",
+	"guide_resources",
+	"guide_profiles",
+	"guide_limits",
 }
 
 local function prettyPrintMarkdown(md)
@@ -3202,6 +3259,17 @@ function ZSBT.BuildOptionsTable()
             -- Tab 2: Profiles
             ----------------------------------------------------------------
             profiles = ZSBT.BuildTab_ProfilesRoot(),
+
+            ----------------------------------------------------------------
+            -- Tab: User Guide
+            ----------------------------------------------------------------
+            userGuide = {
+                type = "group",
+                name = L["|cFFFFD100User Guide|r"],
+                order = 8.5,
+                childGroups = "tree",
+                args = buildHelpTreeArgs(GUIDE_ORDER),
+            },
 
             ----------------------------------------------------------------
             -- Tab 9: Maintenance

@@ -3,7 +3,7 @@
 ## Title: Zore's Scrolling Battle Text
 ## Notes: Zore's Scrolling Battle Text (ZSBT) for WoW Retail 12.x
 ## Author: Zorellion
-## Version: 4.0.6
+## Version: 4.0.7
 ## SavedVariables: ZSBTDB
 ## OptionalDeps: Ace3, LibSharedMedia-3.0
 
@@ -90,6 +90,7 @@ Parser\Pulse_Engine.lua
 
 # UI - Config tabs before main config assembler
 UI\ConfigTabs.lua
+UI\UserGuide.lua
 UI\Config.lua
 UI\ConfigShell.lua
 UI\ScrollAreaFrames.lua

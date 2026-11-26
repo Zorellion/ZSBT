@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.0.7
+
+### Added
+- **In-game User Guide** — a new "User Guide" page in the `/zsbt` sidebar (between Class and Help and Support) with the full guide as navigable topics: Getting Started, Quick Setup, General, Scroll Areas, Combat Text, Crits, Spam Control, Alerts, Resources & Class Page, Profiles, and Midnight Limits & Troubleshooting. Sub-sections appear as child topics, and every topic can be opened in a separate window with Open In Window.
+
+### Fixed
+- **Blizzard FCT partial suppression no longer stomps user settings:** with any suppress mode besides "all", unhidden categories were rewritten to `1` on every login/reload/zone/regen — re-enabling floating combat text the user had turned off in game options. Hidden categories are still forced off; shown categories now restore only the CVar's pre-suppression backup value, and only when ZSBT was the one that zeroed it (tracked per-CVar in the FCT state). Categories ZSBT never touched are left alone. Same rule applies to the `enableCombatText`/`enableFloatingCombatText` master toggles.
+
 ## 4.0.6
 
 ### Added

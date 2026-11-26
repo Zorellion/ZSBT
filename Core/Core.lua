@@ -827,6 +827,33 @@ local function trySetCVarGroup(cvars, value)
 	end
 end
 
+-- Apply one FCT category. Hidden categories are forced off and marked as
+-- suppressed-by-us in st.suppressed. Shown categories restore their
+-- pre-suppression backup value ONLY when we are the ones who turned them
+-- off (marked now, or — for pre-mark backups — suppressedByZSBT is set and
+-- the cvar currently sits at 0). Categories the user controls themselves
+-- are never written.
+local function applyFCTCategory(cvars, hide, st)
+	if type(cvars) ~= "table" then return end
+	for _, cvar in ipairs(cvars) do
+		if hide then
+			trySetCVar(cvar, "0")
+			if st then
+				st.suppressed = st.suppressed or {}
+				st.suppressed[cvar] = true
+			end
+		else
+			local marked = st and st.suppressed and st.suppressed[cvar] == true
+			local backup = st and st.backup and st.backup[cvar]
+			local legacyOurs = st and st.suppressedByZSBT == true and tryGetCVar(cvar) == "0"
+			if backup ~= nil and (marked or legacyOurs) then
+				trySetCVar(cvar, backup)
+			end
+			if st and st.suppressed then st.suppressed[cvar] = nil end
+		end
+	end
+end
+
 local function getFCTStateTable()
     local db = ZSBT and ZSBT.db
     if not db then return nil end
@@ -883,6 +910,7 @@ local function clearBlizzardFCTBackup()
     st.suppressedByZSBT = false
     st.combatText = nil
     st.worldTextMinimized = false
+    st.suppressed = nil
 end
 
 local function snapshotCombatTextFramesOnce()
@@ -1206,12 +1234,12 @@ function Core:ApplyBlizzardFCTCVars()
 	local hidePet = (g.hideBlizzardFCTPet ~= false)
 
 	local hideAll = hideOutgoing and hideInDmg and hideInHeal and hideReact and hideXP and hideRes and hidePet
-	local anyShow = not hideAll
-	trySetCVar("enableCombatText", anyShow and "1" or "0")
-	trySetCVar("enableFloatingCombatText", anyShow and "1" or "0")
+	local st = getFCTStateTable()
+	applyFCTCategory({ "enableCombatText" }, hideAll, st)
+	applyFCTCategory({ "enableFloatingCombatText" }, hideAll, st)
 
-	trySetCVarGroup(BLIZZARD_FCT_OUTGOING_CVARS, hideOutgoing and "0" or "1")
-	trySetCVarGroup(BLIZZARD_FCT_INCOMING_CVARS, hideInHeal and "0" or "1")
+	applyFCTCategory(BLIZZARD_FCT_OUTGOING_CVARS, hideOutgoing, st)
+	applyFCTCategory(BLIZZARD_FCT_INCOMING_CVARS, hideInHeal, st)
 	-- CVars outside every category group (CombatState, FloatMode,
 	-- FriendlyHealers): a full suppress must take them down like the rest,
 	-- and a partial config should put back what a previous suppress
@@ -1228,7 +1256,7 @@ function Core:ApplyBlizzardFCTCVars()
 		end
 		self._fctGroupedSet = grouped
 	end
-	local orphanSt = getFCTStateTable()
+	local orphanSt = st
 	for _, cvar in ipairs(BLIZZARD_FCT_CVARS) do
 		if not self._fctGroupedSet[cvar] then
 			if hideAll then
@@ -1239,11 +1267,11 @@ function Core:ApplyBlizzardFCTCVars()
 			end
 		end
 	end
-	trySetCVarGroup(BLIZZARD_FCT_INCOMING_DAMAGE_CVARS, hideInDmg and "0" or "1")
-	trySetCVarGroup(BLIZZARD_FCT_REACTIVES_CVARS, hideReact and "0" or "1")
-	trySetCVarGroup(BLIZZARD_FCT_XP_REP_HONOR_CVARS, hideXP and "0" or "1")
-	trySetCVarGroup(BLIZZARD_FCT_RESOURCE_GAINS_CVARS, hideRes and "0" or "1")
-	trySetCVarGroup(BLIZZARD_FCT_PET_CVARS, hidePet and "0" or "1")
+	applyFCTCategory(BLIZZARD_FCT_INCOMING_DAMAGE_CVARS, hideInDmg, st)
+	applyFCTCategory(BLIZZARD_FCT_REACTIVES_CVARS, hideReact, st)
+	applyFCTCategory(BLIZZARD_FCT_XP_REP_HONOR_CVARS, hideXP, st)
+	applyFCTCategory(BLIZZARD_FCT_RESOURCE_GAINS_CVARS, hideRes, st)
+	applyFCTCategory(BLIZZARD_FCT_PET_CVARS, hidePet, st)
 
 	-- Chat-event filter for XP gain: suppresses the chat line and, on clients
 	-- where the floating XP popup is spawned by that display path, the popup
@@ -1273,7 +1301,6 @@ function Core:ApplyBlizzardFCTCVars()
 	-- inflate world text off-screen, since it affects ALL floating text
 	-- (including kinds ZSBT doesn't cover). Values chosen to match
 	-- MidnightXP's approach.
-	local st = getFCTStateTable()
 	if hideAll then
 		for _, cvar in ipairs(BLIZZARD_WORLDTEXT_SCALE_CVARS) do
 			trySetCVar(cvar, "1000")

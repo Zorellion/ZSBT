@@ -103,9 +103,11 @@ local NAV = {
 	  end },
 	{ id = "class",     label = L["|cFFFFD100Class|r"],            order = 9,
 	  customPage = true },
-	{ id = "help",      label = L["|cFFFFD100Help and Support|r"], order = 10,
+	{ id = "guide",     label = L["|cFFFFD100User Guide|r"],       order = 10,
+	  getArgs = function(a) return a.userGuide end },
+	{ id = "help",      label = L["|cFFFFD100Help and Support|r"], order = 11,
 	  getArgs = function(a) return a.maintenance end },
-	{ id = "donate",    label = L["|cFFFFD100Donate|r"],           order = 11,
+	{ id = "donate",    label = L["|cFFFFD100Donate|r"],           order = 12,
 	  customPage = true },
 }
 
