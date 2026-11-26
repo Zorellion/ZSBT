@@ -105,6 +105,8 @@ ZSBT.DEFAULTS = {
 			caststops = false,
             cooldowns = true,
             auras = true,
+            buffs = true,
+            debuffs = true,
             power = true,
             procs = true,
             triggers = true,
@@ -129,6 +131,8 @@ ZSBT.DEFAULTS = {
 			externalAddons = "Notifications",
 			cooldowns = "Notifications",
 			auras = "Notifications",
+			buffs = "Notifications",
+			debuffs = "Notifications",
 			power = "Notifications",
 			procs = "Notifications",
 			triggers = "Notifications",
@@ -152,6 +156,8 @@ ZSBT.DEFAULTS = {
 			externalAddons = "%e",
 			cooldowns = "%e",
 			auras = "%e",
+			buffs = "%e",
+			debuffs = "%e",
 			power = "%e",
 			procs = "%e",
 			triggers = "%e",
@@ -177,6 +183,8 @@ ZSBT.DEFAULTS = {
 			externalAddons = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			cooldowns = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			auras = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
+			buffs = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
+			debuffs = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			power = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			procs = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			triggers = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
@@ -406,7 +414,6 @@ ZSBT.DEFAULTS = {
             },
             routing = {
                 spellRulesDefaultArea = "Outgoing",
-                auraRulesDefaultArea = "Notifications",
             },
             templates = {
                 autoApplyOnSpecChange = false,
@@ -509,7 +516,12 @@ ZSBT.DEFAULTS = {
                 -- [spellID] = { enabled=true, throttleSec=0.20 }
             },
             auraRules = {
-                -- [spellID] = { enabled=true, throttleSec=0.00, suppressGain=false, suppressFade=false }
+                -- [spellID] = { enabled=true, suppressGain=false, suppressFade=false }
+                -- ["name:Exact Buff Name"] = same shape; matches every rank and is
+                -- the only rule form that can match secret aura names in combat.
+            },
+            debuffRules = {
+                -- same shape as auraRules; consulted for harmful auras only.
             },
         },
         cooldowns = {

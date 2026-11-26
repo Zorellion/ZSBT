@@ -631,6 +631,22 @@ end
 -- of the base scroll style's motion. Returns dx, dy to add to the base
 -- offsets (dy is up-positive, matching yOff2 semantics). The scroll style
 -- keeps owning position and alpha — the crit layer only styles the line.
+-- Fractional alpha for crit-fx echoes (afterimage/shatter copies). When the
+-- base line's alpha is a secret value (aura-visibility fold landed on it), the
+-- echoes must ride the same visibility decision — EvaluateColorValueFromBoolean
+-- accepts secrets — instead of Lua math on a value it can't touch.
+local function AE_EchoAlpha(ev, frac)
+	local okF, fa = pcall(tonumber, ev.fontAlpha)
+	local ref = ((okF and fa) or 1.0) * frac
+	local vis = ev.meta and ev.meta.auraVisibility
+	if vis and vis.visible ~= nil and C_CurveUtil and C_CurveUtil.EvaluateColorValueFromBoolean then
+		local ok, folded = pcall(C_CurveUtil.EvaluateColorValueFromBoolean, vis.visible, ref, 0)
+		if ok and folded ~= nil then return folded end
+		return 0
+	end
+	return ref
+end
+
 local function AE_ApplyCritFx(ev, fx, t)
 	local fs = ev.fs
 	if not fs then return 0, 0 end
@@ -647,6 +663,27 @@ local function AE_ApplyCritFx(ev, fx, t)
 	if inten > 3.0 then inten = 3.0 end
 	local tWave = (ev.elapsedTime ~= nil) and ev.elapsedTime or (ev.elapsed or 0)
 	local baseA = (fs.GetAlpha and fs:GetAlpha()) or (ev.fontAlpha or 1.0)
+	local baseASecret = (type(baseA) == "number") and ZSBT.IsSafeNumber and not ZSBT.IsSafeNumber(baseA)
+	if baseASecret and not ev._zsbtSecretAlphaLogged then
+		-- Diagnostic: a secret alpha reached the crit layer. Record the meta
+		-- fingerprint so '/zsbt avrep' can show what carried it.
+		ev._zsbtSecretAlphaLogged = true
+		local Core = ZSBT and ZSBT.Core
+		local ring = Core and Core._auraVisLog
+		if type(ring) == "table" then
+			local m = ev.meta
+			local keys = {}
+			if type(m) == "table" then
+				for k in pairs(m) do keys[#keys + 1] = tostring(k) end
+				table.sort(keys)
+			end
+			ring[#ring + 1] = string.format("%.2f SECALPHA fx=%s crit=%s avis=%s keys={%s}",
+				(GetTime and GetTime() or 0) % 100000,
+				tostring(fx), tostring(m and m.isCrit), tostring(m and m.auraVisibility ~= nil),
+				table.concat(keys, ","))
+			if #ring > 120 then table.remove(ring, 1) end
+		end
+	end
 	local dx, dy = 0, 0
 	local scale = 1.0
 
@@ -716,10 +753,16 @@ local function AE_ApplyCritFx(ev, fx, t)
 			pcall(ev._zsbtAfterimageFS2.SetText, ev._zsbtAfterimageFS2, (fs.GetText and fs:GetText()) or "")
 			pcall(ev._zsbtAfterimageFS2.SetTextColor, ev._zsbtAfterimageFS2, tr, tg, tb, ta)
 		end
-		local a1 = math.max(0, baseA) * (0.35 + (0.10 * inten))
-		local a2 = math.max(0, baseA) * (0.20 + (0.08 * inten))
-		if t < 0.04 then a1 = 0 end
-		if t < 0.08 then a2 = 0 end
+		local a1, a2
+		if baseASecret then
+			a1 = AE_EchoAlpha(ev, (t < 0.04) and 0 or (0.35 + (0.10 * inten)))
+			a2 = AE_EchoAlpha(ev, (t < 0.08) and 0 or (0.20 + (0.08 * inten)))
+		else
+			a1 = math.max(0, baseA) * (0.35 + (0.10 * inten))
+			a2 = math.max(0, baseA) * (0.20 + (0.08 * inten))
+			if t < 0.04 then a1 = 0 end
+			if t < 0.08 then a2 = 0 end
+		end
 		if ev._zsbtAfterimageFS1 then ev._zsbtAfterimageFS1:SetAlpha(a1) end
 		if ev._zsbtAfterimageFS2 then ev._zsbtAfterimageFS2:SetAlpha(a2) end
 
@@ -758,7 +801,8 @@ local function AE_ApplyCritFx(ev, fx, t)
 		end
 		local burst = math.min(1.0, t / 0.18)
 		local dist = (18 + (42 * inten)) * burst
-		local ghostAlpha = math.max(0, baseA) * (0.18 + (0.06 * inten))
+		local ghostAlpha = baseASecret and AE_EchoAlpha(ev, 0.18 + (0.06 * inten))
+			or (math.max(0, baseA) * (0.18 + (0.06 * inten)))
 		if ev._zsbtShatterFS and ev._zsbtShatterDir then
 			for i = 1, #ev._zsbtShatterFS do
 				local sfs = ev._zsbtShatterFS[i]
@@ -875,6 +919,43 @@ local function AE_AnchorOriginX(ev)
 		return (ev.scrollWidth or ev.areaW or 0)
 	end
 	return 0
+end
+
+-- Secret aura-visibility fold (name:-rule blacklist on secret aura names):
+-- meta.auraVisibility carries a secret boolean produced by
+-- Core:SecretAuraVisibility through native collation APIs. Lua can't branch
+-- on it, so EvaluateColorValueFromBoolean selects alpha-vs-0 inside C code
+-- and the FontString renders at 0. Icon FSs inherit the folded alpha from
+-- their ev.fs:GetAlpha() copies, so callers place this BEFORE those copies.
+local _AE_SelectVisibilityAlpha = (C_CurveUtil and C_CurveUtil.EvaluateColorValueFromBoolean) or nil
+local function AE_FoldVisibilityAlpha(fs, meta)
+	local vis = meta and meta.auraVisibility
+	if not vis or vis.visible == nil then return end
+	if not _AE_SelectVisibilityAlpha then return end
+	if not fs or not fs.GetAlpha or not fs.SetAlpha then return end
+	local okA, curA = pcall(fs.GetAlpha, fs)
+	if not okA or curA == nil then return end
+	local okS, selA = pcall(_AE_SelectVisibilityAlpha, vis.visible, curA, 0)
+	if okS and selA ~= nil then
+		pcall(fs.SetAlpha, fs, selA)
+		if not meta._visFoldLogged then
+			-- Diagnostic (one per event): which meta carried the secret fold.
+			meta._visFoldLogged = true
+			local Core = ZSBT and ZSBT.Core
+			local ring = Core and Core._auraVisLog
+			if type(ring) == "table" then
+				local sid = meta.spellId
+				local sidT = (type(sid) == "number")
+					and ((ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(sid)) and tostring(sid) or "<sec>")
+					or tostring(sid)
+				ring[#ring + 1] = string.format("%.2f FOLD kind=%s cat=%s crit=%s sid=%s",
+					(GetTime and GetTime() or 0) % 100000,
+					tostring(meta.kind), tostring(meta.category),
+					tostring(meta.isCrit), sidT)
+				if #ring > 120 then table.remove(ring, 1) end
+			end
+		end
+	end
 end
 
 local function AE_UpdateEvent(ev, dt)
@@ -1504,7 +1585,7 @@ local function AE_UpdateEvent(ev, dt)
 				-- Defensive: ensure the FontString isn't left invisible/blank by any external state.
 				if ev.fs and ev.fs.GetAlpha and ev.fs.SetAlpha then
 					local okA, aNow = pcall(ev.fs.GetAlpha, ev.fs)
-					if okA and (aNow == nil or aNow <= 0) then
+					if okA and (type(aNow) ~= "number" or ((ZSBT.IsSafeNumber == nil or ZSBT.IsSafeNumber(aNow)) and aNow <= 0)) then
 						pcall(ev.fs.SetAlpha, ev.fs, math.max(0.01, (ev.fontAlpha or 1.0)))
 					end
 				end
@@ -1567,7 +1648,8 @@ local function AE_UpdateEvent(ev, dt)
 	-- reference Straight/Parabola doesn't apply extra post-fade; it can cause visible jitter.
 	if styleId ~= "Straight" and styleId ~= "Parabola" and styleId ~= "Pow" and styleId ~= "Slam" then
 		local currentAlpha = ev.fs:GetAlpha()
-		local absY = math.abs(laneOff + yOff2)
+		local alphaSecret = (type(currentAlpha) == "number") and ZSBT.IsSafeNumber and not ZSBT.IsSafeNumber(currentAlpha)
+		local absY = alphaSecret and 0 or math.abs(laneOff + yOff2)
 		local fadeStart = ev.areaH * 0.75
 		local fadeEnd = ev.areaH * 1.2
 		if absY > fadeStart then
@@ -1576,6 +1658,8 @@ local function AE_UpdateEvent(ev, dt)
 			ev.fs:SetAlpha(math.max(0, currentAlpha))
 		end
 	end
+
+	AE_FoldVisibilityAlpha(ev.fs, ev.meta)
 
 	if ev.iconFS then
 		ev.iconFS:SetAlpha(ev.fs:GetAlpha())
@@ -1990,6 +2074,7 @@ RecycleFontString = function(fs)
     if not fs then return end
     fs:Hide()
     fs:SetParent(recyclingBin)
+	pcall(fs.SetAlpha, fs, 1)  -- clear any secret/leftover alpha before pooling
 	pcall(fs.SetShadowColor, fs, 0, 0, 0, 0)
 	pcall(fs.SetShadowOffset, fs, 0, 0)
 	pcall(fs.SetRotation, fs, 0)
@@ -2007,6 +2092,7 @@ RecycleIconFS = function(fs)
     if not fs then return end
     fs:Hide()
     fs:SetParent(recyclingBin)
+    pcall(fs.SetAlpha, fs, 1)  -- clear any secret/leftover alpha before pooling
     local okFont, fontPath = pcall(fs.GetFont, fs)
     if okFont and not fontPath and fs.SetFont then
         pcall(fs.SetFont, fs, STANDARD_TEXT_FONT, 12, "")
@@ -3604,8 +3690,10 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
 
         -- Edge fade: smoothly fade text near top/bottom of area.
         -- Text can go ~20% past the edge before fully invisible.
+        -- Skip when the alpha is a secret value (aura-visibility fold owns it).
         local currentAlpha = fs:GetAlpha()
-        local absY = math.abs(slotOffset + yOff2)
+        local alphaSecret = (type(currentAlpha) == "number") and ZSBT.IsSafeNumber and not ZSBT.IsSafeNumber(currentAlpha)
+        local absY = alphaSecret and 0 or math.abs(slotOffset + yOff2)
         local fadeStart = areaH * 0.75  -- start fading at 75% of area
         local fadeEnd = areaH * 1.2     -- fully invisible at 120% (slightly past edge)
         if absY > fadeStart then
@@ -3613,6 +3701,8 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
             currentAlpha = currentAlpha * edgeFade
             fs:SetAlpha(math.max(0, currentAlpha))
         end
+
+        AE_FoldVisibilityAlpha(fs, meta)
 
         -- Position icon to the left of text, matching alpha
         if iconTex then

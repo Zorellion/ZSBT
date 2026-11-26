@@ -1,5 +1,21 @@
 # Changelog
 
+## 4.0.6
+
+### Added
+- **Buff Tracking / Debuff Tracking leaves under Alerts → Notifications** — each gets its own Enabled, Route To, per-category Style (Color, Font Override), Show-Gains/Fades-Without-Rules toggles, and a button to its rules manager. Aura notifications now flow through real `buffs`/`debuffs` categories with independent routing, colors, and fonts.
+- **Debuff Rules Manager** — a fully separate window from Buff Rules Manager, with its own Recently Seen Debuffs list, its own `debuffRules` table, and harm-aware matching (buff rules can't suppress debuffs and vice versa). Opens from the Debuff Tracking leaf.
+- **Icons on aura notifications** — buff/debuff gains and fades render the spell icon again, resolved from the emit's spellID (secret spellIDs still resolve via the existing cast-match/recast paths).
+
+### Changed
+- **Aura rules simplified to Enabled / Hide Gain / Hide Fade** — per-rule scroll-area and throttle options removed; they could never apply to secret-named auras in combat anyway, so the rule surface now shows only what can actually execute. Per-rule sounds are likewise impossible (Blizzard blocks every secret→Lua channel — verified live), so sound controls were removed from the tracking leaves rather than left as dead UI.
+- **Split the `auras` notification category** into `buffs` and `debuffs` (migration `auraCategories_v1` copies existing settings to both).
+
+### Fixed
+- **Disabled aura rules now revert to default behavior** — unchecking Enabled on a rule treats it as nonexistent (was: it suppressed the aura outright — inverted semantics on both the readable and secret paths).
+- **Self-buffs flagged `Aura is Debuff`** (Fel Armor, Necrotic Wave, Stagger-style damage-delay/heal-absorb trackers) correctly classify as debuffs — Blizzard's polarity flag reflects the mechanical effect, so they live in Debuff Tracking / Debuff Rules where they can be hidden by rule.
+- **Aura-category settings migrate correctly** — `notificationsPerType` deep-copied so buffs and debuffs don't share the same style/sound tables.
+
 ## 4.0.5
 
 ### Fixed

@@ -428,10 +428,59 @@ function Addon:OnInitialize()
 		self.db.global.migrations.deadFeedMode_v1 = true
 	end
 
+	-- Aura category split: the single "auras" notification category became
+	-- "buffs" + "debuffs" so each has its own enable/route/style. Copy the
+	-- old auras settings to both new keys where unset (once per profile).
+	local function migrateAuraCategories_v1()
+		if not self.db then return end
+		self.db.global = self.db.global or {}
+		self.db.global.migrations = self.db.global.migrations or {}
+		if self.db.global.migrations.auraCategories_v1 == true then return end
+
+		local function deepCopy(src, seen)
+			if type(src) ~= "table" then return src end
+			seen = seen or {}
+			if seen[src] then return seen[src] end
+			local dst = {}
+			seen[src] = dst
+			for k, v in pairs(src) do dst[deepCopy(k, seen)] = deepCopy(v, seen) end
+			return dst
+		end
+
+		local profiles = self.db.profiles
+		if type(profiles) == "table" then
+			for _, prof in pairs(profiles) do
+				if type(prof) == "table" then
+					for _, newKey in ipairs({ "buffs", "debuffs" }) do
+						local n = prof.notifications
+						if type(n) == "table" and n[newKey] == nil and n.auras ~= nil then
+							n[newKey] = n.auras
+						end
+						local t = prof.notificationsTemplates
+						if type(t) == "table" and t[newKey] == nil and t.auras ~= nil then
+							t[newKey] = t.auras
+						end
+						local r = prof.notificationsRouting
+						if type(r) == "table" and r[newKey] == nil and r.auras ~= nil then
+							r[newKey] = r.auras
+						end
+						local pt = prof.notificationsPerType
+						if type(pt) == "table" and pt[newKey] == nil and type(pt.auras) == "table" then
+							pt[newKey] = deepCopy(pt.auras)
+						end
+					end
+				end
+			end
+		end
+
+		self.db.global.migrations.auraCategories_v1 = true
+	end
+
 	migrateGeneralDefaultsOnce()
 	migrateGeneralDefaults_v2()
 	migrateOutgoingTiers_v1()
 	migrateDeadFeedMode_v1()
+	migrateAuraCategories_v1()
 
 	-- Legacy combat-log filters: ZSBT 3.4-3.6 and 4.x installed a "ZSBT"
 	-- filter (and the embedded ZCT a "ZCT" filter) into
@@ -1633,6 +1682,16 @@ function Addon:OnInitialize()
 								end
 								changed = true
 							end
+							dst.spamControl.debuffRules = dst.spamControl.debuffRules or {}
+							local srcDRules = src.spamControl and src.spamControl.debuffRules
+							if type(srcDRules) == "table" then
+								if mode == "replace" then
+									replaceTable(dst.spamControl.debuffRules, srcDRules)
+								else
+									mergeMissing(dst.spamControl.debuffRules, srcDRules)
+								end
+								changed = true
+							end
 						end
 						if copyTriggers then
 							dst.triggers = dst.triggers or { enabled = true, items = {} }
@@ -1672,6 +1731,7 @@ function Addon:OnInitialize()
 							if ACR2 then
 								pcall(function() ACR2:NotifyChange("ZSBT_SpellRules") end)
 								pcall(function() ACR2:NotifyChange("ZSBT_BuffRules") end)
+								pcall(function() ACR2:NotifyChange("ZSBT_DebuffRules") end)
 								pcall(function() ACR2:NotifyChange("ZSBT") end)
 							end
 							if addon and addon.Print then addon:Print(L["Copied rules/triggers from "] .. tostring(fromKey) .. " (" .. tostring(mode) .. ").") end
@@ -1857,6 +1917,13 @@ function Addon:OnInitialize()
 			self.configDialog:SetDefaultSize("ZSBT_BuffRules", 760, 620)
 		end
 
+		if ZSBT.BuildDebuffRulesOptionsTable then
+			ACR:RegisterOptionsTable("ZSBT_DebuffRules", function()
+				return ZSBT.BuildDebuffRulesOptionsTable()
+			end)
+			self.configDialog:SetDefaultSize("ZSBT_DebuffRules", 760, 620)
+		end
+
 		if ZSBT.BuildSpellRuleEditorOptionsTable then
 			ACR:RegisterOptionsTable("ZSBT_SpellRuleEditor", function()
 				return ZSBT.BuildSpellRuleEditorOptionsTable()
@@ -1869,6 +1936,13 @@ function Addon:OnInitialize()
 				return ZSBT.BuildBuffRuleEditorOptionsTable()
 			end)
 			self.configDialog:SetDefaultSize("ZSBT_BuffRuleEditor", 520, 470)
+		end
+
+		if ZSBT.BuildDebuffRuleEditorOptionsTable then
+			ACR:RegisterOptionsTable("ZSBT_DebuffRuleEditor", function()
+				return ZSBT.BuildDebuffRuleEditorOptionsTable()
+			end)
+			self.configDialog:SetDefaultSize("ZSBT_DebuffRuleEditor", 520, 470)
 		end
 
 		if ZSBT.BuildTriggerEditorOptionsTable then
@@ -2461,7 +2535,7 @@ function Addon:HandleSlashCommand(input)
             self:Print("perf stats cleared")
         else
             perf:report(function(s) self:Print(s) end)
-            self:Print("perf tracing is " .. (perf.on and "ON" or "OFF") .. " — /zsbt perf on|off|reset|report")
+            self:Print("perf tracing is " .. (perf.on and "ON" or "OFF") .. " — /zsbt perf on/off/reset/report")
         end
         return
     elseif cmd == "filter" then
@@ -2541,6 +2615,51 @@ function Addon:HandleSlashCommand(input)
         return
     elseif cmd == "auditreport" or cmd == "arep" then
         self:HandleAuditReport()
+        return
+    elseif cmd == "avrep" or cmd == "auravis" then
+        -- Dump the aura-visibility/blacklist debug ring plus the configured
+        -- rule set — shows what each aura emit saw (sid/name safety, rule
+        -- match, trust) and whether the secret gate computed a visibility.
+        local core = ZSBT.Core
+        local ring = core and core._auraVisLog
+        if type(ring) ~= "table" or #ring == 0 then
+            self:Print("avrep: ring empty — gain/fade an aura first.")
+        else
+            self:Print("--- aura-visibility log (last " .. #ring .. ") ---")
+            local start = math.max(1, #ring - 39)
+            for i = start, #ring do self:Print(ring[i]) end
+        end
+        local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+        local nBuffNum, nBuffName, nDebuffNum, nDebuffName = 0, 0, 0, 0
+        local function dumpRulesTable(rules, tag, onNum, onName)
+            if type(rules) ~= "table" then return end
+            for k, r in pairs(rules) do
+                if type(k) == "number" then
+                    onNum()
+                    if type(r) == "table" and (r.enabled == false or r.suppressGain == true or r.suppressFade == true) then
+                        local nm = (ZSBT.CleanSpellName and ZSBT.CleanSpellName(k)) or (GetSpellInfo and GetSpellInfo(k)) or "?"
+                        self:Print(("rule [%s] #%s '%s' enabled=%s hideGain=%s hideFade=%s"):format(
+                            tag, tostring(k), tostring(nm), tostring(r.enabled ~= false),
+                            tostring(r.suppressGain == true), tostring(r.suppressFade == true)))
+                    end
+                elseif type(k) == "string" and k:sub(1, 5) == "name:" then
+                    onName()
+                    if type(r) == "table" then
+                        self:Print(("rule [%s] %s enabled=%s hideGain=%s hideFade=%s"):format(
+                            tag, k, tostring(r.enabled ~= false), tostring(r.suppressGain == true),
+                            tostring(r.suppressFade == true)))
+                    else
+                        self:Print(("rule [%s] %s = %s"):format(tag, k, tostring(r)))
+                    end
+                end
+            end
+        end
+        dumpRulesTable(sc and sc.auraRules, "buff", function() nBuffNum = nBuffNum + 1 end, function() nBuffName = nBuffName + 1 end)
+        dumpRulesTable(sc and sc.debuffRules, "debuff", function() nDebuffNum = nDebuffNum + 1 end, function() nDebuffName = nDebuffName + 1 end)
+        self:Print(("avrep: buffRules=%d/%d debuffRules=%d/%d intlAPIs=%s"):format(
+            nBuffNum, nBuffName, nDebuffNum, nDebuffName,
+            tostring(C_Intl and C_StringUtil and C_CurveUtil and Enum
+                and Enum.CollationStrength and Enum.NormalizationForm ~= nil)))
         return
     elseif cmd == "dumpcvars" then
 		local function safeGet(name)
@@ -2635,6 +2754,12 @@ function Addon:OpenBuffRulesManager()
     end
 end
 
+function Addon:OpenDebuffRulesManager()
+    if self.configDialog then
+        self.configDialog:Open("ZSBT_DebuffRules")
+    end
+end
+
 function Addon:OpenResourceCounterConfig(powerType)
 	powerType = tonumber(powerType)
 	if not powerType then return end
@@ -2659,10 +2784,20 @@ function Addon:OpenSpellRuleEditor(spellID)
 end
 
 function Addon:OpenBuffRuleEditor(spellID)
-	if type(spellID) ~= "number" then return end
+	if type(spellID) ~= "number"
+		and not (type(spellID) == "string" and spellID:sub(1, 5) == "name:") then return end
 	ZSBT._editingBuffRuleSpellID = spellID
 	if self.configDialog then
 		self.configDialog:Open("ZSBT_BuffRuleEditor")
+	end
+end
+
+function Addon:OpenDebuffRuleEditor(spellID)
+	if type(spellID) ~= "number"
+		and not (type(spellID) == "string" and spellID:sub(1, 5) == "name:") then return end
+	ZSBT._editingDebuffRuleSpellID = spellID
+	if self.configDialog then
+		self.configDialog:Open("ZSBT_DebuffRuleEditor")
 	end
 end
 

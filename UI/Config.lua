@@ -19,6 +19,7 @@ local LSM = LibStub("LibSharedMedia-3.0")
 
 ZSBT._editingSpellRuleSpellID = ZSBT._editingSpellRuleSpellID or nil
 ZSBT._editingBuffRuleSpellID = ZSBT._editingBuffRuleSpellID or nil
+ZSBT._editingDebuffRuleSpellID = ZSBT._editingDebuffRuleSpellID or nil
 ZSBT._editingTriggerIndex = ZSBT._editingTriggerIndex or nil
 
 function ZSBT.ResolveSpellInputToID(input)
@@ -281,6 +282,20 @@ function ZSBT.BuildBuffRulesOptionsTable()
     return {
         type = "group",
 		name = L["|cFFFFD100Buff Rules|r"],
+		childGroups = "tab",
+		args = args,
+    }
+end
+
+function ZSBT.BuildDebuffRulesOptionsTable()
+    assert(ZSBT.BuildTab_DebuffRulesManager, L["ConfigTabs.lua must be loaded before Config.lua"])
+
+	local tab = ZSBT.BuildTab_DebuffRulesManager()
+	local args = (tab and tab.args) or {}
+
+    return {
+        type = "group",
+		name = L["|cFFFFD100Debuff Rules|r"],
 		childGroups = "tab",
 		args = args,
     }
@@ -1376,17 +1391,35 @@ function ZSBT.BuildSpellRuleEditorOptionsTable()
 	}
 end
 
-function ZSBT.BuildBuffRuleEditorOptionsTable()
+local function BuildAuraRuleEditorTable(rulesKey, idField, titleKey, headerKey, noSelKey)
+	local function getId() return ZSBT[idField] end
+	local function getRule()
+		local id = getId()
+		local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+		local rules = sc and sc[rulesKey]
+		return rules and id and rules[id]
+	end
+	local function ensureRule()
+		local id = getId()
+		local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+		if not (sc and (type(id) == "number" or type(id) == "string")) then return nil, nil end
+		sc[rulesKey] = sc[rulesKey] or {}
+		sc[rulesKey][id] = sc[rulesKey][id] or {}
+		return sc[rulesKey][id]
+	end
 	return {
 		type = "group",
-		name = L["Buff Rule Editor"],
+		name = L[titleKey],
 		args = {
-			header = { type = "header", name = L["Edit Buff Rule"], order = 1 },
+			header = { type = "header", name = L[headerKey], order = 1 },
 			spellLabel = {
 				type = "description",
 				name = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					if type(id) ~= "number" then return L["No buff selected."] end
+					local id = getId()
+					if type(id) == "string" and id:sub(1, 5) == "name:" then
+						return id:sub(6) .. L["  |cFF888888(name rule)|r"]
+					end
+					if type(id) ~= "number" then return L[noSelKey] end
 					local name = (C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(id) and C_Spell.GetSpellInfo(id).name) or (GetSpellInfo and GetSpellInfo(id))
 					name = name or (L["Spell #"] .. tostring(id))
 					return name .. L["  |cFF888888(ID: "] .. tostring(id) .. ")|r"
@@ -1400,18 +1433,12 @@ function ZSBT.BuildBuffRuleEditorOptionsTable()
 				order = 3,
 				width = "full",
 				get = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local r = getRule()
 					return type(r) == "table" and r.enabled ~= false
 				end,
 				set = function(_, v)
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					if not (sc and type(id) == "number") then return end
-					sc.auraRules = sc.auraRules or {}
-					sc.auraRules[id] = sc.auraRules[id] or {}
-					sc.auraRules[id].enabled = v and true or false
+					local r = ensureRule()
+					if r then r.enabled = v and true or false end
 				end,
 			},
 			hideGain = {
@@ -1420,18 +1447,12 @@ function ZSBT.BuildBuffRuleEditorOptionsTable()
 				order = 4,
 				width = "full",
 				get = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local r = getRule()
 					return type(r) == "table" and r.suppressGain == true
 				end,
 				set = function(_, v)
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					if not (sc and type(id) == "number") then return end
-					sc.auraRules = sc.auraRules or {}
-					sc.auraRules[id] = sc.auraRules[id] or {}
-					sc.auraRules[id].suppressGain = v and true or false
+					local r = ensureRule()
+					if r then r.suppressGain = v and true or false end
 				end,
 			},
 			hideFade = {
@@ -1440,76 +1461,26 @@ function ZSBT.BuildBuffRuleEditorOptionsTable()
 				order = 5,
 				width = "full",
 				get = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
+					local r = getRule()
 					return type(r) == "table" and r.suppressFade == true
 				end,
 				set = function(_, v)
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					if not (sc and type(id) == "number") then return end
-					sc.auraRules = sc.auraRules or {}
-					sc.auraRules[id] = sc.auraRules[id] or {}
-					sc.auraRules[id].suppressFade = v and true or false
-				end,
-			},
-			throttle = {
-				type = "range",
-				name = L["Throttle (sec)"],
-				desc = L["Minimum time between notifications for this buff (gain/fade tracked separately)."],
-				order = 6,
-				min = 0,
-				max = 10.0,
-				softMax = 2.0,
-				step = 0.05,
-				get = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					return type(r) == "table" and (tonumber(r.throttleSec) or 0) or 0
-				end,
-				set = function(_, v)
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					if not (sc and type(id) == "number") then return end
-					sc.auraRules = sc.auraRules or {}
-					sc.auraRules[id] = sc.auraRules[id] or {}
-					sc.auraRules[id].throttleSec = tonumber(v) or 0
-				end,
-			},
-			scrollArea = {
-				type = "select",
-				name = L["Scroll Area Override"],
-				desc = L["Optional: override the default Buff Rules scroll area for this buff."],
-				order = 7,
-				values = function()
-					local v = { ["(Default)"] = "(Default)" }
-					local names = ZSBT.GetScrollAreaNames()
-					for k, name in pairs(names) do v[k] = name end
-					return v
-				end,
-				get = function()
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					local r = sc and sc.auraRules and id and sc.auraRules[id]
-					return (type(r) == "table" and type(r.scrollArea) == "string" and r.scrollArea ~= "") and r.scrollArea or "(Default)"
-				end,
-				set = function(_, v)
-					local id = ZSBT._editingBuffRuleSpellID
-					local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-					if not (sc and type(id) == "number") then return end
-					sc.auraRules = sc.auraRules or {}
-					sc.auraRules[id] = sc.auraRules[id] or {}
-					if v == "(Default)" then
-						sc.auraRules[id].scrollArea = nil
-					else
-						sc.auraRules[id].scrollArea = (type(v) == "string" and v ~= "") and v or nil
-					end
+					local r = ensureRule()
+					if r then r.suppressFade = v and true or false end
 				end,
 			},
 		},
 	}
+end
+
+function ZSBT.BuildBuffRuleEditorOptionsTable()
+	return BuildAuraRuleEditorTable("auraRules", "_editingBuffRuleSpellID",
+		"Buff Rule Editor", "Edit Buff Rule", "No buff selected.")
+end
+
+function ZSBT.BuildDebuffRuleEditorOptionsTable()
+	return BuildAuraRuleEditorTable("debuffRules", "_editingDebuffRuleSpellID",
+		"Debuff Rule Editor", "Edit Debuff Rule", "No debuff selected.")
 end
 
 ------------------------------------------------------------------------
@@ -1973,21 +1944,23 @@ The Spell Rules Manager includes **Recently Seen Spells**:
   - Or keep throttle very low.
 
 ## Buff Rules (Notifications)
-Buff Rules let you control which **buff gain/fade notifications** you see.
+Buff Rules let you control which **buff/debuff gain/fade notifications** you see.
 
 - **What Buff Rules affect**
   - Notifications for your own auras/procs (gain/fade).
 - **What Buff Rules do**
   - Allow you to:
-    - enable/disable a buff’s notifications
+    - enable/disable an aura’s notifications
     - suppress Gain and/or Fade independently
-    - add a per-buff throttle (spam control)
+  - Rules can be added by spell ID or by exact aura name. Name rules are the
+    only form that can match hidden (secret) aura names during combat.
 - **Where to configure**
-  - `/zsbt` -> `Combat Text` -> `Spam Control` -> `Open Buff Rules Manager`
+  - `/zsbt` -> `Alerts` -> `Notifications` -> `Buff Tracking` / `Debuff Tracking`
 
-### “Whitelist mode” (only show configured buffs)
-The Spam Control tab has toggles that control whether **unconfigured** buffs are allowed:
-- If you disable showing gains/fades without rules, only buffs with a Buff Rule will display.
+### “Whitelist mode” (only show configured auras)
+The Buff Tracking / Debuff Tracking pages have toggles that control whether
+**unconfigured** auras are allowed:
+- If you disable showing gains/fades without rules, only auras with a rule will display.
 
 ### Recently Seen Buffs
 The Buff Rules Manager includes **Recently Seen Buffs**:
@@ -3758,8 +3731,10 @@ function ZSBT.ApplyStrikeSilverStyling()
         return appName == "ZSBT"
             or appName == "ZSBT_SpellRules"
             or appName == "ZSBT_BuffRules"
+            or appName == "ZSBT_DebuffRules"
             or appName == "ZSBT_SpellRuleEditor"
             or appName == "ZSBT_BuffRuleEditor"
+            or appName == "ZSBT_DebuffRuleEditor"
             or appName == "ZSBT_TriggerEditor"
             or appName == "ZSBT_ResourceCounter"
             or appName == "ZSBT_Debug"

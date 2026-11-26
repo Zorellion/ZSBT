@@ -91,10 +91,7 @@ function Core:IsMasterEnabled()
        and ZSBT.db.profile.general.enabled == true
 end
 
-function Core:RecordRecentBuff(spellID)
-	if type(spellID) ~= "number" then return end
-	if not self._recentBuffStats then self._recentBuffStats = {} end
-	local stats = self._recentBuffStats
+local function recordRecentStats(stats, spellID)
 	local now = GetTime and GetTime() or 0
 	local entry = stats[spellID]
 	if type(entry) ~= "table" then
@@ -120,13 +117,30 @@ function Core:RecordRecentBuff(spellID)
 	end
 end
 
-local function getAuraRuleForSpell(spellID)
+function Core:RecordRecentBuff(spellID)
+	if type(spellID) ~= "number" then return end
+	if not self._recentBuffStats then self._recentBuffStats = {} end
+	recordRecentStats(self._recentBuffStats, spellID)
+end
+
+function Core:RecordRecentDebuff(spellID)
+	if type(spellID) ~= "number" then return end
+	if not self._recentDebuffStats then self._recentDebuffStats = {} end
+	recordRecentStats(self._recentDebuffStats, spellID)
+end
+
+local function getAuraRulesTable(isHarmful)
 	local sc = ZSBT and ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-	local rules = sc and sc.auraRules
+	if not sc then return nil end
+	return (isHarmful == true) and sc.debuffRules or sc.auraRules
+end
+
+local function getAuraRuleForSpell(spellID, isHarmful)
+	local rules = getAuraRulesTable(isHarmful)
 	if type(spellID) ~= "number" or type(rules) ~= "table" then return nil end
 	local rule = rules[spellID]
 	if type(rule) ~= "table" then return nil end
-	if rule.enabled == false then return { disabled = true } end
+	if rule.enabled == false then return nil end
 	return rule
 end
 
@@ -138,7 +152,7 @@ function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride, auraName, 
 			isHarmful = ok and aura ~= nil
 		end
 	end
-	local rule = getAuraRuleForSpell(spellID)
+	local rule = getAuraRuleForSpell(spellID, isHarmful)
 	local ruleKey = nil
 	if rule ~= nil then
 		ruleKey = (type(spellID) == "number") and spellID or nil
@@ -147,15 +161,11 @@ function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride, auraName, 
 	-- consulted when no spellID rule exists and the name is readable.
 	if rule == nil and type(auraName) == "string"
 		and ZSBT.IsSafeString and ZSBT.IsSafeString(auraName) then
-		local scn = ZSBT and ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-		local rules = scn and scn.auraRules
+		local rules = getAuraRulesTable(isHarmful)
 		local nkey = "name:" .. auraName
 		local nr = type(rules) == "table" and rules[nkey] or nil
-		if type(nr) == "table" then
-			rule = (nr.enabled == false) and { disabled = true } or nr
-			ruleKey = nkey
-		elseif nr == false then
-			rule = { disabled = true }
+		if type(nr) == "table" and nr.enabled ~= false then
+			rule = nr
 			ruleKey = nkey
 		end
 	end
@@ -219,18 +229,6 @@ function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride, auraName, 
 	if ruleKey == nil then
 		return true
 	end
-	if rule.disabled then 
-		if dl >= 4 then
-			if Addon and Addon.Dbg then
-				Addon:Dbg("core", 4, "[AURA] ShouldEmit: rule disabled sid=" .. tostring(spellID))
-			else
-				local ZSBTAddon = ZSBT and ZSBT.Addon
-				if ZSBTAddon and ZSBTAddon.Print then ZSBTAddon:Print("[AURA] ShouldEmit: rule disabled sid=" .. tostring(spellID)) end
-			end
-		end
-		return false 
-	end
-
 	if isGain and rule.suppressGain then 
 		if dl >= 4 then
 			if Addon and Addon.Dbg then
@@ -254,22 +252,175 @@ function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride, auraName, 
 		return false 
 	end
 
-	local throttle = tonumber(rule.throttleSec) or 0
-	if throttle <= 0 then return true end
-
-	if not self._auraRuleLastShown then self._auraRuleLastShown = {} end
-	local state = self._auraRuleLastShown[ruleKey]
-	if type(state) ~= "table" then
-		state = { gain = 0, fade = 0 }
-		self._auraRuleLastShown[ruleKey] = state
-	end
-	local now = GetTime and GetTime() or 0
-	local key = isGain and "gain" or "fade"
-	if (now - (state[key] or 0)) < throttle then
-		return false
-	end
-	state[key] = now
 	return true
+end
+
+------------------------------------------------------------------------
+-- Secret aura-name matching
+-- A secret string can never be compared in Lua, so name:-keyed auraRules
+-- are matched inside native secret-accepting APIs (same collation pipeline
+-- MSBT uses): CompareStrings yields a secret number (0 = identical),
+-- TruncateWhenZero -> WrapString injects a non-NFC marker on mismatch,
+-- IsNormalized folds that back into a secret boolean, and
+-- EvaluateColorValueFromBoolean accumulates the per-rule result. The
+-- returned {visible=...} object is threaded to the display layer, which
+-- applies it as font alpha without Lua ever branching on the secret.
+-- Direction flags (enabled / suppressGain / suppressFade) are public
+-- config, so gain-vs-fade suppression stays selective on secret names.
+------------------------------------------------------------------------
+-- Debug ring for the aura-visibility/blacklist path. Ungated on purpose —
+-- the user runs '/zsbt avrep' to dump it; records only safe values.
+Core._auraVisLog = Core._auraVisLog or {}
+local AURA_VIS_LOG_MAX = 120
+local function AuraVisLog(msg)
+	local ring = Core._auraVisLog
+	if type(ring) ~= "table" then return end
+	ring[#ring + 1] = string.format("%.2f %s", (GetTime and GetTime() or 0) % 100000, msg)
+	if #ring > AURA_VIS_LOG_MAX then table.remove(ring, 1) end
+end
+
+-- Decision logging wrapper: records what ShouldEmitBuffNotif saw and
+-- decided — the read side of '/zsbt avrep' for blacklist debugging.
+local _rawShouldEmitBuffNotif = Core.ShouldEmitBuffNotif
+function Core:ShouldEmitBuffNotif(spellID, isGain, isHarmfulOverride, auraName, trusted)
+	local r = _rawShouldEmitBuffNotif(self, spellID, isGain, isHarmfulOverride, auraName, trusted)
+	local sidT = "nil"
+	if type(spellID) == "number" then
+		sidT = (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(spellID)) and tostring(spellID) or "<sec>"
+	end
+	local nmT = "nil"
+	if type(auraName) == "string" then
+		nmT = (ZSBT.IsSafeString and ZSBT.IsSafeString(auraName)) and auraName or "<sec>"
+	end
+	AuraVisLog(("SEBN %s sid=%s nm=%s harm=%s tr=%s -> %s"):format(
+		isGain and "G" or "F", sidT, nmT,
+		tostring(isHarmfulOverride == true), tostring(trusted == true), tostring(r)))
+	return r
+end
+
+local _secretIntlReady = nil
+local function SecretIntlReady()
+	if _secretIntlReady ~= nil then return _secretIntlReady end
+	_secretIntlReady = (C_Intl and C_StringUtil and C_CurveUtil
+		and Enum and Enum.CollationStrength and Enum.NormalizationForm
+		and Enum.CollationStrength.Identical and Enum.NormalizationForm.Nfc
+		and type(C_Intl.CompareStrings) == "function"
+		and type(C_Intl.IsNormalized) == "function"
+		and type(C_StringUtil.TruncateWhenZero) == "function"
+		and type(C_StringUtil.WrapString) == "function"
+		and type(C_CurveUtil.EvaluateColorValueFromBoolean) == "function") and true or false
+	return _secretIntlReady
+end
+
+-- Zero -> empty normalized text; nonzero retains a decomposed marker.
+local function SecretIsZero(value)
+	local text = C_StringUtil.TruncateWhenZero(value)
+	local marker = C_StringUtil.WrapString(text, "e\204\129", "")
+	return C_Intl.IsNormalized(marker, Enum.NormalizationForm.Nfc)
+end
+
+-- Public Lua-side test: does this rule suppress the given direction?
+local function AuraRuleHides(rule, isGain)
+	if type(rule) ~= "table" then return false end
+	if rule.enabled == false then return false end
+	if isGain and rule.suppressGain == true then return true end
+	if (not isGain) and rule.suppressFade == true then return true end
+	return false
+end
+
+local function ResolveRuleDisplayName(spellID)
+	if type(spellID) ~= "number" then return nil end
+	local nm = (ZSBT.CleanSpellName and ZSBT.CleanSpellName(spellID)) or nil
+	if not nm and C_Spell and C_Spell.GetSpellName then
+		local ok, s = pcall(C_Spell.GetSpellName, spellID)
+		if ok then nm = s end
+	end
+	if not nm and GetSpellInfo then
+		local ok, s = pcall(GetSpellInfo, spellID)
+		if ok then nm = s end
+	end
+	if type(nm) ~= "string" or nm == "" then return nil end
+	if ZSBT.IsSafeString and not ZSBT.IsSafeString(nm) then return nil end
+	return nm
+end
+
+-- Returns { visible = <secret bool> } when at least one rule suppresses
+-- this direction, else nil (display normally). name: rules compare
+-- verbatim; numeric rules compare by their resolved spell name so rules
+-- added from Recently Seen Buffs still work on secret names.
+function Core:SecretAuraVisibility(secretName, isGain, isHarmful)
+	if not SecretIntlReady() then return nil end
+	if type(secretName) ~= "string" then return nil end
+	local rules = getAuraRulesTable(isHarmful)
+	if type(rules) ~= "table" then return nil end
+	local names
+	for key, rule in pairs(rules) do
+		if AuraRuleHides(rule, isGain) then
+			local nm = nil
+			if type(key) == "string" then
+				nm = key:match("^name:(.+)$")
+			elseif type(key) == "number" then
+				nm = ResolveRuleDisplayName(key)
+			end
+			if nm then
+				if not names then names = {} end
+				names[#names + 1] = nm
+			end
+		end
+	end
+	if not names then return nil end
+	local ok, visibility = pcall(function()
+		local hidden = 0
+		for i = 1, #names do
+			local cmp = C_Intl.CompareStrings(secretName, names[i], Enum.CollationStrength.Identical)
+			hidden = C_CurveUtil.EvaluateColorValueFromBoolean(SecretIsZero(cmp), 1, hidden)
+		end
+		return { visible = SecretIsZero(hidden) }
+	end)
+	-- NOTE: SetShown/Show reject secret args from tainted (addon) execution —
+	-- verified live 2025-12 ("Secret values are only allowed during untainted
+	-- execution"). No Lua-reachable API can branch on a secret bool, so
+	-- conditional sound/routing on secret-name matches is impossible.
+	if ok then return visibility, #names end
+	return nil, #names
+end
+
+-- extraMeta fragment for aura emits: attaches the display-side visibility
+-- gate only when the name is a secret string AND a rule could match.
+-- Safe names already run through ShouldEmitBuffNotif's rule checks.
+function Core:AuraVisibilityMeta(auraName, isGain, isHarmful)
+	if auraName == nil then return nil end
+	if ZSBT.IsSafeString and ZSBT.IsSafeString(auraName) then return nil end
+	if not (ZSBT.IsSecret and ZSBT.IsSecret(auraName)) then return nil end
+	local vis, ruleCount = self:SecretAuraVisibility(auraName, isGain, isHarmful)
+	AuraVisLog(("AVM dir=%s intl=%s hidingRules=%d vis=%s"):format(
+		isGain and "gain" or "fade", tostring(SecretIntlReady()),
+		ruleCount or 0, tostring(vis ~= nil)))
+	if vis then return { auraVisibility = vis } end
+	return nil
+end
+
+-- Combined meta for aura emits: the secret-visibility gate plus the aura's
+-- icon when the spellID is readable (secret sids resolve nothing — the
+-- cast-match/recast paths cover those).
+function Core:AuraNotifMeta(spellID, auraName, isGain, isHarmful)
+	local meta = self:AuraVisibilityMeta(auraName, isGain, isHarmful)
+	if type(spellID) == "number" and (not ZSBT.IsSafeNumber or ZSBT.IsSafeNumber(spellID)) then
+		local tex = nil
+		if C_Spell and C_Spell.GetSpellTexture then
+			local ok, res = pcall(C_Spell.GetSpellTexture, spellID)
+			if ok and type(res) == "number" then tex = res end
+		end
+		if not tex and GetSpellTexture then
+			local ok, res = pcall(GetSpellTexture, spellID)
+			if ok and type(res) == "number" then tex = res end
+		end
+		if tex then
+			if type(meta) ~= "table" then meta = {} end
+			meta.spellIcon = tex
+		end
+	end
+	return meta
 end
 
 function Core:IsCombatOnlyEnabled()
@@ -2911,7 +3062,10 @@ function Core:EmitNotification(text, color, category, extraMeta)
 			end
 		end
 		local sconf = conf.sound
-		if type(sconf) == "table" and sconf.enabled == true and ZSBT.PlayLSMSound then
+		-- Secret-visibility gated emits may resolve to hidden; sound can't be
+		-- gated natively, so silence it on that path (MSBT's soundFile="").
+		local visGated = type(extraMeta) == "table" and extraMeta.auraVisibility ~= nil
+		if type(sconf) == "table" and sconf.enabled == true and ZSBT.PlayLSMSound and not visGated then
 			local soundKey = sconf.soundKey
 			if type(soundKey) == "string" and soundKey ~= "" and soundKey ~= "None" then
 				local handle = ZSBT.PlayLSMSound(soundKey)
@@ -2940,14 +3094,6 @@ function Core:EmitBuffNotification(spellID, text, color, category, extraMeta)
 		if type(category) == "string" and category ~= "" and self.GetNotificationScrollArea then
 			area = self:GetNotificationScrollArea(category)
 		end
-		if type(spellID) == "number" then
-			local csc = ZSBT and ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-			local rules = csc and csc.auraRules
-			local rule = rules and rules[spellID]
-			if type(rule) == "table" and type(rule.scrollArea) == "string" and rule.scrollArea ~= "" then
-				area = rule.scrollArea
-			end
-		end
 		local bmeta = { kind = "notification" }
 		if type(extraMeta) == "table" then
 			for k, v in pairs(extraMeta) do bmeta[k] = v end
@@ -2963,15 +3109,6 @@ function Core:EmitBuffNotification(spellID, text, color, category, extraMeta)
 	if type(category) == "string" and category ~= "" and self.GetNotificationScrollArea then
 		area = self:GetNotificationScrollArea(category)
 	end
-	if type(spellID) == "number" then
-		local csc = ZSBT and ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
-		local rules = csc and csc.auraRules
-		local rule = rules and rules[spellID]
-		if type(rule) == "table" and type(rule.scrollArea) == "string" and rule.scrollArea ~= "" then
-			area = rule.scrollArea
-		end
-	end
-
 	local meta = { kind = "notification" }
 	local finalColor = color
 	local conf = type(category) == "string" and category ~= "" and self.GetNotificationPerTypeConfig and self:GetNotificationPerTypeConfig(category) or nil
@@ -2989,7 +3126,10 @@ function Core:EmitBuffNotification(spellID, text, color, category, extraMeta)
 			end
 		end
 		local sconf = conf.sound
-		if type(sconf) == "table" and sconf.enabled == true and ZSBT.PlayLSMSound then
+		-- Secret-visibility gated emits may resolve to hidden; sound can't be
+		-- gated natively, so silence it on that path.
+		local visGated = type(extraMeta) == "table" and extraMeta.auraVisibility ~= nil
+		if type(sconf) == "table" and sconf.enabled == true and ZSBT.PlayLSMSound and not visGated then
 			local soundKey = sconf.soundKey
 			if type(soundKey) == "string" and soundKey ~= "" and soundKey ~= "None" then
 				ZSBT.PlayLSMSound(soundKey)
@@ -3016,8 +3156,8 @@ Core._auraInstanceMap = {}   -- [auraInstanceID] = name
 Core._auraInstanceSpellIDs = {} -- [auraInstanceID] = spellID (helpful auras only)
 Core._auraInstanceHarmfulSpellIDs = {} -- [auraInstanceID] = spellID (harmful auras only)
 Core._auraInstanceIsHarmful = {} -- [auraInstanceID] = boolean
-Core._auraRuleLastShown = nil  -- [spellID] = { gain=ts, fade=ts }
-Core._recentBuffStats = nil -- runtime-only: [spellID] = { count=N, lastSeen=ts }
+Core._recentBuffStats = nil   -- runtime-only: [spellID] = { count=N, lastSeen=ts }
+Core._recentDebuffStats = nil -- runtime-only: [spellID] = { count=N, lastSeen=ts }
 Core._auraReadAt = nil          -- last readable UNIT_AURA payload (combat-text dedup)
 Core._lastUnreadAuraAt = nil    -- last secret/unreadable UNIT_AURA payload (recast pairing)
 Core._auraInstanceExpires = Core._auraInstanceExpires or {} -- [instanceID] = expirationTime
@@ -3129,7 +3269,6 @@ function Core:InitBuffTracking()
 			Core._auraInstanceHarmfulSpellIDs = {}
 			Core._auraInstanceIsHarmful = {}
 			Core._auraInstanceExpires = {}
-			Core._auraRuleLastShown = {}
 			Core._auraInitSeq = (tonumber(Core._auraInitSeq) or 0) + 1
 			local auraInitSeq = Core._auraInitSeq
 			Core._auraInitInProgress = true
@@ -3458,10 +3597,11 @@ function Core:ScanAuraRulesWatchedPresence(silent)
 						-- Mark handled so the combat-text fallback doesn't double it.
 						self._auraReadAt = GetTime and GetTime() or 0
 						local color = harmful and { r = 1.0, g = 0.4, b = 0.4 } or { r = 0.5, g = 0.8, b = 1.0 }
+						local visMeta = self:AuraNotifMeta(sid, name, true, harmful)
 						if harmful then
-							self:EmitNotification(BuildAuraNotifText("+", name), color, "auras")
+							self:EmitNotification(BuildAuraNotifText("+", name), color, "debuffs", visMeta)
 						else
-							self:EmitBuffNotification(sid, BuildAuraNotifText("+", name), color, "auras")
+							self:EmitBuffNotification(sid, BuildAuraNotifText("+", name), color, "buffs", visMeta)
 						end
 					end
 				end
@@ -3475,10 +3615,11 @@ function Core:ScanAuraRulesWatchedPresence(silent)
 						-- Mark handled so the combat-text fallback doesn't double it.
 						self._auraReadAt = GetTime and GetTime() or 0
 						local color = { r = 0.6, g = 0.6, b = 0.6 }
+						local visMeta = self:AuraNotifMeta(sid, name, false, harmful)
 						if harmful then
-							self:EmitNotification(BuildAuraNotifText("-", name), color, "auras")
+							self:EmitNotification(BuildAuraNotifText("-", name), color, "debuffs", visMeta)
 						else
-							self:EmitBuffNotification(sid, BuildAuraNotifText("-", name), color, "auras")
+							self:EmitBuffNotification(sid, BuildAuraNotifText("-", name), color, "buffs", visMeta)
 						end
 					end
 				end
@@ -3626,6 +3767,9 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                 if type(self._auraInstanceIsHarmful) == "table" then
                     self._auraInstanceIsHarmful[instanceId] = isHelpful ~= true and true or false
                 end
+                if isHelpful ~= true and type(sid) == "number" then
+                    self:RecordRecentDebuff(sid)
+                end
                 if isHelpful and type(sid) == "number" then
                     self:RecordRecentBuff(sid)
                     -- Cache helpful auras by spell for recast pairing and icon
@@ -3658,10 +3802,11 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                 if not silent and not seenDuringInit and not inGracePeriod then
                     local okToShow = self:ShouldEmitBuffNotif(sid, true, isHelpful ~= true, name)
                     if okToShow then
+                        local visMeta = self:AuraNotifMeta(sid, newInstances[instanceId], true, isHelpful ~= true)
                         if sid and type(sid) == "number" then
-                            self:EmitBuffNotification(sid, BuildAuraNotifText("+", newInstances[instanceId]), gainColor, "auras")
+                            self:EmitBuffNotification(sid, BuildAuraNotifText("+", newInstances[instanceId]), gainColor, (isHelpful ~= true) and "debuffs" or "buffs", visMeta)
                         else
-                            self:EmitNotification(BuildAuraNotifText("+", newInstances[instanceId]), gainColor, "auras")
+                            self:EmitNotification(BuildAuraNotifText("+", newInstances[instanceId]), gainColor, (isHelpful ~= true) and "debuffs" or "buffs", visMeta)
                         end
                     end
                 end
@@ -3766,10 +3911,11 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                     end
                     local okToShow = self:ShouldEmitBuffNotif(sid, false, isHarmful, oldName)
                     if okToShow then
+                        local visMeta = self:AuraNotifMeta(sid, oldName, false, isHarmful)
                         if sid and type(sid) == "number" then
-                            self:EmitBuffNotification(sid, BuildAuraNotifText("-", oldName or "Aura"), {r = 0.6, g = 0.6, b = 0.6}, "auras")
+                            self:EmitBuffNotification(sid, BuildAuraNotifText("-", oldName or "Aura"), {r = 0.6, g = 0.6, b = 0.6}, isHarmful and "debuffs" or "buffs", visMeta)
                         else
-                            self:EmitNotification(BuildAuraNotifText("-", oldName or "Aura"), {r = 0.6, g = 0.6, b = 0.6}, "auras")
+                            self:EmitNotification(BuildAuraNotifText("-", oldName or "Aura"), {r = 0.6, g = 0.6, b = 0.6}, isHarmful and "debuffs" or "buffs", visMeta)
                         end
                     end
                 end
@@ -3839,6 +3985,9 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                     if isHarmful == true then
                         color = {r = 1.0, g = 0.4, b = 0.4}  -- debuff red
                     end
+                    if isHarmful == true and type(sid) == "number" then
+                        self:RecordRecentDebuff(sid)
+                    end
                     if isHarmful ~= true and type(sid) == "number" then
                         self:RecordRecentBuff(sid)
                         if self._buffSpellCache then
@@ -3866,13 +4015,14 @@ function Core:ScanPlayerAuras(updateInfo, silent)
                     if not silent then
                         local okToShow = self:ShouldEmitBuffNotif(sid, true, isHarmful, name)
                         if okToShow then
+							local visMeta = self:AuraNotifMeta(sid, self._auraInstanceMap[instanceId], true, isHarmful)
 							if isHarmful then
-								self:EmitNotification(BuildAuraNotifText("+", self._auraInstanceMap[instanceId]), color, "auras")
+								self:EmitNotification(BuildAuraNotifText("+", self._auraInstanceMap[instanceId]), color, "debuffs", visMeta)
 							else
 								if sid and type(sid) == "number" then
-									self:EmitBuffNotification(sid, BuildAuraNotifText("+", self._auraInstanceMap[instanceId]), color, "auras")
+									self:EmitBuffNotification(sid, BuildAuraNotifText("+", self._auraInstanceMap[instanceId]), color, "buffs", visMeta)
 								else
-									self:EmitNotification(BuildAuraNotifText("+", self._auraInstanceMap[instanceId]), color, "auras")
+									self:EmitNotification(BuildAuraNotifText("+", self._auraInstanceMap[instanceId]), color, "buffs", visMeta)
 								end
 							end
                         end
@@ -3927,6 +4077,9 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 					end
 					local name, isHarmful = extractAuraInfo(auraData)
 					local sid = ResolveSafeAuraSpellID(auraData)
+					if type(sid) == "number" and isHarmful == true then
+						self:RecordRecentDebuff(sid)
+					end
 					if type(sid) == "number" and isHarmful ~= true then
 						self:RecordRecentBuff(sid)
 						if self._buffSpellCache then
@@ -3964,10 +4117,11 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 							if okToShow then
 								local rtext = BuildAuraNotifText("+", rname or "Aura")
 								local rcolor = isHarmfulAura and {r = 1.0, g = 0.4, b = 0.4} or {r = 0.5, g = 0.8, b = 1.0}
+								local visMeta = self:AuraNotifMeta(rsid, rname, true, isHarmfulAura)
 								if type(rsid) == "number" and not isHarmfulAura then
-									self:EmitBuffNotification(rsid, rtext, rcolor, "auras")
+									self:EmitBuffNotification(rsid, rtext, rcolor, "buffs", visMeta)
 								else
-									self:EmitNotification(rtext, rcolor, "auras")
+									self:EmitNotification(rtext, rcolor, "debuffs", visMeta)
 								end
 							end
 						end
@@ -4123,7 +4277,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 									end
 								end
 							end
-							self:EmitBuffNotification(sid, BuildAuraNotifText("-", name), {r = 0.6, g = 0.6, b = 0.6}, "auras")
+							self:EmitBuffNotification(sid, BuildAuraNotifText("-", name), {r = 0.6, g = 0.6, b = 0.6}, isHarmful and "debuffs" or "buffs", self:AuraNotifMeta(sid, name, false, isHarmful))
 						else
 							if dl >= 4 then
 								if Addon and Addon.Dbg then
@@ -4149,7 +4303,7 @@ function Core:ScanPlayerAuras(updateInfo, silent)
 									end
 								end
 							end
-							self:EmitNotification(BuildAuraNotifText("-", name), {r = 0.6, g = 0.6, b = 0.6}, "auras")
+							self:EmitNotification(BuildAuraNotifText("-", name), {r = 0.6, g = 0.6, b = 0.6}, isHarmful and "debuffs" or "buffs", self:AuraNotifMeta(sid, name, false, isHarmful))
 						end
 					elseif dl >= 4 then
 						if Addon and Addon.Dbg then
@@ -4309,7 +4463,14 @@ function Core:OnCombatTextAura(kind)
 				if tex then extraMeta = { spellIcon = tex } end
 			end
 		end
-		self:EmitNotification(BuildAuraNotifText(prefix, name), color, "auras", extraMeta)
+		-- Secret-name auras: name: rules can't match inside ShouldEmitBuffNotif,
+		-- so carry the secret-visibility gate to the display layer instead.
+		local visMeta = self:AuraNotifMeta(nil, name, gained, harmful)
+		if visMeta then
+			if type(extraMeta) ~= "table" then extraMeta = {} end
+			for k, v in pairs(visMeta) do extraMeta[k] = v end
+		end
+		self:EmitNotification(BuildAuraNotifText(prefix, name), color, harmful and "debuffs" or "buffs", extraMeta)
 	end)
 end
 
@@ -4343,8 +4504,13 @@ function Core:TryRecastBuffMatch()
 	if entry.icon ~= nil and (type(entry.icon) == "string" or type(entry.icon) == "number") then
 		extraMeta = { spellIcon = entry.icon }
 	end
+	local visMeta = self:AuraNotifMeta(cast.spell, entry.name, true, false)
+	if visMeta then
+		if type(extraMeta) ~= "table" then extraMeta = {} end
+		for k, v in pairs(visMeta) do extraMeta[k] = v end
+	end
 	self:EmitBuffNotification(cast.spell, BuildAuraNotifText("+", entry.name or "Aura"),
-		{r = 0.5, g = 0.8, b = 1.0}, "auras", extraMeta)
+		{r = 0.5, g = 0.8, b = 1.0}, "buffs", extraMeta)
 end
 
 function Core:InitLootTracking()

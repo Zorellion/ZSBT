@@ -6,7 +6,7 @@ description: Release ZSBT version
 
 
 
-This skill performs a release pass for the \*\*live addon folder\*\* (`e:/Blizzard/World of Warcraft/\_retail\_/Interface/AddOns/ZSBT`).
+This skill performs a release pass for the \*\*live addon folder\*\* (`F:/Blizzard/World of Warcraft/_retail_/Interface/AddOns/ZSBT`).
 
 
 
@@ -80,21 +80,22 @@ This skill performs a release pass for the \*\*live addon folder\*\* (`e:/Blizza
 
 6\. Sync live addon -> repo (Windows `robocopy`):
 
-&#x20;  - \*\*Source\*\*: `e:\\Blizzard\\World of Warcraft\\\_retail\_\\Interface\\AddOns\\ZSBT`
+&#x20;  - \*\*Source\*\*: `F:\Blizzard\World of Warcraft\\_retail\_\Interface\AddOns\ZSBT`
 
-&#x20;  - \*\*Dest\*\*: `e:\\REPOS\\ZSBT`
+&#x20;  - \*\*Dest\*\*: `F:\REPOS\ZSBT`
 
 &#x20;  - Use `robocopy` mirror sync with exclusions:
 
-&#x20;    - Exclude from \*\*dest\*\* (repo): `.git\\`, `.github\\`
+&#x20;    - Exclude from \*\*dest\*\* (repo): `.git\`, `.github\`, `.gitignore`
 
-&#x20;    - Exclude from \*\*sync\*\*: `.windusrf\\`, `.windsurf\\`, `Media\\`
+&#x20;    - Exclude from \*\*sync\*\*: `.devin\`, `.windusrf\`, `.windsurf\`, `Media\`, `__pycache__`
 
-&#x20;    - Exclude file: `.pkgmeta`
+&#x20;    - Exclude files: `.pkgmeta`, `.gitignore`
 
 &#x20;  - Command:
 
-&#x20;    - `robocopy "e:\\Blizzard\\World of Warcraft\\\_retail\_\\Interface\\AddOns\\ZSBT" "e:\\REPOS\\ZSBT" /MIR /XD ".git" ".github" ".windusrf" ".windsurf" "Media" /XF ".pkgmeta"`
+&#x20;    - `robocopy "F:\Blizzard\World of Warcraft\\_retail\_\Interface\AddOns\ZSBT" "F:\REPOS\ZSBT" /MIR /XD ".git" ".github" ".devin" ".windusrf" ".windsurf" "Media" "__pycache__" /XF ".pkgmeta" ".gitignore"`
+&#x20;    - Git Bash note: use `//MIR //XD //XF` (double slashes) — single-slash flags get mangled into paths.
 
 &#x20;  - After sync, review robocopy output for unexpected deletes/copies.
 
@@ -122,7 +123,7 @@ This skill performs a release pass for the \*\*live addon folder\*\* (`e:/Blizza
 
 \## Notes / Safety
 
-\- Do not modify the repo copy (`e:/REPOS/ZSBT`) directly. Work only in the live addon folder.
+\- Do not modify the repo copy (`F:/REPOS/ZSBT`) directly. Work only in the live addon folder.
 
 
 

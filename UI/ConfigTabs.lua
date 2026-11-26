@@ -266,359 +266,472 @@ end
 
 local buffRuleSpellInput = ""
 local buffRuleSpellResolvedID = nil
+local debuffRuleSpellInput = ""
+local debuffRuleSpellResolvedID = nil
 
-function ZSBT.BuildTab_BuffRulesManager()
-	return {
-		type  = "group",
-		name  = L["|cFFFFD100Buff Rules|r"],
-		order = 1,
-		args  = {
-			headerRules = {
-				type  = "header",
-				name  = L["Buff Rules (Notifications)"],
-				order = 1,
-			},
-			rulesDesc = {
-				type     = "description",
-				name     = L["Control which player buff (aura/proc) gained/faded notifications you see. Useful for taming noisy procs: disable Gain/Fade per buff, or add a small throttle. Use 'Recently Seen Buffs' below to discover spellIDs."],
-				order    = 2,
-				fontSize = "medium",
-			},
-			addHeader = {
-				type  = "header",
-				name  = L["Add Buff Rule"],
-				order = 10,
-			},
-			spellIdInput = {
-				type  = "input",
-				name  = L["Buff SpellID"],
-				desc  = L["Enter a SpellID or exact spell name to add a rule."],
-				order = 11,
-				width = "full",
-				get   = function() return buffRuleSpellInput end,
-				set   = function(_, val)
-					buffRuleSpellInput = tostring(val or "")
-					local sid = nil
-					if ZSBT.ResolveSpellInputToID then
-						sid = ZSBT.ResolveSpellInputToID(buffRuleSpellInput)
-					else
-						sid = tonumber(buffRuleSpellInput)
-					end
-					buffRuleSpellResolvedID = (type(sid) == "number" and sid > 0) and sid or nil
-				end,
-			},
-			spellIdResolved = {
-				type  = "description",
-				name  = function()
-					return (ZSBT.GetResolvedSpellLabel and ZSBT.GetResolvedSpellLabel(buffRuleSpellResolvedID)) or ""
-				end,
-				order = 11.05,
-				width = "full",
-				hidden = function() return not (type(buffRuleSpellResolvedID) == "number") end,
-			},
-			addSpellId = {
-				type  = "execute",
-				name  = L["Add"],
-				desc  = L["Add a rule for this buff SpellID (merge-only)."],
-				order = 12,
-				width = "full",
-				func  = function()
-					local spellID = nil
-					if ZSBT.ResolveSpellInputToID then
-						spellID = ZSBT.ResolveSpellInputToID(buffRuleSpellInput)
-					else
-						spellID = tonumber(buffRuleSpellInput)
-					end
-					if not spellID then return end
-					local name = SafeGetSpellName(spellID)
-					if not name then return end
-					local sc = ZSBT.db.char.spamControl
-					sc.auraRules = sc.auraRules or {}
-					if sc.auraRules[spellID] == nil then
-						sc.auraRules[spellID] = { enabled = true, throttleSec = 0.00, suppressGain = false, suppressFade = false }
-					end
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT_BuffRules")
-				end,
-			},
-			addRuleSpacer = {
-				type  = "description",
-				name  = " ",
-				order = 13,
-			},
-			templatesHeader = {
-				type  = "header",
-				name  = L["Templates"],
-				order = 14,
-			},
-			templatesApply = {
-				type  = "execute",
-				name  = L["Apply Class Templates (Merge Only)"],
-				desc  = L["Applies built-in templates for your class. Merge-only (never overwrites existing rules)."],
-				order = 15,
-				width = "full",
-				func  = function()
-					ZSBT.ApplyCurrentClassSpecTemplates_Merge()
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT_SpellRules")
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT_BuffRules")
-				end,
-			},
-			templatesAllSpecs = {
-				type  = "toggle",
-				name  = L["Include All Specs (Recommended)"],
-				desc  = L["If enabled, applies templates for ALL specs for your class (more rules, less maintenance)."],
-				order = 15.1,
-				width = "full",
-				get   = function()
-					local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
-					return sc and sc.templates and sc.templates.applyAllSpecs == true
-				end,
-				set   = function(_, v)
-					local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
-					if not sc then return end
-					sc.templates = sc.templates or {}
-					sc.templates.applyAllSpecs = v and true or false
-				end,
-			},
-			templatesNote = {
-				type  = "description",
-				name  = L["Templates are merge-only: they add missing rules but never overwrite your custom rules."],
-				order = 16,
-				width = "full",
-				fontSize = "medium",
-			},
+-- Factory: the buff and debuff rules managers share one implementation.
+-- cfg selects the rules table, the recent-aura stats bucket, labels, and
+-- the input state so the two managers stay fully independent.
+local function BuildAuraRulesManagerTab(cfg)
+	local rulesKey = cfg.rulesKey
+	local function getRulesTable()
+		local sc = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl
+		return sc and sc[rulesKey] or nil
+	end
 
-			headerRecent = {
-				type  = "header",
-				name  = L["Recently Seen Buffs"],
-				order = 20,
-			},
-			recentDesc = {
-				type     = "description",
-				name     = L["These suggestions are based on buffs ZSBT has recently seen on you. Gain a buff (proc, cooldown, etc.) to populate this list."],
-				order    = 21,
-				fontSize = "medium",
-			},
-			recentStatus = {
-				type     = "description",
-				name     = function()
-					local stats = ZSBT.Core and ZSBT.Core._recentBuffStats
-					local n = 0
-					if type(stats) == "table" then
-						for _ in pairs(stats) do n = n + 1 end
-					end
-					return L["Recorded recent buffs: "] .. tostring(n)
-				end,
-				order    = 21.5,
-				fontSize = "medium",
-			},
-			recentRefresh = {
-				type  = "execute",
-				name  = L["Refresh Recent Buffs"],
-				desc  = L["Refresh the Recently Seen Buffs list."],
-				order = 22,
-				width = "full",
-				func  = function()
-					local stats = ZSBT.Core and ZSBT.Core._recentBuffStats
-					local n = 0
-					if type(stats) == "table" then
-						for _ in pairs(stats) do n = n + 1 end
-					end
-					if Addon and Addon.Print then
-						Addon:Print(L["Buff Rules: recorded recent buffs = "] .. tostring(n))
-					end
-					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT_BuffRules")
-				end,
-			},
-			recentContainer = {
-				type   = "group",
-				name   = L["Recent Buffs"],
-				order  = 23,
-				inline = true,
-				args   = {},
-			},
-
-			rulesListHeader = {
-				type     = "description",
-				name     = function()
-					local rules = ZSBT.db.char.spamControl.spellRules or {}
-					local count = 0
-					for _ in pairs(rules) do count = count + 1 end
-					if count == 0 then
-						return L["No spell rules configured."]
-					end
-					return L["Configured spell rules: "] .. "|cFF00CC66" .. tostring(count) .. "|r"
-				end,
-				order    = 30,
-				fontSize = "medium",
-			},
-			rulesListContainer = {
-				type   = "group",
-				name   = L["Buff Rules List"],
-				order  = 31,
-				inline = true,
-				hidden = function()
-					local rules = ZSBT.db.char.spamControl.auraRules or {}
-					return next(rules) == nil
-				end,
-				args   = {},
-			},
-		},
-	}
-end
-
-do
-	local originalBuilder = ZSBT.BuildTab_BuffRulesManager
-
-	ZSBT.BuildTab_BuffRulesManager = function()
-		local tab = originalBuilder()
-		local rulesContainer = tab.args.rulesListContainer
-		local recentContainer = tab.args.recentContainer
-
-		local function getSortedRuleSpellIDs()
-			local rules = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl and ZSBT.db.char.spamControl.auraRules
-			if type(rules) ~= "table" then return {} end
-			local sorted = {}
-			for spellID, rule in pairs(rules) do
-				if type(spellID) == "number" and type(rule) == "table" then
-					sorted[#sorted + 1] = spellID
-				end
+	local function getSortedRuleKeys()
+		local rules = getRulesTable()
+		if type(rules) ~= "table" then return {} end
+		local nums, names = {}, {}
+		for key, rule in pairs(rules) do
+			if type(key) == "number" and type(rule) == "table" then
+				nums[#nums + 1] = key
+			elseif type(key) == "string" and key:sub(1, 5) == "name:" and type(rule) == "table" then
+				names[#names + 1] = key
 			end
-			table.sort(sorted)
-			return sorted
 		end
+		table.sort(nums)
+		table.sort(names)
+		for i = 1, #names do nums[#nums + 1] = names[i] end
+		return nums
+	end
 
-		if rulesContainer then
-			rulesContainer.args = {}
-			local MAX_SLOTS = 80
-			local baseOrder = 1
-			for slot = 1, MAX_SLOTS do
-				local slotIndex = slot
-				local function getSpellID()
-					local sorted = getSortedRuleSpellIDs()
-					return sorted[slotIndex]
-				end
+	local function buildRulesListArgs()
+		local args = {}
+		local MAX_SLOTS = 80
+		local baseOrder = 1
+		for slot = 1, MAX_SLOTS do
+			local slotIndex = slot
+			local function getRuleKey()
+				local sorted = getSortedRuleKeys()
+				return sorted[slotIndex]
+			end
 
-				rulesContainer.args["ruleLabel_" .. slot] = {
-						type   = "description",
-						name   = function()
-							local spellID = getSpellID()
-							if not spellID then return "" end
-							local name = SafeGetSpellName(spellID) or (L["Spell #"] .. tostring(spellID))
-							return "  \226\128\162 " .. name .. L["  |cFF888888(ID: "] .. tostring(spellID) .. ")|r"
-						end,
-						order  = baseOrder + (slot - 1) * 7,
-						width  = "double",
-						hidden = function() return getSpellID() == nil end,
-						fontSize = "medium",
-					}
+			args["ruleLabel_" .. slot] = {
+				type   = "description",
+				name   = function()
+					local spellID = getRuleKey()
+					if not spellID then return "" end
+					if type(spellID) == "string" then
+						return "  \226\128\162 " .. spellID:sub(6) .. L["  |cFF888888(name rule)|r"]
+					end
+					local name = SafeGetSpellName(spellID) or (L["Spell #"] .. tostring(spellID))
+					return "  \226\128\162 " .. name .. L["  |cFF888888(ID: "] .. tostring(spellID) .. ")|r"
+				end,
+				order  = baseOrder + (slot - 1) * 7,
+				width  = "double",
+				hidden = function() return getRuleKey() == nil end,
+				fontSize = "medium",
+			}
 
-				rulesContainer.args["ruleEnabled_" .. slot] = {
-						type   = "toggle",
-						name   = L["Enabled"],
-						order  = baseOrder + (slot - 1) * 7 + 1,
-						width  = "half",
-						hidden = function() return getSpellID() == nil end,
-						get    = function()
-							local spellID = getSpellID(); if not spellID then return false end
-							local rule = ZSBT.db.char.spamControl.auraRules[spellID]
-							return type(rule) == "table" and rule.enabled ~= false
-						end,
-						set    = function(_, val)
-							local spellID = getSpellID(); if not spellID then return end
-							local rules = ZSBT.db.char.spamControl.auraRules
-							rules[spellID] = rules[spellID] or {}
-							rules[spellID].enabled = val and true or false
-						end,
-					}
+			args["ruleEnabled_" .. slot] = {
+				type   = "toggle",
+				name   = L["Enabled"],
+				order  = baseOrder + (slot - 1) * 7 + 1,
+				width  = "half",
+				hidden = function() return getRuleKey() == nil end,
+				get    = function()
+					local spellID = getRuleKey(); if not spellID then return false end
+					local rules = getRulesTable()
+					local rule = rules and rules[spellID]
+					return type(rule) == "table" and rule.enabled ~= false
+				end,
+				set    = function(_, val)
+					local spellID = getRuleKey(); if not spellID then return end
+					local rules = getRulesTable(); if type(rules) ~= "table" then return end
+					rules[spellID] = rules[spellID] or {}
+					rules[spellID].enabled = val and true or false
+				end,
+			}
 
-				rulesContainer.args["ruleEdit_" .. slot] = {
-					type   = "execute",
-					name   = L["Edit"],
-					order  = baseOrder + (slot - 1) * 7 + 2,
-					width  = "half",
-					hidden = function() return getSpellID() == nil end,
-					func   = function()
-						local spellID = getSpellID(); if not spellID then return end
-						if Addon and Addon.OpenBuffRuleEditor then
-							Addon:OpenBuffRuleEditor(spellID)
+			args["ruleEdit_" .. slot] = {
+				type   = "execute",
+				name   = L["Edit"],
+				order  = baseOrder + (slot - 1) * 7 + 2,
+				width  = "half",
+				hidden = function() return getRuleKey() == nil end,
+				func   = function()
+					local spellID = getRuleKey(); if not spellID then return end
+					cfg.openEditor(spellID)
+				end,
+			}
+
+			args["ruleRemove_" .. slot] = {
+				type   = "execute",
+				name   = L["|cFFFF4444Remove|r"],
+				order  = baseOrder + (slot - 1) * 7 + 3,
+				width  = "half",
+				hidden = function() return getRuleKey() == nil end,
+				func   = function()
+					local spellID = getRuleKey(); if not spellID then return end
+					local rules = getRulesTable(); if type(rules) ~= "table" then return end
+					rules[spellID] = nil
+					LibStub("AceConfigRegistry-3.0"):NotifyChange(cfg.appName)
+				end,
+			}
+		end
+		return args
+	end
+
+	local function buildRecentArgs()
+		local args = {}
+		local stats = ZSBT.Core and ZSBT.Core[cfg.recentStatsKey]
+		local rules = getRulesTable()
+		if type(stats) ~= "table" or type(rules) ~= "table" then return args end
+		local items = {}
+		for spellID, e in pairs(stats) do
+			if type(spellID) == "number" and type(e) == "table" then
+				items[#items + 1] = { id = spellID, count = tonumber(e.count) or 0, lastSeen = tonumber(e.lastSeen) or 0 }
+			end
+		end
+		table.sort(items, function(a, b)
+			if a.count == b.count then return a.lastSeen > b.lastSeen end
+			return a.count > b.count
+		end)
+		local MAX = 12
+		local shown = 0
+		for i = 1, #items do
+			if shown >= MAX then break end
+			local spellID = items[i].id
+			if rules[spellID] == nil then
+				shown = shown + 1
+				local row = shown
+				local name = SafeGetSpellName(spellID) or (L["Spell #"] .. tostring(spellID))
+				local seen = tonumber(items[i].count) or 0
+				args["recentLabel_" .. row] = {
+					type  = "description",
+					name  = (L["%s  |cFF888888(ID: %s, seen: %d)|r"]):format(name, tostring(spellID), seen),
+					order = row * 3,
+					width = "double",
+				}
+				args["recentAdd_" .. row] = {
+					type  = "execute",
+					name  = L["Add Rule"],
+					desc  = cfg.recentAddDesc,
+					order = row * 3 + 1,
+					width = "half",
+					disabled = false,
+					func  = function()
+						if rules[spellID] == nil then
+							rules[spellID] = { enabled = true, suppressGain = false, suppressFade = false }
+							LibStub("AceConfigRegistry-3.0"):NotifyChange(cfg.appName)
 						end
 					end,
 				}
-
-				rulesContainer.args["ruleRemove_" .. slot] = {
-						type   = "execute",
-						name   = L["|cFFFF4444Remove|r"],
-						order  = baseOrder + (slot - 1) * 7 + 3,
-						width  = "half",
-						hidden = function() return getSpellID() == nil end,
-						func   = function()
-							local spellID = getSpellID(); if not spellID then return end
-							ZSBT.db.char.spamControl.auraRules[spellID] = nil
-							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT_BuffRules")
-						end,
-					}
-				end
-		end
-
-		if recentContainer then
-			recentContainer.args = {}
-			local stats = ZSBT.Core and ZSBT.Core._recentBuffStats
-			local rules = ZSBT.db and ZSBT.db.char and ZSBT.db.char.spamControl and ZSBT.db.char.spamControl.auraRules
-			if type(stats) == "table" and type(rules) == "table" then
-				local items = {}
-				for spellID, e in pairs(stats) do
-					if type(spellID) == "number" and type(e) == "table" then
-						items[#items + 1] = { id = spellID, count = tonumber(e.count) or 0, lastSeen = tonumber(e.lastSeen) or 0 }
-					end
-				end
-				table.sort(items, function(a, b)
-					if a.count == b.count then return a.lastSeen > b.lastSeen end
-					return a.count > b.count
-				end)
-				local MAX = 12
-				local shown = 0
-				for i = 1, #items do
-					if shown >= MAX then break end
-					local spellID = items[i].id
-					if rules[spellID] == nil then
-						shown = shown + 1
-						local row = shown
-						local name = SafeGetSpellName(spellID) or (L["Spell #"] .. tostring(spellID))
-						local seen = tonumber(items[i].count) or 0
-						recentContainer.args["recentLabel_" .. row] = {
-						type  = "description",
-						name  = (L["%s  |cFF888888(ID: %s, seen: %d)|r"]):format(name, tostring(spellID), seen),
-						order = row * 3,
-						width = "double",
-					}
-						recentContainer.args["recentAdd_" .. row] = {
-						type  = "execute",
-						name  = L["Add Rule"],
-						desc  = L["Add a buff rule for this SpellID."],
-						order = row * 3 + 1,
-						width = "half",
-						disabled = false,
-						func  = function()
-							if rules[spellID] == nil then
-								rules[spellID] = { enabled = true, throttleSec = 0.00, suppressGain = false, suppressFade = false }
-								LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT_BuffRules")
-							end
-						end,
-					}
-						recentContainer.args["recentSpacer_" .. row] = {
-						type  = "description",
-						name  = " ",
-						order = row * 3 + 2,
-						width = "full",
-					}
-					end
-				end
+				args["recentSpacer_" .. row] = {
+					type  = "description",
+					name  = " ",
+					order = row * 3 + 2,
+					width = "full",
+				}
 			end
 		end
-
-		return tab
+		return args
 	end
+
+	local args = {
+		headerRules = {
+			type  = "header",
+			name  = cfg.rulesHeader,
+			order = 1,
+		},
+		rulesDesc = {
+			type     = "description",
+			name     = cfg.desc,
+			order    = 2,
+			fontSize = "medium",
+		},
+		addHeader = {
+			type  = "header",
+			name  = cfg.addHeader,
+			order = 10,
+		},
+		spellIdInput = {
+			type  = "input",
+			name  = cfg.inputLabel,
+			desc  = L["Enter a SpellID or exact spell name to add a rule. Names that do not resolve to a SpellID are stored verbatim as name rules — they match every rank and still apply when the aura name is secret in combat."],
+			order = 11,
+			width = "full",
+			get   = cfg.inputGet,
+			set   = cfg.inputSet,
+		},
+		spellIdResolved = {
+			type  = "description",
+			name  = function()
+				return (ZSBT.GetResolvedSpellLabel and ZSBT.GetResolvedSpellLabel(cfg.resolvedGet())) or ""
+			end,
+			order = 11.05,
+			width = "full",
+			hidden = function() return not (type(cfg.resolvedGet()) == "number") end,
+		},
+		nameRuleHint = {
+			type  = "description",
+			name  = function()
+				local s = tostring(cfg.inputGet() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+				return L["Unresolved name — will be added as name rule: "] .. "name:" .. s
+			end,
+			order = 11.06,
+			width = "full",
+			hidden = function()
+				if type(cfg.resolvedGet()) == "number" then return true end
+				local s = tostring(cfg.inputGet() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+				return s == "" or tonumber(s) ~= nil
+			end,
+		},
+		addSpellId = {
+			type  = "execute",
+			name  = L["Add"],
+			desc  = cfg.addDesc,
+			order = 12,
+			width = "full",
+			func  = function()
+				local spellID = nil
+				if ZSBT.ResolveSpellInputToID then
+					spellID = ZSBT.ResolveSpellInputToID(cfg.inputGet())
+				else
+					spellID = tonumber(cfg.inputGet())
+				end
+				local sc = ZSBT.db.char.spamControl
+				sc[rulesKey] = sc[rulesKey] or {}
+				if spellID then
+					local name = SafeGetSpellName(spellID)
+					if not name then return end
+					if sc[rulesKey][spellID] == nil then
+						sc[rulesKey][spellID] = { enabled = true, suppressGain = false, suppressFade = false }
+					end
+				else
+					-- Verbatim name rule: matches every rank and is the only
+					-- form that can match secret aura names in combat.
+					local nm = tostring(cfg.inputGet() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+					if nm == "" or nm:find("%c") or tonumber(nm) then return end
+					local nkey = "name:" .. nm
+					if sc[rulesKey][nkey] == nil then
+						sc[rulesKey][nkey] = { enabled = true, suppressGain = false, suppressFade = false }
+					end
+				end
+				LibStub("AceConfigRegistry-3.0"):NotifyChange(cfg.appName)
+			end,
+		},
+		addRuleSpacer = {
+			type  = "description",
+			name  = " ",
+			order = 13,
+		},
+	}
+
+	if cfg.showTemplates then
+		args.templatesHeader = {
+			type  = "header",
+			name  = L["Templates"],
+			order = 14,
+		}
+		args.templatesApply = {
+			type  = "execute",
+			name  = L["Apply Class Templates (Merge Only)"],
+			desc  = L["Applies built-in templates for your class. Merge-only (never overwrites existing rules)."],
+			order = 15,
+			width = "full",
+			func  = function()
+				ZSBT.ApplyCurrentClassSpecTemplates_Merge()
+				LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT_SpellRules")
+				LibStub("AceConfigRegistry-3.0"):NotifyChange(cfg.appName)
+			end,
+		}
+		args.templatesAllSpecs = {
+			type  = "toggle",
+			name  = L["Include All Specs (Recommended)"],
+			desc  = L["If enabled, applies templates for ALL specs for your class (more rules, less maintenance)."],
+			order = 15.1,
+			width = "full",
+			get   = function()
+				local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
+				return sc and sc.templates and sc.templates.applyAllSpecs == true
+			end,
+			set   = function(_, v)
+				local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
+				if not sc then return end
+				sc.templates = sc.templates or {}
+				sc.templates.applyAllSpecs = v and true or false
+			end,
+		}
+		args.templatesNote = {
+			type  = "description",
+			name  = L["Templates are merge-only: they add missing rules but never overwrite your custom rules."],
+			order = 16,
+			width = "full",
+			fontSize = "medium",
+		}
+	end
+
+	args.headerRecent = {
+		type  = "header",
+		name  = cfg.recentHeader,
+		order = 20,
+	}
+	args.recentDesc = {
+		type     = "description",
+		name     = cfg.recentDesc,
+		order    = 21,
+		fontSize = "medium",
+	}
+	args.recentStatus = {
+		type     = "description",
+		name     = function()
+			local stats = ZSBT.Core and ZSBT.Core[cfg.recentStatsKey]
+			local n = 0
+			if type(stats) == "table" then
+				for _ in pairs(stats) do n = n + 1 end
+			end
+			return cfg.recentStatusLabel .. tostring(n)
+		end,
+		order    = 21.5,
+		fontSize = "medium",
+	}
+	args.recentRefresh = {
+		type  = "execute",
+		name  = cfg.recentRefreshName,
+		desc  = cfg.recentRefreshDesc,
+		order = 22,
+		width = "full",
+		func  = function()
+			local stats = ZSBT.Core and ZSBT.Core[cfg.recentStatsKey]
+			local n = 0
+			if type(stats) == "table" then
+				for _ in pairs(stats) do n = n + 1 end
+			end
+			if Addon and Addon.Print then
+				Addon:Print(cfg.recentStatusPrint .. tostring(n))
+			end
+			LibStub("AceConfigRegistry-3.0"):NotifyChange(cfg.appName)
+		end,
+	}
+	args.recentContainer = {
+		type   = "group",
+		name   = cfg.recentContainerName,
+		order  = 23,
+		inline = true,
+		args   = buildRecentArgs(),
+	}
+	args.rulesListHeader = {
+		type     = "description",
+		name     = function()
+			local rules = getRulesTable() or {}
+			local count = 0
+			for _ in pairs(rules) do count = count + 1 end
+			if count == 0 then
+				return cfg.emptyRulesMsg
+			end
+			return cfg.countPrefix .. "|cFF00CC66" .. tostring(count) .. "|r"
+		end,
+		order    = 30,
+		fontSize = "medium",
+	}
+	args.rulesListContainer = {
+		type   = "group",
+		name   = cfg.rulesListName,
+		order  = 31,
+		inline = true,
+		hidden = function()
+			local rules = getRulesTable() or {}
+			return next(rules) == nil
+		end,
+		args   = buildRulesListArgs(),
+	}
+
+	return {
+		type  = "group",
+		name  = cfg.title,
+		order = 1,
+		args  = args,
+	}
 end
+
+function ZSBT.BuildTab_BuffRulesManager()
+	return BuildAuraRulesManagerTab({
+		appName            = "ZSBT_BuffRules",
+		title              = L["|cFFFFD100Buff Rules|r"],
+		rulesKey           = "auraRules",
+		recentStatsKey     = "_recentBuffStats",
+		rulesHeader        = L["Buff Rules (Notifications)"],
+		desc               = L["Control which player buff (aura/proc) gained/faded notifications you see. Useful for taming noisy procs: disable Gain/Fade per buff. Use 'Recently Seen Buffs' below to discover spellIDs."],
+		addHeader          = L["Add Buff Rule"],
+		inputLabel         = L["Buff SpellID or Name"],
+		addDesc            = L["Add a rule for this buff (merge-only). Resolves to a SpellID when possible; otherwise stores the typed name verbatim."],
+		showTemplates      = true,
+		recentHeader       = L["Recently Seen Buffs"],
+		recentDesc         = L["These suggestions are based on buffs ZSBT has recently seen on you. Gain a buff (proc, cooldown, etc.) to populate this list."],
+		recentStatusLabel  = L["Recorded recent buffs: "],
+		recentStatusPrint  = L["Buff Rules: recorded recent buffs = "],
+		recentRefreshName  = L["Refresh Recent Buffs"],
+		recentRefreshDesc  = L["Refresh the Recently Seen Buffs list."],
+		recentContainerName = L["Recent Buffs"],
+		recentAddDesc      = L["Add a buff rule for this SpellID."],
+		rulesListName      = L["Buff Rules List"],
+		emptyRulesMsg      = L["No buff rules configured."],
+		countPrefix        = L["Configured buff rules: "],
+		inputGet           = function() return buffRuleSpellInput end,
+		inputSet           = function(_, val)
+			buffRuleSpellInput = tostring(val or "")
+			local sid = nil
+			if ZSBT.ResolveSpellInputToID then
+				sid = ZSBT.ResolveSpellInputToID(buffRuleSpellInput)
+			else
+				sid = tonumber(buffRuleSpellInput)
+			end
+			buffRuleSpellResolvedID = (type(sid) == "number" and sid > 0) and sid or nil
+		end,
+		resolvedGet        = function() return buffRuleSpellResolvedID end,
+		openEditor         = function(spellID)
+			if Addon and Addon.OpenBuffRuleEditor then
+				Addon:OpenBuffRuleEditor(spellID)
+			end
+		end,
+	})
+end
+
+function ZSBT.BuildTab_DebuffRulesManager()
+	return BuildAuraRulesManagerTab({
+		appName            = "ZSBT_DebuffRules",
+		title              = L["|cFFFFD100Debuff Rules|r"],
+		rulesKey           = "debuffRules",
+		recentStatsKey     = "_recentDebuffStats",
+		rulesHeader        = L["Debuff Rules (Notifications)"],
+		desc               = L["Control which player debuff gained/faded notifications you see: disable Gain/Fade per debuff. Use 'Recently Seen Debuffs' below to discover spellIDs."],
+		addHeader          = L["Add Debuff Rule"],
+		inputLabel         = L["Debuff SpellID or Name"],
+		addDesc            = L["Add a rule for this debuff (merge-only). Resolves to a SpellID when possible; otherwise stores the typed name verbatim."],
+		showTemplates      = false,
+		recentHeader       = L["Recently Seen Debuffs"],
+		recentDesc         = L["These suggestions are based on debuffs ZSBT has recently seen on you."],
+		recentStatusLabel  = L["Recorded recent debuffs: "],
+		recentStatusPrint  = L["Debuff Rules: recorded recent debuffs = "],
+		recentRefreshName  = L["Refresh Recent Debuffs"],
+		recentRefreshDesc  = L["Refresh the Recently Seen Debuffs list."],
+		recentContainerName = L["Recent Debuffs"],
+		recentAddDesc      = L["Add a debuff rule for this SpellID."],
+		rulesListName      = L["Debuff Rules List"],
+		emptyRulesMsg      = L["No debuff rules configured."],
+		countPrefix        = L["Configured debuff rules: "],
+		inputGet           = function() return debuffRuleSpellInput end,
+		inputSet           = function(_, val)
+			debuffRuleSpellInput = tostring(val or "")
+			local sid = nil
+			if ZSBT.ResolveSpellInputToID then
+				sid = ZSBT.ResolveSpellInputToID(debuffRuleSpellInput)
+			else
+				sid = tonumber(debuffRuleSpellInput)
+			end
+			debuffRuleSpellResolvedID = (type(sid) == "number" and sid > 0) and sid or nil
+		end,
+		resolvedGet        = function() return debuffRuleSpellResolvedID end,
+		openEditor         = function(spellID)
+			if Addon and Addon.OpenDebuffRuleEditor then
+				Addon:OpenDebuffRuleEditor(spellID)
+			end
+		end,
+	})
+end
+
 
 ------------------------------------------------------------------------
 -- Compatibility: C_Item.GetItemInfo
@@ -870,14 +983,13 @@ local function mergeAuraRulesFromTemplateEntries(entries, classTag, specTag)
 	local added = 0
 	local missing = 0
 
-	local function addRuleAny(spellIDs, throttleSec, suppressGain, suppressFade)
+	local function addRuleAny(spellIDs, suppressGain, suppressFade)
 		if type(spellIDs) ~= "table" then return end
 		for _, id in ipairs(spellIDs) do
 			if type(id) == "number" and id > 0 then
 				if sc.auraRules[id] == nil then
 					sc.auraRules[id] = {
 						enabled = true,
-						throttleSec = throttleSec or 0.00,
 						suppressGain = suppressGain == true,
 						suppressFade = suppressFade == true,
 					}
@@ -892,7 +1004,7 @@ local function mergeAuraRulesFromTemplateEntries(entries, classTag, specTag)
 	if type(entries) == "table" then
 		for _, e in ipairs(entries) do
 			if type(e) == "table" and type(e.spellIDs) == "table" then
-				addRuleAny(e.spellIDs, tonumber(e.throttleSec) or 0.00, e.suppressGain, e.suppressFade)
+				addRuleAny(e.spellIDs, e.suppressGain, e.suppressFade)
 			end
 		end
 	end
@@ -3188,6 +3300,8 @@ function ZSBT.BuildTab_Notifications()
 		tradeskillLearned = true,
 		power = true,
 		externalAddons = true,
+		buffs = true,
+		debuffs = true,
 	}
 	local CATEGORY_LABELS = {
 		enterCombat = L["Enter Combat"],
@@ -3574,6 +3688,94 @@ function ZSBT.BuildTab_Notifications()
 		}
 	end
 
+	-- Buff/Debuff Tracking leaves: the "buffs"/"debuffs" notification
+	-- categories, the unconfigured-aura toggles, and the Buff Rules Manager.
+	local function auraGlobalGet(gainKey, fadeKey)
+		-- returns getters/setters bound to spamControl.auraGlobal keys
+		local function getWhich(which)
+			local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
+			local g = sc and sc.auraGlobal
+			if type(g) ~= "table" then return true end
+			local k = (which == "gain") and gainKey or fadeKey
+			if g[k] == nil then
+				-- debuff keys fall back to the shared buff flags when unset
+				local fb = (which == "gain") and "showUnconfiguredGains" or "showUnconfiguredFades"
+				return g[fb] ~= false
+			end
+			return g[k] ~= false
+		end
+		local function setWhich(which, v)
+			local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
+			if not sc then return end
+			sc.auraGlobal = sc.auraGlobal or {}
+			local k = (which == "gain") and gainKey or fadeKey
+			sc.auraGlobal[k] = v and true or false
+		end
+		return getWhich, setWhich
+	end
+
+	local function buildAuraTrackingLeaf(key, label, order, gainKey, fadeKey, gainLabel, fadeLabel, gainDesc, fadeDesc, mgrLabel, mgrDesc, mgrFunc)
+		local getA, setA = auraGlobalGet(gainKey, fadeKey)
+		local leaf = {
+			type = "group",
+			name = label,
+			order = order,
+			args = {
+				enabled = {
+					type = "toggle",
+					name = L["Enabled"],
+					order = 1,
+					width = "full",
+					get = function() return getCat(key) end,
+					set = function(_, v) setCat(key, v) end,
+				},
+				route = routeSelect(key, 1.1),
+				showGains = {
+					type = "toggle",
+					name = gainLabel,
+					desc = gainDesc,
+					order = 2,
+					width = "full",
+					get = function() return getA("gain") end,
+					set = function(_, v) setA("gain", v) end,
+				},
+				showFades = {
+					type = "toggle",
+					name = fadeLabel,
+					desc = fadeDesc,
+					order = 3,
+					width = "full",
+					get = function() return getA("fade") end,
+					set = function(_, v) setA("fade", v) end,
+				},
+				rulesHeader = { type = "header", name = L["Aura Rules"], order = 4 },
+				rulesDesc = {
+					type = "description",
+					name = L["Rules hide gains and/or fades per aura — by spell ID or exact aura name (name rules also match hidden combat auras)."],
+					order = 4.1,
+					fontSize = "medium",
+				},
+				openBuffRulesManager = {
+					type = "execute",
+					name = mgrLabel,
+					desc = mgrDesc,
+					order = 4.2,
+					width = "full",
+					func = mgrFunc,
+				},
+			},
+		}
+		-- Style args only: per-category sound can't fire reliably on the
+		-- secret-name path (gated emits must silence it), and per-rule sound
+		-- is impossible — Blizzard blocks every secret->Lua channel.
+		local DROP_SOUND_ARGS = { soundHeader = true, soundEnabled = true, soundKey = true, soundTest = true, stopOnLeaveCombat = true }
+		local extra = buildStyleSoundArgs(key, 5)
+		for k, v in pairs(extra) do
+			if not DROP_SOUND_ARGS[k] then leaf.args[k] = v end
+		end
+		return leaf
+	end
+
 	return {
 		type  = "group",
 		name  = L["|cFFFFD100Notifications|r"],
@@ -3841,6 +4043,28 @@ function ZSBT.BuildTab_Notifications()
 					},
 				},
 			},
+			buffTracking = buildAuraTrackingLeaf("buffs", L["Buff Tracking"], 8,
+				"showUnconfiguredGains", "showUnconfiguredFades",
+				L["Show Buff Gains Without Rules"], L["Show Buff Fades Without Rules"],
+				L["If disabled, helpful buff gain notifications only show when you have a Buff Rule for that spell (whitelist mode)."],
+				L["If disabled, helpful buff fade notifications only show when you have a Buff Rule for that spell (whitelist mode)."],
+				L["Open Buff Rules Manager"], L["Open the Buff Rules Manager window."],
+				function()
+					if Addon and Addon.OpenBuffRulesManager then
+						Addon:OpenBuffRulesManager()
+					end
+				end),
+			debuffTracking = buildAuraTrackingLeaf("debuffs", L["Debuff Tracking"], 8.1,
+				"showUnconfiguredDebuffGains", "showUnconfiguredDebuffFades",
+				L["Show Debuff Gains Without Rules"], L["Show Debuff Fades Without Rules"],
+				L["If disabled, harmful debuff gain notifications only show when you have a Debuff Rule for that spell (whitelist mode)."],
+				L["If disabled, harmful debuff fade notifications only show when you have a Debuff Rule for that spell (whitelist mode)."],
+				L["Open Debuff Rules Manager"], L["Open the Debuff Rules Manager window."],
+				function()
+					if Addon and Addon.OpenDebuffRulesManager then
+						Addon:OpenDebuffRulesManager()
+					end
+				end),
 			externalAddons = buildLeafGroup("externalAddons", 9),
 		},
 	}
@@ -9889,106 +10113,6 @@ function ZSBT.BuildTab_SpamControl()
 					sc.routing.spellRulesDefaultArea = val
 				end,
 			},
-			auraRulesDefaultArea = {
-				type   = "select",
-				name   = L["Buff Rules Default Scroll Area"],
-				desc   = L["Default scroll area for Buff Rules notifications when a rule does not specify its own scroll area."],
-				order  = 29.7,
-				values = function() return ZSBT.GetScrollAreaNames() end,
-				get    = function()
-					local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
-					local r = sc and sc.routing
-					return (r and r.auraRulesDefaultArea) or "Notifications"
-				end,
-				set    = function(_, val)
-					local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
-					if not sc then return end
-					sc.routing = sc.routing or {}
-					sc.routing.auraRulesDefaultArea = val
-				end,
-			},
-			auraShowUnconfiguredGains = {
-				type  = "toggle",
-				name  = L["Show Buff Gains Without Rules"],
-				desc  = L["If disabled, helpful buff gain notifications only show when you have a Buff Rule for that spell (whitelist mode)."],
-				width = "full",
-				order = 29.8,
-				get   = function()
-					local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
-					local g = sc and sc.auraGlobal
-					if type(g) ~= "table" then return true end
-					return g.showUnconfiguredGains ~= false
-				end,
-				set   = function(_, v)
-					local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
-					if not sc then return end
-					sc.auraGlobal = sc.auraGlobal or {}
-					sc.auraGlobal.showUnconfiguredGains = v and true or false
-				end,
-			},
-			auraShowUnconfiguredFades = {
-				type  = "toggle",
-				name  = L["Show Buff Fades Without Rules"],
-				desc  = L["If disabled, helpful buff fade notifications only show when you have a Buff Rule for that spell (whitelist mode)."],
-				width = "full",
-				order = 29.9,
-				get   = function()
-					local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
-					local g = sc and sc.auraGlobal
-					if type(g) ~= "table" then return true end
-					return g.showUnconfiguredFades ~= false
-				end,
-				set   = function(_, v)
-					local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
-					if not sc then return end
-					sc.auraGlobal = sc.auraGlobal or {}
-					sc.auraGlobal.showUnconfiguredFades = v and true or false
-				end,
-			},
-			auraShowUnconfiguredDebuffGains = {
-				type  = "toggle",
-				name  = L["Show Debuff Gains Without Rules"],
-				desc  = L["If disabled, harmful debuff gain notifications only show when you have a Debuff Rule for that spell (whitelist mode)."],
-				width = "full",
-				order = 29.91,
-				get   = function()
-					local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
-					local g = sc and sc.auraGlobal
-					if type(g) ~= "table" then return true end
-					if g.showUnconfiguredDebuffGains == nil then
-						return g.showUnconfiguredGains ~= false
-					end
-					return g.showUnconfiguredDebuffGains ~= false
-				end,
-				set   = function(_, v)
-					local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
-					if not sc then return end
-					sc.auraGlobal = sc.auraGlobal or {}
-					sc.auraGlobal.showUnconfiguredDebuffGains = v and true or false
-				end,
-			},
-			auraShowUnconfiguredDebuffFades = {
-				type  = "toggle",
-				name  = L["Show Debuff Fades Without Rules"],
-				desc  = L["If disabled, harmful debuff fade notifications only show when you have a Debuff Rule for that spell (whitelist mode)."],
-				width = "full",
-				order = 29.92,
-				get   = function()
-					local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
-					local g = sc and sc.auraGlobal
-					if type(g) ~= "table" then return true end
-					if g.showUnconfiguredDebuffFades == nil then
-						return g.showUnconfiguredFades ~= false
-					end
-					return g.showUnconfiguredDebuffFades ~= false
-				end,
-				set   = function(_, v)
-					local sc = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.spamControl
-					if not sc then return end
-					sc.auraGlobal = sc.auraGlobal or {}
-					sc.auraGlobal.showUnconfiguredDebuffFades = v and true or false
-				end,
-			},
 			rulesManagerDesc = {
 				type     = "description",
 				name     = L["Manage per-spell outgoing throttles in a separate window."],
@@ -10004,18 +10128,6 @@ function ZSBT.BuildTab_SpamControl()
 				func  = function()
 					if Addon and Addon.OpenSpellRulesManager then
 						Addon:OpenSpellRulesManager()
-					end
-				end,
-			},
-			openBuffRulesManager = {
-				type  = "execute",
-				name  = L["Open Buff Rules Manager"],
-				desc  = L["Open the Buff Rules Manager window."],
-				order = 33,
-				width = "full",
-				func  = function()
-					if Addon and Addon.OpenBuffRulesManager then
-						Addon:OpenBuffRulesManager()
 					end
 				end,
 			},
