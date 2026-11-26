@@ -2669,13 +2669,30 @@ function Core:InitKillAnnouncer()
 	pcall(function() self._killAnnouncerFrame:RegisterEvent("CHAT_MSG_SYSTEM") end)
 	Core._utKillCreditOnly = Core._utKillCreditOnly or false
 	Core._utKillCreditSeen = Core._utKillCreditSeen or false
-	local okKillingBlow = pcall(function() self._killAnnouncerFrame:RegisterEvent("PLAYER_KILLING_BLOW") end)
-	-- Note: successful registration does NOT mean the event will actually fire on this client.
-	-- Only suppress fallbacks after we observe a real kill-credit event.
+	-- Kill-credit and death-witness events verified on Forever/16001 via the
+	-- warcraft.wiki event docs: PARTY_KILL (attackerGUID, targetGUID) fires on
+	-- party kill credit; UNIT_DIED (unitGUID) fires on any nearby unit death;
+	-- PLAYER_PVP_KILLS_CHANGED (unitTarget) fires on honorable PvP credit. GUIDs
+	-- may be secret when unit identity is restricted — handlers degrade to
+	-- name/timing in that case. PLAYER_KILLING_BLOW is not a documented event —
+	-- registered defensively anyway; it is real credit if it ever fires.
+	pcall(function() self._killAnnouncerFrame:RegisterEvent("PLAYER_KILLING_BLOW") end)
+	pcall(function() self._killAnnouncerFrame:RegisterEvent("PARTY_KILL") end)
+	pcall(function() self._killAnnouncerFrame:RegisterEvent("UNIT_DIED") end)
+	pcall(function() self._killAnnouncerFrame:RegisterEvent("PLAYER_PVP_KILLS_CHANGED") end)
 	pcall(function() self._killAnnouncerFrame:RegisterEvent("COMBAT_TEXT_UPDATE") end)
 	pcall(function() self._killAnnouncerFrame:RegisterUnitEvent("UNIT_HEALTH", "target") end)
 	pcall(function() self._killAnnouncerFrame:RegisterUnitEvent("UNIT_HEALTH_FREQUENT", "target") end)
 	pcall(function() self._killAnnouncerFrame:RegisterEvent("PLAYER_TARGET_CHANGED") end)
+	-- Death-witness diagnostics (Camelot): the target clears instantly on death
+	-- and PTC's UnitExists always reads false at delivery, so kill-vs-switch
+	-- must be corroborated by another signal. Register every candidate source;
+	-- whichever actually fires decides the fix.
+	pcall(function() self._killAnnouncerFrame:RegisterEvent("CHAT_MSG_COMBAT_XP_GAIN") end)
+	pcall(function() self._killAnnouncerFrame:RegisterEvent("CHAT_MSG_LOOT") end)
+	pcall(function() self._killAnnouncerFrame:RegisterEvent("CHAT_MSG_MONEY") end)
+	-- Nameplate UNIT_HEALTH registrations were removed: Camelot (1.60.1) does
+	-- not deliver health events for nameplateN units — UNIT_DIED covers death.
 	Core._utLastTargetDead = Core._utLastTargetDead or nil
 	Core._utLastTargetName = Core._utLastTargetName or nil
 	Core._utLastTargetSeenAt = Core._utLastTargetSeenAt or 0
@@ -2695,7 +2712,40 @@ function Core:InitKillAnnouncer()
 		ZSBT.Addon:Print(msg)
 	end
 
-	local function FireUT(targetName)
+	-- Secrets report type()=="boolean" but throw on comparison — normalize.
+	local function safeBool(v)
+		if type(v) ~= "boolean" then return nil end
+		local ok, r = pcall(function() return v == true end)
+		if not ok then return nil end
+		return r
+	end
+
+	local function FireUT(targetName, src, key)
+		local t0 = GetTime and GetTime() or 0
+		-- Dedup: a single kill can arrive as PARTY_KILL + UNIT_DIED + an XP-witness
+		-- line within the same frame — announce it once. Keyed by GUID when the
+		-- event supplies one, and by victim name when resolvable.
+		if type(key) == "string" and key ~= "" then
+			Core._utFireKeys = Core._utFireKeys or {}
+			if Core._utFireKeys[key] and (t0 - Core._utFireKeys[key]) <= 0.75 then
+				if Core._utTrace then SafePrint("|cFF00CC66[UT]|r dupkey " .. dbgSafe(key)) end
+				return
+			end
+			Core._utFireKeys[key] = t0
+		end
+		if type(targetName) == "string" and targetName ~= "" and targetName ~= "Target" then
+			Core._utFireNames = Core._utFireNames or {}
+			if Core._utFireNames[targetName] and (t0 - Core._utFireNames[targetName]) <= 0.75 then
+				if Core._utTrace then SafePrint("|cFF00CC66[UT]|r dupname " .. dbgSafe(targetName)) end
+				return
+			end
+			Core._utFireNames[targetName] = t0
+		end
+		if Core._utTrace then
+			SafePrint("|cFF00CC66[UT]|r FIRE src=" .. dbgSafe(src) .. " tn=" .. dbgSafe(targetName)
+				.. " utGuid=" .. dbgSafe(Core._utLastTargetGUID)
+				.. " lastGuid=" .. dbgSafe(ZSBT.Parser and ZSBT.Parser.EventCollector and ZSBT.Parser.EventCollector._lastOutgoingCombatTargetGUID))
+		end
 		local t = GetTime and GetTime() or 0
 		local perKillWindowSec = 12.0
 		local maxChainDurationSec = 30.0
@@ -2737,8 +2787,101 @@ function Core:InitKillAnnouncer()
 		if not Core:IsMasterEnabled() then return end
 		local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("notifications"))
 			or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
+		if event == "PARTY_KILL" then
+			-- attackerGUID, targetGUID — direct kill credit. Resolve the victim
+			-- name against stamped GUIDs; announce regardless (party kills count).
+			local attackerG, victimG = msg, select(1, ...)
+			local aSafe = (type(attackerG) == "string" and (not ZSBT.IsSafeString or ZSBT.IsSafeString(attackerG))) and attackerG or nil
+			local vSafe = (type(victimG) == "string" and (not ZSBT.IsSafeString or ZSBT.IsSafeString(victimG))) and victimG or nil
+			local tn = nil
+			if vSafe then
+				local rec = Core._utTargetNames and Core._utTargetNames[vSafe]
+				if rec and type(rec.n) == "string" and rec.n ~= "" then tn = rec.n end
+				if not tn and Core._utLastTargetGUID == vSafe then tn = Core._utLastTargetName end
+				local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
+				if not tn and ec and ec._lastOutgoingCombatTargetGUID == vSafe then
+					tn = ec._lastOutgoingCombatTargetName
+				end
+			end
+			if not (ZSBT.IsSafeString and ZSBT.IsSafeString(tn) and tn ~= "") then tn = nil end
+			if tn and vSafe then
+				Core._utTargetNames = Core._utTargetNames or {}
+				Core._utTargetNames[vSafe] = { n = tn, at = GetTime and GetTime() or 0 }
+			end
+			if Core._utTrace or dl >= 4 then
+				SafePrint("|cFF00CC66[UT]|r partykill attacker=" .. dbgSafe(aSafe)
+					.. " victim=" .. dbgSafe(vSafe) .. " tn=" .. dbgSafe(tn))
+			end
+			Core._utKillCreditSeen = true
+			FireUT(tn or "Target", "partykill", vSafe)
+			return
+		end
+		if event == "UNIT_DIED" then
+			-- unitGUID — any nearby unit death. GUID-grade death witness: confirms
+			-- pending clear candidates, and directly attributes when the dead unit
+			-- was our last outgoing victim (untargeted kills included).
+			local tD = GetTime and GetTime() or 0
+			local g = msg
+			local gSafe = (type(g) == "string" and (not ZSBT.IsSafeString or ZSBT.IsSafeString(g))) and g or nil
+			if Core._utTrace or dl >= 4 then
+				SafePrint("|cFF00CC66[UT]|r unitdied guid=" .. dbgSafe(g))
+			end
+			if not gSafe then return end
+			Core._utDiedGuids = Core._utDiedGuids or {}
+			Core._utDiedGuids[gSafe] = tD
+			for k, v in pairs(Core._utDiedGuids) do
+				if (tD - v) > 5 then Core._utDiedGuids[k] = nil end
+			end
+			if Core._utClearCands then
+				for cn, c in pairs(Core._utClearCands) do
+					if c.guid == gSafe and c.at and (tD - c.at) <= 1.5 then
+						Core._utClearCands[cn] = nil
+						Core._utDiedGuids[gSafe] = nil
+						FireUT(cn, "unitdied-cand", gSafe)
+						return
+					end
+				end
+			end
+			local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
+			local lG = ec and ec._lastOutgoingCombatTargetGUID
+			local lAt = ec and ec._lastOutgoingCombatAt
+			if lG == gSafe and lAt and (tD - lAt) <= 3.0 then
+				local tn = nil
+				local rec = Core._utTargetNames and Core._utTargetNames[gSafe]
+				if rec and type(rec.n) == "string" and rec.n ~= "" then tn = rec.n end
+				if not tn then tn = ec._lastOutgoingCombatTargetName end
+				if not (ZSBT.IsSafeString and ZSBT.IsSafeString(tn) and tn ~= "") then tn = "Target" end
+				Core._utDiedGuids[gSafe] = nil
+				FireUT(tn, "unitdied", gSafe)
+			end
+			return
+		end
+		if event == "PLAYER_PVP_KILLS_CHANGED" then
+			-- unitTarget — credited honorable kill (PvP). The payload is a unit
+			-- token for the victim; resolve its name if we can.
+			local tn = nil
+			if type(msg) == "string" and msg ~= "" then
+				local okN, n = pcall(UnitName, msg)
+				if okN and ZSBT.IsSafeString and ZSBT.IsSafeString(n) and n ~= "" then tn = n end
+			end
+			if not tn and ZSBT.IsSafeString and ZSBT.IsSafeString(Core._utLastTargetName) then
+				tn = Core._utLastTargetName
+			end
+			if Core._utTrace or dl >= 4 then
+				SafePrint("|cFF00CC66[UT]|r pvpkill unit=" .. dbgSafe(msg) .. " tn=" .. dbgSafe(tn))
+			end
+			FireUT(tn or "Target", "pvpkill")
+			return
+		end
 		if event == "COMBAT_TEXT_UPDATE" then
 			local ctType = msg
+			if (Core._utTrace or dl >= 4) and type(ctType) == "string" then
+				Core._utCtSeen = Core._utCtSeen or {}
+				if not Core._utCtSeen[ctType] then
+					Core._utCtSeen[ctType] = true
+					SafePrint("|cFF00CC66[UT]|r cttype " .. dbgSafe(ctType))
+				end
+			end
 			if ctType ~= "PARTYKILL" and ctType ~= "PARTY_KILL" then return end
 			Core._utKillCreditSeen = true
 			Core._utKillCreditOnly = true
@@ -2752,10 +2895,12 @@ function Core:InitKillAnnouncer()
 			if dl >= 4 then
 				SafePrint("|cFF00CC66[UT]|r ct PARTYKILL tn=" .. dbgSafe(tn or nil))
 			end
-			FireUT(tn or "Target")
+			FireUT(tn or "Target", "ct")
 			return
 		end
 		if event == "PLAYER_KILLING_BLOW" then
+			-- Not a documented event on any client — kept defensively (registration
+			-- is pcall-guarded); if it ever fires, it is real kill credit.
 			Core._utKillCreditSeen = true
 			Core._utKillCreditOnly = true
 			local tn = nil
@@ -2767,14 +2912,20 @@ function Core:InitKillAnnouncer()
 			if dl >= 4 then
 				SafePrint("|cFF00CC66[UT]|r killingblow tn=" .. dbgSafe(tn or nil))
 			end
-			FireUT(tn or "Target")
+			FireUT(tn or "Target", "kb")
 			return
 		end
 		if event == "PLAYER_TARGET_CHANGED" then
-			local hasTarget = false
-			local okExists, exists = UnitExists and pcall(UnitExists, "target")
-			if okExists and exists == true then
-				hasTarget = true
+			-- Compare inside pcall: UnitExists may return a secret under identity
+			-- restriction, and comparing a secret throws.
+			local okExists, hasT = pcall(function()
+				return UnitExists and (UnitExists("target") == true) or false
+			end)
+			local hasTarget = okExists and hasT == true
+			if Core._utTrace then
+				SafePrint("|cFF00CC66[UT]|r ptc hasTarget=" .. dbgSafe(hasTarget)
+					.. " dead=" .. dbgSafe(Core._utLastTargetDead)
+					.. " utGuid=" .. dbgSafe(Core._utLastTargetGUID))
 			end
 
 			-- If the player is tab-targeting and switching to a NEW target, do not infer a kill.
@@ -2784,6 +2935,17 @@ function Core:InitKillAnnouncer()
 				local tn = UnitName and UnitName("target")
 				if ZSBT.IsSafeString and ZSBT.IsSafeString(tn) and tn ~= "" then
 					Core._utLastTargetName = tn
+				end
+				-- Re-baseline death/GUID state for the new target so the first
+				-- UNIT_HEALTH tick can't manufacture a false dead edge carried
+				-- over from the previous target (tab-targeting corpses).
+				local okD2, d2 = pcall(_secTargetDead)
+				Core._utLastTargetDead = okD2 and safeBool(d2) or nil
+				local okTg, tg = pcall(UnitGUID, "target")
+				Core._utLastTargetGUID = (okTg and type(tg) == "string" and tg ~= "") and tg or nil
+				if Core._utLastTargetGUID and ZSBT.IsSafeString and ZSBT.IsSafeString(tn) and tn ~= "" then
+					Core._utTargetNames = Core._utTargetNames or {}
+					Core._utTargetNames[Core._utLastTargetGUID] = { n = tn, at = GetTime and GetTime() or 0 }
 				end
 				return
 			end
@@ -2795,33 +2957,75 @@ function Core:InitKillAnnouncer()
 			local lastAt = ec and ec._lastOutgoingCombatAt
 			local lastName = ec and ec._lastOutgoingCombatTargetName
 			local outAge = (lastAt and (tNow - lastAt)) or nil
+			-- Prefer the name recorded for THIS guid — _utLastTargetName and
+			-- _utLastTargetGUID are stamped on different ticks and can desync by
+			-- one target under fast switching (mislabeled a kill as "Raid Leader").
 			local tn = Core._utLastTargetName
+			local recT = Core._utLastTargetGUID and Core._utTargetNames and Core._utTargetNames[Core._utLastTargetGUID]
+			if recT and type(recT.n) == "string" and recT.n ~= "" then
+				tn = recT.n
+			end
 			local nameMatch = false
 			if ZSBT.IsSafeString and ZSBT.IsSafeString(tn) and ZSBT.IsSafeString(lastName) and tn ~= "" and lastName ~= "" then
 				nameMatch = (tn == lastName)
 			end
-			local inCombat = false
-			local okAC, ac = pcall(_secAffectingCombat)
-			if okAC then inCombat = (ac == true) end
+			local lastGuid = ec and ec._lastOutgoingCombatTargetGUID
+			local guidCmp = (Core._utLastTargetGUID ~= nil and lastGuid ~= nil)
+			-- When both GUIDs are readable, identity is decided by GUID alone —
+			-- a mismatch proves a different mob cleared (names can collide on
+			-- same-named packs; "Blackrock Outrunner" != "Blackrock Outrunner").
+			-- Only when GUIDs can't compare do we fall back to the name match.
+			local identityOK = (guidCmp and Core._utLastTargetGUID == lastGuid)
+				or (not guidCmp and nameMatch)
+			local okAC, inC = pcall(function() return _secAffectingCombat() == true end)
+			local inCombat = okAC and inC == true
 			if dl >= 4 then
 				SafePrint("|cFF00CC66[UT]|r targetclear lastDead=" .. dbgSafe(Core._utLastTargetDead)
 					.. " lastSeenAge=" .. dbgSafe(lastSeenAge)
 					.. " outAge=" .. dbgSafe(outAge)
 					.. " nameMatch=" .. dbgSafe(nameMatch)
+					.. " identityOK=" .. dbgSafe(identityOK)
 					.. " combat=" .. dbgSafe(inCombat))
 			end
-			-- Avoid false positives: only infer kill if the cleared target matches our last outgoing attribution.
-			-- Note: UNIT_HEALTH may not tick every frame in some clients, so lastSeenAge can be >1s.
+			-- Kill-vs-switch proof: on clients where the target clears instantly
+			-- on death (Camelot), a clear can only be a kill if a death witness
+			-- corroborates it — either the unit was seen dead at its last health
+			-- tick, or a "X dies" chat line (e.g. CHAT_MSG_COMBAT_XP_GAIN's
+			-- "X dies, you gain N experience.") recently named it. Otherwise arm
+			-- a short-lived candidate that a later witness can still confirm.
 			local minGapSec = 0.25
 			local sinceLastUt = (Core._utKillLastAt and (tNow - Core._utKillLastAt)) or nil
+			local witnessAt = (tn and Core._utDeathWitness and Core._utDeathWitness[tn]) or nil
+			local witnessed = (witnessAt ~= nil) and ((tNow - witnessAt) <= 1.5)
+			local diedAt = (Core._utLastTargetGUID and Core._utDiedGuids and Core._utDiedGuids[Core._utLastTargetGUID]) or nil
+			local guidWitnessed = (diedAt ~= nil) and ((tNow - diedAt) <= 1.5)
 			if inCombat and (not sinceLastUt or sinceLastUt >= minGapSec)
-				and nameMatch
+				and identityOK
 				and outAge and outAge <= 0.90
 				and lastSeenAge and lastSeenAge <= 2.0 then
-				FireUT(tn)
+				if Core._utLastTargetDead == true or witnessed or guidWitnessed then
+					if witnessed then Core._utDeathWitness[tn] = nil end
+					if guidWitnessed then
+						FireUT(tn, "clear-died", Core._utLastTargetGUID)
+						Core._utDiedGuids[Core._utLastTargetGUID] = nil
+					else
+						FireUT(tn, witnessed and "clear-witness" or "clear-dead")
+					end
+				elseif type(tn) == "string" and tn ~= "" then
+					Core._utClearCands = Core._utClearCands or {}
+					Core._utClearCands[tn] = { guid = Core._utLastTargetGUID, at = tNow }
+					if Core._utLastTargetGUID then
+						Core._utTargetNames = Core._utTargetNames or {}
+						Core._utTargetNames[Core._utLastTargetGUID] = { n = tn, at = tNow }
+					end
+					if Core._utTrace or dl >= 4 then
+						SafePrint("|cFF00CC66[UT]|r clearcand tn=" .. dbgSafe(tn))
+					end
+				end
 			end
 			Core._utLastTargetDead = nil
 			Core._utLastTargetName = nil
+			Core._utLastTargetGUID = nil
 			Core._utLastTargetSeenAt = 0
 			return
 		end
@@ -2834,15 +3038,52 @@ function Core:InitKillAnnouncer()
 				return
 			end
 			local unit = msg
-			if unit ~= "target" then return end
+			if unit ~= "target" then
+				if (Core._utTrace or dl >= 4) and type(unit) == "string" and unit:sub(1, 9) == "nameplate" then
+					Core._utNpSeen = Core._utNpSeen or {}
+					if not Core._utNpSeen[unit] then
+						Core._utNpSeen[unit] = true
+						SafePrint("|cFF00CC66[UT]|r nptick unit=" .. dbgSafe(unit))
+					end
+					local okD, d = pcall(UnitIsDeadOrGhost, unit)
+					if okD and safeBool(d) == true then
+						local okG, g = pcall(UnitGUID, unit)
+						SafePrint("|cFF00CC66[UT]|r npdead unit=" .. dbgSafe(unit)
+							.. " guid=" .. dbgSafe((okG and type(g) == "string") and g or nil))
+					end
+				end
+				return
+			end
 local okDead, isDead = pcall(_secTargetDead)
-			if not okDead or type(isDead) ~= "boolean" then return end
+			isDead = (okDead and safeBool(isDead)) or nil
+			if isDead == nil then return end
 			local prevDead = Core._utLastTargetDead
 			Core._utLastTargetDead = isDead
 			Core._utLastTargetSeenAt = GetTime and GetTime() or 0
 			local tn = UnitName and UnitName("target")
 			if ZSBT.IsSafeString and ZSBT.IsSafeString(tn) and tn ~= "" then
 				Core._utLastTargetName = tn
+			end
+			local okTg, tg = pcall(UnitGUID, "target")
+			if okTg and type(tg) == "string" and tg ~= "" then
+				if (Core._utTrace or dl >= 4) and tg ~= Core._utLastTargetGUID then
+					SafePrint("|cFF00CC66[UT]|r guidstamp " .. dbgSafe(tg)
+						.. " dead=" .. dbgSafe(isDead))
+				end
+				Core._utLastTargetGUID = tg
+				-- Atomic guid→name map: name resolution for PARTY_KILL victims
+				-- must pair the name with the guid it was captured alongside.
+				if ZSBT.IsSafeString and ZSBT.IsSafeString(tn) and tn ~= "" then
+					Core._utTargetNames = Core._utTargetNames or {}
+					Core._utTargetNames[tg] = { n = tn, at = GetTime and GetTime() or 0 }
+					local tP = GetTime and GetTime() or 0
+					if tP - (Core._utTargetNamesPrune or 0) > 30 then
+						Core._utTargetNamesPrune = tP
+						for gk, rec in pairs(Core._utTargetNames) do
+							if not rec.at or (tP - rec.at) > 60 then Core._utTargetNames[gk] = nil end
+						end
+					end
+				end
 			end
 			if prevDead == nil then return end
 			if prevDead == false and isDead == true then
@@ -2861,13 +3102,20 @@ local okDead, isDead = pcall(_secTargetDead)
 				end
 
 				-- Attribution:
-				-- 1) Best: match safe target name to last outgoing target name.
-				-- 2) Fallback: if we cannot safely compare names (secret strings), rely on a recent outgoing hit.
+				-- 1) Best: match the edged unit's GUID to the last outgoing target's GUID.
+				-- 2) Match safe target name to last outgoing target name.
+				-- 3) Fallback: only when NEITHER identity is readable, rely on a recent outgoing hit.
+				--    (A readable GUID that mismatches proves a different mob died — never fire.)
 				if lastAt and age and age <= 1.5 then
-					if tnSafe and tn ~= "" and lastSafe and tn == lastName then
-						FireUT(tn)
-					elseif not lastSafe then
-						FireUT(tnSafe and tn or "Target")
+					local lastGuid = ec and ec._lastOutgoingCombatTargetGUID
+					local tguid = Core._utLastTargetGUID
+					local guidCmp = (tguid ~= nil and lastGuid ~= nil)
+					if guidCmp and tguid == lastGuid then
+						FireUT(tnSafe and tn or "Target", "edge-guid")
+					elseif not guidCmp and tnSafe and tn ~= "" and lastSafe and tn == lastName then
+						FireUT(tn, "edge-name")
+					elseif not guidCmp and not lastSafe then
+						FireUT(tnSafe and tn or "Target", "edge-recency")
 					end
 				end
 			end
@@ -2879,11 +3127,52 @@ local okDead, isDead = pcall(_secTargetDead)
 		local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("notifications"))
 			or (ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.diagnostics and (ZSBT.db.profile.diagnostics.debugLevel or 0) or 0)
 		local msgIsSafe = (not ZSBT.IsSafeString) or (ZSBT.IsSafeString and ZSBT.IsSafeString(msg))
-		if dl >= 4 and ZSBT.Addon and ZSBT.Addon.Print then
+		if (Core._utTrace or dl >= 4) and ZSBT.Addon and ZSBT.Addon.Print then
 			local safeMsg = msgIsSafe and msg or "<secret>"
 			ZSBT.Addon:Print("|cFF00CC66[UT]|r evt=" .. tostring(event) .. " msg=" .. tostring(safeMsg))
 		end
 		if not msgIsSafe then return end
+
+		-- Death witness: "X dies, you gain N experience." / "X dies." proves a
+		-- named mob actually died. Records a timestamp per name so target-clears
+		-- can corroborate kill-vs-switch; also confirms a pending clear
+		-- candidate directly when the witness lands after the clear event.
+		local wtn = msg:match("^(.-) dies[,%.!]")
+		if wtn then
+			wtn = wtn:gsub("[%.!]+$", "")
+			if wtn ~= "" then
+				local tW = GetTime and GetTime() or 0
+				Core._utDeathWitness = Core._utDeathWitness or {}
+				Core._utDeathWitness[wtn] = tW
+				for wn, wt in pairs(Core._utDeathWitness) do
+					if (tW - wt) > 5 then Core._utDeathWitness[wn] = nil end
+				end
+				if Core._utTrace or dl >= 4 then
+					SafePrint("|cFF00CC66[UT]|r witness tn=" .. dbgSafe(wtn))
+				end
+				local cand = Core._utClearCands and Core._utClearCands[wtn]
+				if cand and cand.at and (tW - cand.at) <= 1.5 then
+					Core._utClearCands[wtn] = nil
+					Core._utDeathWitness[wtn] = nil
+					FireUT(wtn, "clear-witnessed")
+					return
+				end
+				-- No pending clear: the victim may have died untargeted (e.g. a
+				-- dot finishing it while on another mob — no clear event ever
+				-- fires for it). If the witness names our last outgoing victim
+				-- and the hit was recent, the witness alone is the proof.
+				local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
+				local lName = ec and ec._lastOutgoingCombatTargetName
+				local lAt = ec and ec._lastOutgoingCombatAt
+				local lAge = lAt and (tW - lAt) or nil
+				if ZSBT.IsSafeString and ZSBT.IsSafeString(lName) and lName == wtn
+					and lAge and lAge <= 3.0 then
+					Core._utDeathWitness[wtn] = nil
+					FireUT(wtn, "witness")
+					return
+				end
+			end
+		end
 
 		local function extractTarget(m)
 			if type(m) ~= "string" then return nil end
@@ -2902,8 +3191,38 @@ local okDead, isDead = pcall(_secTargetDead)
 
 		local target = extractTarget(msg)
 		if not target then return end
-		FireUT(target)
+		FireUT(target, "chat")
 	end)
+end
+
+-- /zsbt utprobe — dump readability of the unit APIs the kill announcer relies
+-- on, so we can see what the current client/state actually exposes (e.g. in
+-- combat on Camelot where names may be secret but GUIDs readable).
+function Core:RunUTProbe()
+	local function stat(label, fn)
+		local ok, v = pcall(fn)
+		if not ok then return label .. "=<error>" end
+		if v == nil then return label .. "=nil" end
+		if type(v) == "string" and ZSBT.IsSafeString and not ZSBT.IsSafeString(v) then
+			return label .. "=<secret>"
+		end
+		if type(v) == "number" and ZSBT.IsSafeNumber and not ZSBT.IsSafeNumber(v) then
+			return label .. "=<secret>"
+		end
+		return label .. "=" .. tostring(v)
+	end
+	local parts = {
+		stat("combat", function() return UnitAffectingCombat("player") end),
+		stat("exists", function() return UnitExists("target") end),
+		stat("name", function() return UnitName("target") end),
+		stat("guid", function() return UnitGUID("target") end),
+		stat("dead", function() return UnitIsDeadOrGhost("target") end),
+		stat("hp", function() return UnitHealth("target") end),
+		stat("hpmax", function() return UnitHealthMax("target") end),
+	}
+	if ZSBT and ZSBT.Addon and ZSBT.Addon.Print then
+		ZSBT.Addon:Print("UT probe: " .. table.concat(parts, "  "))
+	end
 end
 
 function Core:IsNotificationCategoryEnabled(category)

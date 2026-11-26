@@ -2505,6 +2505,18 @@ function Addon:HandleSlashCommand(input)
             ZSBT.Core:RunAuraTest()
         end
         return
+    elseif cmd == "utprobe" then
+        if ZSBT.Core and ZSBT.Core.RunUTProbe then
+            ZSBT.Core:RunUTProbe()
+        end
+        return
+    elseif cmd == "uttrace" then
+        if ZSBT.Core then
+            ZSBT.Core._utTrace = not ZSBT.Core._utTrace
+            self:Print("UT trace " .. (ZSBT.Core._utTrace and "ON" or "OFF")
+                .. " — prints every announcer decision to chat.")
+        end
+        return
     elseif cmd == "restorefct" then
         if ZSBT.Core and ZSBT.Core.RestoreBlizzardFCT then
             local g = ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general

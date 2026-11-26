@@ -63,6 +63,16 @@ local function safeUnitName(unit)
 	return value
 end
 
+-- Read a unit's GUID, tolerating secret/absent returns. GUIDs are the
+-- identity channel the UT kill-announcer uses when names are secret.
+local function safeTargetGUID(unit)
+	if not unit or type(UnitGUID) ~= "function" then return nil end
+	local ok, value = pcall(UnitGUID, unit)
+	if not ok or type(value) ~= "string" or value == "" then return nil end
+	if ZSBT.IsSafeString and not ZSBT.IsSafeString(value) then return nil end
+	return value
+end
+
 -- Chaos school (127) tooltips cover every school; hits may report the
 -- composite masks 124/126.
 local function spellSchoolFits(learned, school)
@@ -883,6 +893,7 @@ local function flushBestOutgoing(self, token)
 	self._rawPipe[pipeId] = bucket.amount
 	self._lastOutgoingCombatAt = bucket.timestamp
 	self._lastOutgoingCombatTargetName = bucket.targetName
+	self._lastOutgoingCombatTargetGUID = bucket.targetGUID or safeTargetGUID("target")
 	if (tonumber(dl) or 0) >= 4 then
 		ECPrint(("FLUSH_BEST token=%s spellId=%s amt=%s school=%s crit=%s cnt=%s max=%s second=%s")
 			:format(dbgSafe(token), dbgSafe(bucket.spellId), dbgSafe(bucket.amount), dbgSafe(bucket.schoolMask), dbgSafe(bucket.isCrit), dbgSafe(bucket._seenCount), dbgSafe(bucket._seenMax), dbgSafe(bucket._seenSecond)))
@@ -4044,6 +4055,7 @@ local function wwAggPush(self, t, spellId, amount, isCrit, allowInfer)
 		st.normCount = (st.normCount or 0) + 1
 	end
 	st.targetName = st.targetName or safeUnitName("target")
+	st.targetGUID = st.targetGUID or safeTargetGUID("target")
 	st.token = st.token or self._castToken
 	st.spellId = st.spellId or spellId
 	if st.timer and st.timer.Cancel then
@@ -4724,6 +4736,7 @@ function Collector:handleCombatTextUpdate(arg1)
 			-- Mark for health-delta dedup.
 			self._lastOutgoingCombatAt = tNow
 			self._lastOutgoingCombatTargetName = safeUnitName("target")
+			self._lastOutgoingCombatTargetGUID = safeTargetGUID("target")
 
 			emit("OUTGOING_DAMAGE_COMBAT", {
 				timestamp = tNow,
@@ -5061,6 +5074,7 @@ local DEDUP_WINDOW = 0.10 -- 100ms window
 -- health delta to avoid duplicate lines.
 Collector._lastOutgoingCombatAt = Collector._lastOutgoingCombatAt or 0
 Collector._lastOutgoingCombatTargetName = Collector._lastOutgoingCombatTargetName or nil
+Collector._lastOutgoingCombatTargetGUID = Collector._lastOutgoingCombatTargetGUID or nil
 Collector._lastAutoOutgoingAt = Collector._lastAutoOutgoingAt or 0
 local OUTGOING_HEALTH_DEDUP_WINDOW = 0.12
 -- White swings (isAuto / spellId == nil) can be reported through both the
@@ -5988,6 +6002,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						})
 						self._lastOutgoingCombatAt = t
 						self._lastOutgoingCombatTargetName = tName
+						self._lastOutgoingCombatTargetGUID = safeTargetGUID("target")
 						return
 					end
 					-- UNIT_COMBAT has no source attribution on Midnight, so the pet
@@ -6755,6 +6770,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					self._rawPipe[pipeId] = amount
 					self._lastOutgoingCombatAt = t
 					self._lastOutgoingCombatTargetName = H.safeUnitName("target")
+					self._lastOutgoingCombatTargetGUID = safeTargetGUID("target")
 					H.emit("OUTGOING_DAMAGE_COMBAT", {
 						timestamp = t,
 						rawPipeId = pipeId,
@@ -6903,6 +6919,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			self._rawPipe[pipeId] = amount
 			self._lastOutgoingCombatAt = t
 			self._lastOutgoingCombatTargetName = H.safeUnitName("target")
+			self._lastOutgoingCombatTargetGUID = safeTargetGUID("target")
 			-- A physical hit with no cast and no player swing is not your
 			-- auto — pet melee claims it when the class hook allows (the
 			-- veto then verifies a MY_PET line when trusted).
@@ -6986,6 +7003,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						self._rawPipe[pipeId] = amount
 						self._lastOutgoingCombatAt = t
 						self._lastOutgoingCombatTargetName = H.safeUnitName("target")
+						self._lastOutgoingCombatTargetGUID = safeTargetGUID("target")
 						H.emit("OUTGOING_DAMAGE_COMBAT", {
 							timestamp = t,
 							rawPipeId = pipeId,
@@ -7085,6 +7103,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					})
 					self._lastOutgoingCombatAt = t
 					self._lastOutgoingCombatTargetName = tName
+					self._lastOutgoingCombatTargetGUID = safeTargetGUID("target")
 					return
 				end
 				suppressIfUnattributed = true
@@ -7274,6 +7293,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						self._rawPipe[pipeId] = amount
 						self._lastOutgoingCombatAt = t
 						self._lastOutgoingCombatTargetName = tName
+						self._lastOutgoingCombatTargetGUID = safeTargetGUID("target")
 						H.emit("OUTGOING_DAMAGE_COMBAT", {
 							timestamp = t,
 							rawPipeId = pipeId,
@@ -7353,6 +7373,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							self._rawPipe[pipeId] = amount
 							self._lastOutgoingCombatAt = t
 							self._lastOutgoingCombatTargetName = H.safeUnitName("target")
+							self._lastOutgoingCombatTargetGUID = safeTargetGUID("target")
 								H.emit("OUTGOING_DAMAGE_COMBAT", {
 								timestamp = t,
 								rawPipeId = pipeId,
@@ -7676,6 +7697,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				bucket.isCrit = isCrit or bucket.isCrit
 				bucket.schoolMask = schoolMask or bucket.schoolMask
 				bucket.targetName = targetName or bucket.targetName
+				bucket.targetGUID = safeTargetGUID("target") or bucket.targetGUID
 				bucket.spellId = bucket.spellId or spellId
 			end
 		end

@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.0.8
+
+### Added
+- **UT kill announcer: real kill-credit and death-witness events** — the announcer now listens for `PARTY_KILL` (attacker/victim GUIDs), `UNIT_DIED` (dead unit's GUID), and `PLAYER_PVP_KILLS_CHANGED` (honorable-kill credit — PvP kills covered). Multi-signal dedup keys each kill by GUID and name so PARTY_KILL + UNIT_DIED + chat witnesses announce once.
+- **Kill witnesses for clients that clear the target instantly on death:** a gated target-clear (GUID identity + recent hit) arms a short candidate confirmed by a witness — `UNIT_DIED` on the same GUID, or a "X dies" chat line naming it — and untargeted kills (dot/pet finishes) announce when the dead unit's GUID or name matches your last victim. `/zsbt utprobe` and `/zsbt uttrace` diagnostics added.
+
+### Fixed
+- **UT announcer no longer fires on target switching:** the old "recent damage + lost target" inference announced every tab-cycle in combat — including switching away from a living victim with the same name as a dead pack-mate. The cleared unit now must be corroborated as actually dead (witness, dead tick, or GUID death event); identity is decided by GUID with names as fallback, and a stale name/GUID pair can no longer mislabel a kill (names resolve through an atomic guid-to-name map).
+- Possibly-secret boolean returns in the announcer (`UnitExists`, `UnitIsDeadOrGhost`, `UnitAffectingCombat`) are normalized safely — comparisons moved inside pcall so restricted values degrade to false/nil instead of raising errors.
+
 ## 4.0.7
 
 ### Added
