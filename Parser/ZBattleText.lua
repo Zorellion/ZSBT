@@ -501,11 +501,39 @@ end
 -- borrowing a nearby own line (observed in a two-warlock raid: half
 -- the claimed Fel Firebolts had a foreign line strictly nearer). The
 -- caller must release the claimed line so its real owner can pair.
+--
+-- Lead-gated on lagged-UC feeds (Forever's ~0.4s line→wound offset):
+-- every evidence line LEADS its wound by the transport lag, so a
+-- foreign line can only be this wound's competing proof when it sits
+-- at the same evidence instant — i.e. its lead matches the claimed
+-- own line's lead within FNEAR_LEAD_EPS. A foreign line nearer the
+-- wound but at a different lead belongs to a different hit's wound
+-- still in flight (observed: a priest's own staff line led its wound
+-- 0.45s while a co-attacker's lines at 0.04–0.26s lead coin-flipped
+-- half her swings into fnear drops). Non-leading claims — retail's
+-- ~0ms lines and wounds borrowing a TRAILING own line — keep the
+-- strict distance test.
+local FNEAR_LEAD_FLOOR = 0.10
+local FNEAR_LEAD_EPS = 0.15
+
 local function foreignDamageNearer(tHit, lineIdx)
     local l = lineIdx and ZB._lines[lineIdx] or nil
     if l == nil then return false end
-    local fdt = nearestForeignDamageDt(tHit)
-    return fdt ~= nil and fdt < math.abs(l.at - tHit)
+    local ownDt = math.abs(l.at - tHit)
+    if tHit - l.at <= FNEAR_LEAD_FLOOR then
+        local fdt = nearestForeignDamageDt(tHit)
+        return fdt ~= nil and fdt < ownDt
+    end
+    local ownLead = tHit - l.at
+    for i = 1, #ZB._foreignLines do
+        local f = ZB._foreignLines[i]
+        if f.heal ~= true
+            and math.abs(f.at - tHit) < ownDt
+            and math.abs((tHit - f.at) - ownLead) <= FNEAR_LEAD_EPS then
+            return true
+        end
+    end
+    return false
 end
 
 -- Non-consuming look at buffered lines: class modules use this for

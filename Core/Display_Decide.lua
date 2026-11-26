@@ -603,7 +603,10 @@ function Display:Emit(areaName, text, color, meta)
 	end
 
     local profile = ZSBT.db and ZSBT.db.profile
-    local area = profile and profile.scrollAreas and profile.scrollAreas[areaName] or nil
+    -- meta.areaConfig lets emitters supply a virtual area (e.g. the dedicated
+    -- level-up frame) that isn't a profile scrollArea.
+    local area = (meta and type(meta.areaConfig) == "table") and meta.areaConfig
+        or (profile and profile.scrollAreas and profile.scrollAreas[areaName]) or nil
     if not area then
         -- Safe fallback: chat-only when a scroll area is missing.
         -- text may be tainted so we pass it directly to Print (which calls SetText).
@@ -708,10 +711,11 @@ function Display:Emit(areaName, text, color, meta)
         local critFace, critSize, critOutline, critScale, critMode, fxIntensity = ResolveCritFont(meta)
         if not meta then meta = {} end
         if meta.critFace == nil then meta.critFace = critFace end
-        if meta.critSize == nil then meta.critSize = critSize end
+        if meta.critSize == nil and meta.critSizeFromScale ~= true then meta.critSize = critSize end
         if meta.critOutline == nil then meta.critOutline = critOutline end
         if meta.critScale == nil then meta.critScale = critScale end
-        if profile and profile.general and profile.general.forceCritsInline == true then
+        if profile and profile.general and profile.general.forceCritsInline == true
+            and meta.critAnimExplicit ~= true then
             meta.critAnim = "Area"
             meta.stickyCrit = nil
             local ic = profile.general.inlineCrit
@@ -753,9 +757,16 @@ function Display:Emit(areaName, text, color, meta)
         elseif meta.critAnim == nil then
             meta.critAnim = critMode
         end
-        if meta.critFxIntensity == nil and (meta.critAnim == "Shockwave" or meta.critAnim == "Ignite" or meta.critAnim == "Chromatic" or meta.critAnim == "Stomp" or meta.critAnim == "ScreenPunch" or meta.critAnim == "Shatter" or meta.critAnim == "Afterimage" or meta.critAnim == "Rumble") and type(fxIntensity) == "number" then
+        if meta.critFxIntensity == nil and (meta.critAnim == "Shockwave" or meta.critAnim == "Ignite" or meta.critAnim == "Chromatic" or meta.critAnim == "Stomp" or meta.critAnim == "ScreenPunch" or meta.critAnim == "Shatter" or meta.critAnim == "Afterimage" or meta.critAnim == "Rumble" or meta.critAnim == "Flip" or meta.critAnim == "SlideLeft" or meta.critAnim == "DropSlam") and type(fxIntensity) == "number" then
 			meta.critFxIntensity = fxIntensity
 		end
+	end
+
+	-- meta.forcedDuration overrides the area/speed-derived duration (used by
+	-- the level-up Display Duration setting).
+	if meta then
+		local fd = tonumber(meta.forcedDuration)
+		if fd and fd > 0 then duration = fd end
 	end
 
     TryMerge(areaName, text, area, fontFace, fontSize, outlineFlag, fontAlpha,

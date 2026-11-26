@@ -1,5 +1,22 @@
 # Changelog
 
+## 4.0.9
+
+### Added
+- **Dedicated Level Up display frame** — Level Up notifications moved out of the scroll-area system into their own frame (`ZSBT_LevelUpFrame`): movable and resizable with a grip, unlocked via a new **Unlock Frame** button on the Level Up leaf (or while scroll areas are unlocked). No scrolling — the headline plays its animation in place and a new **Display Duration** slider (1–10s) controls how long the pair shows.
+- **Two new Level Up–only animations** — **Slide In From Left** (eases in from off-frame to dead center) and **Drop Slam** (drops in oversized from above the frame with a real squash-and-rebound impact). The Animation Style dropdown offers exactly these plus Letter Flip — no global crit styles leak in.
+- **Stat gains line beneath the headline** — "+18 Health · +2 Strength … · 1 new talent point" renders as a pure-static line pinned to the bottom lane at normal font size (it can't be animated — it just fades with the display duration). Toggleable via **Stat Gains Line**.
+- **9 level-up sounds** (`ZSBT: Level Up Chime 1–4`, `ZSBT: Level Up Riff 1–5`) registered for the leaf's sound picker.
+
+### Changed
+- **Level Up shipping defaults** — enabled out of the box: `Level %e!` template, Letter Flip at scale 3 / intensity 0.9, stat line on, Blizzard level-up toast hidden, 3.5s duration, `ZSBT: airstrike` Thick 24px gold, `ZSBT: Level Up Riff 5` sound, frame parked at (10, 289).
+- **World of Warcraft: Forever — Era Priest module** (`Classes/Era/Priest.lua`) — wand Shoot declared ranged, DoT/channel rows (SW:Pain, Mind Flay) for leveling, Renew self-HoT naming, and a deny-list so buff/heal names can never land on enemy wounds.
+
+### Fixed
+- **Off-center level-up text** — sticky crit styles deliberately scatter `positionX` (±25%) so rapid crits don't stack; for a single-event frame it just looked dropped-in sideways. A new `meta.centered` flag clamps dedicated-frame events to exact center; normal combat crits still scatter.
+- **Foreign-near veto no longer coin-flips own hits (Forever)** — the old rule vetoed a wound whenever *any* foreign line was nearer to it than the claimed own line; with this client's ~0.45s lead times and constant mob ripostes, that killed about half of all staff swings. Foreign lines now only count when they sit at the same evidence instant as the claimed line (±0.15s); trailing/coincident claims get the original rule unchanged.
+- **Renew could never name its own ticks** — it was in both the Era Priest `hots` and `exclude` tables; exclusion won the seed order. Removed from `exclude`, kept in `hots`.
+
 ## 4.0.8
 
 ### Added

@@ -3290,6 +3290,7 @@ function ZSBT.BuildTab_Notifications()
 		enterCombat = true,
 		leaveCombat = true,
 		playerXP = true,
+		levelUp = true,
 		honor = true,
 		reputation = true,
 		companionXP = true,
@@ -3307,6 +3308,7 @@ function ZSBT.BuildTab_Notifications()
 		enterCombat = L["Enter Combat"],
 		leaveCombat = L["Leave Combat"],
 		playerXP = L["Player XP (Leveling)"],
+		levelUp = L["Level Up"],
 		honor = L["Honor (PvP)"],
 		reputation = "Reputation (Faction)",
 		companionXP = L["Companion XP"],
@@ -3324,6 +3326,7 @@ function ZSBT.BuildTab_Notifications()
 		enterCombat = L["Template codes: %e=event text."],
 		leaveCombat = L["Template codes: %e=event text."],
 		playerXP = L["Template codes: %e=event text."],
+		levelUp = "Template codes: %e=new level, %a=stat gains, %t=talent points, %p=your name.",
 		honor = L["Template codes: %e=event text."],
 		reputation = "Template codes: %e=event text.",
 		companionXP = L["Template codes: %e=event text."],
@@ -3341,6 +3344,7 @@ function ZSBT.BuildTab_Notifications()
 		enterCombat = "%e",
 		leaveCombat = "%e",
 		playerXP = "%e",
+		levelUp = "Level %e!",
 		honor = "%e",
 		reputation = "%e",
 		companionXP = "%e",
@@ -3810,6 +3814,237 @@ function ZSBT.BuildTab_Notifications()
 			enterCombat = buildLeafGroup("enterCombat", 3),
 			leaveCombat = buildLeafGroup("leaveCombat", 3.1),
 			playerXP = buildLeafGroup("playerXP", 4),
+			levelUp = (function()
+				local g = buildLeafGroup("levelUp", 4.05)
+				local A = g.args
+				local function critOff()
+					local c = getPerType("levelUp")
+					return c ~= nil and c.crit == false
+				end
+				-- Pull a flat arg out of the buildLeafGroup merge for
+				-- reparenting into an inline section.
+				local function take(k)
+					local a = A[k]
+					A[k] = nil
+					return a
+				end
+				-- Section order: General (what it is) -> Animation (how it
+				-- moves) -> Style (how it looks) -> Sound -> Preview last.
+				local notifyArgs = {
+					enabled = take("enabled"),
+					template = take("template"),
+					statsLine = {
+						type = "toggle",
+						name = L["Stat Gains Line"],
+						desc = L["Show stat and talent gains on a second line beneath the level-up text."],
+						order = 3,
+						width = "full",
+						get = function()
+							local c = getPerType("levelUp")
+							return c == nil or c.statsLine ~= false
+						end,
+						set = function(_, v)
+							local c = ensurePerType("levelUp")
+							c.statsLine = v and true or false
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					},
+					hideToast = {
+						type = "toggle",
+						name = L["Hide Blizzard Level-Up Toast"],
+						desc = L["Dims the stock level-up toast while the level-up notification handles it."],
+						order = 4,
+						width = "full",
+						get = function()
+							local c = getPerType("levelUp")
+							return c == nil or c.hideToast ~= false
+						end,
+						set = function(_, v)
+							local c = ensurePerType("levelUp")
+							c.hideToast = v and true or false
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					},
+					displayDuration = {
+						type = "range",
+						name = L["Display Duration"],
+						desc = L["How long the level-up display stays on screen."],
+						order = 5,
+						min = 1,
+						max = 10,
+						step = 0.25,
+						get = function()
+							local c = getPerType("levelUp")
+							return tonumber(c and c.duration) or 3
+						end,
+						set = function(_, v)
+							local c = ensurePerType("levelUp")
+							c.duration = v
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					},
+					frameUnlock = {
+						type = "execute",
+						order = 6,
+						width = "full",
+						name = function()
+							return (ZSBT.IsLevelUpUnlocked and ZSBT.IsLevelUpUnlocked())
+								and L["Lock Frame"] or L["Unlock Frame"]
+						end,
+						func = function()
+							if ZSBT.ToggleLevelUpUnlock then ZSBT.ToggleLevelUpUnlock() end
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					},
+				}
+				notifyArgs.enabled.order = 1
+				notifyArgs.template.order = 2
+				take("route")
+				local animArgs = {
+					critStyle = {
+						type = "toggle",
+						name = L["Level-Up Animation"],
+						desc = L["Play the level-up text with the Letter Flip animation."],
+						order = 1,
+						width = "full",
+						get = function()
+							local c = getPerType("levelUp")
+							return c == nil or c.crit ~= false
+						end,
+						set = function(_, v)
+							local c = ensurePerType("levelUp")
+							c.crit = v and true or false
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					},
+					animMode = {
+						type = "select",
+						name = L["Animation Style"],
+						desc = L["Which animation the level-up text plays."],
+						order = 2,
+						width = "normal",
+						disabled = critOff,
+						values = {
+							Flip = L["Letter Flip"],
+							SlideLeft = L["Slide In From Left"],
+							DropSlam = L["Drop Slam"],
+						},
+						get = function()
+							local c = getPerType("levelUp")
+							local v = c and c.critAnim
+							return (v == "SlideLeft" or v == "DropSlam") and v or "Flip"
+						end,
+						set = function(_, v)
+							local c = ensurePerType("levelUp")
+							c.critAnim = v
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					},
+					animScale = {
+						type = "range",
+						name = L["Scale"],
+						desc = L["Scale multiplier vs normal font size."],
+						order = 3,
+						min = 0.5,
+						max = 3,
+						step = 0.1,
+						disabled = critOff,
+						get = function()
+							local c = getPerType("levelUp")
+							return tonumber(c and c.critScale) or 1.5
+						end,
+						set = function(_, v)
+							local c = ensurePerType("levelUp")
+							c.critScale = v
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					},
+					animIntensity = {
+						type = "range",
+						name = L["Intensity"],
+						desc = L["Strength of the animation's visual effect (tumble angle, slide distance, drop height)."],
+						order = 4,
+						min = 0.25,
+						max = 3,
+						step = 0.05,
+						disabled = critOff,
+						get = function()
+							local c = getPerType("levelUp")
+							return tonumber(c and c.critIntensity) or 1
+						end,
+						set = function(_, v)
+							local c = ensurePerType("levelUp")
+							c.critIntensity = v
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					},
+				}
+				local styleArgs = {
+					color = take("color"),
+					fontOverride = take("fontOverride"),
+					fontFace = take("fontFace"),
+					fontOutline = take("fontOutline"),
+					fontSize = take("fontSize"),
+				}
+				styleArgs.color.order = 1
+				styleArgs.fontOverride.order = 2
+				styleArgs.fontFace.order = 3
+				styleArgs.fontOutline.order = 4
+				styleArgs.fontSize.order = 5
+				local soundArgs = {
+					soundEnabled = take("soundEnabled"),
+					soundKey = take("soundKey"),
+					soundTest = take("soundTest"),
+					stopOnLeaveCombat = take("stopOnLeaveCombat"),
+				}
+				soundArgs.soundEnabled.order = 1
+				soundArgs.soundKey.order = 2
+				soundArgs.soundTest.order = 3
+				soundArgs.stopOnLeaveCombat.order = 4
+				take("styleHeader")
+				take("soundHeader")
+				A.notifyGrp = {
+					type = "group",
+					name = L["General"],
+					inline = true,
+					order = 1,
+					args = notifyArgs,
+				}
+				A.animGrp = {
+					type = "group",
+					name = L["Animation"],
+					inline = true,
+					order = 2,
+					args = animArgs,
+				}
+				A.styleGrp = {
+					type = "group",
+					name = L["Style"],
+					inline = true,
+					order = 3,
+					args = styleArgs,
+				}
+				A.soundGrp = {
+					type = "group",
+					name = L["Sound"],
+					inline = true,
+					order = 4,
+					args = soundArgs,
+				}
+				A.preview = {
+					type = "execute",
+					name = L["Preview"],
+					desc = L["Show the level-up notification with sample text, sound, and animation."],
+					order = 5,
+					width = "full",
+					func = function()
+						if ZSBT.Core and ZSBT.Core.PreviewLevelUp then
+							ZSBT.Core:PreviewLevelUp()
+						end
+					end,
+				}
+				return g
+			end)(),
 			honor = buildLeafGroup("honor", 4.1),
 			reputation = buildLeafGroup("reputation", 4.2),
 			companionXP = buildLeafGroup("companionXP", 4.3),

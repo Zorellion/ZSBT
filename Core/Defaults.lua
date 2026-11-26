@@ -110,6 +110,7 @@ ZSBT.DEFAULTS = {
             power = true,
             procs = true,
             triggers = true,
+			levelUp = true,
 			externalAddons = true,
         },
 
@@ -161,6 +162,7 @@ ZSBT.DEFAULTS = {
 			power = "%e",
 			procs = "%e",
 			triggers = "%e",
+			levelUp = "Level %e!",
 		},
 
 		notificationsMoneyFormat = {
@@ -180,6 +182,22 @@ ZSBT.DEFAULTS = {
 			lootCurrency = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			tradeskillUps = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			tradeskillLearned = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
+			levelUp = {
+				critAnim = "Flip",
+				critScale = 3,
+				critIntensity = 0.9,
+				duration = 3.5,
+				statsLine = true,
+				hideToast = true,
+				style = {
+					fontOverride = true,
+					fontFace = "ZSBT: airstrike",
+					fontOutline = "Thick",
+					fontSize = 24,
+					color = { r = 1.0, g = 0.8509804010391235, b = 0.2666666805744171 },
+				},
+				sound = { enabled = true, soundKey = "ZSBT: Level Up Riff 5" },
+			},
 			externalAddons = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			cooldowns = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			auras = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
@@ -213,6 +231,13 @@ ZSBT.DEFAULTS = {
 			fullSoundEnabled = false,
 			fullSoundKey = "ZSBT: Finish Him",
 			fullEffect = "none",
+		},
+
+		levelUpFrame = {
+			xOffset = 10,
+			yOffset = 289,
+			width = 340,
+			height = 110,
 		},
 
 		interruptAlerts = {

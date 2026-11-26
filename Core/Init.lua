@@ -638,8 +638,51 @@ function Addon:OnInitialize()
 		self.db.global.migrations.notificationsProgressSplit_v1 = true
 	end
 
+	-- Migration: the level-up display uses a dedicated movable frame instead
+	-- of a scroll area. Seed profile.levelUpFrame and remove the scroll-area
+	-- seed an earlier version of this migration may have written.
+	local function migrateLevelUpFrame_v1()
+		if not self.db then return end
+		self.db.global = self.db.global or {}
+		self.db.global.migrations = self.db.global.migrations or {}
+		if self.db.global.migrations.levelUpFrame_v1 == true then return end
+
+		local LEVEL_UP_FRAME = {
+			xOffset = 10,
+			yOffset = 289,
+			width = 340,
+			height = 110,
+		}
+
+		local function applyToProfile(prof)
+			if type(prof) ~= "table" then return end
+			if type(prof.scrollAreas) == "table" then
+				prof.scrollAreas["Level Up"] = nil
+			end
+			if type(prof.notificationsRouting) == "table"
+				and prof.notificationsRouting.levelUp == "Level Up" then
+				prof.notificationsRouting.levelUp = nil
+			end
+			prof.levelUpFrame = prof.levelUpFrame or {}
+			for k, v in pairs(LEVEL_UP_FRAME) do
+				if prof.levelUpFrame[k] == nil then prof.levelUpFrame[k] = v end
+			end
+		end
+
+		local profiles = self.db.profiles
+		if type(profiles) == "table" then
+			for _, prof in pairs(profiles) do
+				applyToProfile(prof)
+			end
+		end
+		applyToProfile(self.db.profile)
+
+		self.db.global.migrations.levelUpFrame_v1 = true
+	end
+
 	migrateDiagnosticsDebugChannels_v1()
 	migrateNotificationsProgressSplit_v1()
+	migrateLevelUpFrame_v1()
 
 	ZSBT.Presets = ZSBT.Presets or {}
 	local Presets = ZSBT.Presets
@@ -1370,6 +1413,15 @@ function Addon:OnInitialize()
 			LSM:Register("sound", "ZSBT: Rampage", [[Interface\AddOns\ZSBT\Media\Sounds\rampage.ogg]])
 			LSM:Register("sound", "ZSBT: Ship Horn", [[Interface\AddOns\ZSBT\Media\Sounds\ship-horn.ogg]])
 			LSM:Register("sound", "ZSBT: Unstoppable", [[Interface\AddOns\ZSBT\Media\Sounds\unstoppable.ogg]])
+			LSM:Register("sound", "ZSBT: Level Up Chime 1", [[Interface\AddOns\ZSBT\Media\Sounds\LevelUp\LEVEL_UP-Chime1.ogg]])
+			LSM:Register("sound", "ZSBT: Level Up Chime 2", [[Interface\AddOns\ZSBT\Media\Sounds\LevelUp\LEVEL_UP-Chime2.ogg]])
+			LSM:Register("sound", "ZSBT: Level Up Chime 3", [[Interface\AddOns\ZSBT\Media\Sounds\LevelUp\LEVEL_UP-Chime3.ogg]])
+			LSM:Register("sound", "ZSBT: Level Up Chime 4", [[Interface\AddOns\ZSBT\Media\Sounds\LevelUp\LEVEL_UP-Chime4.ogg]])
+			LSM:Register("sound", "ZSBT: Level Up Riff 1", [[Interface\AddOns\ZSBT\Media\Sounds\LevelUp\LEVEL_UP-RIFF1.ogg]])
+			LSM:Register("sound", "ZSBT: Level Up Riff 2", [[Interface\AddOns\ZSBT\Media\Sounds\LevelUp\LEVEL_UP-RIFF2.ogg]])
+			LSM:Register("sound", "ZSBT: Level Up Riff 3", [[Interface\AddOns\ZSBT\Media\Sounds\LevelUp\LEVEL_UP-RIFF3.ogg]])
+			LSM:Register("sound", "ZSBT: Level Up Riff 4", [[Interface\AddOns\ZSBT\Media\Sounds\LevelUp\LEVEL_UP-RIFF4.ogg]])
+			LSM:Register("sound", "ZSBT: Level Up Riff 5", [[Interface\AddOns\ZSBT\Media\Sounds\LevelUp\LEVEL_UP-RIFF5.ogg]])
 		end)
 		local custom = self.db and self.db.profile and self.db.profile.media and self.db.profile.media.custom
 		local oldPrefix = "interface\\addons\\zsbt\\media\\"

@@ -1,97 +1,196 @@
 ## Interface: 120107, 120105, 120100, 120007, 16001, 50504, 38001, 20506, 11509
 
+
+
 ## Title: Zore's Scrolling Battle Text
+
 ## Notes: Zore's Scrolling Battle Text (ZSBT) for WoW Retail 12.x
+
 ## Author: Zorellion
-## Version: 4.0.8
+
+## Version: 4.0.9
+
 ## SavedVariables: ZSBTDB
+
 ## OptionalDeps: Ace3, LibSharedMedia-3.0
 
+
+
 # Libraries - Load order matters
+
 libs\LibStub\LibStub.lua
+
 #Locales\ForceLocale.lua
+
 libs\AceLocale-3.0\AceLocale-3.0.lua
+
 libs\LibCombatPulse-1.0\LibCombatPulse-1.0.lua
+
 libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+
 libs\AceAddon-3.0\AceAddon-3.0.lua
+
 libs\AceConsole-3.0\AceConsole-3.0.lua
+
 libs\AceDB-3.0\AceDB-3.0.lua
+
 libs\AceDBOptions-3.0\AceDBOptions-3.0.lua
+
 libs\AceConfig-3.0\AceConfigRegistry-3.0.lua
+
 libs\AceGUI-3.0\AceGUI-3.0.lua
+
 libs\AceGUI-3.0\AceGUI-3.0.xml
+
 libs\AceConfig-3.0\AceConfigCmd-3.0.lua
+
 libs\AceConfig-3.0\AceConfigDialog-3.0.lua
+
 libs\AceConfig-3.0\AceConfig-3.0.lua
+
 libs\AceSerializer-3.0\AceSerializer-3.0.lua
+
 libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
+
 libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+
 libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 
+
+
 # Localization - L.lua registers the app first (silent), locale files must
+
 # load before any file that reads ZSBT.L at load time
+
 Core\L.lua
+
 Locales\enUS.lua
+
 Locales\deDE.lua
+
 Locales\esES.lua
+
 Locales\frFR.lua
+
 Locales\itIT.lua
+
 Locales\ptBR.lua
+
 Locales\ruRU.lua
+
 Locales\zhCN.lua
+
 Locales\koKR.lua
 
+
+
 # Core - Constants and defaults before init
+
 Core\Constants.lua
+
 Core\Perf.lua
+
 Core\Defaults.lua
+
 Core\Init.lua
+
 Core\Diagnostics.lua
 
+
+
 # Core (Decision / Coordination) - Skeletons
+
 Core\Core.lua
+
 Core\Incoming_Probe.lua
+
 Core\Outgoing_Probe.lua
+
 Core\MinimapButton.lua
+
 Core\Display_Decide.lua
+
 Core\Cooldowns_Decide.lua
+
 Core\Triggers.lua
+
 Core\Combat_Decide.lua
 
+
+
 # Parser (Detection) - Skeletons
+
 Parser\Normalize.lua
+
 Parser\CombatLog_Detect.lua
+
 Parser\Cooldowns_Detect.lua
+
 Parser\Incoming_Detect.lua
+
 Parser\Outgoing_Detect.lua
+
 Parser\State_Manager.lua
+
 Parser\Correlation_Logic.lua
+
 Classes\Spellbook.lua
+
 Classes\Registry.lua
+
 Classes\Warlock.lua
+
 Classes\Warrior.lua
+
 Classes\DeathKnight.lua
+
 Classes\Mage.lua
+
 Classes\Shaman.lua
+
 Classes\Hunter.lua
+
 Classes\Priest.lua
+
 Classes\Rogue.lua
+
 Classes\Druid.lua
+
 Classes\Paladin.lua
+
 Classes\Monk.lua
+
 Classes\DemonHunter.lua
+
 Classes\Evoker.lua
+
 Classes\Era\Warlock.lua
+
 Classes\Era\Warrior.lua
+
 Classes\Era\Hunter.lua
+
+Classes\Era\Priest.lua
+
 Parser\ZBattleText.lua
+
 Parser\Event_Collector.lua
+
 Parser\Pulse_Engine.lua
 
+
+
 # UI - Config tabs before main config assembler
+
 UI\ConfigTabs.lua
+
 UI\UserGuide.lua
+
 UI\Config.lua
+
 UI\ConfigShell.lua
+
 UI\ScrollAreaFrames.lua
+
 UI\QuickControlBar.lua
+

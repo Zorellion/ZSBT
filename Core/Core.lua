@@ -1568,6 +1568,7 @@ function Core:Enable()
     self:InitHealthWarnings()
     self:InitBuffTracking()
     self:InitKillAnnouncer()
+    self:InitLevelUpNotifier()
     self:InitLootTracking()
     self:InitTradeSkillTracking()
 	self:InitInterruptTracking()
@@ -3195,6 +3196,358 @@ local okDead, isDead = pcall(_secTargetDead)
 	end)
 end
 
+------------------------------------------------------------------------
+-- Level Up frame: a dedicated host frame for the level-up display. Not a
+-- scroll area — the headline animates in place and the stat line is
+-- Static beneath it. Unlockable/movable/resizable like the resource
+-- counter frames; display events parent to it so text follows the frame.
+------------------------------------------------------------------------
+local LEVELUP_FRAME_DEFAULTS = { xOffset = 10, yOffset = 289, width = 340, height = 110 }
+
+function ZSBT.LevelUpFrameConfig()
+	local p = ZSBT.db and ZSBT.db.profile
+	if not p then return nil end
+	if type(p.levelUpFrame) ~= "table" then p.levelUpFrame = {} end
+	local f = p.levelUpFrame
+	for k, v in pairs(LEVELUP_FRAME_DEFAULTS) do
+		if f[k] == nil then f[k] = v end
+	end
+	return f
+end
+
+local function LevelUpEditUnlocked()
+	return (ZSBT.IsScrollAreasUnlocked and ZSBT.IsScrollAreasUnlocked())
+		or ZSBT._levelUpUnlocked == true
+end
+
+function ZSBT.IsLevelUpUnlocked()
+	return ZSBT._levelUpUnlocked == true
+end
+
+function ZSBT.ToggleLevelUpUnlock()
+	ZSBT._levelUpUnlocked = not (ZSBT._levelUpUnlocked == true)
+	if Core and Core.EnsureLevelUpFrame then Core:EnsureLevelUpFrame() end
+	if ZSBT.RefreshLevelUpFrame then ZSBT.RefreshLevelUpFrame() end
+end
+
+local function SetLevelUpBorder(frame, on)
+	if on then
+		if not frame._luBorder then
+			local edges = {}
+			for _, e in ipairs({
+				{ "TOPLEFT", "TOPRIGHT", 1, -1, -1, -3 },
+				{ "BOTTOMLEFT", "BOTTOMRIGHT", 1, 3, -1, 1 },
+				{ "TOPLEFT", "BOTTOMLEFT", 1, -1, 3, 1 },
+				{ "TOPRIGHT", "BOTTOMRIGHT", -3, -1, -1, 1 },
+			}) do
+				local t = frame:CreateTexture(nil, "OVERLAY")
+				t:SetColorTexture(1, 0.82, 0, 0.9)
+				t:SetPoint("TOPLEFT", frame, e[1], e[3], e[4])
+				t:SetPoint("BOTTOMRIGHT", frame, e[2], e[5], e[6])
+				t:Hide()
+				edges[#edges + 1] = t
+			end
+			frame._luBorder = edges
+		end
+		for _, t in ipairs(frame._luBorder) do t:Show() end
+	elseif frame._luBorder then
+		for _, t in ipairs(frame._luBorder) do t:Hide() end
+	end
+end
+
+function ZSBT.RefreshLevelUpFrame()
+	local f = Core and Core._levelUpHostFrame
+	if not f then return end
+	local c = ZSBT.LevelUpFrameConfig()
+	if not c then return end
+	f:ClearAllPoints()
+	f:SetPoint("CENTER", UIParent, "CENTER", c.xOffset, c.yOffset)
+	f:SetSize(c.width, c.height)
+end
+
+function Core:EnsureLevelUpFrame()
+	if self._levelUpHostFrame then return self._levelUpHostFrame end
+	local cfg = ZSBT.LevelUpFrameConfig() or LEVELUP_FRAME_DEFAULTS
+	local frame = CreateFrame("Frame", "ZSBT_LevelUpFrame", UIParent)
+	self._levelUpHostFrame = frame
+	frame:SetSize(cfg.width, cfg.height)
+	frame:SetPoint("CENTER", UIParent, "CENTER", cfg.xOffset, cfg.yOffset)
+	frame:SetFrameStrata("HIGH")
+	frame:SetClampedToScreen(true)
+
+	local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	label:SetPoint("TOP", frame, "TOP", 0, -2)
+	label:SetText(L["Level Up"])
+	label:SetTextColor(1, 0.82, 0, 0.9)
+	label:Hide()
+	frame._luLabel = label
+
+	frame:SetResizable(true)
+	if frame.SetResizeBounds then frame:SetResizeBounds(120, 40, 800, 400) end
+	local grip = CreateFrame("Button", nil, frame)
+	grip:SetSize(16, 16)
+	grip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 2)
+	grip:SetFrameLevel(frame:GetFrameLevel() + 5)
+	grip:EnableMouse(true)
+	local gripTex = grip:CreateTexture(nil, "OVERLAY")
+	gripTex:SetAllPoints(grip)
+	gripTex:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+	grip:Hide()
+	frame._luGrip = grip
+	grip:SetScript("OnMouseDown", function(_, button)
+		if button ~= "LeftButton" or not LevelUpEditUnlocked() then return end
+		frame:StartSizing("BOTTOMRIGHT")
+	end)
+	grip:SetScript("OnMouseUp", function(_, button)
+		if button ~= "LeftButton" then return end
+		frame:StopMovingOrSizing()
+		if not LevelUpEditUnlocked() then return end
+		local w = math.floor((frame:GetWidth() or 0) + 0.5)
+		local h = math.floor((frame:GetHeight() or 0) + 0.5)
+		local c = ZSBT.LevelUpFrameConfig()
+		if c then
+			c.width = math.max(120, math.min(800, w))
+			c.height = math.max(40, math.min(400, h))
+		end
+		LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+	end)
+
+	frame:SetMovable(true)
+	frame:RegisterForDrag("LeftButton")
+	frame:SetScript("OnDragStart", function(self)
+		if LevelUpEditUnlocked() then self:StartMoving() end
+	end)
+	frame:SetScript("OnDragStop", function(self)
+		self:StopMovingOrSizing()
+		if not LevelUpEditUnlocked() then return end
+		local cx, cy = self:GetCenter()
+		local ucx, ucy = UIParent:GetCenter()
+		local c = ZSBT.LevelUpFrameConfig()
+		if not c or not cx then return end
+		c.xOffset = math.floor(cx - ucx + 0.5)
+		c.yOffset = math.floor(cy - ucy + 0.5)
+		LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+	end)
+
+	C_Timer.NewTicker(0.5, function()
+		local unl = LevelUpEditUnlocked()
+		if unl ~= frame._luMouseOn then
+			frame._luMouseOn = unl
+			frame:EnableMouse(unl == true)
+			SetLevelUpBorder(frame, unl == true)
+			if frame._luGrip then
+				if unl then frame._luGrip:Show() else frame._luGrip:Hide() end
+			end
+			if frame._luLabel then
+				if unl then frame._luLabel:Show() else frame._luLabel:Hide() end
+			end
+		end
+	end)
+
+	frame:Show()
+	return frame
+end
+
+-- Virtual scroll-area config for the level-up display: geometry comes from
+-- the movable frame; the fixed fields keep every event in place — the
+-- headline's crit animation plays at its anchor and everything else is
+-- Static, so nothing ever scrolls.
+function Core:_levelUpAreaConfig()
+	local c = ZSBT.LevelUpFrameConfig() or LEVELUP_FRAME_DEFAULTS
+	return {
+		xOffset = c.xOffset,
+		yOffset = c.yOffset,
+		width = c.width,
+		height = c.height,
+		alignment = "Center",
+		direction = "Up",
+		animation = "Static",
+		animSpeed = 1.0,
+	}
+end
+
+------------------------------------------------------------------------
+-- Level Up Notification
+-- PLAYER_LEVEL_UP -> template notification (optional crit styling + per-
+-- category LSM sound). Optionally dims the stock level-up toast so only
+-- ours shows.
+------------------------------------------------------------------------
+function Core:InitLevelUpNotifier()
+	if self._levelUpFrame then return end
+	local f = CreateFrame("Frame")
+	self._levelUpFrame = f
+
+	local function safeNum(v)
+		if type(v) ~= "number" then return nil end
+		if ZSBT.IsSafeNumber and not ZSBT.IsSafeNumber(v) then return nil end
+		return v
+	end
+
+	local function gainsText(hp, power, str, agi, sta, int)
+		local powerName
+		if type(UnitPowerType) == "function" then
+			local ok, _, token = pcall(UnitPowerType, "player")
+			powerName = ok and type(token) == "string" and _G[token] or nil
+		end
+		local parts = {}
+		local function add(n, name)
+			local v = safeNum(n)
+			if v and v > 0 and type(name) == "string" and name ~= "" then
+				parts[#parts + 1] = string.format("+%d %s", v, name)
+			end
+		end
+		add(hp, HEALTH)
+		add(power, powerName)
+		add(str, SPELL_STAT1_NAME)
+		add(agi, SPELL_STAT2_NAME)
+		add(sta, SPELL_STAT3_NAME)
+		add(int, SPELL_STAT4_NAME)
+		return table.concat(parts, "  ·  ")
+	end
+
+	pcall(f.RegisterEvent, f, "PLAYER_LEVEL_UP")
+	f:SetScript("OnEvent", function(_, _, level, hp, power, talents, _, str, agi, sta, int)
+		if not self:IsNotificationCategoryEnabled("levelUp") then return end
+		local lvl = safeNum(level)
+		if not lvl then return end
+		local tp = safeNum(talents)
+		local ctx = {
+			e = lvl,
+			a = gainsText(hp, power, str, agi, sta, int),
+			t = (tp and tp > 0) and ((tp == 1) and L["1 new talent point"]
+				or string.format(L["%d new talent points"], tp)) or "",
+			p = UnitName("player"),
+		}
+		self:EmitNotificationTemplate("levelUp", L["Level %e!"], ctx, nil, self:_levelUpEmitMeta())
+		self:_levelUpEmitStats(ctx)
+		if self.CheckLevelUpToast then self:CheckLevelUpToast() end
+	end)
+
+	-- The toast manager re-animates alpha and rotates toasts without hiding,
+	-- so a level-up toast must be re-checked every frame the manager is shown.
+	local LEVEL_TOAST = Enum and Enum.EventToastEventType and Enum.EventToastEventType.LevelUp
+	local toastWatch = CreateFrame("Frame")
+	function Core:CheckLevelUpToast()
+		local m = _G.EventToastManagerFrame
+		if type(m) ~= "table" then return end
+		local conf = self:GetNotificationPerTypeConfig("levelUp")
+		local want = LEVEL_TOAST ~= nil
+			and self:IsNotificationCategoryEnabled("levelUp")
+			and (conf == nil or conf.hideToast ~= false)
+			and m:IsShown() or false
+		if want then
+			local t = m.currentDisplayingToast
+			local info = type(t) == "table" and t.toastInfo
+			want = type(info) == "table" and info.eventType == LEVEL_TOAST
+		end
+		if want then m:SetAlpha(0) end
+		if want ~= self._levelUpToastBlanked then
+			self._levelUpToastBlanked = want and true or false
+			if not want then m:SetAlpha(1) end
+			m:EnableMouse(not want)
+		end
+	end
+	local tm = _G.EventToastManagerFrame
+	if type(tm) == "table" and tm.HookScript then
+		tm:HookScript("OnShow", function()
+			toastWatch:SetScript("OnUpdate", function() Core:CheckLevelUpToast() end)
+			Core:CheckLevelUpToast()
+		end)
+		tm:HookScript("OnHide", function()
+			toastWatch:SetScript("OnUpdate", nil)
+			Core:CheckLevelUpToast()
+		end)
+	end
+end
+
+function Core:_levelUpEmitMeta()
+	local conf = self:GetNotificationPerTypeConfig("levelUp")
+	-- forcedDuration is the leaf's Display Duration; it governs both the
+	-- headline animation and the stat line's time on screen.
+	local dur = tonumber(conf and conf.duration) or 3
+	if conf ~= nil and conf.crit == false then
+		-- Plain fallback: still pins above the stat line (lane 0) so the
+		-- pair keeps its stacked layout instead of colliding on lane 0.
+		return { forcedDuration = dur, staticLane = 1, centered = true }
+	end
+	-- critSizeFromScale keeps Display_Decide from filling critSize with the
+	-- global crit font size, so the leaf's Scale always multiplies the
+	-- (overridden or area) font size instead of being replaced by it.
+	-- critYOffset lifts the headline a touch so the pinned stat line
+	-- beneath centers the pair in the area.
+	-- Flip/SlideLeft/DropSlam are the level-up-only animations;
+	-- critAnimExplicit keeps Display_Decide's forceCritsInline flattening
+	-- from overriding the choice.
+	local meta = { isCrit = true, critSizeFromScale = true, critYOffset = 10,
+		forcedDuration = dur, critAnim = "Flip", critAnimExplicit = true,
+		centered = true }
+	if type(conf) == "table" then
+		if conf.critAnim == "SlideLeft" or conf.critAnim == "DropSlam"
+			or conf.critAnim == "Flip" then
+			meta.critAnim = conf.critAnim
+		end
+		meta.critScale = tonumber(conf.critScale) or 1.5
+		meta.critFxIntensity = tonumber(conf.critIntensity) or 1
+		local style = conf.style
+		if type(style) == "table" and style.fontOverride == true then
+			local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
+			local faceKey = style.fontFace
+			if LSM and type(faceKey) == "string" and faceKey ~= "" then
+				local fetched = LSM:Fetch("font", faceKey)
+				if fetched then meta.critFace = fetched end
+			end
+			local outlineKey = style.fontOutline
+			if type(outlineKey) == "string" and ZSBT.OUTLINE_STYLES and ZSBT.OUTLINE_STYLES[outlineKey] ~= nil then
+				meta.critOutline = ZSBT.OUTLINE_STYLES[outlineKey]
+			end
+		end
+	end
+	return meta
+end
+
+-- Stat gains line: emits the gain summary (+ talent points) as a plain
+-- Static event pinned to the bottom lane of the level-up frame at regular
+-- font size — never crit-styled, never animated. It sits beneath the
+-- headline and fades when the display duration ends.
+function Core:_levelUpEmitStats(ctx, preview)
+	local conf = self:GetNotificationPerTypeConfig("levelUp")
+	if conf ~= nil and conf.statsLine == false then return end
+	ctx = type(ctx) == "table" and ctx or {}
+	local parts = {}
+	if type(ctx.a) == "string" and ctx.a ~= "" then parts[#parts + 1] = ctx.a end
+	if type(ctx.t) == "string" and ctx.t ~= "" then parts[#parts + 1] = ctx.t end
+	local text = table.concat(parts, "    ")
+	if text == "" then return end
+	local meta = {
+		noSound = true,
+		staticLane = 0,
+		centered = true,
+		forcedDuration = tonumber(conf and conf.duration) or 3,
+	}
+	if preview then meta.preview = true end
+	self:EmitNotification(text, nil, "levelUp", meta)
+end
+
+function Core:PreviewLevelUp()
+	local lvl = 2
+	if type(UnitLevel) == "function" then
+		local ok, v = pcall(UnitLevel, "player")
+		if ok and type(v) == "number" and (not ZSBT.IsSafeNumber or ZSBT.IsSafeNumber(v)) then
+			lvl = v + 1
+		end
+	end
+	local meta = self:_levelUpEmitMeta() or {}
+	meta.preview = true
+	local ctx = {
+		e = lvl,
+		a = "+18 " .. (HEALTH or "Health") .. "  ·  +2 " .. (SPELL_STAT1_NAME or "Strength"),
+		t = L["1 new talent point"],
+		p = UnitName("player"),
+	}
+	self:EmitNotificationTemplate("levelUp", L["Level %e!"], ctx, nil, meta)
+	self:_levelUpEmitStats(ctx, true)
+end
+
 -- /zsbt utprobe — dump readability of the unit APIs the kill announcer relies
 -- on, so we can see what the current client/state actually exposes (e.g. in
 -- combat on Camelot where names may be secret but GUIDs readable).
@@ -3333,8 +3686,9 @@ function Core:EmitInterruptAlert(text, category, ctx)
 	end
 end
 
-function Core:EmitNotificationTemplate(category, fallbackTpl, ctx, fallbackColor)
-	if category and not self:IsNotificationCategoryEnabled(category) then
+function Core:EmitNotificationTemplate(category, fallbackTpl, ctx, fallbackColor, extraMeta)
+	if category and not self:IsNotificationCategoryEnabled(category)
+		and not (type(extraMeta) == "table" and extraMeta.preview) then
 		return
 	end
 	local p = ZSBT.db and ZSBT.db.profile
@@ -3356,7 +3710,7 @@ function Core:EmitNotificationTemplate(category, fallbackTpl, ctx, fallbackColor
 	out = out:gsub("%%s", coerceSafe(ctx.s))
 	out = out:gsub("%%p", coerceSafe(ctx.p))
 	if out and out ~= "" then
-		self:EmitNotification(out, fallbackColor, category)
+		self:EmitNotification(out, fallbackColor, category, extraMeta)
 	end
 end
 
@@ -3368,7 +3722,8 @@ function Core:GetNotificationPerTypeConfig(category)
 end
 
 function Core:EmitNotification(text, color, category, extraMeta)
-	if category and not self:IsNotificationCategoryEnabled(category) then
+	if category and not self:IsNotificationCategoryEnabled(category)
+		and not (type(extraMeta) == "table" and extraMeta.preview) then
 		return
 	end
 	if category == "interrupts" or category == "caststops" then
@@ -3411,7 +3766,8 @@ function Core:EmitNotification(text, color, category, extraMeta)
 		-- Secret-visibility gated emits may resolve to hidden; sound can't be
 		-- gated natively, so silence it on that path.
 		local visGated = type(extraMeta) == "table" and extraMeta.auraVisibility ~= nil
-		if type(sconf) == "table" and sconf.enabled == true and ZSBT.PlayLSMSound and not visGated then
+		local noSound = type(extraMeta) == "table" and extraMeta.noSound == true
+		if type(sconf) == "table" and sconf.enabled == true and ZSBT.PlayLSMSound and not visGated and not noSound then
 			local soundKey = sconf.soundKey
 			if type(soundKey) == "string" and soundKey ~= "" and soundKey ~= "None" then
 				local handle = ZSBT.PlayLSMSound(soundKey)
@@ -3423,6 +3779,11 @@ function Core:EmitNotification(text, color, category, extraMeta)
 	end
 	if type(extraMeta) == "table" then
 		for k, v in pairs(extraMeta) do meta[k] = v end
+	end
+	if category == "levelUp" then
+		area = "Level Up"
+		meta.hostFrame = self:EnsureLevelUpFrame()
+		meta.areaConfig = self:_levelUpAreaConfig()
 	end
 	if ZSBT.DisplayText then
 		ZSBT.DisplayText(area, text, finalColor, meta)

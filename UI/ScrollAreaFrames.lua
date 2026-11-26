@@ -262,6 +262,12 @@ local function AE_ResolveStyleId(ev)
 	if ev.meta and ev.meta.isCrit == true then
 		local ca = ev.meta.critAnim
 		if ca == "Glow" then ca = "Pow" end
+		-- Flip is its own full-line animation (per-letter cascade) — never an
+		-- FX overlay on the base scroll style. SlideLeft and DropSlam are the
+		-- other level-up-only full-line animations; same treatment.
+		if ca == "Flip" then return "Flip" end
+		if ca == "SlideLeft" then return "SlideLeft" end
+		if ca == "DropSlam" then return "DropSlam" end
 		local gen = ZSBT and ZSBT.db and ZSBT.db.profile and ZSBT.db.profile.general
 		if gen and gen.critsRidePath == false then
 			-- Classic centered crits: the crit animation replaces the
@@ -318,6 +324,61 @@ local function AE_InitSlam(newDisplayEvent)
 end
 
 
+local function AE_InitFlip(newDisplayEvent)
+	-- Letter-cascade crit: each letter tumbles in left-to-right on a stagger,
+	-- so the intro lasts until the last letter lands; then hold and fade.
+	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
+	local txt = (newDisplayEvent.fs and newDisplayEvent.fs.GetText and newDisplayEvent.fs:GetText()) or ""
+	txt = txt:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|[rR]", "")
+	local n = 0
+	for _ in txt:gmatch("[%z\1-\127\194-\244][\128-\191]*") do n = n + 1 end
+	local stagger = 0.075
+	local flipDur = 0.42
+	local intro = (stagger * math.max(0, n - 1)) + flipDur
+	local scrollTime = intro + 1.7 + 0.55
+	newDisplayEvent.scrollTime = scrollTime * animationSpeed
+	newDisplayEvent.fadePercent = (intro + 1.7) / scrollTime
+	newDisplayEvent._zsbtFlipStagger = stagger
+	newDisplayEvent._zsbtFlipDur = flipDur
+	newDisplayEvent.positionX = newDisplayEvent.scrollWidth / 2
+	newDisplayEvent.positionY = newDisplayEvent.scrollHeight / 2
+	newDisplayEvent.originalPositionX = newDisplayEvent.positionX
+	newDisplayEvent.originalPositionY = newDisplayEvent.positionY
+end
+
+local function AE_InitSlideLeft(newDisplayEvent)
+	-- Whole-text slide: starts just off the frame's left edge and eases to
+	-- center, holds, then fades. Level-up only.
+	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
+	local intro, hold, fade = 0.55, 1.7, 0.55
+	local scrollTime = intro + hold + fade
+	newDisplayEvent.scrollTime = scrollTime * animationSpeed
+	newDisplayEvent.fadePercent = (intro + hold) / scrollTime
+	newDisplayEvent._zsbtSlideIntro = intro / scrollTime
+	newDisplayEvent.positionX = newDisplayEvent.scrollWidth / 2
+	newDisplayEvent.positionY = newDisplayEvent.scrollHeight / 2
+	newDisplayEvent.originalPositionX = newDisplayEvent.positionX
+	newDisplayEvent.originalPositionY = newDisplayEvent.positionY
+end
+
+local function AE_InitDropSlam(newDisplayEvent)
+	-- Oversized drop: text starts large well above the frame, plummets with
+	-- cubic acceleration, slams into a squash, and rebounds to 1x; holds,
+	-- then fades.
+	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
+	local drop, settle, hold, fade = 0.38, 0.35, 1.6, 0.55
+	local scrollTime = drop + settle + hold + fade
+	newDisplayEvent.scrollTime = scrollTime * animationSpeed
+	newDisplayEvent.fadePercent = (drop + settle + hold) / scrollTime
+	newDisplayEvent._zsbtSlamDropEnd = drop / scrollTime
+	newDisplayEvent._zsbtSlamSettleEnd = (drop + settle) / scrollTime
+	newDisplayEvent.positionX = newDisplayEvent.scrollWidth / 2
+	newDisplayEvent.positionY = newDisplayEvent.scrollHeight / 2
+	newDisplayEvent.originalPositionX = newDisplayEvent.positionX
+	newDisplayEvent.originalPositionY = newDisplayEvent.positionY
+end
+
+
 local function AE_ReRollCenteredPosition(newDisplayEvent, events)
 	if not newDisplayEvent or not events then return end
 	local w = newDisplayEvent.scrollWidth or newDisplayEvent.areaW or 0
@@ -331,7 +392,7 @@ local function AE_ReRollCenteredPosition(newDisplayEvent, events)
 	local function Collides(x, y)
 		for i = 1, #events do
 			local e = events[i]
-			if e and (e.styleId == "Pow" or e.styleId == "Slam" or e.styleId == "Shockwave" or e.styleId == "Ignite" or e.styleId == "Chromatic" or e.styleId == "Stomp" or e.styleId == "ScreenPunch" or e.styleId == "Shatter" or e.styleId == "Afterimage" or e.styleId == "Rumble") and e.elapsedTime ~= nil then
+			if e and (e.styleId == "Pow" or e.styleId == "Slam" or e.styleId == "Shockwave" or e.styleId == "Ignite" or e.styleId == "Chromatic" or e.styleId == "Stomp" or e.styleId == "ScreenPunch" or e.styleId == "Shatter" or e.styleId == "Afterimage" or e.styleId == "Rumble" or e.styleId == "Flip" or e.styleId == "SlideLeft" or e.styleId == "DropSlam") and e.elapsedTime ~= nil then
 				local dx = (x - (e.positionX or 0))
 				local dy = (y - (e.positionY or 0))
 				if (dx * dx + dy * dy) < minDist2 then
@@ -618,6 +679,18 @@ local function AE_RecycleEvent(ev)
 		end
 		ev._zsbtShatterFS = nil
 		ev._zsbtShatterDir = nil
+	end
+	if ev._zsbtFlipFS then
+		for i = 1, #ev._zsbtFlipFS do
+			local sfs = ev._zsbtFlipFS[i]
+			if sfs and sfs.SetRotation then pcall(sfs.SetRotation, sfs, 0) end
+			RecycleFontString(sfs)
+			ev._zsbtFlipFS[i] = nil
+		end
+		ev._zsbtFlipFS = nil
+		ev._zsbtFlipW = nil
+		ev._zsbtFlipCX = nil
+		ev._zsbtFlipTotalW = nil
 	end
 	RecycleFontString(ev.fs)
 	RecycleIconFS(ev.iconFS)
@@ -970,6 +1043,12 @@ local function AE_UpdateEvent(ev, dt)
 		if ev._zsbtShatterFS then
 			for i = 1, #ev._zsbtShatterFS do
 				local sfs = ev._zsbtShatterFS[i]
+				if sfs then sfs:SetAlpha(0) end
+			end
+		end
+		if ev._zsbtFlipFS then
+			for i = 1, #ev._zsbtFlipFS do
+				local sfs = ev._zsbtFlipFS[i]
 				if sfs then sfs:SetAlpha(0) end
 			end
 		end
@@ -1394,6 +1473,155 @@ local function AE_UpdateEvent(ev, dt)
 		end
 		ev.fs:SetAlpha(math.max(0, alpha))
 
+	elseif styleId == "Flip" then
+		-- Letter-cascade: the base string stays hidden; N letter fontstrings
+		-- drop in and tumble upright left-to-right on a stagger, hold, then
+		-- fade out together.
+		local t = progress
+		local inten = (ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0
+		if inten < 0 then inten = 0 end
+		if inten > 3.0 then inten = 3.0 end
+		xOff2 = (ev.positionX or 0) - AE_AnchorOriginX(ev)
+		yOff2 = ev.positionY or 0
+		if not ev._zsbtFlipFS then
+			ev._zsbtFlipFS = {}
+			ev._zsbtFlipW = {}
+			local raw = (ev.fs and ev.fs.GetText and ev.fs:GetText()) or ""
+			raw = raw:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|[rR]", "")
+			local tr, tg, tb, ta = 1, 1, 1, 1
+			if ev.fs and ev.fs.GetTextColor then
+				local ok, r, g, b, a = pcall(ev.fs.GetTextColor, ev.fs)
+				if ok then tr, tg, tb, ta = r or 1, g or 1, b or 1, a or 1 end
+			end
+			local sz = (ev.effectiveFontSize or ev.fontSize or 18)
+			local totalW = 0
+			for ch in raw:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+				local sfs = AcquireFontString(ev.parent)
+				pcall(sfs.SetFont, sfs, ev.fontFace, sz, ev.outlineFlag or "OUTLINE")
+				pcall(sfs.SetText, sfs, ch)
+				pcall(sfs.SetTextColor, sfs, tr, tg, tb, ta)
+				sfs:SetAlpha(0)
+				local w = (sfs.GetStringWidth and sfs:GetStringWidth()) or (sz * 0.6)
+				ev._zsbtFlipFS[#ev._zsbtFlipFS + 1] = sfs
+				ev._zsbtFlipW[#ev._zsbtFlipW + 1] = w
+				totalW = totalW + w
+			end
+			ev._zsbtFlipCX = {}
+			local acc = -totalW / 2
+			for i = 1, #ev._zsbtFlipW do
+				local w = ev._zsbtFlipW[i]
+				acc = acc + (w / 2)
+				ev._zsbtFlipCX[i] = acc
+				acc = acc + (w / 2)
+			end
+			ev._zsbtFlipTotalW = totalW
+		end
+		local n = #ev._zsbtFlipFS
+		if n == 0 or n > 32 then
+			-- Degenerate or oversized text: fall back to showing the base
+			-- string with a plain late fade (keeps the string pool sane).
+			ev.fs:SetAlpha(math.max(0, (ev.fontAlpha or 1) * (1 - math.max(0,
+				(t - (ev.fadePercent or 0.8)) / math.max(0.001, 1 - (ev.fadePercent or 0.8))))))
+		else
+			ev.fs:SetAlpha(0)
+			local stagger = ev._zsbtFlipStagger or 0.075
+			local flipDur = ev._zsbtFlipDur or 0.42
+			local dropPx = (ev.effectiveFontSize or ev.fontSize or 18) * (0.9 + (0.5 * inten))
+			local startRot = math.rad(70 + (40 * inten))
+			local fadeIn = ev.fadePercent or 0.8
+			local endAlpha = 1
+			if t > fadeIn then
+				endAlpha = math.max(0, 1 - ((t - fadeIn) / math.max(0.001, 1 - fadeIn)))
+			end
+			for i = 1, n do
+				local sfs = ev._zsbtFlipFS[i]
+				if sfs then
+					local lt = (ev.elapsedTime or 0) - ((i - 1) * stagger)
+					if lt <= 0 then
+						sfs:SetAlpha(0)
+						sfs._zsbtOffY = dropPx
+					elseif lt < flipDur then
+						local p = lt / flipDur
+						local e = 1 - ((1 - p) * (1 - p) * (1 - p))
+						local dip = math.sin(p * math.pi) * (dropPx * 0.18) * (1 - e)
+						sfs._zsbtOffY = (dropPx * (1 - e)) - dip
+						if sfs.SetRotation then pcall(sfs.SetRotation, sfs, startRot * (1 - e)) end
+						sfs:SetAlpha(math.min(1, lt / (flipDur * 0.4)) * endAlpha)
+					else
+						sfs._zsbtOffY = 0
+						if sfs.SetRotation then pcall(sfs.SetRotation, sfs, 0) end
+						sfs:SetAlpha(endAlpha)
+					end
+				end
+			end
+		end
+
+	elseif styleId == "SlideLeft" then
+		-- Slides in from the frame's left edge to center with a cubic
+		-- ease-out; holds centered, then fades at the tail.
+		local t = progress
+		local inten = (ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0
+		if inten < 0 then inten = 0 end
+		if inten > 3.0 then inten = 3.0 end
+		local intro = ev._zsbtSlideIntro or 0.20
+		local w = ev.scrollWidth or ev.areaW or 0
+		local startX = -(w * (0.55 + (0.15 * inten)))
+		local dx = 0
+		if t < intro then
+			local p = t / intro
+			local e = 1 - ((1 - p) * (1 - p) * (1 - p))
+			dx = startX * (1 - e)
+		end
+		xOff2 = ((ev.positionX or 0) - AE_AnchorOriginX(ev)) + dx
+		yOff2 = ev.positionY or 0
+		local fadeStart = ev.fadePercent or 0.85
+		if t > fadeStart then
+			alpha = alpha * (1.0 - ((t - fadeStart) / math.max(0.001, 1.0 - fadeStart)))
+		end
+		ev.fs:SetAlpha(math.max(0, alpha))
+
+	elseif styleId == "DropSlam" then
+		-- Drops oversized from well above with cubic acceleration, slams
+		-- into a hard squash at impact, then rebounds through a damped
+		-- bounce to 1x.
+		local t = progress
+		local inten = (ev.meta and tonumber(ev.meta.critFxIntensity)) or 1.0
+		if inten < 0 then inten = 0 end
+		if inten > 3.0 then inten = 3.0 end
+		local dropEnd = ev._zsbtSlamDropEnd or 0.15
+		local settleEnd = ev._zsbtSlamSettleEnd or 0.24
+		local h = ev.scrollHeight or ev.areaH or 0
+		local dropH = h * (1.10 + (0.50 * inten))
+		local baseSize = ev.effectiveFontSize or ev.fontSize or 18
+		local bigScale = 2.6 + (0.5 * inten)
+		local scale, dy = 1.0, 0
+		if t < dropEnd then
+			local p = t / dropEnd
+			local e = p * p * p
+			dy = dropH * (1 - e)
+			scale = bigScale - ((bigScale - 1.0) * (e * 0.70))
+		elseif t < settleEnd then
+			local p = (t - dropEnd) / math.max(0.001, settleEnd - dropEnd)
+			-- Damped squash-and-rebound: compressed at impact, springs
+			-- through a stretch and settles at 1x — with a matching jolt
+			-- so the text visibly presses into place.
+			local wob = math.cos(p * math.pi * 2.0)
+			scale = 1.0 - (0.28 * (1 - p) * wob)
+			dy = -(3 + (2 * inten)) * (1 - p) * wob
+		end
+		xOff2 = (ev.positionX or 0) - AE_AnchorOriginX(ev)
+		yOff2 = (ev.positionY or 0) + dy
+		local scaledSize = math.max(8, math.floor((baseSize * scale) + 0.5))
+		if scaledSize ~= ev._lastFontSize then
+			ev._lastFontSize = scaledSize
+			pcall(ev.fs.SetFont, ev.fs, ev.fontFace, scaledSize, ev.outlineFlag or "OUTLINE")
+		end
+		local fadeStart = ev.fadePercent or 0.85
+		if t > fadeStart then
+			alpha = alpha * (1.0 - ((t - fadeStart) / math.max(0.001, 1.0 - fadeStart)))
+		end
+		ev.fs:SetAlpha(math.max(0, alpha))
+
 	elseif styleId == "Static" then
 		-- reference-like static: no movement, late fade only. Placement happens via lane.
 		xOff2, yOff2 = 0, 0
@@ -1630,7 +1858,7 @@ local function AE_UpdateEvent(ev, dt)
 		placedX = (xOff2 or 0)
 		placedY = ev.staticSlotY + (yOff2 or 0)
 		ev.fs:SetPoint(ev.staticPoint, ev.parent, ev.staticPoint, placedX, placedY)
-	elseif styleId == "Pow" or styleId == "Slam" or styleId == "Shockwave" or styleId == "Ignite" or styleId == "Chromatic" or styleId == "Stomp" or styleId == "ScreenPunch" or styleId == "Shatter" or styleId == "Afterimage" or styleId == "Rumble" then
+	elseif styleId == "Pow" or styleId == "Slam" or styleId == "Shockwave" or styleId == "Ignite" or styleId == "Chromatic" or styleId == "Stomp" or styleId == "ScreenPunch" or styleId == "Shatter" or styleId == "Afterimage" or styleId == "Rumble" or styleId == "Flip" or styleId == "SlideLeft" or styleId == "DropSlam" then
 		-- reference Pow uses the scroll area's anchorPoint.
 		ev.fs:SetPoint(point, ev.parent, point, xOff2, yOff2)
 	else
@@ -1688,6 +1916,31 @@ local function AE_UpdateEvent(ev, dt)
 					local oy = sfs._zsbtOffY or 0
 					sfs:ClearAllPoints()
 					sfs:SetPoint(placedPoint, ev.parent, placedPoint, placedX + ox, placedY + oy)
+				end
+			end
+		end
+	elseif styleId == "Flip" then
+		if ev._zsbtFlipFS and ev._zsbtFlipCX then
+			local pt = tostring(placedPoint or "CENTER")
+			local shiftX, shiftY = 0, 0
+			if pt:find("LEFT") then
+				shiftX = (ev._zsbtFlipTotalW or 0) / 2
+			elseif pt:find("RIGHT") then
+				shiftX = -(ev._zsbtFlipTotalW or 0) / 2
+			end
+			local sz = (ev.effectiveFontSize or ev.fontSize or 18)
+			if pt:sub(1, 3) == "TOP" then
+				shiftY = -sz * 0.5
+			elseif pt:sub(1, 6) == "BOTTOM" then
+				shiftY = sz * 0.5
+			end
+			for i = 1, #ev._zsbtFlipFS do
+				local sfs = ev._zsbtFlipFS[i]
+				if sfs then
+					sfs:ClearAllPoints()
+					sfs:SetPoint("CENTER", ev.parent, placedPoint,
+						placedX + shiftX + (ev._zsbtFlipCX[i] or 0),
+						placedY + shiftY + (sfs._zsbtOffY or 0))
 				end
 			end
 		end
@@ -1881,6 +2134,42 @@ function AnimEngine:Enqueue(areaKey, ev)
 		AE_InitWaterfallSpacing(ev, active, direction)
 	end
 
+	-- Flip letter-cascade centered init.
+	if ev.styleId == "Flip" then
+		ev.startAt = nil
+		ev.elapsedTime = 0
+		ev.scrollHeight = ev.areaH
+		ev.scrollWidth = ev.areaW
+		ev.anchorPoint = AE_AnchorPoint(ev)
+		AE_InitFlip(ev)
+		AE_ReRollCenteredPosition(ev, events)
+		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
+	end
+
+	-- Level-up slide-in-from-left centered init.
+	if ev.styleId == "SlideLeft" then
+		ev.startAt = nil
+		ev.elapsedTime = 0
+		ev.scrollHeight = ev.areaH
+		ev.scrollWidth = ev.areaW
+		ev.anchorPoint = AE_AnchorPoint(ev)
+		AE_InitSlideLeft(ev)
+		AE_ReRollCenteredPosition(ev, events)
+		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
+	end
+
+	-- Level-up drop-slam centered init.
+	if ev.styleId == "DropSlam" then
+		ev.startAt = nil
+		ev.elapsedTime = 0
+		ev.scrollHeight = ev.areaH
+		ev.scrollWidth = ev.areaW
+		ev.anchorPoint = AE_AnchorPoint(ev)
+		AE_InitDropSlam(ev)
+		AE_ReRollCenteredPosition(ev, events)
+		ev.scrollTime = (ev.scrollTime or 0) / (ev.animationSpeed or 1.0)
+	end
+
 	-- reference-exact initialization for Pow (sticky crits).
 	if ev.styleId == "Pow" then
 		ev.startAt = nil
@@ -1918,9 +2207,18 @@ function AnimEngine:Enqueue(areaKey, ev)
 		local lineHeight = fontSize + 2
 		local usable = math.max(1, (ev.areaH or 1) - fontSize)
 		local maxSlots = math.max(1, math.floor(usable / lineHeight) + 1)
-		local lane = (st._staticNextLane or 0) % maxSlots
-		st._staticNextLane = lane + 1
-		if ev.dirMult and ev.dirMult < 0 then
+		-- meta.staticLane pins the event to a bottom-relative lane (0 =
+		-- bottommost) regardless of scroll direction — used by lines that
+		-- must sit under a centered animation (level-up stat gains).
+		local pinned = ev.meta and tonumber(ev.meta.staticLane) or nil
+		local lane
+		if pinned ~= nil then
+			lane = math.max(0, math.min(maxSlots - 1, math.floor(pinned)))
+		else
+			lane = (st._staticNextLane or 0) % maxSlots
+			st._staticNextLane = lane + 1
+		end
+		if ev.dirMult and ev.dirMult < 0 and pinned == nil then
 			ev.staticSlotY = ((ev.areaH - fontSize) - (lane * lineHeight))
 		else
 			ev.staticSlotY = lane * lineHeight
@@ -1965,6 +2263,36 @@ function AnimEngine:Enqueue(areaKey, ev)
 		-- Tiny stagger to separate dense bursts (keeps cadence, reduces overlap).
 		local stagger = (s % 3) * 0.02
 		ev.startAt = (ev.startAt or AE_Now()) + stagger
+	end
+
+	-- meta.centered pins a sticky event to the exact area center: the sticky
+	-- scatter in the init functions and the AE_ReRollCenteredPosition
+	-- re-roll exist so stacked crits don't overlap, which just reads as
+	-- off-center for single-event host frames like the level-up frame.
+	if ev.meta and ev.meta.centered == true
+		and (ev.styleId == "Pow" or ev.styleId == "Slam" or ev.styleId == "Shockwave"
+			or ev.styleId == "Ignite" or ev.styleId == "Chromatic" or ev.styleId == "Stomp"
+			or ev.styleId == "ScreenPunch" or ev.styleId == "Shatter"
+			or ev.styleId == "Afterimage" or ev.styleId == "Rumble" or ev.styleId == "Flip"
+			or ev.styleId == "SlideLeft" or ev.styleId == "DropSlam") then
+		local sw = ev.scrollWidth or ev.areaW or 0
+		local sh = ev.scrollHeight or ev.areaH or 0
+		if sw > 0 then
+			ev.positionX = sw / 2
+			ev.originalPositionX = sw / 2
+		end
+		if sh > 0 then
+			ev.positionY = sh / 2
+			ev.originalPositionY = sh / 2
+		end
+	end
+
+	-- meta.critYOffset shifts the whole event's anchor vertically after
+	-- style init (styles base positionY on the area center). Used to lift
+	-- a headline animation so a pinned Static line fits beneath it.
+	local cyo = ev.meta and tonumber(ev.meta.critYOffset) or nil
+	if cyo and cyo ~= 0 then
+		ev.positionY = (ev.positionY or 0) + cyo
 	end
 
 	events[#events + 1] = ev
@@ -2996,28 +3324,36 @@ function ZSBT.FireTestText(text, area, fontFace, fontSize, outlineFlag,
 
 	local parentKey = string.format("test_%d_%d", xOff, yOff)
 
-    if not ZSBT._testParentFrames then
-        ZSBT._testParentFrames = {}
-    end
+	-- meta.hostFrame hosts the event on a caller-owned frame (e.g. the
+	-- dedicated level-up frame). The frame's own geometry is authoritative —
+	-- never re-anchor or resize it here.
+	local hostOverride = (type(meta) == "table" and type(meta.hostFrame) == "table")
+		and meta.hostFrame or nil
+	local parent = hostOverride
+	if not parent then
+		if not ZSBT._testParentFrames then
+			ZSBT._testParentFrames = {}
+		end
 
-    local parent = ZSBT._testParentFrames[parentKey]
-    if not parent then
-        parent = CreateFrame("Frame", "ZSBT_TestParent_" .. parentKey, UIParent)
-        parent:SetFrameStrata("HIGH")
-        -- No clipping — text fades at edges instead
-        ZSBT._testParentFrames[parentKey] = parent
-    end
+		parent = ZSBT._testParentFrames[parentKey]
+		if not parent then
+			parent = CreateFrame("Frame", "ZSBT_TestParent_" .. parentKey, UIParent)
+			parent:SetFrameStrata("HIGH")
+			-- No clipping — text fades at edges instead
+			ZSBT._testParentFrames[parentKey] = parent
+		end
 
-    -- Only re-anchor when geometry actually changed.  Re-anchoring every event (10-30+/sec
-    -- during AoE) is wasteful because parentKey already encodes the position.
-    if parent._lastW ~= areaW or parent._lastH ~= areaH
-       or parent._lastXOff ~= xOff or parent._lastYOff ~= yOff then
-        parent:ClearAllPoints()
-        parent:SetSize(areaW, areaH)
-        parent:SetPoint("CENTER", UIParent, "CENTER", xOff, yOff)
-        parent._lastW = areaW; parent._lastH = areaH
-        parent._lastXOff = xOff; parent._lastYOff = yOff
-    end
+		-- Only re-anchor when geometry actually changed.  Re-anchoring every event (10-30+/sec
+		-- during AoE) is wasteful because parentKey already encodes the position.
+		if parent._lastW ~= areaW or parent._lastH ~= areaH
+		   or parent._lastXOff ~= xOff or parent._lastYOff ~= yOff then
+			parent:ClearAllPoints()
+			parent:SetSize(areaW, areaH)
+			parent:SetPoint("CENTER", UIParent, "CENTER", xOff, yOff)
+			parent._lastW = areaW; parent._lastH = areaH
+			parent._lastXOff = xOff; parent._lastYOff = yOff
+		end
+	end
     parent:Show()
 
     -- Slot tracking: stagger new texts so they don't stack on each other.
