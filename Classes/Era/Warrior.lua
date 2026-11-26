@@ -44,20 +44,20 @@ mod.dots = {
 }
 
 -- Next-swing strikes. Queuing one emits an EMPTY damage report at the
--- press instant — FCT's documented Camelot mechanic (SpellCatalog
--- nextSwing): the empowered swing cannot land at press time by
+-- press instant — a documented Camelot mechanic: the empowered
+-- swing cannot land at press time by
 -- definition, so a sid-carrying wound riding the cast timestamp is the
 -- phantom ("Heroic Strike 0" in scroll). The collector drops those; the
 -- real hit arrives on the swing (melee wound, or the same sid at
 -- hit-time — its cast record is left unconsumed either way). Sid-keyed
--- because the report carries the ranked cast id. Ids from FCT's
+-- because the report carries the ranked cast id. Ids from the
 -- client-derived catalog; Heroic Strike is tape-verified (78).
 mod.nextSwing = {
-	-- Heroic Strike ranks (verified: 78; FCT catalog for the rest)
+	-- Heroic Strike ranks (verified: 78; catalog for the rest)
 	[78] = true, [284] = true, [285] = true, [1608] = true,
 	[11564] = true, [11565] = true, [11566] = true, [11567] = true,
 	[25286] = true, [25712] = true,
-	-- Cleave ranks (same mechanic; FCT unverified but same report class)
+	-- Cleave ranks (same mechanic; unverified but same report class)
 	[845] = true, [7369] = true, [11608] = true, [11609] = true,
 	[20569] = true,
 }

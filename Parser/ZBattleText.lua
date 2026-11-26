@@ -739,7 +739,7 @@ local function say(msg)
 end
 
 local function showLostPopup(why)
-    -- Once per session, ever (MSBT's model): whether it's dismissed,
+    -- Once per session, ever: whether it's dismissed,
     -- displaced, or ignored, it never comes back — the periodic chat
     -- reminder keeps the door open.
     if ZB._popupShown == true then return end
@@ -868,8 +868,8 @@ function ZB:TryHealFilter()
 end
 
 function ZB:Verify()
-    -- Saved filters may not be restored yet during load (MSBT gates
-    -- MaintainLog on the same signal): verify nothing before login.
+    -- Saved filters may not be restored yet during load (the combat-log
+    -- gate only opens once login completes): verify nothing before login.
     if IsLoggedIn and not IsLoggedIn() then return ZB._trusted end
     ZB._verified = true
     local _perf = ZSBT.Perf
@@ -886,7 +886,7 @@ function ZB:Verify()
             say(("|cff66aaff[ZSBT]|r The '%s' combat log filter is active again — outgoing text restored.")
                 :format(FILTER_NAME))
             -- A late heal while the dialog is up leaves it stale — close
-            -- it the way MSBT's onReady hides their prompt.
+            -- it the way the ready handler hides the prompt.
             if type(StaticPopup_Hide) == "function" then
                 StaticPopup_Hide("ZSBT_ZBT_FILTER_LOST")
             end
@@ -1312,7 +1312,7 @@ local function candidateKinds(payload)
     return kindPreference(payload)
 end
 
--- Pet noline provenance (FCT petOut/PetAttacking model): hard evidence
+-- Pet noline provenance (pet-out/attacking model): hard evidence
 -- (a consumed pet cast/melee record) rescues on its own; guess-evidence
 -- needs a live pet verifiably engaged and an uncontested timeline — a
 -- co-attacker's melee wound routed pet is the false positive this gate
@@ -1413,7 +1413,7 @@ local function deliverOutgoing(payload)
     local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
     if ec and ec._sink then
         -- Deferred delivery only happens after a palette line confirmed
-        -- ownership: teach the spell's school (FCT Trust equivalent), but
+        -- ownership: teach the spell's school (trust equivalent), but
         -- only when the sid came from a consumed cast record — recency
         -- stamps are guesses and must not learn from a stolen line.
         local learnSid = payload and (payload.spellId or payload.petSpellId)
@@ -1539,7 +1539,7 @@ local function flushPending()
                             or (type(ecF._fschoolCount) == "number"
                                 and type(fsSeq) == "number"
                                 and ecF._fschoolCount > fsSeq))
-                    -- Late-swing hold (FCT port): on a swing-capable
+                    -- Late-swing hold: on a swing-capable
                     -- client the per-swing report may follow its wound
                     -- by up to 0.35s — a queued wound's swing can arrive
                     -- between emit and this flush. SwingCovers accepts

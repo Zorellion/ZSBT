@@ -3,6 +3,7 @@ You are an expert World of Warcraft addon developer specializing in the modern R
 
 ## Core Directives
 - **Zero Legacy Globals**: Strictly use the modern `C_` namespaces (e.g., `C_Timer`, `C_ChatInfo`, `C_CombatLog`).
+- **No third-party addon references**: Never name or cite other people's addons in code comments, docs, changelogs, UI strings, commit messages, or any other project text. Describe mechanics on their own terms ("the scored-race model", "trust/doubt corroboration") — never by provenance. (User directive, 2026-11.)
 - **Garbage Collection (GC) Mitigation**: Prioritize table recycling pools (`Wipe` / object pooling) for high-frequency events (`COMBAT_LOG_EVENT_UNFILTERED`).
 - **Secure Frames**: Ensure all UI frame rendering adheres to modern anchoring and secure frame templates. Do not trigger interface taints during combat lockdown.
 - **Spellbook is the source of truth for spell DATA; research is required for MECHANICS**: `ZSBT.Spellbook`/`/zsbt sb` has live ids, names, school masks, tooltip durations/intervals — always prefer it over hardcoded values. But the book cannot express mechanics: buffs-with-duration parse as "dot" (it flagged Stormkeeper and Ascendance as dots — both wrong), and applicator chains (Voltaic Blaze/Ascendance *apply* Flame Shock), summons (Stormkeeper's elemental), and replace semantics are invisible to it. Verify those relationships against current sources (Wowhead/Icy Veins). Audit wounds are ground truth for what the client actually reports (e.g., composite school-12 ticks vs the tooltip's pure-nature school).
@@ -451,7 +452,7 @@ heals — modules upgrade naming/attribution only (see "Verified live" below).
 | `UNIT_COMBAT` self-heals | **Amounts readable** (per community docs: UNIT_COMBAT amounts stay readable where UnitHealth is secret). `_playerHeals` ring feeds the leech check |
 | `UNIT_AURA` (enemy) | Poll machinery live: `auraPollCandidates` = module dot `ids` + era dot `names[1]` (name-keyed) + `learnedProcDots` + gear dots. `AURA_PROBE` logs first-present-per-unit |
 | `C_CombatText.GetCurrentEventInfo` | Live — already feeding `rawArg1-3`; `AUDCTI` probe logs heal-event args (no heal events observed yet — drains still untested) |
-| Wand school | `readWandSchool()` (FCT's `C_TooltipInfo.GetInventoryItem("player",18)` port) + `_wandVotes` learning; `_wandSchool` gates `pickWandShot` (off-school wounds never wear Shoot); `_swingAt.ranged` preferred anchor; `includeConsumed=true` on wand peeks |
+| Wand school | `readWandSchool()` (`C_TooltipInfo.GetInventoryItem("player",18)`) + `_wandVotes` learning; `_wandSchool` gates `pickWandShot` (off-school wounds never wear Shoot); `_swingAt.ranged` preferred anchor; `includeConsumed=true` on wand peeks |
 
 **Era Warlock module** (`Classes/Era/Warlock.lua`): name-primary `mod.dots`
 (names+school+interval, `drains` on Siphon Life), `mod.channels` (Drain
@@ -459,7 +460,7 @@ Life/Soul drains, Drain Mana, Rain of Fire, Hellfire), `mod.ranged`/`rangedIds`
 for Shoot (auto-shoot sustained family — anchor stamped at cast and every
 ranged emit), `mod.exclude` denylist, pet school gates, `mod.schoolsAny`.
 
-**Leech/drains evidence (FCT Leech model):** a self-heal in `_playerHeals`
+**Leech/drains evidence:** a self-heal in `_playerHeals`
 with `amount == wound.amount` within ±0.06s is proof-positive a drain fired
 (`leech=true`) — drains candidates score -0.40, non-drains +1.0 (proven leech
 veto). Weaker co-timed heal LINE (`PeekHealLine` or self-sourced CT_UPDATE
@@ -474,13 +475,12 @@ manufacture a false tie), `drains` leech bonus/penalty, wand veto (live wand +
 ranged line + no tick line ⇒ not a dot), tick-line rescue at +0.4, direct-line
 veto on weak picks. >1 survivor within 0.15 score ⇒ generic (never wrong).
 
-**Forever-aware MSBT reference** — `_retail_\Interface\AddOns\MikScrollingBattleText\Combat\`
-(Forever Combat Text 0.6.8 port, MIT — `LICENSE-ForeverCombatText`): `Mine.lua`
-is the scored-race engine (Trust/Doubt corroboration, `DotDue` beat veto,
-`swingLags` per-hand lag learning, `wandVotes`, `procSources` seal/poison
-recency naming, `playerHeals` leech); `Reader.lua` feeds it (UNIT_COMBAT
-records, `Leech()` amount-match, `AuraSecret`/`ShouldUnitAuraIndexBeSecret`
-gating, SENT→SUCCEEDED castTargets with `CAST_TARGET_KEEP` + `uncertain`).
+**Forever combat-text reference model** — mechanics verified against the
+client's live behavior: a scored-race attribution engine (trust/doubt
+corroboration, tick-beat veto, per-hand swing-lag learning, wand-school votes,
+seal/poison recency naming, player-heals leech evidence) fed by UNIT_COMBAT
+records (leech amount-match, aura-secret gating, SENT→SUCCEEDED cast-target
+pairing with `CAST_TARGET_KEEP` + `uncertain`).
 
 **Ground truth: `/combatlog` disk log + `Tools/correlate.py`** — the file
 logs carry real names/sids/schools even where the live feed is secret.
@@ -508,7 +508,7 @@ except pet melee (0/10 — pet swings never reach the pet stream).
   for channel sids in `consumeBestPendingCast` AND `miwClaim`.
 - `AUDCAD` logs failed-cadence anchors (applied/next/last/period) so
   picker rejections are diagnosable from the ring alone.
-- **Learner trust (FCT Trust applied to the learner):** a claim must carry
+- **Learner trust:** a claim must carry
   evidence independent of learned state before it may teach —
   `self._dotPickTeach` is set by `pickDotByCadenceDisambig` only for
   debuff-tiebreak / live-channel / tickline-rescued picks, and
@@ -532,7 +532,7 @@ except pet melee (0/10 — pet swings never reach the pet stream).
   traffic). A pet-routed wound could never satisfy the line requirement
   and died `src=pet` (retry exhausted) or `src=fline` (a mob hit on our
   pet paints a foreign line inside the old 0.35s window at mob-swing
-  cadence). Fix (FCT `petOut`/`PetAttacking` model): pet-route wounds get
+  cadence). Fix (pet-out/pet-attacking model): pet-route wounds get
   the narrowed 0.12s same-frame foreign check, then a `petNolineProven`
   rescue emits after one retry — hard evidence (`petEvidence` cast/melee/
   mline) always; guess-evidence needs `UnitExists("pet")`, a readable-
@@ -543,8 +543,8 @@ except pet melee (0/10 — pet swings never reach the pet stream).
 - **Companion bug — `_swingProven` stamp ignored pet route + VetoAuto:**
   `emit()` stamped `schoolMask==1, spellId==nil` payloads with
   `_swingProven` whenever `anySwingRecent` fired — and a `ranged` hand
-  report covers ALL schools for 0.05-2.0s with no school check (FCT
-  requires `SchoolFits(wandSchool)`). A wand report promoted pet wounds
+  report covers ALL schools for 0.05-2.0s with no school check (must
+  school-fit the learned wand school). A wand report promoted pet wounds
   to tier-1 where they died `fnear` (or could claim own lines as player
   damage). Stamp now skips `_petRoute` payloads and `VetoAuto()` classes;
   same guard added to the flush-time late-swing upgrade.
@@ -553,9 +553,9 @@ except pet melee (0/10 — pet swings never reach the pet stream).
   arm here — BoA-vs-Corruption same-school same-grid collisions are
   irreducible, honest generics. Amount-mismatch veto and leech
   amount-match are no-ops on this client, not bugs.
-- **Next-swing EMPTY REPORT (Camelot mechanic, FCT-verified):** the
+- **Next-swing EMPTY REPORT (Camelot mechanic, verified):** the
   queued next-swing frame carries an Empty Report before the real Hit
-  (FCT `PreferQueuedStrikeHit`; `mod.nextSwing` sid table,
+  (prefer the queued strike's hit; `mod.nextSwing` sid table,
   `ClassDB.NextSwing`). The phantom rides the cast's own instant
   (`cast.at == first.at` — tape: wound ht == cast ht), which is the only
   legible marker: wound amounts are SECRET values (type() reports

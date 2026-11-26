@@ -258,8 +258,8 @@ end
 ------------------------------------------------------------------------
 -- Secret aura-name matching
 -- A secret string can never be compared in Lua, so name:-keyed auraRules
--- are matched inside native secret-accepting APIs (same collation pipeline
--- MSBT uses): CompareStrings yields a secret number (0 = identical),
+-- are matched inside native secret-accepting APIs (the client's own
+-- collation pipeline): CompareStrings yields a secret number (0 = identical),
 -- TruncateWhenZero -> WrapString injects a non-NFC marker on mismatch,
 -- IsNormalized folds that back into a secret boolean, and
 -- EvaluateColorValueFromBoolean accumulates the per-rule result. The
@@ -3063,7 +3063,7 @@ function Core:EmitNotification(text, color, category, extraMeta)
 		end
 		local sconf = conf.sound
 		-- Secret-visibility gated emits may resolve to hidden; sound can't be
-		-- gated natively, so silence it on that path (MSBT's soundFile="").
+		-- gated natively, so silence it on that path.
 		local visGated = type(extraMeta) == "table" and extraMeta.auraVisibility ~= nil
 		if type(sconf) == "table" and sconf.enabled == true and ZSBT.PlayLSMSound and not visGated then
 			local soundKey = sconf.soundKey

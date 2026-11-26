@@ -5,8 +5,8 @@
 -- Name-primary by design: Forever spellIds are RANKED (a different id per
 -- rank), so no table below carries ids where a name match suffices — the
 -- engine resolves each combat-log id to its localized name and matches
--- `names`. Facts below are derived from Camelot's own logs and FCT's
--- client-derived SpellCatalog — NOT classic-era databases; Camelot
+-- `names`. Facts below are derived from Camelot's own logs and
+-- client-derived spell data — NOT classic-era databases; Camelot
 -- re-schools and adds Forever-only spells freely (Sniper Shot, Strider
 -- Kick, Summon Hawk, Forever Lacerate ranks).
 --
@@ -29,7 +29,7 @@ mod.dotCadenceDisambig = true
 mod.bookScopedKnowledge = true
 
 mod.dots = {
-	-- Serpent Sting: nature on Camelot per FCT's catalog (3s ticks,
+	-- Serpent Sting: nature on Camelot per its spell catalog (3s ticks,
 	-- 15s) — classic school holds here. travels = its first tick lags
 	-- the shot flight.
 	{ names = { "Serpent Sting" },                    school = 8, interval = 3 },
@@ -46,9 +46,9 @@ mod.dots = {
 	{ names = { "Volley" },                           school = 64, interval = 1 },
 }
 
--- Raptor Strike is the hunter's next-swing strike (FCT replacesSwing;
--- tape-verified pattern at sid 2973 — the queue emits an empty report
--- at the press instant, the real hit lands on the melee swing).
+-- Raptor Strike is the hunter's next-swing strike (a replaces-swing
+-- mechanic; tape-verified pattern at sid 2973 — the queue emits an
+-- empty report at the press instant, the real hit lands on the melee swing).
 mod.nextSwing = {
 	[2973] = true, [14260] = true, [14261] = true, [14262] = true,
 	[14263] = true, [14264] = true, [14265] = true, [14266] = true,
@@ -77,7 +77,7 @@ mod.exclude = {
 	"Read Leyline", "Walk on Air", "Elemental Insight", "Wind Blessed",
 }
 
--- Multi-target casts: Multi-Shot caps at 3 (FCT spellFacts).
+-- Multi-target casts: Multi-Shot caps at 3.
 mod.castBudget = {
 	[2643] = 3, -- Multi-Shot
 }

@@ -64,7 +64,7 @@ local function safeUnitName(unit)
 end
 
 -- Chaos school (127) tooltips cover every school; hits may report the
--- composite masks 124/126 (FCT SchoolFits).
+-- composite masks 124/126.
 local function spellSchoolFits(learned, school)
 	if learned == nil or school == nil then return true end
 	if learned == school then return true end
@@ -84,7 +84,7 @@ local swingPredictedNear -- fwd decl; emit() stamps _swingGuessed before the rea
 
 -- Friendly non-player casts (pet slot, imps, guardians) recorded in
 -- _petCasts. A hit claims one of them instead of taking the most recent
--- unconditionally: the newest school-fitting cast wins (FCT candidate
+-- unconditionally: the newest school-fitting cast wins (candidate
 -- scoring) and each cast has an outcome budget — PET_CAST_MAX_CLAIMS
 -- stamps total, covering AoE like Whiplash while stopping one cast from
 -- absorbing an unlimited run of foreign hits.
@@ -160,7 +160,7 @@ end
 -- Forever Combat Text, MIT).
 -- C_Spell.GetSpellDescription is plain for your spells even on secret-
 -- value clients, so a cast knows its own damage school from the moment
--- it is first parsed — no confirmed-hit bootstrap needed. The full FCT
+-- it is first parsed — no confirmed-hit bootstrap needed. The full
 -- school table covers composite names (Shadowflame 36, Chaos 127) so
 -- warlock/hunter tooltips resolve exactly.
 local SPELL_SCHOOL_WORDS = {
@@ -235,9 +235,9 @@ end
 
 -- A cast may only claim a hit it can plausibly have made:
 -- * a spell whose own tooltip deals no damage claims nothing;
--- * a tooltip-declared school is authoritative (FCT catalog facts);
+-- * a tooltip-declared school is authoritative (catalog facts);
 -- * a school learned from confirmed hits gates identically;
--- * unknown stays permissive (a guess, like FCT).
+-- * unknown stays permissive (a guess).
 -- This is what stops "Consecration shown as Shadow Bolt".
 castSchoolOk = function(self, spellId, school)
 	if type(spellId) ~= "number" then return true end
@@ -421,7 +421,7 @@ local function emit(eventType, payload)
 			Collector._wandSid = payload.spellId
 			Collector._wandAt = payload.timestamp or now()
 			-- Wand-element vote: claimed shots teach the school when the
-			-- ranged-slot tooltip can't be read (FCT wandVotes). Only a
+			-- ranged-slot tooltip can't be read (wand-vote model). Only a
 			-- ranged-line-proven claim votes — a pending-cast claim that
 			-- consumed a wrong-school wound would teach the wrong element
 			-- during bootstrap and then gate real shots out.
@@ -954,7 +954,7 @@ Limitations:
 Collector._pendingCasts = Collector._pendingCasts or {}
 Collector._pendingCastNextToken = Collector._pendingCastNextToken or 0
 -- spellId -> damage school, learned ONLY from veto-confirmed (line-paired)
--- outgoing hits. Unconfirmed hits never teach (FCT Trust/Doubt): a foreign
+-- outgoing hits. Unconfirmed hits never teach (trust/doubt): a foreign
 -- hit that slips past heuristics cannot write a bad school.
 Collector._learnedSpellSchool = Collector._learnedSpellSchool or {}
 Collector._schoolVotes = Collector._schoolVotes or {}
@@ -1792,8 +1792,8 @@ local function isLikelyPetPhysicalHit(school)
 end
 
 -- PLAYER_SWING gives a public per-swing report (melee/ranged) — Forever
--- client only; the event does not exist on Retail. FCT-measured model
--- (ported from MSBT's Mine.lua): a melee hit lands ~0.45s after its
+-- client only; the event does not exist on Retail. Timing model:
+-- a melee hit lands ~0.45s after its
 -- swing report; ranged shots fly 0.05-2.0s (forward only — a shot never
 -- claims a hit that preceded the report). The lag is learned PER HAND —
 -- a dual wielder's two weapons land after different delays — from wounds
@@ -2207,7 +2207,7 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 	-- whenever an imp was active.
 	local pendingPet = pendingPetCast(self, t, 1.5, school)
 	local woundTgt = safeUnitName("target")
-	-- Typed-line evidence (FCT model): the combat-log filter classifies
+	-- Typed-line evidence: the combat-log filter classifies
 	-- MINE/MY_PET lines by kind — a "tick" line near this wound means the
 	-- client itself logged a periodic hit. Peek only; the real pairing
 	-- consumes the line downstream. Both lines present = ambiguous
@@ -2244,7 +2244,7 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 		and (t - self._drainHealAt) >= 0 and (t - self._drainHealAt) <= 0.5 then
 		healLine = "ctheal"
 	end
-	-- Amount-matched leech (FCT Leech()): a self-heal for EXACTLY the wound
+	-- Amount-matched leech: a self-heal for EXACTLY the wound
 	-- amount in the same moment is proof-positive a drain fired — an
 	-- unrelated heal can't fake the equality. nil = unproven (suppression
 	-- means absence is never trusted), true = proven.
@@ -2332,7 +2332,7 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 		else
 			score = score + 0.5
 		end
-		-- drains evidence, two strengths (FCT's `drains ~= leech` rule):
+		-- drains evidence, two strengths (the drains-vs-leech rule):
 		-- amount-matched leech is proof a drain fired — drains entries get
 		-- the bonus AND non-drains take the penalty (a wound carrying its
 		-- own heal is never honestly a non-drain's tick). A bare co-timed
@@ -2527,7 +2527,7 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 	end
 	-- Scored race: the best-fitting survivor wins only if it beats the
 	-- runner-up by a margin — near-tied candidates stay honest generic
-	-- (the FCT DIRECT_MATCH_MARGIN model), never a coin flip.
+	-- (a direct-match margin), never a coin flip.
 	local ret, retWhy = nil, nil
 	if count == 1 then
 		ret = pool[1]
@@ -2562,7 +2562,7 @@ local function pickDotByCadenceDisambig(self, t, school, amount, isCrit)
 	if ret ~= nil and type(ch) == "table" and ret == ch.spellId then
 		ch.lastTickAt = t
 	end
-	-- Learner trust (FCT Trust applied to the learner): a pick backed by
+	-- Learner trust: a pick backed by
 	-- evidence independent of learned state may teach — an aura/debuff
 	-- tiebreak, a live channel's own ticks, or a sole survivor that was
 	-- rescued by the client's typed tick line. Sole-survivor guesses and
@@ -2638,8 +2638,8 @@ local function pickProcRider(self, t, school)
 end
 
 -- Your wand's element, read off the ranged slot's tooltip damage line
--- ("33 - 62 Fire Damage", or bare "N - N Damage" for physical) — FCT's
--- ReadWandSchool, English-client pattern only. Re-read on equipment
+-- ("33 - 62 Fire Damage", or bare "N - N Damage" for physical) —
+-- English-client pattern only. Re-read on equipment
 -- change; when unreadable the claimed-shot vote learns it instead.
 local WAND_SCHOOL_WORDS = {
 	holy = 2, fire = 4, nature = 8, frost = 16, shadow = 32, arcane = 64,
@@ -2676,8 +2676,8 @@ local function pickWandShot(self, t, school)
 	if type(ws) == "number" and ws ~= school then return nil end
 	local sid, lastAt = self._wandSid, self._wandAt
 	if type(sid) ~= "number" then return nil end
-	-- A real ranged swing is the tighter anchor (FCT records shot→hit
-	-- flight at 0.05-2.0s); fall back to the last claimed shot's family
+	-- A real ranged swing is the tighter anchor (shot→hit flight is
+	-- 0.05-2.0s); fall back to the last claimed shot's family
 	-- window when no swing reported this shot.
 	local dt
 	local swAt = self._swingAt and self._swingAt.ranged
@@ -3017,7 +3017,7 @@ local function enqueuePendingCast(self, spellId, spellName, tNow)
 	-- a strong indicator of a damage cast.
 	local eligibleIcon = (helpful == false) or (harmful == true) or (targetHostile == true)
 	-- A spell whose own tooltip deals no damage can never own a hit — the
-	-- FCT "Curse of Tongues" fix; summon/curse casts stay out of the pool
+	-- "Curse of Tongues" fix; summon/curse casts stay out of the pool
 	-- so their spellId can't stamp foreign damage.
 	local castFacts = SpellFacts(spellId)
 	if castFacts and castFacts.damages == false then
@@ -3054,7 +3054,7 @@ end
 -- Veto-confirmed (line-paired) outgoing hits teach the spell's damage
 -- school. Called from emit()'s fast path and ZBattleText's deferred
 -- delivery — both mean a MINE/MY_PET palette line confirmed ownership.
--- Vote-guarded (FCT): a single confirmed hit is still a guess — a school
+-- Vote-guarded: a single confirmed hit is still a guess — a school
 -- is only taught once it leads the vote with >= 2 confirmations, so one
 -- stolen line can't poison the table. Learned values persist to the
 -- profile so the ratchet survives /reload.
@@ -3070,7 +3070,7 @@ function Collector:LearnConfirmedSchool(spellId, schoolMask, trusted)
 	if type(spellId) ~= "number" then return end
 	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(spellId)) then return end
 	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(schoolMask)) then return end
-	-- Provenance gate (FCT Trust): only a sid bound to a consumed cast
+	-- Provenance gate: only a sid bound to a consumed cast
 	-- record may teach. Recency/fallback stamps are guesses — a foreign
 	-- hit confirmed by a stolen line would otherwise teach its school to
 	-- your spell (the "Demonbolt learned Holy" poison).
@@ -3562,7 +3562,7 @@ end
 -- produces one, so auto-attack claims can require a matching swing.
 -- swingType is numeric Enum.PlayerSwingType on Forever; duration is the
 -- weapon's swing speed — a >0.3s change drops that hand's learned lag
--- (weapon swap / big haste shift, FCT 0.6.2).
+-- (weapon swap / big haste shift).
 function Collector:handlePlayerSwing(swingDuration, swingType)
 	local t = now()
 	self._swingAt = self._swingAt or {}
@@ -3599,7 +3599,7 @@ end
 -- UNIT_SPELLCAST_SENT (unit, target, castGUID, spellId): the intended
 -- recipient at press time, player-only. SUCCEEDED joins on castGUID —
 -- the real application mob for per-mob dot anchors instead of
--- "whoever is targeted now" (FCT's castTargets model).
+-- "whoever is targeted now" (the cast-target model).
 function Collector:handleSpellcastSent(unit, target, castGUID, spellId)
 	if unit ~= "player" then return end
 	if not (ZSBT.IsSafeNumber and ZSBT.IsSafeNumber(spellId)) then return end
@@ -6572,7 +6572,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					end
 				end
 			end
-			-- Empty-report drop (FCT PreferQueuedStrikeHit: the queued
+			-- Empty-report drop (prefer the queued strike's hit: the
 			-- next-swing frame carries an Empty Report before the real
 			-- Hit, and the empty one rides the cast's own instant —
 			-- cast.at == first.at). A phys wound claiming a pending
@@ -6604,7 +6604,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					end
 				end
 				-- One drop per cast: the frame's SECOND report is the
-				-- real hit (FCT) — dropping every same-instant wound
+				-- real hit — dropping every same-instant wound
 				-- kills the damage entirely (tape: both nameplate and
 				-- target reports dropped, nothing showed).
 				if peekNS and peekNS.at and (t - peekNS.at) < 0.30
@@ -7762,7 +7762,7 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 				return
 			end
 		end
-		-- Leech evidence (FCT playerHeals): a readable self-heal is recorded
+		-- Leech evidence (player heals): a readable self-heal is recorded
 		-- so a wound of the SAME amount in the same moment proves a drain
 		-- tick (Siphon Life / drain channels). The health-rise check above
 		-- drops full-overheal drains, so a miss here is suppression, not
@@ -8431,7 +8431,7 @@ function Collector:Enable()
 	-- not every client family exposes it.
 	pcall(function() self._frame:RegisterEvent("UNIT_SPELLCAST_SENT") end)
 	self._frame:RegisterEvent("UNIT_HEALTH")
-	-- Wand element from the ranged-slot tooltip (FCT ReadWandSchool);
+	-- Wand element from the ranged-slot tooltip;
 	-- nil when unreadable — the claimed-shot vote learns it instead.
 	self._wandSchool = readWandSchool()
 	pcall(function() self._frame:RegisterEvent("UNIT_HEALTH_FREQUENT") end)
