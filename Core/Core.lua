@@ -2681,6 +2681,7 @@ function Core:InitKillAnnouncer()
 	pcall(function() self._killAnnouncerFrame:RegisterEvent("PARTY_KILL") end)
 	pcall(function() self._killAnnouncerFrame:RegisterEvent("UNIT_DIED") end)
 	pcall(function() self._killAnnouncerFrame:RegisterEvent("PLAYER_PVP_KILLS_CHANGED") end)
+	pcall(function() self._killAnnouncerFrame:RegisterEvent("CHAT_MSG_COMBAT_HONOR_GAIN") end)
 	pcall(function() self._killAnnouncerFrame:RegisterEvent("COMBAT_TEXT_UPDATE") end)
 	pcall(function() self._killAnnouncerFrame:RegisterUnitEvent("UNIT_HEALTH", "target") end)
 	pcall(function() self._killAnnouncerFrame:RegisterUnitEvent("UNIT_HEALTH_FREQUENT", "target") end)
@@ -2721,6 +2722,44 @@ function Core:InitKillAnnouncer()
 		return r
 	end
 
+	-- Restricted-context check for the event-credit tier: instances are always
+	-- restricted; C_Secrets.HasSecretRestrictions catches world-PvP/other
+	-- restricted zones when the predicate exists (Forever has it).
+	local function utRestrictedContext()
+		if IsInInstance and IsInInstance() then return true end
+		if C_Secrets and C_Secrets.HasSecretRestrictions then
+			local ok, r = pcall(C_Secrets.HasSecretRestrictions)
+			if ok and r == true then return true end
+		end
+		return false
+	end
+
+	-- Honor-gain chat lines are plain text — never secret. Named variants name
+	-- the victim: deformat the client's own GlobalStrings for localization.
+	-- A missing global just yields no pattern for that variant.
+	local honorNamePats = {}
+	local honorAwardPat = nil
+	do
+		local function gspat(gs)
+			if type(gs) ~= "string" or gs == "" then return nil end
+			local pat = gs
+			pat = pat:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
+			pat = pat:gsub("%%%%%d%$d", "(%%d+)")
+			pat = pat:gsub("%%%%d", "(%%d+)")
+			pat = pat:gsub("%%%%%d%$s", "(.+)")
+			pat = pat:gsub("%%%%s", "(.+)")
+			return "^" .. pat .. "$"
+		end
+		for _, gname in ipairs({ "COMBATLOG_HONORGAIN", "COMBATLOG_HONORGAIN_NO_RANK",
+			"COMBATLOG_HONORGAIN_EXHAUSTION", "COMBATLOG_DISHONORGAIN" }) do
+			local pat = gspat(_G[gname])
+			if pat then honorNamePats[#honorNamePats + 1] = pat end
+		end
+		-- Last-resort enUS shape in case the globals moved.
+		honorNamePats[#honorNamePats + 1] = "^(.+) dies, honorable kill"
+		honorAwardPat = gspat(_G.COMBATLOG_HONORAWARD)
+	end
+
 	local function FireUT(targetName, src, key)
 		local t0 = GetTime and GetTime() or 0
 		-- Dedup: a single kill can arrive as PARTY_KILL + UNIT_DIED + an XP-witness
@@ -2741,6 +2780,28 @@ function Core:InitKillAnnouncer()
 				return
 			end
 			Core._utFireNames[targetName] = t0
+		end
+		-- Named/unnamed mutual suppression: a named fire (real victim name) and
+		-- an unnamed fire ("Target") for the same kill arrive from different
+		-- signals in either order — one announce wins, whichever came first.
+		local named = (type(targetName) == "string" and targetName ~= "" and targetName ~= "Target")
+		if named then
+			local u = Core._utRecentUnnamedFireAt
+			if u and (t0 - u) <= 1.5 then
+				if Core._utTrace then SafePrint("|cFF00CC66[UT]|r unnamed-supp " .. dbgSafe(targetName)) end
+				return
+			end
+		else
+			local n = Core._utRecentNamedFireAt
+			if n and (t0 - n) <= 1.5 then
+				if Core._utTrace then SafePrint("|cFF00CC66[UT]|r named-supp src=" .. dbgSafe(src)) end
+				return
+			end
+		end
+		if named then
+			Core._utRecentNamedFireAt = t0
+		else
+			Core._utRecentUnnamedFireAt = t0
 		end
 		if Core._utTrace then
 			SafePrint("|cFF00CC66[UT]|r FIRE src=" .. dbgSafe(src) .. " tn=" .. dbgSafe(targetName)
@@ -2848,6 +2909,56 @@ function Core:InitKillAnnouncer()
 			for k, v in pairs(Core._utDiedGuids) do
 				if (tD - v) > 5 then Core._utDiedGuids[k] = nil end
 			end
+			-- Restricted tier: a dead PLAYER pairs with a pending HK credit.
+			-- Player GUIDs arrive readable even under identity restriction;
+			-- resolve the victim name from stamped GUID names, or a live unit
+			-- token for the corpse (nameplate etc.) via UnitTokenFromGUID.
+			-- No pending credit → not our kill → no announce.
+			if gSafe:sub(1, 7) == "Player-" and utRestrictedContext() then
+				local credits = Core._utPvpCredits
+				local cAt = nil
+				if credits then
+					for i = #credits, 1, -1 do
+						if (tD - credits[i]) > 2 then table.remove(credits, i) end
+					end
+					-- Oldest credit not newer than the death (+0.5s jitter for
+					-- delivery-order inversions) claims this victim.
+					for i = 1, #credits do
+						if credits[i] <= tD + 0.5 then cAt = table.remove(credits, i) break end
+					end
+				end
+				if cAt then
+					-- Pairing alone is too loose: HK credits arrive raid-wide and
+					-- any nearby death can claim one. Require a recent own
+					-- outgoing hit — a kill you never touched is an assist or a
+					-- remote credit, not your announce.
+					local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
+					local ownAt = ec and ec._lastOutgoingCombatAt
+					local ownAge = ownAt and (tD - ownAt) or nil
+					if ownAge and ownAge <= 2.5 then
+						local tn = nil
+						local rec = Core._utTargetNames and Core._utTargetNames[gSafe]
+						if rec and type(rec.n) == "string" and rec.n ~= "" then tn = rec.n end
+						if not tn and UnitTokenFromGUID then
+							local okT, tok = pcall(UnitTokenFromGUID, gSafe)
+							if okT and type(tok) == "string" and tok ~= "" then
+								local okN, n = pcall(UnitName, tok)
+								if okN and ZSBT.IsSafeString and ZSBT.IsSafeString(n) and n ~= "" then tn = n end
+							end
+						end
+						if Core._utTrace or dl >= 4 then
+							SafePrint("|cFF00CC66[UT]|r pvpkill-died guid=" .. dbgSafe(gSafe)
+								.. " tn=" .. dbgSafe(tn) .. " ownAge=" .. dbgSafe(ownAge)
+								.. " pend=" .. tostring(credits and #credits or 0))
+						end
+						FireUT(tn or "Target", "pvpkill", gSafe)
+					elseif Core._utTrace or dl >= 4 then
+						SafePrint("|cFF00CC66[UT]|r pvpkill-nofight guid=" .. dbgSafe(gSafe)
+							.. " ownAge=" .. dbgSafe(ownAge))
+					end
+					return
+				end
+			end
 			if Core._utClearCands then
 				for cn, c in pairs(Core._utClearCands) do
 					if c.guid == gSafe and c.at and (tD - c.at) <= 1.5 then
@@ -2885,6 +2996,51 @@ function Core:InitKillAnnouncer()
 			return
 		end
 		if event == "PLAYER_PVP_KILLS_CHANGED" then
+			if utRestrictedContext() then
+				-- Restricted tier: unitTarget is the CREDITED unit — the killer,
+				-- via its token aliases ("player" + "raidN" resolve to the same
+				-- unit → the same credit fires once per alias). It is never the
+				-- victim: announcing its name would name the killer. Credits are
+				-- pushed onto _utPvpCredits (dedup'd by HK session-stat delta
+				-- when readable, near-instant repeats otherwise) and ONLY become
+				-- announces when a witnessed Player- death pairs with them —
+				-- HK credit arrives raid-wide (assists, across-the-map kills)
+				-- so a naked credit must never announce.
+				local tNow = GetTime and GetTime() or 0
+				local hkNow = nil
+				if GetPVPSessionStats then
+					local okHK, hk = pcall(GetPVPSessionStats)
+					if okHK and type(hk) == "number"
+						and (not ZSBT.IsSafeNumber or ZSBT.IsSafeNumber(hk)) then
+						hkNow = hk
+					end
+				end
+				local newCredits = 0
+				if hkNow then
+					local delta = hkNow - (Core._utPvpLastHK or hkNow)
+					Core._utPvpLastHK = hkNow
+					newCredits = (delta > 0) and delta or 0
+				elseif (tNow - (Core._utPvpCreditAt or 0)) > 0.15 then
+					newCredits = 1
+				end
+				Core._utPvpCreditAt = tNow
+				if newCredits > 0 then
+					Core._utPvpCredits = Core._utPvpCredits or {}
+					for i = #Core._utPvpCredits, 1, -1 do
+						if (tNow - Core._utPvpCredits[i]) > 2 then table.remove(Core._utPvpCredits, i) end
+					end
+					for i = 1, newCredits do
+						Core._utPvpCredits[#Core._utPvpCredits + 1] = tNow
+					end
+					if Core._utTrace or dl >= 4 then
+						SafePrint("|cFF00CC66[UT]|r pvpkill credit unit=" .. dbgSafe(msg)
+							.. " +" .. tostring(newCredits) .. " pend=" .. tostring(#Core._utPvpCredits))
+					end
+				elseif Core._utTrace or dl >= 4 then
+					SafePrint("|cFF00CC66[UT]|r pvpkill dup unit=" .. dbgSafe(msg))
+				end
+				return
+			end
 			-- unitTarget — credited honorable kill (PvP). The payload is a unit
 			-- token for the victim; resolve its name if we can.
 			local tn = nil
@@ -2907,7 +3063,9 @@ function Core:InitKillAnnouncer()
 				Core._utCtSeen = Core._utCtSeen or {}
 				if not Core._utCtSeen[ctType] then
 					Core._utCtSeen[ctType] = true
-					SafePrint("|cFF00CC66[UT]|r cttype " .. dbgSafe(ctType))
+					local a1, a2 = ...
+					SafePrint("|cFF00CC66[UT]|r cttype " .. dbgSafe(ctType)
+						.. " a1=" .. dbgSafe(a1) .. " a2=" .. dbgSafe(a2))
 				end
 			end
 			if ctType ~= "PARTYKILL" and ctType ~= "PARTY_KILL" then return end
@@ -3157,6 +3315,33 @@ local okDead, isDead = pcall(_secTargetDead)
 					elseif not guidCmp and not lastSafe then
 						FireUT(tnSafe and tn or "Target", "edge-recency")
 					end
+				end
+			end
+			return
+		end
+
+		-- Honor-gain credit (restricted contexts only): "X dies, honorable
+		-- kill…" names the victim in plain text — a credit-backed announce
+		-- that survives secret identity. In the open world these lines keep
+		-- falling through to the generic witness path below — unchanged.
+		if event == "CHAT_MSG_COMBAT_HONOR_GAIN" and type(msg) == "string" and utRestrictedContext() then
+			local tH = GetTime and GetTime() or 0
+			local victim = nil
+			for _, pat in ipairs(honorNamePats) do
+				victim = msg:match(pat)
+				if victim then break end
+			end
+			if type(victim) == "string" and victim ~= "" then
+				Core._utDeathWitness = Core._utDeathWitness or {}
+				Core._utDeathWitness[victim] = tH
+				if Core._utTrace or dl >= 4 then
+					SafePrint("|cFF00CC66[UT]|r honor-gain victim=" .. dbgSafe(victim))
+				end
+				FireUT(victim, "honor-gain")
+			else
+				Core._utHonorCreditAt = tH
+				if Core._utTrace or dl >= 4 then
+					SafePrint("|cFF00CC66[UT]|r honor credit (unnamed)")
 				end
 			end
 			return

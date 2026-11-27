@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.0.10-beta
+
+Beta build — unreleased work on top of 4.0.10.
+
+### Added
+- **18 new display fonts** registered under the `ZSBT:` prefix (28 Days Later, 8bitOperatorPlus8 regular+bold, Create Future, KOMIKA, Pixel NES, Transformers Movie, and more) — available in every font dropdown via LibSharedMedia.
+- **UT kill announcer: restricted-context tier (instances/BGs/raids)** — new announce sources for contexts where unit identity is secret: `CHAT_MSG_COMBAT_HONOR_GAIN` (victim names in plain text where the client emits them), and a PvP model that counts `PLAYER_PVP_KILLS_CHANGED` credits (deduplicated across the event's token aliases) and announces only when a witnessed `UNIT_DIED` player death pairs a pending credit *and* you dealt damage recently — across-the-map assist credits no longer announce. Named and unnamed announces suppress each other so a kill fires once regardless of signal order.
+
 ## 4.0.10
 
 ### Added

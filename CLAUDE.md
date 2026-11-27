@@ -1013,3 +1013,124 @@ already means "never a direct hit" → enforce line-kind vetoes in core
 - Combat log stamp `M/D/Y H:M:S.mmm-tz`; `ep_corr = naive_utc(stamp)+43200`; `GetTime ≈ ep_corr - 1794666676.856` (offset drifts per session — recompute via anchors).
 - DS (Blood, Deadly Reach): 2-3 SPELL_DAMAGE per cast — castBudget 3.
 - `correlate.py` next to devin.exe dir; `python -m luaparser` for compile checks (exe path → permission denied).
+
+---
+
+# Masterplan: UT kill announcer — restricted-context tier (instances/BGs/raids)
+
+Status: **phase 1 implemented 2026-11-26** — honor-gain announce path +
+restricted-context gate + named/unnamed suppression in `FireUT`. Verified in
+a retail BG: `PLAYER_PVP_KILLS_CHANGED` payload is the CREDITED unit (token
+aliases `player`/`raidN`/`targettarget` resolve to you — the event refires
+per alias), retail honor lines are nameless ("You receive currency: Honor
+Points"), and `UNIT_DIED` delivers readable `Player-` GUIDs even under
+restriction. PvP model: credits → `_utPvpCredits` list (dedup via
+`GetPVPSessionStats` delta when readable, 0.15s near-instant window when
+secret), announced only when a witnessed `Player-` `UNIT_DIED` pairs a
+pending credit AND `_lastOutgoingCombatAt` is ≤2.5s (a naked credit =
+assist/remote — never announces). Deferred: secret-passthrough display
+(rung 4 — needs `string.format` passthrough, `applyTemplate` gsub can't
+take secrets) and the assist/HK `GetPVPSessionStats` delta path.
+
+## Locked constraint
+
+**Open-world behavior is frozen.** `unitdied` last-victim, `unitdied-cand`,
+`clear-*`/`witness` candidates, foreign-blow veto (`foreignBlowNear` +
+`_woundAtByGuid`/`_ownAtByGuid`), dedup — all untouched. The restricted tier
+is strictly additive: worst case it announces "Target" exactly like today.
+
+## Why a separate tier
+
+In restricted contexts every identity read returns a secret value:
+`UnitGUID` → secret string, `UnitName("target")` → secret string (verified
+live: `tn=<secret string>`), `UnitIsDeadOrGhost` → secret bool,
+`UNIT_DIED`/`PARTY_KILL` payloads are `SecretWhenUnitIdentityRestricted`.
+Comparisons throw; `IsSafeString` filters nil them out. The inference paths
+self-disable — that's correct and stays. What CAN work there: event-borne
+credit + plain-text chat witnesses + secret passthrough display.
+
+## Context detection
+
+`restricted = IsInInstance() or (C_Secrets and C_Secrets.HasSecretRestrictions and C_Secrets.HasSecretRestrictions())`
+— the `C_Secrets` predicates exist on Forever (verified in API dumps);
+prefer the predicate over instance checks (covers world-PvP restricted
+zones). Evaluate lazily at the credit-event site — no global mode flag.
+
+## Credit signals (restricted tier)
+
+| Signal | Scope | Victim identity |
+|---|---|---|
+| `PARTY_KILL` | PvE kills (own-kill scoped on modern clients — verified: only fires for the player's own blows, follower-dungeon NPCs don't trigger it) | victim GUID — usually secret |
+| `PLAYER_PVP_KILLS_CHANGED` | PvP kills (honorable-kill credit) | unit **token** — `UnitName(token)` may resolve even when NPC names secret (enemy player names are a different secrecy class — verify live) |
+| `PLAYER_KILLING_BLOW` | defensive, undocumented — keep existing registration | — |
+| `CHAT_MSG_COMBAT_HONOR_GAIN` | honor credit, both clients | **plain text, never secret** |
+
+## Victim name resolution ladder
+
+For a credit event needing a name, in order:
+
+1. `UnitName` on the PVP_KILLS unit token (pcall + IsSafeString).
+2. `_utTargetNames[guid]` / `_utLastTargetName` — only populated when a
+   name was readable at stamp time.
+3. `CHAT_MSG_COMBAT_HONOR_GAIN` named line — `COMBATLOG_HONORGAIN`
+   (`"%s dies, honorable kill Rank: %s (Estimated Honor Points: %d)"`)
+   parsed via existing `convertGlobalStringToPattern` (Core.lua :1683,
+   :2037 — deformat the client's own GlobalString = free localization).
+   Victim name is plain text on both clients. The nameless
+   `COMBATLOG_HONORAWARD` variant is a credit witness only, no name.
+4. **Secret passthrough** — if a name comes back secret, don't
+   `coerceSafe` it to `"<secret>"`: `string.format` ACCEPTS secret values
+   under taint (wiki-confirmed). Build the announce text via
+   `string.format(tpl, secretName)` and pass it through — `SetText`
+   renders the real name. Trade-off: secret text can't be
+   compared/deduped — dedup falls to timing-only for that fire.
+5. `"Target"` — floor (current behavior).
+
+## Honor-line announce path
+
+- Register `CHAT_MSG_COMBAT_HONOR_GAIN` on `_killAnnouncerFrame`.
+- Named line → `FireUT(victimName, "honor-gain", nil)` — plain-text name
+  dedups normally by name key.
+- Guard against double-fire: a `partykill`/`pvpkill` firing in the same
+  ~1.5s window for an unnamed kill stamps `_utRecentUnnamedFireAt`;
+  suppress a subsequent name-keyed honor fire in that window (and
+  vice-versa, name fire suppresses a later unnamed fire).
+- Nameless `HONORAWARD` line → credit witness only: stamp
+  `_utDeathWitness`-style timestamp, do not announce by itself.
+
+## Assists / HK-without-victim (phase 2, optional)
+
+Warlords Forever's model: `PLAYER_PVP_KILLS_CHANGED` +
+`GetPVPSessionStats()` delta = a credited HK naming no victim (assist).
+Match to a witnessed enemy death (nameplate/target/mouseover token →
+name). Feign Death guard: defer the fire ~4s and re-check
+`UnitIsDeadOrGhost` (pcall + safeBool) — only on this path, never on
+PARTY_KILL (server-credited). Phase 1 can ship named-kills only.
+
+## What does NOT change
+
+- Open world: every path, veto, dedup — byte-identical behavior.
+- `_utKillCreditSeen`/`_utKillCreditOnly` semantics — already suppress
+  inference when real credit events exist; keep.
+- No combat-log reads, no CLEU — still off the table.
+- `CHAT_MSG_COMBAT_HOSTILE_DEATH` — dead since patch 2.4; do not use.
+
+## Verify live before building
+
+1. `UnitName(pvpkillToken)` — do enemy player names resolve on retail BGs?
+2. Does 12.x still emit `COMBATLOG_HONORGAIN`-format lines, or only the
+   nameless `HONORAWARD` variant? (Forever emits the named form.)
+3. Does `PARTY_KILL` carry a pet GUID in `attackerGUID` for pet blows?
+   (Warlords Forever says yes — same credit for our purposes.)
+4. `C_Secrets.HasSecretRestrictions` on retail 12.x — exists and returns
+   true inside follower dungeons/BGs?
+
+## Testing matrix
+
+- Retail open world — regression only: unchanged names/dedup.
+- Retail follower dungeon — partykill "Target" baseline today; improves
+  only if a ladder rung resolves.
+- Retail BG — pvpkill + honor line; target: named announce.
+- Forever open world — regression only.
+- Forever BG / world PvP — honor-line named announce expected.
+
