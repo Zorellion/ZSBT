@@ -2784,6 +2784,21 @@ function Core:InitKillAnnouncer()
 		end
 	end
 
+	-- Foreign-blow veto (shared by the non-credit inference paths): the
+	-- collector's _woundAtByGuid stamps every wound on a unit's token — ours
+	-- AND a co-attacker's — while _ownAtByGuid only moves on our attributed
+	-- emits to that same unit. A wound on this GUID newer than our last own
+	-- hit on it, close to the death, is someone else's blow — not ours.
+	local function foreignBlowNear(guid, deadAt)
+		local ec = ZSBT.Parser and ZSBT.Parser.EventCollector
+		local wAt = ec and ec._woundAtByGuid and ec._woundAtByGuid[guid]
+		local lAt = ec and ec._ownAtByGuid and ec._ownAtByGuid[guid]
+		if type(wAt) ~= "number" or type(lAt) ~= "number" or type(deadAt) ~= "number" then
+			return false
+		end
+		return (wAt - lAt) > 0.05 and (deadAt - wAt) <= 1.5 and (deadAt - wAt) >= -0.10
+	end
+
 	self._killAnnouncerFrame:SetScript("OnEvent", function(_, event, msg, ...)
 		if not Core:IsMasterEnabled() then return end
 		local dl = (Addon and Addon.GetDebugLevel and Addon:GetDebugLevel("notifications"))
@@ -2838,7 +2853,13 @@ function Core:InitKillAnnouncer()
 					if c.guid == gSafe and c.at and (tD - c.at) <= 1.5 then
 						Core._utClearCands[cn] = nil
 						Core._utDiedGuids[gSafe] = nil
-						FireUT(cn, "unitdied-cand", gSafe)
+						if foreignBlowNear(gSafe, tD) then
+							if Core._utTrace or dl >= 4 then
+								SafePrint("|cFF00CC66[UT]|r unitdied-cand-veto guid=" .. dbgSafe(gSafe))
+							end
+						else
+							FireUT(cn, "unitdied-cand", gSafe)
+						end
 						return
 					end
 				end
@@ -2847,13 +2868,19 @@ function Core:InitKillAnnouncer()
 			local lG = ec and ec._lastOutgoingCombatTargetGUID
 			local lAt = ec and ec._lastOutgoingCombatAt
 			if lG == gSafe and lAt and (tD - lAt) <= 3.0 then
-				local tn = nil
-				local rec = Core._utTargetNames and Core._utTargetNames[gSafe]
-				if rec and type(rec.n) == "string" and rec.n ~= "" then tn = rec.n end
-				if not tn then tn = ec._lastOutgoingCombatTargetName end
-				if not (ZSBT.IsSafeString and ZSBT.IsSafeString(tn) and tn ~= "") then tn = "Target" end
-				Core._utDiedGuids[gSafe] = nil
-				FireUT(tn, "unitdied", gSafe)
+				if foreignBlowNear(gSafe, tD) then
+					if Core._utTrace or dl >= 4 then
+						SafePrint("|cFF00CC66[UT]|r unitdied-veto guid=" .. dbgSafe(gSafe))
+					end
+				else
+					local tn = nil
+					local rec = Core._utTargetNames and Core._utTargetNames[gSafe]
+					if rec and type(rec.n) == "string" and rec.n ~= "" then tn = rec.n end
+					if not tn then tn = ec._lastOutgoingCombatTargetName end
+					if not (ZSBT.IsSafeString and ZSBT.IsSafeString(tn) and tn ~= "") then tn = "Target" end
+					Core._utDiedGuids[gSafe] = nil
+					FireUT(tn, "unitdied", gSafe)
+				end
 			end
 			return
 		end
@@ -2943,7 +2970,7 @@ function Core:InitKillAnnouncer()
 				local okD2, d2 = pcall(_secTargetDead)
 				Core._utLastTargetDead = okD2 and safeBool(d2) or nil
 				local okTg, tg = pcall(UnitGUID, "target")
-				Core._utLastTargetGUID = (okTg and type(tg) == "string" and tg ~= "") and tg or nil
+				Core._utLastTargetGUID = (okTg and type(tg) == "string" and ZSBT.IsSafeString(tg) and tg ~= "") and tg or nil
 				if Core._utLastTargetGUID and ZSBT.IsSafeString and ZSBT.IsSafeString(tn) and tn ~= "" then
 					Core._utTargetNames = Core._utTargetNames or {}
 					Core._utTargetNames[Core._utLastTargetGUID] = { n = tn, at = GetTime and GetTime() or 0 }
@@ -3007,8 +3034,19 @@ function Core:InitKillAnnouncer()
 				if Core._utLastTargetDead == true or witnessed or guidWitnessed then
 					if witnessed then Core._utDeathWitness[tn] = nil end
 					if guidWitnessed then
-						FireUT(tn, "clear-died", Core._utLastTargetGUID)
+						if foreignBlowNear(Core._utLastTargetGUID, diedAt) then
+							if Core._utTrace or dl >= 4 then
+								SafePrint("|cFF00CC66[UT]|r clear-died-veto guid=" .. dbgSafe(Core._utLastTargetGUID))
+							end
+						else
+							FireUT(tn, "clear-died", Core._utLastTargetGUID)
+						end
 						Core._utDiedGuids[Core._utLastTargetGUID] = nil
+					elseif Core._utLastTargetDead == true and not witnessed
+						and foreignBlowNear(Core._utLastTargetGUID, tNow) then
+						if Core._utTrace or dl >= 4 then
+							SafePrint("|cFF00CC66[UT]|r clear-dead-veto guid=" .. dbgSafe(Core._utLastTargetGUID))
+						end
 					else
 						FireUT(tn, witnessed and "clear-witness" or "clear-dead")
 					end
@@ -3066,17 +3104,18 @@ local okDead, isDead = pcall(_secTargetDead)
 				Core._utLastTargetName = tn
 			end
 			local okTg, tg = pcall(UnitGUID, "target")
-			if okTg and type(tg) == "string" and tg ~= "" then
-				if (Core._utTrace or dl >= 4) and tg ~= Core._utLastTargetGUID then
-					SafePrint("|cFF00CC66[UT]|r guidstamp " .. dbgSafe(tg)
+			local tgSafe = (okTg and type(tg) == "string" and ZSBT.IsSafeString and ZSBT.IsSafeString(tg)) and tg or nil
+			if tgSafe and tgSafe ~= "" then
+				if (Core._utTrace or dl >= 4) and tgSafe ~= Core._utLastTargetGUID then
+					SafePrint("|cFF00CC66[UT]|r guidstamp " .. dbgSafe(tgSafe)
 						.. " dead=" .. dbgSafe(isDead))
 				end
-				Core._utLastTargetGUID = tg
+				Core._utLastTargetGUID = tgSafe
 				-- Atomic guid→name map: name resolution for PARTY_KILL victims
 				-- must pair the name with the guid it was captured alongside.
 				if ZSBT.IsSafeString and ZSBT.IsSafeString(tn) and tn ~= "" then
 					Core._utTargetNames = Core._utTargetNames or {}
-					Core._utTargetNames[tg] = { n = tn, at = GetTime and GetTime() or 0 }
+					Core._utTargetNames[tgSafe] = { n = tn, at = GetTime and GetTime() or 0 }
 					local tP = GetTime and GetTime() or 0
 					if tP - (Core._utTargetNamesPrune or 0) > 30 then
 						Core._utTargetNamesPrune = tP
@@ -3726,6 +3765,26 @@ function Core:EmitNotification(text, color, category, extraMeta)
 		and not (type(extraMeta) == "table" and extraMeta.preview) then
 		return
 	end
+	-- Optional level-up delay: let the client stinger/sounds settle before our
+	-- display and sound fire. Headline and stats emits both pass through here
+	-- with the same delay, so ordering is preserved. Previews fire instantly.
+	-- _levelUpDelayed marks the deferred re-entry so it can't reschedule itself.
+	if category == "levelUp"
+		and not (type(extraMeta) == "table" and (extraMeta.preview == true or extraMeta._levelUpDelayed == true)) then
+		local luConf = self.GetNotificationPerTypeConfig and self:GetNotificationPerTypeConfig("levelUp")
+		local delay = luConf and tonumber(luConf.delay) or 0
+		if delay > 0 and C_Timer and C_Timer.After then
+			local reMeta = {}
+			if type(extraMeta) == "table" then
+				for k, v in pairs(extraMeta) do reMeta[k] = v end
+			end
+			reMeta._levelUpDelayed = true
+			C_Timer.After(delay, function()
+				self:EmitNotification(text, color, category, reMeta)
+			end)
+			return
+		end
+	end
 	if category == "interrupts" or category == "caststops" then
 		local area = "Notifications"
 		if type(category) == "string" and category ~= "" and self.GetNotificationScrollArea then
@@ -3767,12 +3826,19 @@ function Core:EmitNotification(text, color, category, extraMeta)
 		-- gated natively, so silence it on that path.
 		local visGated = type(extraMeta) == "table" and extraMeta.auraVisibility ~= nil
 		local noSound = type(extraMeta) == "table" and extraMeta.noSound == true
-		if type(sconf) == "table" and sconf.enabled == true and ZSBT.PlayLSMSound and not visGated and not noSound then
+		-- Level-up can request a short window where the Leave Combat sound is
+		-- skipped entirely (regen often ends a beat after PLAYER_LEVEL_UP).
+		local lcSuppressed = category == "leaveCombat"
+			and type(self._suppressLeaveCombatSoundUntil) == "number"
+			and (GetTime() or 0) < self._suppressLeaveCombatSoundUntil
+		if type(sconf) == "table" and sconf.enabled == true and ZSBT.PlayLSMSound and not visGated and not noSound and not lcSuppressed then
 			local soundKey = sconf.soundKey
 			if type(soundKey) == "string" and soundKey ~= "" and soundKey ~= "None" then
 				local handle = ZSBT.PlayLSMSound(soundKey)
-				if category == "enterCombat" and sconf.stopOnLeaveCombat == true then
+				if category == "enterCombat" then
 					self._enterCombatSoundHandle = handle
+				elseif category == "leaveCombat" then
+					self._leaveCombatSoundHandle = handle
 				end
 			end
 		end
@@ -3784,6 +3850,21 @@ function Core:EmitNotification(text, color, category, extraMeta)
 		area = "Level Up"
 		meta.hostFrame = self:EnsureLevelUpFrame()
 		meta.areaConfig = self:_levelUpAreaConfig()
+		-- "Stop combat sounds": kill any Enter/Leave Combat notification sound
+		-- still playing, and suppress a Leave Combat sound that hasn't fired yet
+		-- (PLAYER_REGEN_ENABLED can land a beat after the level-up).
+		if conf and type(conf.sound) == "table" and conf.sound.stopCombatSounds == true
+			and not (type(extraMeta) == "table" and extraMeta.preview == true) then
+			self._suppressLeaveCombatSoundUntil = (GetTime and GetTime() or 0) + 4
+			if self._leaveCombatSoundHandle and StopSound then
+				pcall(function() StopSound(self._leaveCombatSoundHandle) end)
+			end
+			self._leaveCombatSoundHandle = nil
+			if self._enterCombatSoundHandle and StopSound then
+				pcall(function() StopSound(self._enterCombatSoundHandle) end)
+			end
+			self._enterCombatSoundHandle = nil
+		end
 	end
 	if ZSBT.DisplayText then
 		ZSBT.DisplayText(area, text, finalColor, meta)

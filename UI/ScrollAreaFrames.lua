@@ -328,7 +328,12 @@ local function AE_InitFlip(newDisplayEvent)
 	-- Letter-cascade crit: each letter tumbles in left-to-right on a stagger,
 	-- so the intro lasts until the last letter lands; then hold and fade.
 	local animationSpeed = newDisplayEvent.animationSpeed or 1.0
-	local txt = (newDisplayEvent.fs and newDisplayEvent.fs.GetText and newDisplayEvent.fs:GetText()) or ""
+	-- Read the logical text, not fs:GetText() — fontstring reads return secret
+	-- strings under tainted execution (e.g. timer-deferred emits), and secret
+	-- strings can't be gsub'd/gmatch'd here.
+	local evText = newDisplayEvent.text
+	local txt = (type(evText) == "string"
+		and (not ZSBT.IsSafeString or ZSBT.IsSafeString(evText)) and evText) or ""
 	txt = txt:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|[rR]", "")
 	local n = 0
 	for _ in txt:gmatch("[%z\1-\127\194-\244][\128-\191]*") do n = n + 1 end
@@ -1486,7 +1491,9 @@ local function AE_UpdateEvent(ev, dt)
 		if not ev._zsbtFlipFS then
 			ev._zsbtFlipFS = {}
 			ev._zsbtFlipW = {}
-			local raw = (ev.fs and ev.fs.GetText and ev.fs:GetText()) or ""
+			local evText = ev.text
+			local raw = (type(evText) == "string"
+				and (not ZSBT.IsSafeString or ZSBT.IsSafeString(evText)) and evText) or ""
 			raw = raw:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|[rR]", "")
 			local tr, tg, tb, ta = 1, 1, 1, 1
 			if ev.fs and ev.fs.GetTextColor then
@@ -1501,7 +1508,9 @@ local function AE_UpdateEvent(ev, dt)
 				pcall(sfs.SetText, sfs, ch)
 				pcall(sfs.SetTextColor, sfs, tr, tg, tb, ta)
 				sfs:SetAlpha(0)
-				local w = (sfs.GetStringWidth and sfs:GetStringWidth()) or (sz * 0.6)
+				local okW, w = pcall(function() return sfs.GetStringWidth and sfs:GetStringWidth() end)
+				w = (okW and type(w) == "number" and (not ZSBT.IsSafeNumber or ZSBT.IsSafeNumber(w)))
+					and w or (sz * 0.6)
 				ev._zsbtFlipFS[#ev._zsbtFlipFS + 1] = sfs
 				ev._zsbtFlipW[#ev._zsbtFlipW + 1] = w
 				totalW = totalW + w

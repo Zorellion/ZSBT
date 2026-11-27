@@ -3629,6 +3629,27 @@ function ZSBT.BuildTab_Notifications()
 					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 				end,
 			},
+			stopCombatSounds = {
+				type = "toggle",
+				name = L["Stop combat sounds"],
+				desc = L["If enabled, Enter Combat and Leave Combat sounds are stopped when you level up so the level-up sound can play cleanly."],
+				order = baseOrder + 1.5,
+				width = "full",
+				hidden = function() return key ~= "levelUp" end,
+				disabled = function()
+					local c = getPerType(key)
+					return not (c and c.sound and c.sound.enabled == true)
+				end,
+				get = function()
+					local c = getPerType(key)
+					return c and c.sound and c.sound.stopCombatSounds == true
+				end,
+				set = function(_, v)
+					local c = ensurePerType(key)
+					c.sound.stopCombatSounds = v and true or false
+					LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+				end,
+			},
 		}
 	end
 
@@ -3772,7 +3793,7 @@ function ZSBT.BuildTab_Notifications()
 		-- Style args only: per-category sound can't fire reliably on the
 		-- secret-name path (gated emits must silence it), and per-rule sound
 		-- is impossible — Blizzard blocks every secret->Lua channel.
-		local DROP_SOUND_ARGS = { soundHeader = true, soundEnabled = true, soundKey = true, soundTest = true, stopOnLeaveCombat = true }
+		local DROP_SOUND_ARGS = { soundHeader = true, soundEnabled = true, soundKey = true, soundTest = true, stopOnLeaveCombat = true, stopCombatSounds = true }
 		local extra = buildStyleSoundArgs(key, 5)
 		for k, v in pairs(extra) do
 			if not DROP_SOUND_ARGS[k] then leaf.args[k] = v end
@@ -3883,9 +3904,27 @@ function ZSBT.BuildTab_Notifications()
 							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
 						end,
 					},
+					delay = {
+						type = "range",
+						name = L["Delay"],
+						desc = L["How long to wait before showing the level-up display and playing its sound."],
+						order = 6,
+						min = 0,
+						max = 3,
+						step = 0.1,
+						get = function()
+							local c = getPerType("levelUp")
+							return tonumber(c and c.delay) or 0
+						end,
+						set = function(_, v)
+							local c = ensurePerType("levelUp")
+							c.delay = v
+							LibStub("AceConfigRegistry-3.0"):NotifyChange("ZSBT")
+						end,
+					},
 					frameUnlock = {
 						type = "execute",
-						order = 6,
+						order = 7,
 						width = "full",
 						name = function()
 							return (ZSBT.IsLevelUpUnlocked and ZSBT.IsLevelUpUnlocked())
@@ -3996,11 +4035,13 @@ function ZSBT.BuildTab_Notifications()
 					soundKey = take("soundKey"),
 					soundTest = take("soundTest"),
 					stopOnLeaveCombat = take("stopOnLeaveCombat"),
+					stopCombatSounds = take("stopCombatSounds"),
 				}
 				soundArgs.soundEnabled.order = 1
 				soundArgs.soundKey.order = 2
 				soundArgs.soundTest.order = 3
 				soundArgs.stopOnLeaveCombat.order = 4
+				soundArgs.stopCombatSounds.order = 5
 				take("styleHeader")
 				take("soundHeader")
 				A.notifyGrp = {

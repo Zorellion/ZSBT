@@ -68,8 +68,11 @@ end
 local function safeTargetGUID(unit)
 	if not unit or type(UnitGUID) ~= "function" then return nil end
 	local ok, value = pcall(UnitGUID, unit)
-	if not ok or type(value) ~= "string" or value == "" then return nil end
+	-- Secret strings report type()=="string" but throw on any comparison
+	-- (incl. == ""), so the safety filter must run before the empty check.
+	if not ok or type(value) ~= "string" then return nil end
 	if ZSBT.IsSafeString and not ZSBT.IsSafeString(value) then return nil end
+	if value == "" then return nil end
 	return value
 end
 
@@ -894,6 +897,17 @@ local function flushBestOutgoing(self, token)
 	self._lastOutgoingCombatAt = bucket.timestamp
 	self._lastOutgoingCombatTargetName = bucket.targetName
 	self._lastOutgoingCombatTargetGUID = bucket.targetGUID or safeTargetGUID("target")
+	if self._lastOutgoingCombatTargetGUID then
+		local m = self._ownAtByGuid or {}; self._ownAtByGuid = m
+		m[self._lastOutgoingCombatTargetGUID] = self._lastOutgoingCombatAt
+
+		local n = 0
+		for _ in pairs(m) do n = n + 1; if n > 48 then break end end
+		if n > 48 then
+			local cut = self._lastOutgoingCombatAt - 6
+			for k, v in pairs(m) do if v < cut then m[k] = nil end end
+		end
+	end
 	if (tonumber(dl) or 0) >= 4 then
 		ECPrint(("FLUSH_BEST token=%s spellId=%s amt=%s school=%s crit=%s cnt=%s max=%s second=%s")
 			:format(dbgSafe(token), dbgSafe(bucket.spellId), dbgSafe(bucket.amount), dbgSafe(bucket.schoolMask), dbgSafe(bucket.isCrit), dbgSafe(bucket._seenCount), dbgSafe(bucket._seenMax), dbgSafe(bucket._seenSecond)))
@@ -1087,7 +1101,10 @@ if type(_G.isPlayerClassTag) ~= "function" then
 		if type(tag) ~= "string" or tag == "" then return false end
 		if type(UnitClass) ~= "function" then return false end
 		local ok, _, classTag = pcall(UnitClass, "player")
-		return ok and classTag == tag
+		-- classTag may be a secret string — guard before comparing.
+		return ok and type(classTag) == "string"
+			and (not ZSBT.IsSafeString or ZSBT.IsSafeString(classTag))
+			and classTag == tag
 	end
 end
 
@@ -1766,7 +1783,11 @@ end
 local function getUnitNpcId(unit)
 	if not UnitGUID then return nil end
 	local okG, guid = pcall(UnitGUID, unit)
-	if not okG or type(guid) ~= "string" or guid == "" then return nil end
+	-- Secret GUIDs report type()=="string" but throw on compare/strsplit —
+	-- filter them before the empty check (unusable here anyway).
+	if not okG or type(guid) ~= "string" then return nil end
+	if ZSBT.IsSafeString and not ZSBT.IsSafeString(guid) then return nil end
+	if guid == "" then return nil end
 	-- GUID format: Type-0-ServerID-InstanceID-ZoneUID-ID-SpawnUID
 	local _, _, _, _, _, id = strsplit("-", guid)
 	local n = tonumber(id)
@@ -3897,7 +3918,10 @@ isPlayerClassTag = function(tag)
 	if type(tag) ~= "string" or tag == "" then return false end
 	if type(UnitClass) ~= "function" then return false end
 	local ok, _, classTag = pcall(UnitClass, "player")
-	return ok and classTag == tag
+	-- classTag may be a secret string — guard before comparing.
+	return ok and type(classTag) == "string"
+		and (not ZSBT.IsSafeString or ZSBT.IsSafeString(classTag))
+		and classTag == tag
 end
 
 local function isWhirlwindSpellId(spellId)
@@ -4737,6 +4761,17 @@ function Collector:handleCombatTextUpdate(arg1)
 			self._lastOutgoingCombatAt = tNow
 			self._lastOutgoingCombatTargetName = safeUnitName("target")
 			self._lastOutgoingCombatTargetGUID = safeTargetGUID("target")
+			if self._lastOutgoingCombatTargetGUID then
+				local m = self._ownAtByGuid or {}; self._ownAtByGuid = m
+				m[self._lastOutgoingCombatTargetGUID] = self._lastOutgoingCombatAt
+		
+				local n = 0
+				for _ in pairs(m) do n = n + 1; if n > 48 then break end end
+				if n > 48 then
+					local cut = self._lastOutgoingCombatAt - 6
+					for k, v in pairs(m) do if v < cut then m[k] = nil end end
+				end
+			end
 
 			emit("OUTGOING_DAMAGE_COMBAT", {
 				timestamp = tNow,
@@ -5587,10 +5622,27 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 	-- Stamp when UNIT_COMBAT reports a WOUND on the resolved target token.
 	-- The OFFT (off-target) fallback only emits while this goes stale, so
 	-- normal target reporting keeps foreign nameplate hits out of the pipe.
-	if unit == "target" then
+	-- Per-GUID: every wound on any token also stamps _woundAtByGuid[guid] so the
+	-- UT announcer's foreign-blow veto can see hits on off-target victims
+	-- (a mob you damaged then untargeted still earns nameplate-token wounds).
+	do
 		local aW = (ZSBT.IsSafeString and ZSBT.IsSafeString(action)) and action or nil
 		if aW == "WOUND" then
-			self._lastTargetWoundAt = H.now()
+			if unit == "target" then
+				self._lastTargetWoundAt = H.now()
+			end
+			local gW = safeTargetGUID(unit)
+			if gW then
+				local m = self._woundAtByGuid
+				if type(m) ~= "table" then m = {}; self._woundAtByGuid = m end
+				m[gW] = H.now()
+				local n = 0
+				for _ in pairs(m) do n = n + 1; if n > 48 then break end end
+				if n > 48 then
+					local cut = H.now() - 6
+					for k, v in pairs(m) do if v < cut then m[k] = nil end end
+				end
+			end
 		end
 	end
 	if amount == nil then return end
@@ -6003,6 +6055,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						self._lastOutgoingCombatAt = t
 						self._lastOutgoingCombatTargetName = tName
 						self._lastOutgoingCombatTargetGUID = safeTargetGUID("target")
+						if self._lastOutgoingCombatTargetGUID then
+							local m = self._ownAtByGuid or {}; self._ownAtByGuid = m
+							m[self._lastOutgoingCombatTargetGUID] = self._lastOutgoingCombatAt
+					
+							local n = 0
+							for _ in pairs(m) do n = n + 1; if n > 48 then break end end
+							if n > 48 then
+								local cut = self._lastOutgoingCombatAt - 6
+								for k, v in pairs(m) do if v < cut then m[k] = nil end end
+							end
+						end
 						return
 					end
 					-- UNIT_COMBAT has no source attribution on Midnight, so the pet
@@ -6771,6 +6834,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					self._lastOutgoingCombatAt = t
 					self._lastOutgoingCombatTargetName = H.safeUnitName("target")
 					self._lastOutgoingCombatTargetGUID = safeTargetGUID("target")
+					if self._lastOutgoingCombatTargetGUID then
+						local m = self._ownAtByGuid or {}; self._ownAtByGuid = m
+						m[self._lastOutgoingCombatTargetGUID] = self._lastOutgoingCombatAt
+				
+						local n = 0
+						for _ in pairs(m) do n = n + 1; if n > 48 then break end end
+						if n > 48 then
+							local cut = self._lastOutgoingCombatAt - 6
+							for k, v in pairs(m) do if v < cut then m[k] = nil end end
+						end
+					end
 					H.emit("OUTGOING_DAMAGE_COMBAT", {
 						timestamp = t,
 						rawPipeId = pipeId,
@@ -6920,6 +6994,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 			self._lastOutgoingCombatAt = t
 			self._lastOutgoingCombatTargetName = H.safeUnitName("target")
 			self._lastOutgoingCombatTargetGUID = safeTargetGUID("target")
+			if self._lastOutgoingCombatTargetGUID then
+				local m = self._ownAtByGuid or {}; self._ownAtByGuid = m
+				m[self._lastOutgoingCombatTargetGUID] = self._lastOutgoingCombatAt
+		
+				local n = 0
+				for _ in pairs(m) do n = n + 1; if n > 48 then break end end
+				if n > 48 then
+					local cut = self._lastOutgoingCombatAt - 6
+					for k, v in pairs(m) do if v < cut then m[k] = nil end end
+				end
+			end
 			-- A physical hit with no cast and no player swing is not your
 			-- auto — pet melee claims it when the class hook allows (the
 			-- veto then verifies a MY_PET line when trusted).
@@ -7004,6 +7089,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						self._lastOutgoingCombatAt = t
 						self._lastOutgoingCombatTargetName = H.safeUnitName("target")
 						self._lastOutgoingCombatTargetGUID = safeTargetGUID("target")
+						if self._lastOutgoingCombatTargetGUID then
+							local m = self._ownAtByGuid or {}; self._ownAtByGuid = m
+							m[self._lastOutgoingCombatTargetGUID] = self._lastOutgoingCombatAt
+					
+							local n = 0
+							for _ in pairs(m) do n = n + 1; if n > 48 then break end end
+							if n > 48 then
+								local cut = self._lastOutgoingCombatAt - 6
+								for k, v in pairs(m) do if v < cut then m[k] = nil end end
+							end
+						end
 						H.emit("OUTGOING_DAMAGE_COMBAT", {
 							timestamp = t,
 							rawPipeId = pipeId,
@@ -7104,6 +7200,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 					self._lastOutgoingCombatAt = t
 					self._lastOutgoingCombatTargetName = tName
 					self._lastOutgoingCombatTargetGUID = safeTargetGUID("target")
+					if self._lastOutgoingCombatTargetGUID then
+						local m = self._ownAtByGuid or {}; self._ownAtByGuid = m
+						m[self._lastOutgoingCombatTargetGUID] = self._lastOutgoingCombatAt
+				
+						local n = 0
+						for _ in pairs(m) do n = n + 1; if n > 48 then break end end
+						if n > 48 then
+							local cut = self._lastOutgoingCombatAt - 6
+							for k, v in pairs(m) do if v < cut then m[k] = nil end end
+						end
+					end
 					return
 				end
 				suppressIfUnattributed = true
@@ -7294,6 +7401,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 						self._lastOutgoingCombatAt = t
 						self._lastOutgoingCombatTargetName = tName
 						self._lastOutgoingCombatTargetGUID = safeTargetGUID("target")
+						if self._lastOutgoingCombatTargetGUID then
+							local m = self._ownAtByGuid or {}; self._ownAtByGuid = m
+							m[self._lastOutgoingCombatTargetGUID] = self._lastOutgoingCombatAt
+					
+							local n = 0
+							for _ in pairs(m) do n = n + 1; if n > 48 then break end end
+							if n > 48 then
+								local cut = self._lastOutgoingCombatAt - 6
+								for k, v in pairs(m) do if v < cut then m[k] = nil end end
+							end
+						end
 						H.emit("OUTGOING_DAMAGE_COMBAT", {
 							timestamp = t,
 							rawPipeId = pipeId,
@@ -7374,6 +7492,17 @@ function Collector:handleUnitCombat(unit, action, descriptor, amount, school)
 							self._lastOutgoingCombatAt = t
 							self._lastOutgoingCombatTargetName = H.safeUnitName("target")
 							self._lastOutgoingCombatTargetGUID = safeTargetGUID("target")
+							if self._lastOutgoingCombatTargetGUID then
+								local m = self._ownAtByGuid or {}; self._ownAtByGuid = m
+								m[self._lastOutgoingCombatTargetGUID] = self._lastOutgoingCombatAt
+						
+								local n = 0
+								for _ in pairs(m) do n = n + 1; if n > 48 then break end end
+								if n > 48 then
+									local cut = self._lastOutgoingCombatAt - 6
+									for k, v in pairs(m) do if v < cut then m[k] = nil end end
+								end
+							end
 								H.emit("OUTGOING_DAMAGE_COMBAT", {
 								timestamp = t,
 								rawPipeId = pipeId,

@@ -187,6 +187,7 @@ ZSBT.DEFAULTS = {
 				critScale = 3,
 				critIntensity = 0.9,
 				duration = 3.5,
+				delay = 0,
 				statsLine = true,
 				hideToast = true,
 				style = {
@@ -196,7 +197,7 @@ ZSBT.DEFAULTS = {
 					fontSize = 24,
 					color = { r = 1.0, g = 0.8509804010391235, b = 0.2666666805744171 },
 				},
-				sound = { enabled = true, soundKey = "ZSBT: Level Up Riff 5" },
+				sound = { enabled = true, soundKey = "ZSBT: Level Up Riff 5", stopCombatSounds = true },
 			},
 			externalAddons = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },
 			cooldowns = { style = { fontOverride = false }, sound = { enabled = false, soundKey = "None" } },

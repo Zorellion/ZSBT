@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.0.10
+
+### Added
+- **Level Up: Delay slider (0–3s)** — defers the headline, stat line, and sound together so the display lands after the client's own level-up stinger and any still-playing combat sounds settle. Everything is captured at `PLAYER_LEVEL_UP`; the timer only holds the finished text.
+- **Level Up: Stop Combat Sounds toggle** — kills any still-playing Enter/Leave Combat notification sound at level-up and suppresses a Leave Combat sound that lands a beat after `PLAYER_LEVEL_UP`. Ships enabled for new profiles.
+
+### Fixed
+- **Level Up headline invisible after a delayed ding (secret reads)** — the Letter Flip animation re-read `fs:GetText()` to count letters instead of using the text the event already carried; fontstring reads return *secret strings* under tainted execution (timer-deferred emits, in-instance/combat contexts), so the letter build crashed and the headline never appeared while the stat line (Static style) survived. Flip now uses the captured `ev.text`, and the per-letter `GetStringWidth` measurement is guarded — secret widths fall back to a size estimate so the cascade still lays out.
+- **Secret-GUID compare crashes (`Event_Collector.lua:71`, `Core.lua` UT frame)** — several helpers compared `UnitGUID`/`UnitClass` returns (`== ""`, `== tag`, `~=` against stamps) *before* the `IsSafeString` guard, so a secret value threw under tainted execution — erroring on every outgoing flush and every target switch in restricted contexts (retail instances). Guards reordered so secrets are filtered before any comparison: `safeTargetGUID`, `getUnitNpcId`, both `isPlayerClassTag` copies, the `PLAYER_TARGET_CHANGED` GUID stamp, and the `UNIT_HEALTH` guidstamp. Behavior on normal strings is unchanged.
+- **UT kill announcer crediting kills you only tagged** — wound tracking was target-only, so foreign blows on a *former* target were invisible after switching away, and the `clear-*`/`unitdied-cand` inference paths had no foreign-blow veto at all. Added per-GUID wound (`_woundAtByGuid`) and own-hit (`_ownAtByGuid`) maps stamped across `target` + `nameplateN` tokens, and extended the veto to `unitdied-cand`, `clear-died`, and `clear-dead`. `witness`/`partykill` paths stay unvetoed (XP/PARTY_KILL are credit-backed).
+
 ## 4.0.9
 
 ### Added
